@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.domain.engine.trading_engine import TradingEngine
-from app.domain.models.context import StrategyContext
-from app.domain.models.order import Order
-from app.domain.models.signal import StrategySignal
+from domain.engine.trading_engine import TradingEngine
+from domain.models.context import StrategyContext
+from domain.models.order import Order
+from domain.models.signal import StrategySignal
 
 
 class TradingService:
