@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.models.order import Order
+from domain.models.order import Order
 
 
 class BrokerClient(Protocol):
