@@ -1,27 +1,26 @@
+from __future__ import annotations
+
 from fastapi import FastAPI
-from presentation.api.trading_api import router
-from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="QuantGrid 🚀")
-
-app.include_router(router)
+from presentation.api.trading_api import router as trading_router
 
 
-@app.get("/")
-def root():
-    return {"status": "running"}
+def create_app() -> FastAPI:
+    app = FastAPI(title="Clean Trading System", version="1.0.0")
+
+    # ✅ ADD THIS (important for React)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # restrict later
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.include_router(trading_router)
+
+    return app
 
 
-@app.get("/favicon.ico", include_in_schema=False)
-def favicon():
-    return FileResponse("favicon.ico")
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = create_app()
