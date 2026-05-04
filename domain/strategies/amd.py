@@ -5,11 +5,11 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 
-from app.domain.models.context import StrategyContext
-from app.domain.models.signal import StrategySignal
-from app.domain.strategies.base import BaseStrategy, StrategyConfig, normalize_mode, recent_true
-from app.domain.strategies.scoring import ScoringEngine
-from app.domain.strategies.signal_builder import SignalBuilder
+from domain.models.context import StrategyContext
+from domain.models.signal import StrategySignal
+from domain.strategies.base import BaseStrategy, StrategyConfig, normalize_mode, recent_true
+from domain.strategies.scoring import ScoringEngine
+from domain.strategies.signal_builder import SignalBuilder
 
 
 @dataclass(slots=True)
