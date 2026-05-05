@@ -1,20 +1,45 @@
+import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+
 import Dashboard from "./pages/Dashboard";
 import StrategyForm from "./components/StrategyForm";
 import ExecutionForm from "./components/ExecutionForm";
 
-function App() {
+function Layout({ children }) {
   return (
     <div className="flex h-screen bg-gray-950 text-white">
 
-    {/* Sidebar */}
-      <div className="w-64 bg-gray-900 p-5">
-        <h2 className="text-2xl font-bold mb-6">🚀 QuantGrid</h2>
+      {/* Sidebar */}
+      <div className="w-64 bg-gray-900 p-5 border-r border-gray-800">
+        <h2 className="text-2xl font-bold mb-8">🚀 QuantGrid</h2>
 
-        <ul className="space-y-4">
-          <li className="hover:text-blue-400 cursor-pointer">Dashboard</li>
-          <li className="hover:text-blue-400 cursor-pointer">Strategies</li>
-          <li className="hover:text-blue-400 cursor-pointer">Execution</li>
-        </ul>
+        <nav className="space-y-4">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"
+            }
+            >
+            Dashboard
+          </NavLink>
+
+          <NavLink
+            to="/strategies"
+            className={({ isActive }) =>
+              isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"
+            }
+          >
+            Strategies
+          </NavLink>
+
+          <NavLink
+            to="/execution"
+            className={({ isActive }) =>
+              isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"
+            }
+          >
+            Execution
+          </NavLink>
+        </nav>
       </div>
 
       {/* Main Area */}
@@ -25,27 +50,51 @@ function App() {
           <h1 className="text-lg font-semibold">Trading Dashboard</h1>
         </div>
 
-        {/* Content */}
-        <div className="p-6 grid grid-cols-2 gap-6">
-
-          {/* Dashboard */}
-          <div className="bg-gray-900 p-4 rounded-xl shadow">
-            <Dashboard />
-          </div>
-
-          {/* Strategy */}
-          <div className="bg-gray-900 p-4 rounded-xl shadow">
-            <StrategyForm />
-          </div>
-
-          {/* Execution (full width) */}
-          <div className="col-span-2 bg-gray-900 p-4 rounded-xl shadow">
-            <ExecutionForm />
-          </div>
-
+        {/* Page Content */}
+        <div className="p-6 overflow-auto">
+          {children}
         </div>
+
       </div>
     </div>
+  );
+}
+
+function DashboardPage() {
+  return (
+    <div className="bg-gray-900 p-4 rounded-xl shadow">
+      <Dashboard />
+    </div>
+  );
+}
+
+function StrategyPage() {
+  return (
+    <div className="bg-gray-900 p-4 rounded-xl shadow">
+      <StrategyForm />
+    </div>
+  );
+}
+
+function ExecutionPage() {
+  return (
+    <div className="bg-gray-900 p-4 rounded-xl shadow">
+      <ExecutionForm />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/strategies" element={<StrategyPage />} />
+          <Route path="/execution" element={<ExecutionPage />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
   );
 }
 
