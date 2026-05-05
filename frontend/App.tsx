@@ -1,10 +1,67 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 
-import Dashboard from "./pages/Dashboard";
-import StrategyForm from "./components/StrategyForm";
-import ExecutionForm from "./components/ExecutionForm";
+/* =======================
+   DASHBOARD PAGE (mock)
+======================= */
+function Dashboard() {
+  return (
+    <div className="bg-gray-900 p-4 rounded-xl shadow">
+      <h2 className="text-xl font-semibold">Dashboard</h2>
+      <p className="text-gray-400 mt-2">Market overview coming soon...</p>
+    </div>
+  );
+}
 
+/* =======================
+   STRATEGY UI (MERGED)
+======================= */
+const strategies = [
+  { name: "amd", desc: "Accumulation → Manipulation → Distribution" },
+  { name: "breakout", desc: "Momentum breakout strategy" },
+  { name: "btst", desc: "Buy Today Sell Tomorrow" },
+  { name: "mean_reversion", desc: "Price returns to mean" },
+  { name: "mtf", desc: "Multi-timeframe analysis" },
+  { name: "supply_demand", desc: "Liquidity zones strategy" },
+];
+
+function StrategyForm() {
+  return (
+    <div>
+      <h2 className="text-xl font-semibold mb-4">Strategies</h2>
+
+      <div className="grid grid-cols-2 gap-3">
+        {strategies.map((s) => (
+          <button
+            key={s.name}
+            className="bg-gray-800 hover:bg-gray-700 p-3 rounded-lg text-left transition"
+          >
+            <div className="text-blue-400 font-semibold uppercase">
+              {s.name}
+            </div>
+            <div className="text-xs text-gray-400">{s.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =======================
+   EXECUTION PAGE (mock)
+======================= */
+function ExecutionForm() {
+  return (
+    <div className="bg-gray-900 p-4 rounded-xl shadow">
+      <h2 className="text-xl font-semibold">Execution Panel</h2>
+      <p className="text-gray-400 mt-2">Order execution UI coming soon...</p>
+    </div>
+  );
+}
+
+/* =======================
+   LAYOUT
+======================= */
 type LayoutProps = {
   children: React.ReactNode;
 };
@@ -63,24 +120,16 @@ function Layout({ children }: LayoutProps) {
   );
 }
 
-const DashboardPage = () => (
-  <div className="bg-gray-900 p-4 rounded-xl shadow">
-    <Dashboard />
-  </div>
-);
+/* =======================
+   PAGES
+======================= */
+const DashboardPage = () => <Dashboard />;
+const StrategyPage = () => <StrategyForm />;
+const ExecutionPage = () => <ExecutionForm />;
 
-const StrategyPage = () => (
-  <div className="bg-gray-900 p-4 rounded-xl shadow">
-    <StrategyForm />
-  </div>
-);
-
-const ExecutionPage = () => (
-  <div className="bg-gray-900 p-4 rounded-xl shadow">
-    <ExecutionForm />
-  </div>
-);
-
+/* =======================
+   APP ROOT
+======================= */
 export default function App() {
   return (
     <BrowserRouter>
