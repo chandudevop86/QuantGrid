@@ -18,8 +18,8 @@ function App() {
   }, []);
 
   return (
-    <div style={{ padding: "20px", fontFamily: "Arial" }}>
-      <h1>🚀 QuantGrid Dashboard</h1>
+    <div> style={{ padding: "20px", fontFamily: "Arial" }}
+     <h1>🚀 QuantGrid Dashboard</h1>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
