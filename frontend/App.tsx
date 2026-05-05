@@ -143,3 +143,23 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+
+
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+import Dashboard from "./pages/dashboard/Dashboard";
+import LiveAnalysis from "./pages/analysis/LiveAnalysis";
+import Jobs from "./pages/jobs/Jobs";
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/analysis" element={<LiveAnalysis />} />
+        <Route path="/jobs" element={<Jobs />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

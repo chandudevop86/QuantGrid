@@ -21,3 +21,31 @@ export const api = {
       body: JSON.stringify(payload),
     }).then(r => r.json()),
 };
+
+const BASE = "http://localhost:8000";
+
+export const api = {
+  getSummary: async () => {
+    const res = await fetch(`${BASE}/dashboard/summary`, {
+      credentials: "include",
+    });
+    return res.json();
+  },
+
+  runAnalysis: async (data: any) => {
+    const res = await fetch(`${BASE}/dashboard/live-analysis/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+      credentials: "include",
+    });
+    return res.json();
+  },
+
+  getJobs: async () => {
+    const res = await fetch(`${BASE}/dashboard/live-analysis/jobs`, {
+      credentials: "include",
+    });
+    return res.json();
+  },
+};
