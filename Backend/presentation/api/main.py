@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
+
 def create_app():
     app = FastAPI(title="QuantGrid API")
 
@@ -24,6 +25,5 @@ def create_app():
     app.include_router(execution_router, prefix="/execution")
 
     return app
-
 
 app = create_app()
