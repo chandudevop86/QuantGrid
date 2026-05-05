@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
-app.include_router(trading_router, prefix="/trading", tags=["Trading"])
 
 
 def create_app():
@@ -21,7 +20,7 @@ def create_app():
     app.include_router(auth_router, prefix="/auth")
 
     from Backend.presentation.api.trading_api import router as trading_router
-    app.include_router(trading_router, prefix="/trading")
+    app.include_router(trading_router, prefix="/trading", tags=["Trading"])
 
     from Backend.presentation.api.execution import router as execution_router
     app.include_router(execution_router, prefix="/execution")
