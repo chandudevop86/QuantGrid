@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 
+app.include_router(trading_router, prefix="/trading", tags=["Trading"])
+
 
 def create_app():
     app = FastAPI(title="QuantGrid API")

@@ -5,8 +5,10 @@ from typing import Any
 from Backend.application.dto import serialize_signal
 from Backend.application.trading_service import TradingService
 
-router = APIRouter(prefix="/trading", tags=["trading"])
+router = APIRouter(tags=["Trading"])
 service = TradingService()
+
+
 
 
 class StrategyRunRequest(BaseModel):
