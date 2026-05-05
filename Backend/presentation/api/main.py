@@ -1,36 +1,27 @@
-from __future__ import annotations
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-#rom Backend.presentation.api.auth import router as auth_router
-from Backend.presentation.api.trading_api import router as trading_router
-from Backend.presentation.api.execution import router as execution_router
 
+def create_app():
+    app = FastAPI(title="QuantGrid API")
 
-def create_app() -> FastAPI:
-    app = FastAPI(
-        title="QuantGrid API",
-        version="1.0.0"
-    )
-
-    # --------------------
-    # CORS (React frontend)
-    # --------------------
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # restrict in production
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # --------------------
-    # ROUTERS (modular APIs)
-    # --------------------
-    app.include_router(auth_router, prefix="/auth", tags=["Auth"])
-    app.include_router(trading_router, prefix="/trading", tags=["Trading"])
-    app.include_router(execution_router, prefix="/execution", tags=["Execution"])
+    # lazy imports prevent partial failure
+    from Backend.presentation.api.auth import router as auth_router
+    app.include_router(auth_router, prefix="/auth")
+
+    from Backend.presentation.api.trading_api import router as trading_router
+    app.include_router(trading_router, prefix="/trading")
+
+    from Backend.presentation.api.execution import router as execution_router
+    app.include_router(execution_router, prefix="/execution")
 
     return app
 
