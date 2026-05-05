@@ -1,15 +1,36 @@
-from __future__ import annotations
+import { useEffect, useState } from "react";
 
-from fastapi import FastAPI
+function App() {
+  const [strategies, setStrategies] = useState<string[]>([]);
+  const [error, setError] = useState("");
 
-from presentation.api.trading_api import router as trading_router
+  useEffect(() => {
+    fetch("http://13.222.179.171:8000/trading/strategies")
+      .then((res) => {
+        if (!res.ok) throw new Error("API error");
+        return res.json();
+      })
+      .then((data) => setStrategies(data))
+      .catch((err) => {
+        console.error(err);
+        setError("Backend not reachable");
+      });
+  }, []);
 
+  return (
+    <div style={{ padding: "20px", fontFamily: "Arial" }}>
+      <h1>🚀 QuantGrid Dashboard</h1>
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="Clean Trading System", version="1.0.0")
-    app.include_router(trading_router)
-    return app
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
+      <h2>Available Strategies</h2>
+      <ul>
+        {strategies.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
-app = create_app()
-router = APIRouter(prefix="/api")
+export default App;
