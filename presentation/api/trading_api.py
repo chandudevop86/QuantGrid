@@ -36,3 +36,22 @@ def generate_signals(payload: StrategyRunRequest):
 @router.get("/strategies")
 def list_strategies():
     return service.trading_engine.strategy_engine.available()
+
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/price")
+def get_price():
+    return {
+        "symbol": "NIFTY",
+        "price": 22450,
+        "change": "+0.85%"
+    }
+
+@router.get("/signals")
+def get_signals():
+    return {
+        "signal": "BUY",
+        "confidence": 0.78
+    }
