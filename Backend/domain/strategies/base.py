@@ -6,9 +6,9 @@ from typing import Any
 
 import pandas as pd
 
-from domain.indicators.indicators import IndicatorService
-from domain.models.context import StrategyContext
-from domain.models.signal import StrategySignal
+from Backend.domain.indicators.indicators import IndicatorService
+from Backend.domain.models.context import StrategyContext
+from Backend.domain.models.signal import StrategySignal
 
 
 @dataclass(slots=True)

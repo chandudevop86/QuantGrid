@@ -4,8 +4,8 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from application.dto import serialize_signal
-from application.trading_service import TradingService
+from Backend.application.dto import serialize_signal
+from Backend.application.trading_service import TradingService
 
 router = APIRouter(prefix="/trading", tags=["trading"])
 service = TradingService()

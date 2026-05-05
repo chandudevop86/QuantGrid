@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from domain.models.context import StrategyContext
-from domain.models.signal import StrategySignal
-from domain.strategies.amd import AMDStrategy
-from domain.strategies.base import BaseStrategy
-from domain.strategies.breakout import BreakoutStrategy
-from domain.strategies.btst import BTSTStrategy
-from domain.strategies.mean_reversion import MeanReversionStrategy
-from domain.strategies.mtf import MTFStrategy
-from domain.strategies.supply_demand import SupplyDemandStrategy
+from Backend.domain.models.context import StrategyContext
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.strategies.amd import AMDStrategy
+from Backend.domain.strategies.base import BaseStrategy
+from Backend.domain.strategies.breakout import BreakoutStrategy
+from Backend.domain.strategies.btst import BTSTStrategy
+from Backend.domain.strategies.mean_reversion import MeanReversionStrategy
+from Backend.domain.strategies.mtf import MTFStrategy
+from Backend.domain.strategies.supply_demand import SupplyDemandStrategy
 
 
 class StrategyEngine:

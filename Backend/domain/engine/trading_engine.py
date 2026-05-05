@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from domain.engine.execution_engine import ExecutionEngine
-from domain.engine.strategy_engine import StrategyEngine
-from domain.models.context import StrategyContext
-from domain.models.order import Order
-from domain.models.signal import StrategySignal
-from domain.risk.risk_manager import RiskManager
+from Backend.domain.engine.execution_engine import ExecutionEngine
+from Backend.domain.engine.strategy_engine import StrategyEngine
+from Backend.domain.models.context import StrategyContext
+from Backend.domain.models.order import Order
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.risk.risk_manager import RiskManager
 
 
 class TradingEngine:

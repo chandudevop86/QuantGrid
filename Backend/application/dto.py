@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from domain.models.signal import StrategySignal
+from Backend.domain.models.signal import StrategySignal
 
 
 def serialize_signal(signal: StrategySignal) -> dict[str, Any]:

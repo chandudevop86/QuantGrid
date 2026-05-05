@@ -20,3 +20,10 @@ class CsvMarketDataRepository:
         if not path.exists():
             raise FileNotFoundError(f"Market data file not found: {path}")
         return pd.read_csv(path)
+class MarketDataService:
+
+    def __init__(self, adapter):
+        self.adapter = adapter
+
+    def get_candles(self, symbol: str):
+        return self.adapter.get_ohlcv(symbol, "1m", 100)

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from domain.models.order import Order
-from domain.models.signal import StrategySignal
+from Backend.domain.models.order import Order
+from Backend.domain.models.signal import StrategySignal
 
 
 class ExecutionEngine:

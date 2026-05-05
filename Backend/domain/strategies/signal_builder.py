@@ -4,8 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from domain.models.signal import StrategySignal
-from domain.risk.risk_manager import RiskManager
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.risk.risk_manager import RiskManager
 
 
 class SignalBuilder:

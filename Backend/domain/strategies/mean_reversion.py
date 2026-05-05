@@ -4,11 +4,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from domain.models.context import StrategyContext
-from domain.models.signal import StrategySignal
-from domain.strategies.base import BaseStrategy, StrategyConfig
-from domain.strategies.scoring import ScoringEngine
-from domain.strategies.signal_builder import SignalBuilder
+from Backend.domain.models.context import StrategyContext
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.strategies.base import BaseStrategy, StrategyConfig
+from Backend.domain.strategies.scoring import ScoringEngine
+from Backend.domain.strategies.signal_builder import SignalBuilder
 
 
 @dataclass(slots=True)

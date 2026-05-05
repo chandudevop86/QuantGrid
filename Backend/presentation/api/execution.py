@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from domain.engine.execution_engine import ExecutionEngine
-from domain.models.signal import StrategySignal
+from Backend.domain.engine.execution_engine import ExecutionEngine
+from Backend.domain.models.signal import StrategySignal
 
 router = APIRouter()
 

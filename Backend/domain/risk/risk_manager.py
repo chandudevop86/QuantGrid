@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from math import floor
 
-from domain.models.signal import StrategySignal
+from Backend.domain.models.signal import StrategySignal
 
 
 class RiskManager:
