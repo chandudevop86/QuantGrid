@@ -1,10 +1,15 @@
+import React from "react";
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 
 import Dashboard from "./pages/Dashboard";
 import StrategyForm from "./components/StrategyForm";
 import ExecutionForm from "./components/ExecutionForm";
 
-function Layout({ children }) {
+type LayoutProps = {
+  children: React.ReactNode;
+};
+
+function Layout({ children }: LayoutProps) {
   return (
     <div className="flex h-screen bg-gray-950 text-white">
 
@@ -18,7 +23,7 @@ function Layout({ children }) {
             className={({ isActive }) =>
               isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"
             }
-            >
+          >
             Dashboard
           </NavLink>
 
@@ -42,15 +47,13 @@ function Layout({ children }) {
         </nav>
       </div>
 
-      {/* Main Area */}
+      {/* Main */}
       <div className="flex-1 flex flex-col">
 
-        {/* Topbar */}
-        <div className="h-14 bg-gray-900 flex items-center justify-between px-6 border-b border-gray-800">
+        <div className="h-14 bg-gray-900 flex items-center px-6 border-b border-gray-800">
           <h1 className="text-lg font-semibold">Trading Dashboard</h1>
         </div>
 
-        {/* Page Content */}
         <div className="p-6 overflow-auto">
           {children}
         </div>
@@ -60,31 +63,25 @@ function Layout({ children }) {
   );
 }
 
-function DashboardPage() {
-  return (
-    <div className="bg-gray-900 p-4 rounded-xl shadow">
-      <Dashboard />
-    </div>
-  );
-}
+const DashboardPage = () => (
+  <div className="bg-gray-900 p-4 rounded-xl shadow">
+    <Dashboard />
+  </div>
+);
 
-function StrategyPage() {
-  return (
-    <div className="bg-gray-900 p-4 rounded-xl shadow">
-      <StrategyForm />
-    </div>
-  );
-}
+const StrategyPage = () => (
+  <div className="bg-gray-900 p-4 rounded-xl shadow">
+    <StrategyForm />
+  </div>
+);
 
-function ExecutionPage() {
-  return (
-    <div className="bg-gray-900 p-4 rounded-xl shadow">
-      <ExecutionForm />
-    </div>
-  );
-}
+const ExecutionPage = () => (
+  <div className="bg-gray-900 p-4 rounded-xl shadow">
+    <ExecutionForm />
+  </div>
+);
 
-function App() {
+export default function App() {
   return (
     <BrowserRouter>
       <Layout>
@@ -97,5 +94,3 @@ function App() {
     </BrowserRouter>
   );
 }
-
-export default App;
