@@ -1,7 +1,6 @@
 import requests
 from typing import List, Dict, Any
-from app.adapters.base import MarketDataAdapter
-
+from Backend.infrastructure.broker.base import MarketDataAdapter
 
 class DhanAdapter(MarketDataAdapter):
 
