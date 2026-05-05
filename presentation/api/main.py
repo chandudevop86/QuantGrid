@@ -3,9 +3,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.auth import router as auth_router
-from app.api.trading import router as trading_router
-from app.api.execution import router as execution_router
+from presentation.api.auth import router as auth_router
+from presentation.api.trading import router as trading_router
+from presentation.api.execution import router as execution_router
 
 
 def create_app() -> FastAPI:
