@@ -1,21 +1,31 @@
+
 import { useEffect, useState } from "react";
-import { api } from "../api/dashboard";
 
 export default function Dashboard() {
-  const [data, setData] = useState<any>(null);
+  const [strategies, setStrategies] = useState<string[]>([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api.summary().then(setData);
+    fetch("http://13.222.179.171:8000/trading/strategies")
+      .then((res) => {
+        if (!res.ok) throw new Error("API error");
+        return res.json();
+      })
+      .then(setStrategies)
+      .catch(() => setError("Backend not reachable"));
   }, []);
 
-  if (!data) return <div>Loading...</div>;
-
   return (
-    <div className="grid grid-cols-4 gap-4">
-      <div className="bg-gray-900 p-4 rounded">Broker: {data.broker}</div>
-      <div className="bg-gray-900 p-4 rounded">Trades: {data.trades}</div>
-      <div className="bg-gray-900 p-4 rounded">Signals: {data.signals}</div>
-      <div className="bg-gray-900 p-4 rounded">Status: {data.status}</div>
+    <div>
+      <h1 className="text-xl font-bold mb-4">Strategies</h1>
+
+      {error && <p className="text-red-500">{error}</p>}
+
+      <ul>
+        {strategies.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
     </div>
   );
 }

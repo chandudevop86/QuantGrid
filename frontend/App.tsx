@@ -1,15 +1,8 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
-import App from "./App";
-/* =======================
-   PAGES
-======================= */
 import Dashboard from "./pages/Dashboard";
 import LiveAnalysis from "./pages/LiveAnalysis";
 import Jobs from "./pages/Jobs";
 
-/* =======================
-   LAYOUT
-======================= */
 function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-gray-950 text-white">
@@ -31,15 +24,14 @@ function Layout({ children }: { children: React.ReactNode }) {
           <h1 className="text-lg font-semibold">Trading Dashboard</h1>
         </div>
 
-        <div className="p-6 overflow-auto">{children}</div>
+        <div className="p-6 overflow-auto">
+          {children}
+        </div>
       </div>
     </div>
   );
 }
 
-/* =======================
-   APP ROOT
-======================= */
 export default function App() {
   return (
     <BrowserRouter>
