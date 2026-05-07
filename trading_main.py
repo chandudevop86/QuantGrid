@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.presentation.api.trading_api import router as trading_router
+from Backend.presentation.api.trading_api import router as trading_router
 
 
 def create_app() -> FastAPI:
@@ -12,3 +12,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+router = APIRouter(prefix="/api")
