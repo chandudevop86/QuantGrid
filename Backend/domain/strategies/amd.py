@@ -7,11 +7,10 @@ import pandas as pd
 
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
-from Backend.domain.strategies.base import BaseStrategy, StrategyConfig, normalize_mode, recent_true
+from Backend.domain.strategies.base import BaseStrategy, StrategyConfig
 from Backend.domain.strategies.scoring import ScoringEngine
 from Backend.domain.strategies.signal_builder import SignalBuilder
-
-
+from Backend.domain.strategies.strategy_utils import normalize_mode, recent_true
 @dataclass(slots=True)
 class ConfluenceConfig(StrategyConfig):
     accumulation_lookback: int = 10

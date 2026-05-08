@@ -1,14 +1,12 @@
 from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List
 
 import pandas as pd
 
-from Backend.domain.indicators.indicators import IndicatorService
-from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
+from Backend.domain.models.context import StrategyContext
 
 
 @dataclass(slots=True)
@@ -19,43 +17,33 @@ class StrategyConfig:
 
 
 class BaseStrategy(ABC):
-    name = "Base Strategy"
+    name = "BaseStrategy"
 
-    def __init__(self, config: StrategyConfig | None = None, indicators: IndicatorService | None = None) -> None:
+    def __init__(self, config: StrategyConfig | None = None):
         self.config = config or StrategyConfig()
-        self.indicators = indicators or IndicatorService()
 
-    def run(self, data: Any, context: StrategyContext) -> list[StrategySignal]:
+    def run(self, data: Any, context: StrategyContext) -> List[StrategySignal]:
         candles = self.prepare_data(data)
         if candles.empty:
             return []
         return self.generate_signals(candles, context)
 
     def prepare_data(self, data: Any) -> pd.DataFrame:
-        return self.indicators.prepare(data)
+        if isinstance(data, pd.DataFrame):
+            return data
+        return pd.DataFrame(data)
 
     @abstractmethod
-    def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
-        raise NotImplementedError
+    def generate_signals(
+        self, candles: pd.DataFrame, context: StrategyContext
+    ) -> List[StrategySignal]:
+        pass
 
     @abstractmethod
-    def calculate_levels(self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext) -> tuple[float, float]:
-        raise NotImplementedError
+    def calculate_levels(
+        self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext
+    ) -> tuple[float, float]:
+        pass
+    from typing import Dict
 
 
-def normalize_mode(mode: str) -> str:
-    raw = str(mode or "").strip().lower()
-    if raw == "conservative":
-        return "Conservative"
-    if raw == "aggressive":
-        return "Aggressive"
-    return "Balanced"
-
-
-def recent_true(series: pd.Series, index: int, lookback: int) -> int | None:
-    left = max(0, int(index) - int(lookback))
-    window = series.iloc[left : index + 1]
-    matches = window[window.fillna(False)]
-    if matches.empty:
-        return None
-    return int(matches.index[-1])
