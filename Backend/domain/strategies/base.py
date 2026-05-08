@@ -44,3 +44,27 @@ class BaseStrategy(ABC):
         self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext
     ) -> tuple[float, float]:
         pass
+    from typing import Dict
+
+
+class BaseStrategy:
+    def generate_signal(self, data: Dict) -> Dict:
+        raise NotImplementedError
+
+
+# --- Optional config class ---
+class StrategyConfig:
+    def __init__(self, mode: str = "live"):
+        self.mode = mode
+
+
+# --- Utility: normalize mode ---
+def normalize_mode(mode: str) -> str:
+    if not mode:
+        return "live"
+    return mode.lower().strip()
+
+
+# --- Utility: check recent True values ---
+def recent_true(values, lookback=3):
+    return any(values[-lookback:])
