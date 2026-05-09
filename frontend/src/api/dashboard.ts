@@ -1,21 +1,20 @@
-const BASE = "http://localhost:8000/dashboard";
+import API from "../services/api";
 
 export const api = {
-  summary: () => fetch(`${BASE}/summary`).then(r => r.json()),
+  summary: () => API.get("/dashboard/summary").then(r => r.data),
 
   candles: (symbol: string) =>
-    fetch(`${BASE}/candles?symbol=${symbol}`).then(r => r.json()),
+    API.get(`/dashboard/candles?symbol=${symbol}`).then(r => r.data),
 
   jobs: () =>
-    fetch(`${BASE}/live-analysis/jobs`).then(r => r.json()),
+    API.get("/dashboard/live-analysis/jobs").then(r => r.data),
 
   job: (id: string) =>
-    fetch(`${BASE}/live-analysis/jobs/${id}`).then(r => r.json()),
+    API.get(`/dashboard/live-analysis/jobs/${id}`).then(r => r.data),
 
   runAnalysis: (payload: any) =>
-    fetch(`${BASE}/live-analysis`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }).then(r => r.json()),
+    API.post("/dashboard/live-analysis", payload).then(r => r.data),
 };
+useLive((data) => {
+  console.log("LIVE:", data);
+});
