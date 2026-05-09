@@ -8,15 +8,34 @@ function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen bg-gray-950 text-white">
 
       {/* Sidebar */}
-      <div className="w-64 bg-gray-900 p-5 border-r border-gray-800">
-        <h2 className="text-2xl font-bold mb-8">🚀 QuantGrid</h2>
+     <nav className="space-y-4">
+  <NavLink
+    to="/"
+    className={({ isActive }) =>
+      `block ${isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"}`
+    }
+  >
+    Dashboard
+  </NavLink>
 
-        <nav className="space-y-4">
-          <NavLink to="/" className="block hover:text-blue-400">Dashboard</NavLink>
-          <NavLink to="/analysis" className="block hover:text-blue-400">Live Analysis</NavLink>
-          <NavLink to="/jobs" className="block hover:text-blue-400">Jobs</NavLink>
-        </nav>
-      </div>
+  <NavLink
+    to="/analysis"
+    className={({ isActive }) =>
+      `block ${isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"}`
+    }
+  >
+    Live Analysis
+  </NavLink>
+
+  <NavLink
+    to="/jobs"
+    className={({ isActive }) =>
+      `block ${isActive ? "text-blue-400 font-semibold" : "hover:text-blue-400"}`
+    }
+  >
+    Jobs
+  </NavLink>
+</nav>
 
       {/* Main */}
       <div className="flex-1 flex flex-col">
