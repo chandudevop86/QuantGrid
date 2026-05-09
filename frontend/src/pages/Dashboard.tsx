@@ -1,31 +1,49 @@
 
+
 import { useEffect, useState } from "react";
 
-export default function Dashboard() {
-  const [strategies, setStrategies] = useState<string[]>([]);
-  const [error, setError] = useState("");
+export default function LiveAnalysis() {
+  const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    fetch("http://13.222.179.171:8000/trading/strategies")
-      .then((res) => {
-        if (!res.ok) throw new Error("API error");
-        return res.json();
-      })
-      .then(setStrategies)
-      .catch(() => setError("Backend not reachable"));
+    const ws = new WebSocket("ws://localhost:8005/ws");
+
+    ws.onmessage = (e) => {
+      const parsed = JSON.parse(e.data);
+      console.log("LIVE:", parsed);
+      setData(parsed);
+    };
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    // cleanup (VERY IMPORTANT)
+    return () => {
+      ws.close();
+    };
   }, []);
 
   return (
     <div>
-      <h1 className="text-xl font-bold mb-4">Strategies</h1>
+      <h1>Live Analysis</h1>
 
-      {error && <p className="text-red-500">{error}</p>}
-
-      <ul>
-        {strategies.map((s) => (
-          <li key={s}>{s}</li>
-        ))}
-      </ul>
+      {data ? (
+        <div>
+          <p>Order ID: {data.order_id}</p>
+          <p>Status: {data.status}</p>
+        </div>
+      ) : (
+        <p>Waiting for live data...</p>
+      )}
     </div>
   );
 }
