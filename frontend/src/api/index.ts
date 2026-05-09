@@ -27,3 +27,5 @@ export const api = {
   getJobs: () =>
     API.get("/dashboard/live-analysis/jobs").then(res => res.data),
 };
+
+

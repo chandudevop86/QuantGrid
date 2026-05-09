@@ -47,3 +47,22 @@ export default function LiveAnalysis() {
     </div>
   );
 }
+
+
+
+
+import { useEffect } from "react";
+import { api } from "../api";
+
+export default function Dashboard() {
+  useEffect(() => {
+    const fetchData = async () => {
+      const price = await api.getPrice();
+      console.log("Live price:", price);
+    };
+
+    fetchData();
+  }, []);
+
+  return <div>Dashboard</div>;
+}

@@ -1,19 +1,21 @@
-import API from "../services/api";
+import API from "./client";
 
 export const api = {
-  summary: () => API.get("/dashboard/summary").then(r => r.data),
+  health: () => API.get("/health").then(r => r.data),
 
-  candles: (symbol: string) =>
-    API.get(`/dashboard/candles?symbol=${symbol}`).then(r => r.data),
+  // ✅ FIXED
+  getStrategies: () => API.get("/strategies").then(r => r.data),
 
-  jobs: () =>
-    API.get("/dashboard/live-analysis/jobs").then(r => r.data),
+  // ✅ FIXED
+  runSignals: (payload: any) =>
+    API.post("/signals", payload).then(r => r.data),
 
-  job: (id: string) =>
-    API.get(`/dashboard/live-analysis/jobs/${id}`).then(r => r.data),
+  // ✅ FIXED
+  executeOrder: (payload: any) =>
+    API.post("/order", payload).then(r => r.data),
 
-  runAnalysis: (payload: any) =>
-    API.post("/dashboard/live-analysis", payload).then(r => r.data),
+  // optional
+  getPrice: () => API.get("/price").then(r => r.data),
 };
 useLive((data) => {
   console.log("LIVE:", data);
