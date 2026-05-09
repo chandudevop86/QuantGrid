@@ -1,40 +1,56 @@
-
-import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useState } from "react";
+import { useAutoSignals } from "../hooks/useAutoSignals";
 
 export default function Strategies() {
-  const [strategies, setStrategies] = useState([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.getStrategies().then(setStrategies);
-  }, []);
+  const { signal, loading } = useAutoSignals(selectedStrategy, 5000);
 
-  const runStrategy = async (name: string) => {
-    try {
-      const result = await api.runSignals({
-        strategy: name,
-        data: [
-          { open: 100, high: 105, low: 95, close: 102 },
-          { open: 102, high: 108, low: 101, close: 107 }
-        ]
-      });
-
-      console.log("Signal:", result);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const strategies = [
+    "amd",
+    "breakout",
+    "btst",
+    "mean_reversion",
+    "mtf",
+    "supply_demand"
+  ];
 
   return (
-    <div>
-      <h1>Strategies</h1>
+    <div style={{ padding: 20 }}>
+      <h1>🚀 QuantGrid Dashboard</h1>
 
-      {strategies.map((s: any, i: number) => (
-        <div key={i} style={{ marginBottom: "10px" }}>
-          <span>{s}</span>
-          <button onClick={() => runStrategy(s)}>Run</button>
-        </div>
+      {/* STRATEGIES */}
+      <h2>Strategies</h2>
+
+      {strategies.map((s) => (
+        <button
+          key={s}
+          onClick={() => setSelectedStrategy(s)}
+          style={{
+            display: "block",
+            marginBottom: 8,
+            padding: 8
+          }}
+        >
+          {s}
+        </button>
       ))}
+
+      {/* LIVE PANEL */}
+      <h2>📡 Live Signal</h2>
+
+      {!selectedStrategy && <p>Select a strategy</p>}
+
+      {selectedStrategy && (
+        <div>
+          <p>Active: {selectedStrategy}</p>
+          <p>Status: {loading ? "Updating..." : "Live"}</p>
+
+          <pre>
+            {JSON.stringify(signal, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }
