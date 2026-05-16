@@ -7,6 +7,7 @@ import pandas as pd
 
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.models.context import StrategyContext
+from Backend.domain.indicators.indicators import add_core_indicators, prepare_ohlcv
 
 
 @dataclass(slots=True)
@@ -29,9 +30,7 @@ class BaseStrategy(ABC):
         return self.generate_signals(candles, context)
 
     def prepare_data(self, data: Any) -> pd.DataFrame:
-        if isinstance(data, pd.DataFrame):
-            return data
-        return pd.DataFrame(data)
+        return add_core_indicators(prepare_ohlcv(data))
 
     @abstractmethod
     def generate_signals(
