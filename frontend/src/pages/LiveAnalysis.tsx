@@ -1,11 +1,28 @@
-import { useState, useEffect } from "react";
-import { api } from "../api/dashboard";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+
+const strategies = [
+  "amd",
+  "breakout",
+  "btst",
+  "mean_reversion",
+  "mtf",
+  "supply_demand",
+];
+
+function formatStrategyName(strategy: string) {
+  return strategy
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 export default function LiveAnalysis() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [strategy, setStrategy] = useState("breakout");
 
   const run = async () => {
     try {
@@ -16,60 +33,113 @@ export default function LiveAnalysis() {
         symbol: "NIFTY",
         interval: "1m",
         period: "1d",
-        strategy: "breakout",
+        strategy,
         capital: 100000,
         risk_pct: 1,
         rr_ratio: 2,
       });
 
-      // 🔥 assume backend returns job_id
       setJobId(res.job_id);
       setResult(res);
     } catch (err: any) {
-      console.error(err);
-      setError("Failed to run analysis");
+      const message =
+        err?.response?.data?.detail ??
+        err?.message ??
+        "Failed to run analysis";
+      setError(
+        message === "Network Error"
+          ? "Cannot reach the dashboard API. Check that the backend is running on port 8000."
+          : message
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // 🔥 Real-time updates via WebSocket
   useEffect(() => {
     if (!jobId) return;
 
-    const ws = new WebSocket("ws://YOUR_EC2_IP:8005/ws");
+    const wsHost = window.location.hostname;
+    const ws = new WebSocket(`ws://${wsHost}:8005/ws`);
 
-    ws.onmessage = (e) => {
-      const data = JSON.parse(e.data);
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
 
-      // only update relevant job
       if (data.job_id === jobId) {
         setResult(data);
       }
+    };
+
+    ws.onerror = () => {
+      setError("Live websocket is unavailable. The job was still submitted.");
     };
 
     return () => ws.close();
   }, [jobId]);
 
   return (
-    <div>
-      <h1 className="text-xl mb-4">Live Analysis</h1>
+    <section className="dashboard-page">
+      <div className="page-heading">
+        <h1>Live Analysis</h1>
+        <p>Create a queued analysis job for the selected NIFTY strategy.</p>
+      </div>
 
-      <button
-        onClick={run}
-        disabled={loading}
-        className="bg-blue-500 px-4 py-2 rounded"
-      >
-        {loading ? "Running..." : "Run Analysis"}
-      </button>
+      <div className="strategy-layout">
+        <div className="form-panel">
+          <div className="form-panel-header">
+            <div>
+              <h2>Strategy</h2>
+              <p>Choose the strategy before creating the job.</p>
+            </div>
+          </div>
 
-      {error && <p className="text-red-500 mt-2">{error}</p>}
+          <div className="strategy-grid">
+            {strategies.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setStrategy(item)}
+                className={`strategy-chip${strategy === item ? " active" : ""}`}
+              >
+                {formatStrategyName(item)}
+              </button>
+            ))}
+          </div>
 
-      <pre className="mt-4 bg-gray-900 p-4">
-        {result
-          ? JSON.stringify(result, null, 2)
-          : "No data yet..."}
-      </pre>
-    </div>
+          <button
+            type="button"
+            onClick={run}
+            disabled={loading}
+            className="primary-action"
+          >
+            {loading ? "Queueing..." : `Run ${formatStrategyName(strategy)}`}
+          </button>
+        </div>
+
+        <div className="form-panel signal-panel">
+          <div className="form-panel-header">
+            <div>
+              <h2>Job Result</h2>
+              <p>{jobId ? `Tracking job ${jobId}` : "No live-analysis job submitted yet."}</p>
+            </div>
+            <span className={`status-pill${error ? " error" : ""}`}>
+              {loading ? "Queueing" : error ? "Check" : jobId ? "Queued" : "Idle"}
+            </span>
+          </div>
+
+          {error && (
+            <div className="alert alert-error" role="alert">
+              {error}
+            </div>
+          )}
+
+          <pre>
+            {result
+              ? JSON.stringify(result, null, 2)
+              : "Select a strategy and run analysis to create a job."}
+          </pre>
+        </div>
+      </div>
+    </section>
   );
 }
