@@ -57,32 +57,37 @@ export default function Dashboard() {
           </div>
 
           <div className="dashboard-section">
-            <h2>Recent Jobs</h2>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Status</th>
-                  <th>Symbol</th>
-                  <th>Strategy</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.slice(0, 5).map((job) => (
-                  <tr key={job.job_id ?? job.id}>
-                    <td>{job.job_id ?? job.id}</td>
-                    <td>{job.status ?? "unknown"}</td>
-                    <td>{job.symbol ?? "-"}</td>
-                    <td>{job.strategy ?? "-"}</td>
-                  </tr>
-                ))}
-                {jobs.length === 0 && (
+            <div className="section-header">
+              <h2>Recent Jobs</h2>
+              <span>{jobs.length} total</span>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={4}>No live-analysis jobs yet.</td>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Symbol</th>
+                    <th>Strategy</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {jobs.slice(0, 5).map((job) => (
+                    <tr key={job.job_id ?? job.id}>
+                      <td>{job.job_id ?? job.id}</td>
+                      <td>{job.status ?? "unknown"}</td>
+                      <td>{job.symbol ?? "-"}</td>
+                      <td>{job.strategy ?? "-"}</td>
+                    </tr>
+                  ))}
+                  {jobs.length === 0 && (
+                    <tr>
+                      <td colSpan={4}>No live-analysis jobs yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}

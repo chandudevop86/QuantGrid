@@ -1,16 +1,20 @@
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 
-export default function AppLayout({ children }: any) {
+type AppLayoutProps = {
+  children: React.ReactNode;
+};
+
+export default function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="flex h-screen bg-gray-950 text-white">
+    <div className="app-shell">
       <Sidebar />
 
-      <div className="flex-1 flex flex-col">
+      <main className="app-main">
         <Topbar />
 
-        <div className="p-4 overflow-auto">{children}</div>
-      </div>
+        <div className="app-content">{children}</div>
+      </main>
     </div>
   );
 }
