@@ -413,6 +413,12 @@ select {
   color: #fecaca;
 }
 
+.alert-success {
+  border: 1px solid rgba(45, 212, 191, 0.38);
+  background: rgba(20, 184, 166, 0.1);
+  color: #ccfbf1;
+}
+
 .strategy-layout {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
