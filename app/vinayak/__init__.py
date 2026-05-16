@@ -1,0 +1,1 @@
+"""Vinayak API compatibility namespace."""
