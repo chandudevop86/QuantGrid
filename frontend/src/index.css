@@ -468,6 +468,93 @@ select {
   color: #fecaca;
 }
 
+.chart-panel {
+  max-width: none;
+}
+
+.candle-chart {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+}
+
+.price-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 12px;
+  border-right: 1px solid #1e293b;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.candle-plot {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(56px, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 220px;
+  padding: 18px 18px 34px;
+  overflow-x: auto;
+}
+
+.candle-column {
+  position: relative;
+  min-width: 48px;
+  height: 190px;
+}
+
+.candle-column span {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  color: #94a3b8;
+  font-size: 11px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.candle-wick {
+  position: absolute;
+  left: 50%;
+  width: 2px;
+  min-height: 1px;
+  background: #94a3b8;
+  transform: translateX(-50%);
+}
+
+.candle-body {
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  border-radius: 4px;
+  transform: translateX(-50%);
+}
+
+.candle-body.up {
+  background: #14b8a6;
+  box-shadow: 0 0 18px rgba(20, 184, 166, 0.22);
+}
+
+.candle-body.down {
+  background: #f87171;
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.2);
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  border: 1px dashed #334155;
+  border-radius: 8px;
+  color: #94a3b8;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -501,6 +588,14 @@ select {
 
   .strategy-layout {
     grid-template-columns: 1fr;
+  }
+
+  .candle-chart {
+    grid-template-columns: 1fr;
+  }
+
+  .price-axis {
+    display: none;
   }
 
   .topbar,
