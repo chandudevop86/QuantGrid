@@ -1,56 +1,86 @@
 import { useState } from "react";
 import { useAutoSignals } from "../hooks/useAutoSignals";
 
+const strategies = [
+  "amd",
+  "breakout",
+  "btst",
+  "mean_reversion",
+  "mtf",
+  "supply_demand",
+];
+
+function formatStrategyName(strategy: string) {
+  return strategy
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export default function Strategies() {
-  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
+  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(strategies[0]);
 
   const { signal, loading } = useAutoSignals(selectedStrategy, 5000);
-
-  const strategies = [
-    "amd",
-    "breakout",
-    "btst",
-    "mean_reversion",
-    "mtf",
-    "supply_demand"
-  ];
+  const hasSignalError = Boolean(signal?.error);
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>🚀 QuantGrid Dashboard</h1>
+    <section className="dashboard-page">
+      <div className="page-heading">
+        <h1>Strategies</h1>
+        <p>Run sample NIFTY signal checks and watch the active strategy response.</p>
+      </div>
 
-      {/* STRATEGIES */}
-      <h2>Strategies</h2>
+      <div className="strategy-layout">
+        <div className="form-panel">
+          <div className="form-panel-header">
+            <div>
+              <h2>Strategy Set</h2>
+              <p>Select one strategy to poll every 5 seconds.</p>
+            </div>
+          </div>
 
-      {strategies.map((s) => (
-        <button
-          key={s}
-          onClick={() => setSelectedStrategy(s)}
-          style={{
-            display: "block",
-            marginBottom: 8,
-            padding: 8
-          }}
-        >
-          {s}
-        </button>
-      ))}
+          <div className="strategy-grid">
+            {strategies.map((strategy) => (
+              <button
+                key={strategy}
+                type="button"
+                onClick={() => setSelectedStrategy(strategy)}
+                className={`strategy-chip${selectedStrategy === strategy ? " active" : ""}`}
+              >
+                {formatStrategyName(strategy)}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {/* LIVE PANEL */}
-      <h2>📡 Live Signal</h2>
+        <div className="form-panel signal-panel">
+          <div className="form-panel-header">
+            <div>
+              <h2>Live Signal</h2>
+              <p>
+                {selectedStrategy
+                  ? `${formatStrategyName(selectedStrategy)} is selected.`
+                  : "Select a strategy to begin polling."}
+              </p>
+            </div>
+            <span className={`status-pill${hasSignalError ? " error" : ""}`}>
+              {loading ? "Updating" : hasSignalError ? "Offline" : "Live"}
+            </span>
+          </div>
 
-      {!selectedStrategy && <p>Select a strategy</p>}
-
-      {selectedStrategy && (
-        <div>
-          <p>Active: {selectedStrategy}</p>
-          <p>Status: {loading ? "Updating..." : "Live"}</p>
+          {hasSignalError && (
+            <div className="alert alert-error" role="alert">
+              Signal API unavailable. Check that the trading backend is running on port 8000.
+            </div>
+          )}
 
           <pre>
-            {JSON.stringify(signal, null, 2)}
+            {signal
+              ? JSON.stringify(signal, null, 2)
+              : "Waiting for the first signal response..."}
           </pre>
         </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }

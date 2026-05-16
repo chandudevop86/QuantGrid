@@ -413,6 +413,61 @@ select {
   color: #fecaca;
 }
 
+.strategy-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.strategy-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.strategy-chip {
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #1e293b;
+  background: #020617;
+  color: #cbd5e1;
+  text-align: left;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.strategy-chip:hover {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.strategy-chip.active {
+  border-color: rgba(45, 212, 191, 0.64);
+  background: #134e4a;
+  color: #ccfbf1;
+}
+
+.signal-panel {
+  max-width: none;
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(45, 212, 191, 0.38);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #99f6e4;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-pill.error {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -442,6 +497,10 @@ select {
 
   .order-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .strategy-layout {
+    grid-template-columns: 1fr;
   }
 
   .topbar,
