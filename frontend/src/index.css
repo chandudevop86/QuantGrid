@@ -444,6 +444,12 @@ select {
   color: #ccfbf1;
 }
 
+.alert-warning {
+  border: 1px solid rgba(251, 191, 36, 0.42);
+  background: rgba(120, 53, 15, 0.24);
+  color: #fde68a;
+}
+
 .strategy-layout {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);

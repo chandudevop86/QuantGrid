@@ -22,12 +22,14 @@ export default function LiveAnalysis() {
   const [loading, setLoading] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [wsWarning, setWsWarning] = useState<string | null>(null);
   const [strategy, setStrategy] = useState("breakout");
 
   const run = async () => {
     try {
       setLoading(true);
       setError(null);
+      setWsWarning(null);
 
       const res = await api.runAnalysis({
         symbol: "NIFTY",
@@ -59,8 +61,10 @@ export default function LiveAnalysis() {
   useEffect(() => {
     if (!jobId) return;
 
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     const wsHost = window.location.hostname;
-    const ws = new WebSocket(`ws://${wsHost}:8005/ws`);
+    const wsUrl = import.meta.env.VITE_WS_URL ?? `${wsProtocol}://${wsHost}:8005/ws`;
+    const ws = new WebSocket(wsUrl);
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -71,7 +75,7 @@ export default function LiveAnalysis() {
     };
 
     ws.onerror = () => {
-      setError("Live websocket is unavailable. The job was still submitted.");
+      setWsWarning("Live websocket is unavailable, so this page will not receive push updates. The job was still submitted.");
     };
 
     return () => ws.close();
@@ -130,6 +134,12 @@ export default function LiveAnalysis() {
           {error && (
             <div className="alert alert-error" role="alert">
               {error}
+            </div>
+          )}
+
+          {wsWarning && !error && (
+            <div className="alert alert-warning" role="status">
+              {wsWarning}
             </div>
           )}
 
