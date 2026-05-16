@@ -1,10 +1,20 @@
 import { useState } from "react";
 import { api } from "../api";
 
+type TradeSide = "BUY" | "SELL";
+
 export default function Trade() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [side, setSide] = useState<TradeSide>("BUY");
+
+  const order = {
+    symbol: "NIFTY",
+    entry: 22450,
+    stop: side === "BUY" ? 22410 : 22490,
+    target: side === "BUY" ? 22530 : 22370,
+  };
 
   const placeOrder = async () => {
     try {
@@ -14,11 +24,11 @@ export default function Trade() {
 
       const response = await api.executeOrder({
         strategy_name: "manual",
-        symbol: "NIFTY",
-        side: "BUY",
-        entry_price: 22450,
-        stop_loss: 22410,
-        target_price: 22530,
+        symbol: order.symbol,
+        side,
+        entry_price: order.entry,
+        stop_loss: order.stop,
+        target_price: order.target,
         signal_time: new Date().toISOString(),
         metadata: {
           quantity: 1,
@@ -54,26 +64,43 @@ export default function Trade() {
         <div className="form-panel-header">
           <div>
             <h2>Manual Paper Order</h2>
-            <p>NIFTY buy order routed to the same execution endpoint.</p>
+            <p>NIFTY {side.toLowerCase()} order routed to the same execution endpoint.</p>
           </div>
-          <span className="environment-badge">BUY</span>
+          <span className="environment-badge">{side}</span>
+        </div>
+
+        <div className="side-selector" role="group" aria-label="Order side">
+          <button
+            type="button"
+            onClick={() => setSide("BUY")}
+            className={side === "BUY" ? "active" : ""}
+          >
+            Buy
+          </button>
+          <button
+            type="button"
+            onClick={() => setSide("SELL")}
+            className={side === "SELL" ? "active danger" : "danger"}
+          >
+            Sell
+          </button>
         </div>
 
         <div className="order-summary">
           <span>
-            <strong>NIFTY</strong>
+            <strong>{order.symbol}</strong>
             Symbol
           </span>
           <span>
-            <strong>22450</strong>
+            <strong>{order.entry}</strong>
             Entry
           </span>
           <span>
-            <strong>22410</strong>
+            <strong>{order.stop}</strong>
             Stop
           </span>
           <span>
-            <strong>22530</strong>
+            <strong>{order.target}</strong>
             Target
           </span>
         </div>
@@ -84,7 +111,7 @@ export default function Trade() {
           disabled={loading}
           className="primary-action"
         >
-          {loading ? "Placing Order..." : "Buy Paper Lot"}
+          {loading ? "Placing Order..." : `${side === "BUY" ? "Buy" : "Sell"} Paper Lot`}
         </button>
 
         {error && (

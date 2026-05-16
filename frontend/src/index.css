@@ -390,6 +390,31 @@ select {
   font-size: 18px;
 }
 
+.side-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 4px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+}
+
+.side-selector button {
+  min-height: 40px;
+  background: transparent;
+  color: #94a3b8;
+}
+
+.side-selector button.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.side-selector button.danger.active {
+  background: #b91c1c;
+}
+
 .primary-action {
   min-height: 44px;
   padding: 10px 16px;
