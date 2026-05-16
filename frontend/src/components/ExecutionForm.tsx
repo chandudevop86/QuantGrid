@@ -28,36 +28,65 @@ export default function ExecutionForm() {
 
       setResult(res);
     } catch (err: any) {
-      setError(err.message || "Execution failed");
+      const message =
+        err?.response?.data?.detail ??
+        err?.message ??
+        "Execution failed";
+      setError(
+        message === "Network Error"
+          ? "Cannot reach the trading API. Check that the backend is running on port 8000 and that the port is open."
+          : message
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-gray-900 p-4 rounded-xl">
+    <div className="form-panel execution-panel">
+      <div className="form-panel-header">
+        <div>
+          <h2>Paper Order</h2>
+          <p>NIFTY breakout signal with a simulated buy-side order.</p>
+        </div>
+        <span className="environment-badge">BUY</span>
+      </div>
 
-      <h3 className="text-lg font-semibold mb-3">Execution</h3>
+      <div className="order-summary">
+        <span>
+          <strong>NIFTY</strong>
+          Symbol
+        </span>
+        <span>
+          <strong>100</strong>
+          Entry
+        </span>
+        <span>
+          <strong>99</strong>
+          Stop
+        </span>
+        <span>
+          <strong>102</strong>
+          Target
+        </span>
+      </div>
 
-      {/* Execute Button */}
       <button
         onClick={submit}
         disabled={loading}
-        className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded w-full"
+        className="primary-action"
       >
         {loading ? "Executing..." : "Execute Trade"}
       </button>
 
-      {/* Error */}
       {error && (
-        <div className="text-red-400 mt-3 text-sm">
+        <div className="alert alert-error" role="alert">
           {error}
         </div>
       )}
 
-      {/* Result */}
       {result && (
-        <pre className="bg-black mt-4 p-3 rounded text-xs overflow-auto">
+        <pre>
           {JSON.stringify(result, null, 2)}
         </pre>
       )}
