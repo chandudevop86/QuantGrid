@@ -31,8 +31,10 @@ export default function StrategyForm() {
         risk_pct: 1,
         rr_ratio: 2,
 
-        // ⚠️ IMPORTANT: avoid empty candles if backend expects OHLCV
-        candles: undefined as any,
+        candles: [
+          { timestamp: new Date().toISOString(), open: 100, high: 105, low: 98, close: 103, volume: 1000 },
+          { timestamp: new Date().toISOString(), open: 103, high: 108, low: 101, close: 107, volume: 1200 },
+        ],
       });
 
       setResult(res);

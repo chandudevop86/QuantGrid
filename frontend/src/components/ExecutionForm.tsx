@@ -11,20 +11,18 @@ export default function ExecutionForm() {
       setLoading(true);
       setError(null);
 
-      const res = await api.execution({
-        mode: "PAPER",
-        account_id: "paper-default",
-
-        signal: {
-          strategy_name: "breakout",
-          symbol: "NIFTY",
-          side: "BUY",
-
-          // ✅ FIX: numbers should NOT be strings
-          entry_price: 100,
-          stop_loss: 99,
-          target_price: 102,
+      const res = await api.executeOrder({
+        strategy_name: "breakout",
+        symbol: "NIFTY",
+        side: "BUY",
+        entry_price: 100,
+        stop_loss: 99,
+        target_price: 102,
+        signal_time: new Date().toISOString(),
+        metadata: {
           quantity: 1,
+          mode: "PAPER",
+          account_id: "paper-default",
         },
       });
 

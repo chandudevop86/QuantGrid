@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from Backend.presentation.api.trading_api import router as trading_router
 

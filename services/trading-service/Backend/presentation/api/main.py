@@ -13,6 +13,13 @@ def create_app():
         allow_headers=["*"],
     )
 
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    from Backend.presentation.api.dashboard_api import router as dashboard_router
+    app.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
+
     # Auth
     from Backend.presentation.api.auth import router as auth_router
     app.include_router(auth_router, prefix="/auth")
@@ -25,7 +32,6 @@ def create_app():
     from Backend.presentation.api.execution import router as execution_router
     app.include_router(execution_router, prefix="/execution")
 
-    # Market (you missed this earlier!)
     from Backend.presentation.api.market_api import router as market_router
     app.include_router(market_router, prefix="/market")
 

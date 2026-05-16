@@ -1,3 +1,5 @@
-import { io } from "socket.io-client";
+const socketUrl = import.meta.env.VITE_WS_URL ?? "ws://localhost:8005/ws";
 
-export const socket = io("http://localhost:5000");
+export function createSocket() {
+  return new WebSocket(socketUrl);
+}
