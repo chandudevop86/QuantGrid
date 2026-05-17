@@ -3,9 +3,12 @@ import { api } from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
 
 const intervals = [
+  { label: "1m", value: "1m" },
   { label: "5m", value: "5m" },
   { label: "15m", value: "15m" },
   { label: "1hr", value: "60m" },
+  { label: "4hr", value: "4h" },
+  { label: "1day", value: "1d" },
 ];
 
 export default function Candles() {
