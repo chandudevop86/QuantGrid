@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -89,15 +90,16 @@ def _finish_claimed_job(job_id: str, payload_data: dict[str, Any]) -> dict[str, 
     return finished_job
 
 
-def execute_job(job_id: str) -> dict[str, Any] | None:
-    time.sleep(JOB_START_DELAY_SECONDS)
+async def execute_job(job_id: str) -> dict[str, Any] | None:
+    await asyncio.sleep(JOB_START_DELAY_SECONDS)
     claimed = claim_job(job_id)
     if claimed is None:
         return None
 
     job, payload_data = claimed
     publish_job_update(job)
-    return _finish_claimed_job(job_id, payload_data)
+    await asyncio.sleep(JOB_START_DELAY_SECONDS)
+    return await asyncio.to_thread(_finish_claimed_job, job_id, payload_data)
 
 
 def process_next_job() -> dict[str, Any] | None:
