@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.encoders import jsonable_encoder
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.models.signal import StrategySignal
 
@@ -24,5 +25,5 @@ async def place_order(
 
     return {
         "status": "executed",
-        "order": order.model_dump() if hasattr(order, "model_dump") else order.__dict__
+        "order": jsonable_encoder(order),
     }
