@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { createSocket } from "../socket";
 
 const strategies = [
   "amd",
@@ -17,6 +18,10 @@ function formatStrategyName(strategy: string) {
     .join(" ");
 }
 
+function isTerminalStatus(status: unknown) {
+  return ["completed", "failed", "stale"].includes(String(status ?? "").toLowerCase());
+}
+
 export default function LiveAnalysis() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -24,6 +29,16 @@ export default function LiveAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [wsWarning, setWsWarning] = useState<string | null>(null);
   const [strategy, setStrategy] = useState("breakout");
+
+  const statusLabel = loading
+    ? "Running"
+    : error
+      ? "Check"
+      : result?.status
+        ? String(result.status)
+        : jobId
+          ? "Submitted"
+          : "Idle";
 
   const run = async () => {
     try {
@@ -61,10 +76,40 @@ export default function LiveAnalysis() {
   useEffect(() => {
     if (!jobId) return;
 
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const wsHost = window.location.hostname;
-    const wsUrl = import.meta.env.VITE_WS_URL ?? `${wsProtocol}://${wsHost}:8005/ws`;
-    const ws = new WebSocket(wsUrl);
+    let active = true;
+    let socketAvailable = false;
+    const ws = createSocket();
+
+    const refreshJob = async () => {
+      try {
+        const res = await api.getJobs();
+        if (!active) return;
+
+        const latestJob = Array.isArray(res?.jobs)
+          ? res.jobs.find((job: any) => job.job_id === jobId)
+          : null;
+
+        if (latestJob) {
+          setResult(latestJob);
+        }
+      } catch {
+        if (active && !socketAvailable) {
+          setWsWarning("Live websocket is unavailable, and the latest job status could not be fetched. The job was still submitted.");
+        }
+      }
+    };
+
+    const pollId = window.setInterval(() => {
+      setResult((current: any) => {
+        if (!isTerminalStatus(current?.status)) {
+          void refreshJob();
+        }
+
+        return current;
+      });
+    }, 2500);
+
+    void refreshJob();
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -74,18 +119,27 @@ export default function LiveAnalysis() {
       }
     };
 
+    ws.onopen = () => {
+      socketAvailable = true;
+      setWsWarning(null);
+    };
+
     ws.onerror = () => {
       setWsWarning("Live websocket is unavailable, so this page will not receive push updates. The job was still submitted.");
     };
 
-    return () => ws.close();
+    return () => {
+      active = false;
+      window.clearInterval(pollId);
+      ws.close();
+    };
   }, [jobId]);
 
   return (
     <section className="dashboard-page">
       <div className="page-heading">
         <h1>Live Analysis</h1>
-        <p>Create a queued analysis job for the selected NIFTY strategy.</p>
+        <p>Run a paper analysis job for the selected NIFTY strategy.</p>
       </div>
 
       <div className="strategy-layout">
@@ -116,7 +170,7 @@ export default function LiveAnalysis() {
             disabled={loading}
             className="primary-action"
           >
-            {loading ? "Queueing..." : `Run ${formatStrategyName(strategy)}`}
+            {loading ? "Running..." : `Run ${formatStrategyName(strategy)}`}
           </button>
         </div>
 
@@ -127,7 +181,7 @@ export default function LiveAnalysis() {
               <p>{jobId ? `Tracking job ${jobId}` : "No live-analysis job submitted yet."}</p>
             </div>
             <span className={`status-pill${error ? " error" : ""}`}>
-              {loading ? "Queueing" : error ? "Check" : jobId ? "Queued" : "Idle"}
+              {formatStrategyName(statusLabel)}
             </span>
           </div>
 
