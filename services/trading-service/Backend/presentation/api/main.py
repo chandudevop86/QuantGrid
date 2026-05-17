@@ -1,9 +1,12 @@
 import os
+import asyncio
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.job_store import init_job_store
+from Backend.presentation.api.websocket_manager import manager
 
 
 def _allowed_origins() -> list[str]:
@@ -35,10 +38,21 @@ def create_app():
     @app.on_event("startup")
     def startup():
         init_job_store()
+        manager.set_loop(asyncio.get_running_loop())
 
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket):
+        await manager.connect(websocket)
+
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            manager.disconnect(websocket)
 
     from Backend.presentation.api.dashboard_api import router as dashboard_router
     app.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
