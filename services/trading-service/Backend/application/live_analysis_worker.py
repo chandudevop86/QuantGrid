@@ -15,7 +15,6 @@ from Backend.application.trading_service import TradingService
 from Backend.presentation.api.market_api import get_candles
 
 logger = logging.getLogger(__name__)
-service = TradingService()
 JOB_START_DELAY_SECONDS = 0.75
 
 
@@ -43,6 +42,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         period=payload.period,
     )
     candles = _prepare_strategy_candles(candles_response)
+    service = TradingService()
     raw_signals = service.run_strategy(
         strategy_name=payload.strategy,
         data=candles,
@@ -57,6 +57,9 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         candles=candles,
         candle_source=candles_response.get("source"),
     )
+    serialized_signals = [serialize_signal(signal) for signal in signals]
+    print("Generated signals:", serialized_signals)
+    print("Signal timestamp:", serialized_signals[0]["signal_time"] if serialized_signals else None)
     return {
         "data_source": data_source,
         "candles_analyzed": len(candles),
@@ -66,7 +69,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
             "volume_status": candles_response.get("volume_status"),
             "warning": candles_response.get("warning"),
         },
-        "signals": [serialize_signal(signal) for signal in signals],
+        "signals": serialized_signals,
     }
 
 

@@ -50,6 +50,15 @@ def _is_recent(candle: dict[str, Any]) -> bool:
     return 0 <= age.total_seconds() <= MAX_CANDLE_AGE_SECONDS
 
 
+def _matches_latest_candle(signal: StrategySignal, latest_candle: dict[str, Any]) -> bool:
+    signal_time = _parse_timestamp(signal.signal_time)
+    candle_time = _parse_timestamp(latest_candle.get("timestamp"))
+    if signal_time is None or candle_time is None:
+        return False
+
+    return abs((signal_time - candle_time).total_seconds()) <= 60
+
+
 def _is_valid_trade_shape(signal: StrategySignal) -> bool:
     entry = float(signal.entry_price)
     stop = float(signal.stop_loss)
@@ -233,6 +242,8 @@ def validate_signals(
 
     valid_signals: list[StrategySignal] = []
     for signal in signals:
+        if latest is None or not _matches_latest_candle(signal, latest):
+            continue
         if not _is_valid_trade_shape(signal):
             continue
         if not _valid_indicator_metadata(signal.metadata):

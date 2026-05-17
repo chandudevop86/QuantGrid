@@ -8,7 +8,6 @@ from Backend.application.trading_service import TradingService
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["Trading"])
-service = TradingService()
 
 
 
@@ -27,6 +26,7 @@ def generate_signals(
     payload: StrategyRunRequest,
     _role: str = Depends(require_roles("admin", "trader", "analyst")),
 ):
+    service = TradingService()
     signals = service.run_strategy(
         strategy_name=payload.strategy_name,
         data=payload.candles,
