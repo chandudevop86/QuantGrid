@@ -21,7 +21,8 @@ export const api = {
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
-  candles: (symbol: string) => API.get(`/market/candles/${symbol}`).then((res) => res.data),
+  candles: (symbol: string, interval = "5m") =>
+    API.get(`/market/candles/${symbol}`, { params: { interval } }).then((res) => res.data),
   getPrice: () => API.get("/market/price").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),

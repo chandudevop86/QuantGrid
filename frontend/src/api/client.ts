@@ -17,8 +17,13 @@ API.interceptors.request.use((config) => {
     typeof window === "undefined"
       ? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer"
       : window.localStorage.getItem("quantgrid_role") ?? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer";
+  const mode =
+    typeof window === "undefined"
+      ? import.meta.env.VITE_DEFAULT_MODE ?? "paper"
+      : window.localStorage.getItem("quantgrid_mode") ?? import.meta.env.VITE_DEFAULT_MODE ?? "paper";
 
   config.headers.set("X-QuantGrid-Role", role);
+  config.headers.set("X-QuantGrid-Mode", mode);
   return config;
 });
 

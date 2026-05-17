@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
 
+const intervals = [
+  { label: "5m", value: "5m" },
+  { label: "15m", value: "15m" },
+  { label: "1hr", value: "60m" },
+];
+
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [source, setSource] = useState<string | null>(null);
@@ -9,10 +15,15 @@ export default function Candles() {
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [interval, setInterval] = useState(intervals[0].value);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
+    setWarning(null);
+
     api
-      .candles("NIFTY")
+      .candles("NIFTY", interval)
       .then((data) => {
         setCandles(Array.isArray(data?.candles) ? data.candles : []);
         setSource(data?.source ?? null);
@@ -26,7 +37,7 @@ export default function Candles() {
         setError(message);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [interval]);
 
   const latest = useMemo(() => candles[candles.length - 1], [candles]);
   const latestVolume =
@@ -70,11 +81,25 @@ export default function Candles() {
         <div className="form-panel-header">
           <div>
             <h2>Price Action</h2>
-            <p>{loading ? "Loading candles..." : "Open, high, low, and close over recent minutes."}</p>
+            <p>{loading ? "Loading candles..." : "Open, high, low, and close across the selected timeline."}</p>
           </div>
-          <span className={`status-pill${error ? " error" : ""}`}>
-            {loading ? "Loading" : error ? "Offline" : source === "yahoo-finance" ? "Live" : "Fallback"}
-          </span>
+          <div className="chart-controls">
+            <div className="timeline-toggle" aria-label="Candle timeline">
+              {intervals.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setInterval(item.value)}
+                  className={interval === item.value ? "active" : ""}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <span className={`status-pill${error ? " error" : ""}`}>
+              {loading ? "Loading" : error ? "Offline" : source === "yahoo-finance" ? "Live" : "Fallback"}
+            </span>
+          </div>
         </div>
 
         <CandleChart candles={candles} />

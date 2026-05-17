@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
+import { getCurrentMode, modeLabels, modes, setCurrentMode, type TradingMode } from "../mode";
 import { getCurrentRole, roleLabels, roles, setCurrentRole, type Role } from "../roles";
 
 export default function Topbar() {
   const [role, setRole] = useState<Role>(getCurrentRole());
+  const [mode, setMode] = useState<TradingMode>(getCurrentMode());
 
   useEffect(() => {
     const syncRole = () => setRole(getCurrentRole());
+    const syncMode = () => setMode(getCurrentMode());
     window.addEventListener("quantgrid-role-change", syncRole);
+    window.addEventListener("quantgrid-mode-change", syncMode);
     window.addEventListener("storage", syncRole);
+    window.addEventListener("storage", syncMode);
     return () => {
       window.removeEventListener("quantgrid-role-change", syncRole);
+      window.removeEventListener("quantgrid-mode-change", syncMode);
       window.removeEventListener("storage", syncRole);
+      window.removeEventListener("storage", syncMode);
     };
   }, []);
 
@@ -18,6 +25,11 @@ export default function Topbar() {
     setCurrentRole(nextRole);
     setRole(nextRole);
     window.location.assign("/");
+  };
+
+  const changeMode = (nextMode: TradingMode) => {
+    setCurrentMode(nextMode);
+    setMode(nextMode);
   };
 
   return (
@@ -39,7 +51,18 @@ export default function Topbar() {
             </option>
           ))}
         </select>
-        <span className="environment-badge">Paper Mode</span>
+        <div className="mode-toggle" aria-label="Trading mode">
+          {modes.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={mode === item ? "active" : ""}
+              onClick={() => changeMode(item)}
+            >
+              {modeLabels[item]}
+            </button>
+          ))}
+        </div>
       </div>
     </header>
   );
