@@ -146,10 +146,7 @@ def get_price(
 
 @router.get("/signals")
 def get_signals():
-    return {
-        "signal": "BUY",
-        "confidence": 0.78
-    }
+    return {"signals": []}
 
 
 @router.get("/candles/{symbol}")

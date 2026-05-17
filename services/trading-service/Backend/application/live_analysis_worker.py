@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from Backend.application.dto import serialize_signal
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
+from Backend.application.signal_validation import validate_signals
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.market_api import get_candles
 
@@ -42,7 +43,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         period=payload.period,
     )
     candles = _prepare_strategy_candles(candles_response)
-    signals = service.run_strategy(
+    raw_signals = service.run_strategy(
         strategy_name=payload.strategy,
         data=candles,
         symbol=payload.symbol.upper(),
@@ -50,7 +51,14 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         risk_pct=payload.risk_pct,
         rr_ratio=payload.rr_ratio,
     )
+    signals, data_source = validate_signals(
+        raw_signals,
+        symbol=payload.symbol,
+        candles=candles,
+        candle_source=candles_response.get("source"),
+    )
     return {
+        "data_source": data_source,
         "candles_analyzed": len(candles),
         "market_data": {
             "source": candles_response.get("source"),

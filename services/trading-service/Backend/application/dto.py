@@ -11,4 +11,5 @@ def serialize_signal(signal: StrategySignal) -> dict[str, Any]:
     return {
         **asdict(signal),
         "signal_time": signal.signal_time.isoformat(),
+        "data_source": signal.metadata.get("data_source", "cached"),
     }

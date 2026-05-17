@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 
 from Backend.application.dto import serialize_signal
+from Backend.application.signal_validation import validate_signals
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.roles import require_roles
 
@@ -34,7 +35,13 @@ def generate_signals(
         risk_pct=payload.risk_pct,
         rr_ratio=payload.rr_ratio,
     )
-    return [serialize_signal(s) for s in signals]
+    validated_signals, _data_source = validate_signals(
+        signals,
+        symbol=payload.symbol,
+        candles=payload.candles,
+        candle_source="yahoo-finance",
+    )
+    return [serialize_signal(s) for s in validated_signals]
 
 
 @router.get("/strategies")
