@@ -1,16 +1,7 @@
-import { useEffect, useState } from "react";
-import { api } from "../api";
+import { useLiveJobs } from "../hooks/useLiveJobs";
 
 export default function Jobs() {
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .getJobs()
-      .then((res) => setJobs(Array.isArray(res?.jobs) ? res.jobs : []))
-      .catch(() => setError("Jobs API is not available yet."));
-  }, []);
+  const { jobs, error, socketConnected } = useLiveJobs();
 
   return (
     <section className="dashboard-page">
@@ -18,6 +9,9 @@ export default function Jobs() {
         <h1>Live Jobs</h1>
         <p>Analysis jobs submitted to the trading service.</p>
       </div>
+      {!socketConnected && !error && (
+        <p className="warning-text">Live websocket unavailable. Polling jobs every 3 seconds.</p>
+      )}
       {error && <p className="error-text">{error}</p>}
       <div className="table-wrap">
         <table className="table">

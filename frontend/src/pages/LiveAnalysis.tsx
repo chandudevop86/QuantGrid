@@ -78,7 +78,9 @@ export default function LiveAnalysis() {
 
     let active = true;
     let socketAvailable = false;
-    const ws = createSocket();
+    let ws: WebSocket | null = null;
+    let pollId: number | null = null;
+    let reconnectId: number | null = null;
 
     const refreshJob = async () => {
       try {
@@ -99,39 +101,72 @@ export default function LiveAnalysis() {
       }
     };
 
-    const pollId = window.setInterval(() => {
-      setResult((current: any) => {
-        if (!isTerminalStatus(current?.status)) {
-          void refreshJob();
-        }
-
-        return current;
-      });
-    }, 2500);
-
-    void refreshJob();
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.job_id === jobId) {
-        setResult(data);
+    const stopPolling = () => {
+      if (pollId !== null) {
+        window.clearInterval(pollId);
+        pollId = null;
       }
     };
 
-    ws.onopen = () => {
-      socketAvailable = true;
-      setWsWarning(null);
+    const startPolling = () => {
+      if (pollId !== null) return;
+      void refreshJob();
+      pollId = window.setInterval(() => {
+        setResult((current: any) => {
+          if (!isTerminalStatus(current?.status)) {
+            void refreshJob();
+          }
+
+          return current;
+        });
+      }, 3000);
     };
 
-    ws.onerror = () => {
-      setWsWarning("Live websocket is unavailable, so this page will not receive push updates. The job was still submitted.");
+    void refreshJob();
+
+    const connect = () => {
+      ws = createSocket();
+
+      ws.onopen = () => {
+        socketAvailable = true;
+        setWsWarning(null);
+        stopPolling();
+        void refreshJob();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.job_id === jobId) {
+            setResult(data);
+          }
+        } catch {
+          setWsWarning("Received an invalid live job update. Polling for the latest job status.");
+          startPolling();
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+
+      ws.onclose = () => {
+        if (!active) return;
+        socketAvailable = false;
+        setWsWarning("Live websocket is unavailable. Polling for job updates every 3 seconds.");
+        startPolling();
+        reconnectId = window.setTimeout(connect, 3000);
+      };
     };
+
+    connect();
 
     return () => {
       active = false;
-      window.clearInterval(pollId);
-      ws.close();
+      stopPolling();
+      if (reconnectId !== null) window.clearTimeout(reconnectId);
+      ws?.close();
     };
   }, [jobId]);
 

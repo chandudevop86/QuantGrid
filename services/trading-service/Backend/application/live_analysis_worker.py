@@ -14,6 +14,7 @@ from Backend.presentation.api.market_api import get_candles
 
 logger = logging.getLogger(__name__)
 service = TradingService()
+JOB_START_DELAY_SECONDS = 0.75
 
 
 class LiveAnalysisPayload(BaseModel):
@@ -89,6 +90,7 @@ def _finish_claimed_job(job_id: str, payload_data: dict[str, Any]) -> dict[str, 
 
 
 def execute_job(job_id: str) -> dict[str, Any] | None:
+    time.sleep(JOB_START_DELAY_SECONDS)
     claimed = claim_job(job_id)
     if claimed is None:
         return None
@@ -99,6 +101,7 @@ def execute_job(job_id: str) -> dict[str, Any] | None:
 
 
 def process_next_job() -> dict[str, Any] | None:
+    time.sleep(JOB_START_DELAY_SECONDS)
     claimed = claim_next_queued_job()
     if claimed is None:
         return None

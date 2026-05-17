@@ -2,23 +2,27 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
 import MetricCard from "../components/MetricCard";
+import { useLiveJobs } from "../hooks/useLiveJobs";
+
+function isActiveJob(job: any) {
+  return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
+}
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
-  const [jobs, setJobs] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { jobs, error: jobsError } = useLiveJobs();
 
   useEffect(() => {
-    Promise.all([api.getSummary(), api.getJobs()])
-      .then(([summaryData, jobsData]) => {
-        setSummary(summaryData);
-        setJobs(Array.isArray(jobsData?.jobs) ? jobsData.jobs : []);
-      })
+    api
+      .getSummary()
+      .then(setSummary)
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
   }, []);
 
+  const activeJobs = jobs.filter(isActiveJob).length;
   const lastUpdated = summary?.updated_at
     ? new Date(summary.updated_at).toLocaleString()
     : "Not available";
@@ -33,9 +37,9 @@ export default function Dashboard() {
       </div>
 
       {loading && <Loader label="Loading dashboard..." />}
-      {error && <p className="error-text">{error}</p>}
+      {(error || jobsError) && <p className="error-text">{error ?? jobsError}</p>}
 
-      {!loading && !error && (
+      {!loading && !error && !jobsError && (
         <>
           <div className="metric-grid">
             <MetricCard
@@ -46,8 +50,8 @@ export default function Dashboard() {
             />
             <MetricCard
               label="Active Jobs"
-              value={summary?.active_jobs ?? 0}
-              helper={`${summary?.total_jobs ?? jobs.length} total jobs`}
+              value={activeJobs}
+              helper={`${jobs.length} total jobs`}
             />
             <MetricCard
               label="Open Positions"
