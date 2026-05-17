@@ -33,6 +33,20 @@ pip install -r requirements.txt
 uvicorn Backend.presentation.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+Live analysis jobs are queued by the REST API, executed by a background worker
+task in the trading service, and published to Redis channel `updates`.
+
+## Websocket Updates
+
+```bash
+cd websocket
+pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8005
+```
+
+Set `REDIS_URL` for both the trading API and websocket service if Redis is not
+running at `redis://localhost:6379/0`.
+
 Useful routes:
 
 - `GET /health`

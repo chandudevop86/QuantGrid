@@ -1,9 +1,14 @@
+import asyncio
+import os
+
 from fastapi import FastAPI, WebSocket
+from starlette.websockets import WebSocketDisconnect
 import redis
 
 app = FastAPI()
 
-r = redis.Redis(host="localhost", port=6379)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+r = redis.Redis.from_url(REDIS_URL)
 
 @app.websocket("/ws")
 async def ws(ws: WebSocket):
@@ -12,6 +17,13 @@ async def ws(ws: WebSocket):
     pubsub = r.pubsub()
     pubsub.subscribe("updates")
 
-    for msg in pubsub.listen():
-        if msg["type"] == "message":
-            await ws.send_text(msg["data"].decode())
+    try:
+        while True:
+            msg = await asyncio.to_thread(pubsub.get_message, timeout=1.0)
+            if msg and msg["type"] == "message":
+                await ws.send_text(msg["data"].decode())
+            await asyncio.sleep(0.05)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        pubsub.close()
