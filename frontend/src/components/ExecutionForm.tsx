@@ -11,20 +11,23 @@ export default function ExecutionForm() {
       setLoading(true);
       setError(null);
 
-      const res = await api.executeOrder({
+      const candleData = await api.candles("NIFTY", "5m");
+      const signals = await api.runSignals({
         strategy_name: "breakout",
         symbol: "NIFTY",
-        side: "BUY",
-        entry_price: 100,
-        stop_loss: 99,
-        target_price: 102,
-        signal_time: new Date().toISOString(),
-        metadata: {
-          quantity: 1,
-          mode: "PAPER",
-          account_id: "paper-default",
-        },
+        capital: 100000,
+        risk_pct: 1,
+        rr_ratio: 2,
+        candles: Array.isArray(candleData?.candles) ? candleData.candles : [],
       });
+      const signal = Array.isArray(signals) ? signals[0] : null;
+
+      if (!signal) {
+        setResult({ status: "no_trade", source: "signal_based" });
+        return;
+      }
+
+      const res = await api.executeOrder(signal);
 
       setResult(res);
     } catch (err: any) {
@@ -58,15 +61,15 @@ export default function ExecutionForm() {
           Symbol
         </span>
         <span>
-          <strong>100</strong>
+          <strong>Signal</strong>
           Entry
         </span>
         <span>
-          <strong>99</strong>
+          <strong>Signal</strong>
           Stop
         </span>
         <span>
-          <strong>102</strong>
+          <strong>Signal</strong>
           Target
         </span>
       </div>

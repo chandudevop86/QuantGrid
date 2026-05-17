@@ -74,16 +74,16 @@ class BreakoutStrategy(BaseStrategy):
             momentum_ok = float(row["macd"]) > float(row["macd_signal"])
             if not confirmed_breakout or not trend_ok or not momentum_ok:
                 return 0.0
-            score = 3.0
-            score += 1.5 if float(row["close"]) >= float(row["vwap"]) else 0.0
-            score += 1.5 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
+            score = 4.0
+            score += 2.0 if float(row["close"]) >= float(row["vwap"]) else 0.0
+            score += 2.0 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
             return score
         confirmed_breakout = float(row["close"]) < float(row["breakout_low"])
         trend_ok = float(row["ema_9"]) < float(row["ema_21"])
         momentum_ok = float(row["macd"]) < float(row["macd_signal"])
         if not confirmed_breakout or not trend_ok or not momentum_ok:
             return 0.0
-        score = 3.0
-        score += 1.5 if float(row["close"]) <= float(row["vwap"]) else 0.0
-        score += 1.5 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
+        score = 4.0
+        score += 2.0 if float(row["close"]) <= float(row["vwap"]) else 0.0
+        score += 2.0 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
         return score

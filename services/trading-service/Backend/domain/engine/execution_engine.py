@@ -17,7 +17,8 @@ class ExecutionEngine:
             target_price=signal.target_price, 
             created_at=datetime.utcnow(),
             metadata={
-                "strategy_name": signal.strategy_name
+                "strategy_name": signal.strategy_name,
+                "source": "signal_based",
             }
        )
 from fastapi import APIRouter

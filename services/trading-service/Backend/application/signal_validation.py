@@ -182,6 +182,10 @@ def _score(signal: StrategySignal) -> float:
     return 0.0
 
 
+def _quality_rank(signal: StrategySignal) -> tuple[float, float]:
+    return _score(signal), _risk_reward(signal)
+
+
 def _is_high_quality(signal: StrategySignal) -> bool:
     if _score(signal) < MIN_SIGNAL_SCORE:
         return False
@@ -257,4 +261,7 @@ def validate_signals(
         )
         valid_signals.append(signal)
 
-    return valid_signals, source_tag
+    if not valid_signals:
+        return [], source_tag
+
+    return [max(valid_signals, key=_quality_rank)], source_tag
