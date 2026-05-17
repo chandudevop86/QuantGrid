@@ -15,7 +15,7 @@ from Backend.domain.strategies.signal_builder import SignalBuilder
 @dataclass(slots=True)
 class BreakoutConfig(StrategyConfig):
     lookback: int = 20
-    min_score: float = 3.0
+    min_score: float = 6.0
 
 
 class BreakoutStrategy(BaseStrategy):
@@ -39,7 +39,7 @@ class BreakoutStrategy(BaseStrategy):
         return out
 
     def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
-        signals: list[StrategySignal] = []
+        latest_signal: StrategySignal | None = None
         last_signal_index = {"BUY": -10_000, "SELL": -10_000}
         for index in range(int(self.config.lookback), len(candles)):
             row = candles.iloc[index]
@@ -52,10 +52,10 @@ class BreakoutStrategy(BaseStrategy):
                 stop_loss, target_price = self.calculate_levels(candles, index, side, context)
                 signal = self.signal_builder.build(row, strategy_name=self.name, symbol=context.symbol, side=side, capital=context.capital, risk_pct=context.risk_pct, stop_loss=stop_loss, target_price=target_price, score=score, metadata={"breakout_type": "range_high" if side == "BUY" else "range_low"})
                 if signal is not None:
-                    signals.append(signal)
+                    latest_signal = signal
                     last_signal_index[side] = index
                     break
-        return signals
+        return [latest_signal] if latest_signal is not None else []
 
     def calculate_levels(self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext) -> tuple[float, float]:
         row = candles.iloc[index]
@@ -69,11 +69,21 @@ class BreakoutStrategy(BaseStrategy):
 
     def _score(self, row: pd.Series, side: str) -> float:
         if side == "BUY":
-            score = 2.0 if float(row["close"]) > float(row["breakout_high"]) else 0.0
-            score += 1.0 if float(row["close"]) >= float(row["vwap"]) else 0.0
-            score += 1.0 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
+            confirmed_breakout = float(row["close"]) > float(row["breakout_high"])
+            trend_ok = float(row["ema_9"]) > float(row["ema_21"])
+            momentum_ok = float(row["macd"]) > float(row["macd_signal"])
+            if not confirmed_breakout or not trend_ok or not momentum_ok:
+                return 0.0
+            score = 3.0
+            score += 1.5 if float(row["close"]) >= float(row["vwap"]) else 0.0
+            score += 1.5 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
             return score
-        score = 2.0 if float(row["close"]) < float(row["breakout_low"]) else 0.0
-        score += 1.0 if float(row["close"]) <= float(row["vwap"]) else 0.0
-        score += 1.0 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
+        confirmed_breakout = float(row["close"]) < float(row["breakout_low"])
+        trend_ok = float(row["ema_9"]) < float(row["ema_21"])
+        momentum_ok = float(row["macd"]) < float(row["macd_signal"])
+        if not confirmed_breakout or not trend_ok or not momentum_ok:
+            return 0.0
+        score = 3.0
+        score += 1.5 if float(row["close"]) <= float(row["vwap"]) else 0.0
+        score += 1.5 if float(row["volume"]) >= float(row["avg_volume"]) else 0.0
         return score
