@@ -5,6 +5,7 @@ import CandleChart, { type Candle } from "../components/CandleChart";
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [source, setSource] = useState<string | null>(null);
+  const [volumeStatus, setVolumeStatus] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +16,7 @@ export default function Candles() {
       .then((data) => {
         setCandles(Array.isArray(data?.candles) ? data.candles : []);
         setSource(data?.source ?? null);
+        setVolumeStatus(data?.volume_status ?? null);
         setWarning(data?.warning ?? null);
       })
       .catch((err: any) => {
@@ -27,6 +29,14 @@ export default function Candles() {
   }, []);
 
   const latest = useMemo(() => candles[candles.length - 1], [candles]);
+  const latestVolume =
+    volumeStatus === "not_reported_for_index"
+      ? "N/A"
+      : latest?.volume?.toLocaleString() ?? "-";
+  const volumeHelper =
+    volumeStatus === "not_reported_for_index"
+      ? "Index volume not reported"
+      : source ?? "Market API";
 
   return (
     <section className="dashboard-page">
@@ -51,8 +61,8 @@ export default function Candles() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Latest Volume</span>
-          <strong className="metric-value">{latest?.volume ?? "-"}</strong>
-          <span className="metric-helper">{source ?? "Market API"}</span>
+          <strong className="metric-value">{latestVolume}</strong>
+          <span className="metric-helper">{volumeHelper}</span>
         </div>
       </div>
 

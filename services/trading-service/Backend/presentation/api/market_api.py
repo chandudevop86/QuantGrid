@@ -99,6 +99,13 @@ def _candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> li
     return candles[-limit:]
 
 
+def _volume_status(market_symbol: str, candles: list[dict[str, Any]]) -> str:
+    if market_symbol.startswith("^") and candles and all(int(candle.get("volume") or 0) == 0 for candle in candles):
+        return "not_reported_for_index"
+
+    return "reported"
+
+
 @router.get("/price")
 def get_price(symbol: str = "NIFTY"):
     try:
@@ -149,13 +156,15 @@ def get_candles(symbol: str, interval: str = "1m", period: str = "1d", limit: in
         candles = _candles_from_chart(symbol, chart, limit=limit)
         if not candles:
             raise RuntimeError("No complete candles returned")
+        market_symbol = chart.get("meta", {}).get("symbol", _market_symbol(symbol))
 
         return {
             "symbol": symbol.upper(),
-            "market_symbol": chart.get("meta", {}).get("symbol", _market_symbol(symbol)),
+            "market_symbol": market_symbol,
             "interval": interval,
             "period": period,
             "source": "yahoo-finance",
+            "volume_status": _volume_status(market_symbol, candles),
             "candles": candles,
         }
     except Exception as exc:
@@ -165,6 +174,7 @@ def get_candles(symbol: str, interval: str = "1m", period: str = "1d", limit: in
             "interval": interval,
             "period": period,
             "source": "sample-fallback",
+            "volume_status": "reported",
             "warning": f"Live market data unavailable: {exc}",
             "candles": _sample_candles(symbol, limit=min(limit, 100)),
         }

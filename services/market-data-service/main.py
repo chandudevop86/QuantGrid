@@ -98,6 +98,13 @@ def candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> lis
     return rows[-limit:]
 
 
+def volume_status(market_symbol: str, rows: list[dict[str, Any]]) -> str:
+    if market_symbol.startswith("^") and rows and all(int(row.get("volume") or 0) == 0 for row in rows):
+        return "not_reported_for_index"
+
+    return "reported"
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "market-data"}
@@ -145,13 +152,15 @@ def candles(symbol: str, interval: str = "1m", period: str = "1d", limit: int = 
         rows = candles_from_chart(symbol, chart, limit=limit)
         if not rows:
             raise RuntimeError("No complete candles returned")
+        yahoo_symbol = chart.get("meta", {}).get("symbol", market_symbol(symbol))
 
         return {
             "symbol": symbol.upper(),
-            "market_symbol": chart.get("meta", {}).get("symbol", market_symbol(symbol)),
+            "market_symbol": yahoo_symbol,
             "interval": interval,
             "period": period,
             "source": "yahoo-finance",
+            "volume_status": volume_status(yahoo_symbol, rows),
             "candles": rows,
         }
     except Exception as exc:
@@ -161,6 +170,7 @@ def candles(symbol: str, interval: str = "1m", period: str = "1d", limit: int = 
             "interval": interval,
             "period": period,
             "source": "sample-fallback",
+            "volume_status": "reported",
             "warning": f"Live market data unavailable: {exc}",
             "candles": sample_candles(symbol, limit),
         }
