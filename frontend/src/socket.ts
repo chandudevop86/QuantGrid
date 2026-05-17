@@ -4,6 +4,10 @@ function defaultSocketUrl() {
   }
 
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  if (!window.location.port || window.location.port === "80" || window.location.port === "443") {
+    return `${protocol}://${window.location.host}/ws`;
+  }
+
   return `${protocol}://${window.location.hostname}:8005/ws`;
 }
 

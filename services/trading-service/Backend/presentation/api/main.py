@@ -1,5 +1,24 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from Backend.application.job_store import init_job_store
+
+
+def _allowed_origins() -> list[str]:
+    configured = os.getenv("CORS_ALLOWED_ORIGINS")
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://chandudevopai.shop:5173",
+        "https://chandudevopai.shop:5173",
+        "https://chandudevopai.shop",
+        "http://13.222.179.171:5173",
+    ]
 
 
 def create_app():
@@ -7,11 +26,15 @@ def create_app():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_allowed_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.on_event("startup")
+    def startup():
+        init_job_store()
 
     @app.get("/health")
     def health():

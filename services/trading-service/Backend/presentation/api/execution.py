@@ -24,6 +24,6 @@ async def place_order(
     # - queue system
 
     return {
-        "status": "executed",
+        "status": "paper_simulated",
         "order": jsonable_encoder(order),
     }

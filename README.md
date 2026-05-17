@@ -33,8 +33,19 @@ pip install -r requirements.txt
 uvicorn Backend.presentation.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Live analysis jobs are queued by the REST API, executed by a background worker
-task in the trading service, and published to Redis channel `updates`.
+Live analysis jobs are stored in SQLite, queued by the REST API, executed by a
+worker, and published to Redis channel `updates`. The API starts a background
+task after creating a job, and you can also run the durable worker loop as a
+separate process:
+
+```bash
+cd services/trading-service
+python -m Backend.application.live_analysis_worker
+```
+
+Set `CORS_ALLOWED_ORIGINS` as a comma-separated list in production. Set
+`JOB_STORE_DB_FILE` if the SQLite job database should live outside the default
+`services/trading-service/data/dashboard_jobs.sqlite3` path.
 
 ## Websocket Updates
 
