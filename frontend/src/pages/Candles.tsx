@@ -4,13 +4,19 @@ import CandleChart, { type Candle } from "../components/CandleChart";
 
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [source, setSource] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .candles("NIFTY")
-      .then((data) => setCandles(Array.isArray(data?.candles) ? data.candles : []))
+      .then((data) => {
+        setCandles(Array.isArray(data?.candles) ? data.candles : []);
+        setSource(data?.source ?? null);
+        setWarning(data?.warning ?? null);
+      })
       .catch((err: any) => {
         const message = err?.message === "Network Error"
           ? "Cannot reach the market API. Check that the backend is running on port 8000."
@@ -26,10 +32,11 @@ export default function Candles() {
     <section className="dashboard-page">
       <div className="page-heading">
         <h1>Candles</h1>
-        <p>Market candle visualization for the NIFTY sample feed.</p>
+        <p>Market candle visualization for NIFTY live data.</p>
       </div>
 
       {error && <div className="alert alert-error" role="alert">{error}</div>}
+      {warning && !error && <div className="alert alert-warning" role="status">{warning}</div>}
 
       <div className="metric-grid">
         <div className="metric-card">
@@ -45,7 +52,7 @@ export default function Candles() {
         <div className="metric-card">
           <span className="metric-label">Latest Volume</span>
           <strong className="metric-value">{latest?.volume ?? "-"}</strong>
-          <span className="metric-helper">Market API sample</span>
+          <span className="metric-helper">{source ?? "Market API"}</span>
         </div>
       </div>
 
@@ -56,7 +63,7 @@ export default function Candles() {
             <p>{loading ? "Loading candles..." : "Open, high, low, and close over recent minutes."}</p>
           </div>
           <span className={`status-pill${error ? " error" : ""}`}>
-            {loading ? "Loading" : error ? "Offline" : "Live"}
+            {loading ? "Loading" : error ? "Offline" : source === "yahoo-finance" ? "Live" : "Fallback"}
           </span>
         </div>
 
