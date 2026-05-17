@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import count_jobs, create_job, list_jobs, utc_now
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, execute_job
+from Backend.presentation.api.roles import require_roles
 
 router = APIRouter()
 
@@ -34,7 +35,11 @@ def summary():
 
 
 @router.post("/live-analysis/jobs")
-def create_live_analysis_job(payload: LiveAnalysisPayload, background_tasks: BackgroundTasks):
+def create_live_analysis_job(
+    payload: LiveAnalysisPayload,
+    background_tasks: BackgroundTasks,
+    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+):
     now = utc_now()
     job = {
         "job_id": str(uuid4()),

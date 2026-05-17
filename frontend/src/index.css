@@ -166,6 +166,22 @@ select {
   font-weight: 700;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.role-select {
+  width: auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  border-color: rgba(45, 212, 191, 0.38);
+  color: #ccfbf1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .app-content {
   flex: 1;
   min-width: 0;

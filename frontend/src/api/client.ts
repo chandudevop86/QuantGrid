@@ -12,4 +12,14 @@ const API = axios.create({
   },
 });
 
+API.interceptors.request.use((config) => {
+  const role =
+    typeof window === "undefined"
+      ? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer"
+      : window.localStorage.getItem("quantgrid_role") ?? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer";
+
+  config.headers.set("X-QuantGrid-Role", role);
+  return config;
+});
+
 export default API;

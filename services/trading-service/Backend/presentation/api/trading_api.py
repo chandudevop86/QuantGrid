@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Any
 
 from Backend.application.dto import serialize_signal
 from Backend.application.trading_service import TradingService
+from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["Trading"])
 service = TradingService()
@@ -21,7 +22,10 @@ class StrategyRunRequest(BaseModel):
 
 
 @router.post("/signals")
-def generate_signals(payload: StrategyRunRequest):
+def generate_signals(
+    payload: StrategyRunRequest,
+    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+):
     signals = service.run_strategy(
         strategy_name=payload.strategy_name,
         data=payload.candles,

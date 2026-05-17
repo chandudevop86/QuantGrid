@@ -6,7 +6,9 @@ from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["market"])
 
@@ -107,7 +109,10 @@ def _volume_status(market_symbol: str, candles: list[dict[str, Any]]) -> str:
 
 
 @router.get("/price")
-def get_price(symbol: str = "NIFTY"):
+def get_price(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+):
     try:
         chart = _fetch_yahoo_chart(symbol)
         meta = chart.get("meta", {})
@@ -148,7 +153,13 @@ def get_signals():
 
 
 @router.get("/candles/{symbol}")
-def get_candles(symbol: str, interval: str = "1m", period: str = "1d", limit: int = 100):
+def get_candles(
+    symbol: str,
+    interval: str = "1m",
+    period: str = "1d",
+    limit: int = 100,
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+):
     limit = max(1, min(limit, 500))
 
     try:

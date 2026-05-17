@@ -1,6 +1,8 @@
 import { NavLink } from "react-router-dom";
+import { canAccessRoute, getCurrentRole } from "../roles";
 
 export default function Sidebar() {
+  const role = getCurrentRole();
   const navItems = [
     { to: "/", label: "Dashboard" },
     { to: "/candles", label: "Candles" },
@@ -22,7 +24,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
-        {navItems.map((item) => (
+        {navItems.filter((item) => canAccessRoute(role, item.to)).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
