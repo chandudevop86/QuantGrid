@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
 type TradeSide = "BUY" | "SELL";
@@ -7,20 +7,65 @@ export default function Trade() {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [priceLoading, setPriceLoading] = useState(true);
+  const [marketPrice, setMarketPrice] = useState<number | null>(null);
+  const [marketSource, setMarketSource] = useState<string | null>(null);
   const [side, setSide] = useState<TradeSide>("BUY");
 
-  const order = {
-    symbol: "NIFTY",
-    entry: 22450,
-    stop: side === "BUY" ? 22410 : 22490,
-    target: side === "BUY" ? 22530 : 22370,
+  const order = useMemo(() => {
+    const entry = marketPrice ?? 0;
+    const stopDistance = Math.max(25, entry * 0.0015);
+    const targetDistance = stopDistance * 2;
+
+    return {
+      symbol: "NIFTY",
+      entry: Number(entry.toFixed(2)),
+      stop: Number((side === "BUY" ? entry - stopDistance : entry + stopDistance).toFixed(2)),
+      target: Number((side === "BUY" ? entry + targetDistance : entry - targetDistance).toFixed(2)),
+    };
+  }, [marketPrice, side]);
+
+  const loadPrice = async () => {
+    try {
+      setPriceLoading(true);
+      setError(null);
+
+      const priceData = await api.getPrice();
+      const price = Number(priceData?.price);
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error("Live NIFTY price is unavailable.");
+      }
+
+      setMarketPrice(price);
+      setMarketSource(priceData?.source ?? "Market API");
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.detail ??
+        err?.message ??
+        "Failed to load market price.";
+      setError(
+        message === "Network Error"
+          ? "Cannot reach the trading API. Check that the backend is running on port 8000."
+          : message
+      );
+    } finally {
+      setPriceLoading(false);
+    }
   };
+
+  useEffect(() => {
+    void loadPrice();
+  }, []);
 
   const placeOrder = async () => {
     try {
       setLoading(true);
       setError(null);
       setResult(null);
+
+      if (!marketPrice || marketPrice <= 0) {
+        await loadPrice();
+      }
 
       const response = await api.executeOrder({
         strategy_name: "manual",
@@ -64,7 +109,7 @@ export default function Trade() {
         <div className="form-panel-header">
           <div>
             <h2>Manual Paper Order</h2>
-            <p>NIFTY {side.toLowerCase()} order routed to the same execution endpoint.</p>
+            <p>{priceLoading ? "Loading live NIFTY price..." : `Live price from ${marketSource ?? "Market API"}`}</p>
           </div>
           <span className="environment-badge">{side}</span>
         </div>
@@ -108,10 +153,19 @@ export default function Trade() {
         <button
           type="button"
           onClick={placeOrder}
-          disabled={loading}
+          disabled={loading || priceLoading || !marketPrice}
           className="primary-action"
         >
           {loading ? "Placing Order..." : `${side === "BUY" ? "Buy" : "Sell"} Paper Lot`}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void loadPrice()}
+          disabled={loading || priceLoading}
+          className="refresh-button"
+        >
+          Refresh Price
         </button>
 
         {error && (
