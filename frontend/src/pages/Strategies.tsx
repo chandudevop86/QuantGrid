@@ -17,6 +17,12 @@ function formatStrategyName(strategy: string) {
     .join(" ");
 }
 
+function formatMarketSource(source?: string) {
+  if (source === "yahoo-finance") return "Live NIFTY";
+  if (source === "sample-fallback") return "Fallback";
+  return source ?? "-";
+}
+
 export default function Strategies() {
   const strategyList = useMemo(() => strategies, []);
   const { signalsByStrategy, loading } = useStrategySignals(strategyList, 5000);
@@ -67,7 +73,7 @@ export default function Strategies() {
                     Signals
                   </span>
                   <span>
-                    <strong>{signal.market_data?.source ?? "-"}</strong>
+                    <strong>{formatMarketSource(signal.market_data?.source)}</strong>
                     Source
                   </span>
                 </div>
