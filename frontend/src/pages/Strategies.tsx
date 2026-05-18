@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useAutoSignals } from "../hooks/useAutoSignals";
+import { useMemo } from "react";
+import { useStrategySignals } from "../hooks/useAutoSignals";
 
 const strategies = [
   "amd",
@@ -18,96 +18,75 @@ function formatStrategyName(strategy: string) {
 }
 
 export default function Strategies() {
-  const [selectedStrategy, setSelectedStrategy] = useState<string | null>(strategies[0]);
-
-  const { signal, loading } = useAutoSignals(selectedStrategy, 5000);
-  const hasSignalError = Boolean(signal?.error);
-  const signals = Array.isArray(signal?.data) ? signal.data : [];
-  const hasSignals = signals.length > 0;
-  const updatedAt = signal?.updated_at
-    ? new Date(signal.updated_at).toLocaleTimeString()
-    : null;
+  const strategyList = useMemo(() => strategies, []);
+  const { signalsByStrategy, loading } = useStrategySignals(strategyList, 5000);
 
   return (
     <section className="dashboard-page">
       <div className="page-heading">
         <h1>Strategies</h1>
-        <p>Run sample NIFTY signal checks and watch the active strategy response.</p>
+        <p>Watch strategy-wise NIFTY signals refresh every 5 seconds.</p>
       </div>
 
-      <div className="strategy-layout">
-        <div className="form-panel">
-          <div className="form-panel-header">
-            <div>
-              <h2>Strategy Set</h2>
-              <p>Select one strategy to poll every 5 seconds.</p>
+      <div className="strategy-signal-grid">
+        {strategyList.map((strategy) => {
+          const signal = signalsByStrategy[strategy];
+          const hasSignalError = Boolean(signal?.error);
+          const signals = Array.isArray(signal?.data) ? signal.data : [];
+          const hasSignals = signals.length > 0;
+          const updatedAt = signal?.updated_at
+            ? new Date(signal.updated_at).toLocaleTimeString()
+            : null;
+
+          return (
+            <div key={strategy} className="form-panel signal-panel strategy-signal-card">
+              <div className="form-panel-header">
+                <div>
+                  <h2>{formatStrategyName(strategy)}</h2>
+                  <p>{updatedAt ? `Updated ${updatedAt}` : "Waiting for first refresh."}</p>
+                </div>
+                <span className={`status-pill${hasSignalError ? " error" : ""}`}>
+                  {loading && !signal ? "Updating" : hasSignalError ? "Offline" : "Live"}
+                </span>
+              </div>
+
+              {hasSignalError && (
+                <div className="alert alert-error" role="alert">
+                  Signal API unavailable. Check that the trading backend is running on port 8000.
+                </div>
+              )}
+
+              {!hasSignalError && signal && (
+                <div className="signal-summary">
+                  <span>
+                    <strong>{signal.candles_analyzed ?? 0}</strong>
+                    Candles
+                  </span>
+                  <span>
+                    <strong>{signals.length}</strong>
+                    Signals
+                  </span>
+                  <span>
+                    <strong>{signal.market_data?.source ?? "-"}</strong>
+                    Source
+                  </span>
+                </div>
+              )}
+
+              {!hasSignalError && signal && !hasSignals && (
+                <div className="alert alert-warning" role="status">
+                  No validated signal right now.
+                </div>
+              )}
+
+              <pre>
+                {signal
+                  ? JSON.stringify(hasSignalError ? signal : signals, null, 2)
+                  : "Waiting for the first signal response..."}
+              </pre>
             </div>
-          </div>
-
-          <div className="strategy-grid">
-            {strategies.map((strategy) => (
-              <button
-                key={strategy}
-                type="button"
-                onClick={() => setSelectedStrategy(strategy)}
-                className={`strategy-chip${selectedStrategy === strategy ? " active" : ""}`}
-              >
-                {formatStrategyName(strategy)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="form-panel signal-panel">
-          <div className="form-panel-header">
-            <div>
-              <h2>Live Signal</h2>
-              <p>
-                {selectedStrategy
-                  ? `${formatStrategyName(selectedStrategy)} is selected.`
-                  : "Select a strategy to begin polling."}
-              </p>
-            </div>
-            <span className={`status-pill${hasSignalError ? " error" : ""}`}>
-              {loading ? "Updating" : hasSignalError ? "Offline" : "Live"}
-            </span>
-          </div>
-
-          {hasSignalError && (
-            <div className="alert alert-error" role="alert">
-              Signal API unavailable. Check that the trading backend is running on port 8000.
-            </div>
-          )}
-
-          {!hasSignalError && signal && (
-            <div className="signal-summary">
-              <span>
-                <strong>{signal.candles_analyzed ?? 0}</strong>
-                Candles
-              </span>
-              <span>
-                <strong>{signals.length}</strong>
-                Signals
-              </span>
-              <span>
-                <strong>{updatedAt ?? "-"}</strong>
-                Updated
-              </span>
-            </div>
-          )}
-
-          {!hasSignalError && signal && !hasSignals && (
-            <div className="alert alert-warning" role="status">
-              No validated signal for this strategy right now.
-            </div>
-          )}
-
-          <pre>
-            {signal
-              ? JSON.stringify(hasSignalError ? signal : signals, null, 2)
-              : "Waiting for the first signal response..."}
-          </pre>
-        </div>
+          );
+        })}
       </div>
     </section>
   );
