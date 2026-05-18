@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { api } from "../services/api";
 
+const strategies = [
+  "amd",
+  "breakout",
+  "btst",
+  "mean_reversion",
+  "mtf",
+  "supply_demand",
+];
+
 export default function ExecutionForm() {
   const [result, setResult] = useState<any>(null);
+  const [signal, setSignal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,26 +20,50 @@ export default function ExecutionForm() {
     try {
       setLoading(true);
       setError(null);
+      setResult(null);
+      setSignal(null);
 
-      const candleData = await api.candles("NIFTY", "5m");
-      const signals = await api.runSignals({
-        strategy_name: "breakout",
-        symbol: "NIFTY",
-        capital: 100000,
-        risk_pct: 1,
-        rr_ratio: 2,
-        candles: Array.isArray(candleData?.candles) ? candleData.candles : [],
-      });
-      const signal = Array.isArray(signals) ? signals[0] : null;
+      const candleData = await api.candles("NIFTY", "1m");
+      const candles = Array.isArray(candleData?.candles) ? candleData.candles : [];
+      let selectedSignal: any = null;
+      let selectedStrategy: string | null = null;
 
-      if (!signal) {
-        setResult({ status: "no_trade", source: "signal_based" });
+      for (const strategy of strategies) {
+        const signals = await api.runSignals({
+          strategy_name: strategy,
+          symbol: "NIFTY",
+          capital: 100000,
+          risk_pct: 1,
+          rr_ratio: 2,
+          candles,
+        });
+
+        if (Array.isArray(signals) && signals.length > 0) {
+          selectedSignal = signals[0];
+          selectedStrategy = strategy;
+          break;
+        }
+      }
+
+      if (!selectedSignal) {
+        setResult({
+          status: "no_trade",
+          source: "signal_based",
+          reason: "No validated signal found across auto-scan strategies.",
+          candles_analyzed: candles.length,
+          strategies_checked: strategies,
+        });
         return;
       }
 
-      const res = await api.executeOrder(signal);
+      setSignal(selectedSignal);
+      const res = await api.executeOrder(selectedSignal);
 
-      setResult(res);
+      setResult({
+        ...res,
+        strategy_checked: selectedStrategy,
+        signal: selectedSignal,
+      });
     } catch (err: any) {
       const message =
         err?.response?.data?.detail ??
@@ -50,9 +84,9 @@ export default function ExecutionForm() {
       <div className="form-panel-header">
         <div>
           <h2>Paper Order</h2>
-          <p>NIFTY breakout signal with a simulated buy-side order.</p>
+          <p>Auto-scan NIFTY strategies and submit the first validated paper order.</p>
         </div>
-        <span className="environment-badge">BUY</span>
+        <span className="environment-badge">{signal?.side ?? "AUTO"}</span>
       </div>
 
       <div className="order-summary">
@@ -61,15 +95,15 @@ export default function ExecutionForm() {
           Symbol
         </span>
         <span>
-          <strong>Signal</strong>
+          <strong>{signal ? signal.entry_price : "Signal"}</strong>
           Entry
         </span>
         <span>
-          <strong>Signal</strong>
+          <strong>{signal ? signal.stop_loss : "Signal"}</strong>
           Stop
         </span>
         <span>
-          <strong>Signal</strong>
+          <strong>{signal ? signal.target_price : "Signal"}</strong>
           Target
         </span>
       </div>
@@ -79,7 +113,7 @@ export default function ExecutionForm() {
         disabled={loading}
         className="primary-action"
       >
-        {loading ? "Executing..." : "Execute Trade"}
+        {loading ? "Scanning..." : "Auto Execute Trade"}
       </button>
 
       {error && (
