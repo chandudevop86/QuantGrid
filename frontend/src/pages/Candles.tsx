@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
 
@@ -11,27 +11,36 @@ const intervals = [
   { label: "1day", value: "1d" },
 ];
 
+const refreshMs = 15000;
+
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [source, setSource] = useState<string | null>(null);
   const [volumeStatus, setVolumeStatus] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState(intervals[0].value);
+  const [selectedInterval, setSelectedInterval] = useState(intervals[0].value);
 
-  useEffect(() => {
-    setLoading(true);
+  const loadCandles = useCallback((showInitialLoading = false) => {
+    if (showInitialLoading) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     setError(null);
     setWarning(null);
 
-    api
-      .candles("NIFTY", interval)
+    return api
+      .candles("NIFTY", selectedInterval)
       .then((data) => {
         setCandles(Array.isArray(data?.candles) ? data.candles : []);
         setSource(data?.source ?? null);
         setVolumeStatus(data?.volume_status ?? null);
         setWarning(data?.warning ?? null);
+        setLastRefreshed(new Date());
       })
       .catch((err: any) => {
         const message = err?.message === "Network Error"
@@ -39,8 +48,21 @@ export default function Candles() {
           : err?.message ?? "Failed to load candles.";
         setError(message);
       })
-      .finally(() => setLoading(false));
-  }, [interval]);
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }, [selectedInterval]);
+
+  useEffect(() => {
+    void loadCandles(true);
+
+    const refreshTimer = window.setInterval(() => {
+      void loadCandles(false);
+    }, refreshMs);
+
+    return () => window.clearInterval(refreshTimer);
+  }, [loadCandles]);
 
   const latest = useMemo(() => candles[candles.length - 1], [candles]);
   const latestVolume =
@@ -51,6 +73,9 @@ export default function Candles() {
     volumeStatus === "not_reported_for_index"
       ? "Index volume not reported"
       : source ?? "Market API";
+  const refreshLabel = lastRefreshed
+    ? `Updated ${lastRefreshed.toLocaleTimeString()}`
+    : "Auto refresh every 15s";
 
   return (
     <section className="dashboard-page">
@@ -84,7 +109,7 @@ export default function Candles() {
         <div className="form-panel-header">
           <div>
             <h2>Price Action</h2>
-            <p>{loading ? "Loading candles..." : "Open, high, low, and close across the selected timeline."}</p>
+            <p>{loading ? "Loading candles..." : refreshLabel}</p>
           </div>
           <div className="chart-controls">
             <div className="timeline-toggle" aria-label="Candle timeline">
@@ -92,15 +117,23 @@ export default function Candles() {
                 <button
                   key={item.value}
                   type="button"
-                  onClick={() => setInterval(item.value)}
-                  className={interval === item.value ? "active" : ""}
+                  onClick={() => setSelectedInterval(item.value)}
+                  className={selectedInterval === item.value ? "active" : ""}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
+            <button
+              type="button"
+              className="refresh-button"
+              onClick={() => void loadCandles(false)}
+              disabled={loading || refreshing}
+            >
+              Refresh
+            </button>
             <span className={`status-pill${error ? " error" : ""}`}>
-              {loading ? "Loading" : error ? "Offline" : source === "yahoo-finance" ? "Live" : "Fallback"}
+              {loading ? "Loading" : refreshing ? "Refreshing" : error ? "Offline" : source === "yahoo-finance" ? "Live" : "Fallback"}
             </span>
           </div>
         </div>

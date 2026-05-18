@@ -29,6 +29,7 @@ export default function LiveAnalysis() {
   const [error, setError] = useState<string | null>(null);
   const [wsWarning, setWsWarning] = useState<string | null>(null);
   const [strategy, setStrategy] = useState("breakout");
+  const [autoTrade, setAutoTrade] = useState(true);
 
   const statusLabel = loading
     ? "Running"
@@ -54,6 +55,7 @@ export default function LiveAnalysis() {
         capital: 100000,
         risk_pct: 1,
         rr_ratio: 2,
+        auto_trade: autoTrade,
       });
 
       setJobId(res.job_id);
@@ -198,6 +200,15 @@ export default function LiveAnalysis() {
               </button>
             ))}
           </div>
+
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={autoTrade}
+              onChange={(event) => setAutoTrade(event.target.checked)}
+            />
+            <span>Auto paper trades</span>
+          </label>
 
           <button
             type="button"

@@ -217,6 +217,21 @@ select {
   justify-content: flex-end;
 }
 
+.refresh-button {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid rgba(45, 212, 191, 0.38);
+  background: rgba(15, 23, 42, 0.9);
+  color: #ccfbf1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.refresh-button:hover:not(:disabled) {
+  border-color: rgba(45, 212, 191, 0.62);
+  background: #134e4a;
+}
+
 .app-content {
   flex: 1;
   min-width: 0;
@@ -533,6 +548,22 @@ select {
   border-color: rgba(45, 212, 191, 0.64);
   background: #134e4a;
   color: #ccfbf1;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  accent-color: #0f766e;
 }
 
 .signal-panel {

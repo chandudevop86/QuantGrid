@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import asdict
 from typing import Any
 
 from pydantic import BaseModel
@@ -11,6 +12,9 @@ from Backend.application.dto import serialize_signal
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
 from Backend.application.signal_validation import validate_signals
+from Backend.domain.engine.execution_engine import ExecutionEngine
+from Backend.domain.models.order import Order
+from Backend.domain.models.signal import StrategySignal
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.market_api import get_candles
 
@@ -26,6 +30,26 @@ class LiveAnalysisPayload(BaseModel):
     capital: float = 100000
     risk_pct: float = 1
     rr_ratio: float = 2
+    auto_trade: bool = False
+
+
+def _serialize_order(order: Order) -> dict[str, Any]:
+    serialized = asdict(order)
+    if order.created_at is not None:
+        serialized["created_at"] = order.created_at.isoformat()
+    return serialized
+
+
+def _generate_paper_trades(signals: list[StrategySignal]) -> list[dict[str, Any]]:
+    execution_engine = ExecutionEngine()
+    return [
+        {
+            "status": "paper_simulated",
+            "source": "auto_signal",
+            "order": _serialize_order(execution_engine.order_from_signal(signal)),
+        }
+        for signal in signals
+    ]
 
 
 def _prepare_strategy_candles(candles_response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -58,11 +82,13 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         candle_source=candles_response.get("source"),
     )
     serialized_signals = [serialize_signal(signal) for signal in signals]
+    auto_trades = _generate_paper_trades(signals) if payload.auto_trade else []
     print("Generated signals:", serialized_signals)
     print("Signal timestamp:", serialized_signals[0]["signal_time"] if serialized_signals else None)
     return {
         "data_source": data_source,
         "candles_analyzed": len(candles),
+        "auto_trade": payload.auto_trade,
         "market_data": {
             "source": candles_response.get("source"),
             "market_symbol": candles_response.get("market_symbol"),
@@ -70,6 +96,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
             "warning": candles_response.get("warning"),
         },
         "signals": serialized_signals,
+        "trades": auto_trades,
     }
 
 
