@@ -83,8 +83,13 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     )
     serialized_signals = [serialize_signal(signal) for signal in signals]
     auto_trades = _generate_paper_trades(signals) if payload.auto_trade else []
-    print("Generated signals:", serialized_signals)
-    print("Signal timestamp:", serialized_signals[0]["signal_time"] if serialized_signals else None)
+    logger.info(
+        "Live analysis generated %s signals and %s trades for %s/%s",
+        len(serialized_signals),
+        len(auto_trades),
+        payload.symbol.upper(),
+        payload.strategy,
+    )
     return {
         "data_source": data_source,
         "candles_analyzed": len(candles),
