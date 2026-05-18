@@ -152,6 +152,32 @@ def _momentum_aligned(signal: StrategySignal) -> bool:
     return _rsi_aligned(signal) and _macd_aligned(signal)
 
 
+def _is_mean_reversion(signal: StrategySignal) -> bool:
+    strategy_name = signal.strategy_name.lower()
+    setup = str(signal.metadata.get("setup", "")).lower()
+    return "mean reversion" in strategy_name or setup == "enhanced_mean_reversion"
+
+
+def _mean_reversion_high_quality(signal: StrategySignal) -> bool:
+    if _score(signal) < 5.0:
+        return False
+    if _risk_reward(signal) < MIN_RISK_REWARD:
+        return False
+    if _stop_distance(signal) > MAX_STOP_DISTANCE:
+        return False
+    if signal.metadata.get("market_regime") != "ranging":
+        return False
+    if not _trend_aligned(signal):
+        return False
+
+    score_components = signal.metadata.get("score_components")
+    if not isinstance(score_components, dict):
+        return False
+
+    required_components = ["rsi_extreme", "mean_deviation", "trend_alignment", "macd_confirmation"]
+    return all(float(score_components.get(component) or 0.0) > 0.0 for component in required_components)
+
+
 def _zone_confirmed(signal: StrategySignal) -> bool:
     strategy_name = signal.strategy_name.lower()
     metadata_values = " ".join(str(value).lower() for value in signal.metadata.values())
@@ -196,6 +222,9 @@ def _quality_rank(signal: StrategySignal) -> tuple[float, float]:
 
 
 def _is_high_quality(signal: StrategySignal) -> bool:
+    if _is_mean_reversion(signal):
+        return _mean_reversion_high_quality(signal)
+
     if _score(signal) < MIN_SIGNAL_SCORE:
         return False
     if _risk_reward(signal) < MIN_RISK_REWARD:
