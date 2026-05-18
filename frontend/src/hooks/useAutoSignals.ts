@@ -17,20 +17,29 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
       try {
         setLoading(true);
 
-        const now = new Date().toISOString();
+        const candleData = await api.candles("NIFTY", "1m");
+        const candles = Array.isArray(candleData?.candles) ? candleData.candles : [];
         const result = await api.runSignals({
           strategy_name: strategy,
           symbol: "NIFTY",
           capital: 100000,
           risk_pct: 1,
           rr_ratio: 2,
-          candles: [
-            { timestamp: now, open: 100, high: 105, low: 98, close: 103, volume: 1000 },
-            { timestamp: now, open: 103, high: 108, low: 101, close: 107, volume: 1200 },
-          ],
+          candles,
         });
 
-        if (isMounted) setSignal(result);
+        if (isMounted) {
+          setSignal({
+            data: result,
+            candles_analyzed: candles.length,
+            updated_at: new Date().toISOString(),
+            market_data: {
+              source: candleData?.source,
+              volume_status: candleData?.volume_status,
+              warning: candleData?.warning,
+            },
+          });
+        }
       } catch (error) {
         if (isMounted) setSignal({ error: "Signal API unavailable" });
       } finally {

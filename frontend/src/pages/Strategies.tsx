@@ -22,6 +22,11 @@ export default function Strategies() {
 
   const { signal, loading } = useAutoSignals(selectedStrategy, 5000);
   const hasSignalError = Boolean(signal?.error);
+  const signals = Array.isArray(signal?.data) ? signal.data : [];
+  const hasSignals = signals.length > 0;
+  const updatedAt = signal?.updated_at
+    ? new Date(signal.updated_at).toLocaleTimeString()
+    : null;
 
   return (
     <section className="dashboard-page">
@@ -74,9 +79,32 @@ export default function Strategies() {
             </div>
           )}
 
+          {!hasSignalError && signal && (
+            <div className="signal-summary">
+              <span>
+                <strong>{signal.candles_analyzed ?? 0}</strong>
+                Candles
+              </span>
+              <span>
+                <strong>{signals.length}</strong>
+                Signals
+              </span>
+              <span>
+                <strong>{updatedAt ?? "-"}</strong>
+                Updated
+              </span>
+            </div>
+          )}
+
+          {!hasSignalError && signal && !hasSignals && (
+            <div className="alert alert-warning" role="status">
+              No validated signal for this strategy right now.
+            </div>
+          )}
+
           <pre>
             {signal
-              ? JSON.stringify(signal, null, 2)
+              ? JSON.stringify(hasSignalError ? signal : signals, null, 2)
               : "Waiting for the first signal response..."}
           </pre>
         </div>

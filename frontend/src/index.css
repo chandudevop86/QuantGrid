@@ -570,6 +570,29 @@ select {
   max-width: none;
 }
 
+.signal-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signal-summary span {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.signal-summary strong {
+  color: #f8fafc;
+  font-size: 18px;
+}
+
 .status-pill {
   flex: 0 0 auto;
   padding: 7px 10px;
