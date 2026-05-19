@@ -19,6 +19,9 @@ class StrategyRunRequest(BaseModel):
     risk_pct: float
     rr_ratio: float = 2.0
     candles: list[dict[str, Any]]
+    htf_candles: list[dict[str, Any]] | None = None
+    mtf_candles: list[dict[str, Any]] | None = None
+    daily_candles: list[dict[str, Any]] | None = None
 
 
 @router.post("/signals")
@@ -34,6 +37,15 @@ def generate_signals(
         capital=payload.capital,
         risk_pct=payload.risk_pct,
         rr_ratio=payload.rr_ratio,
+        params={
+            key: value
+            for key, value in {
+                "htf_candles": payload.htf_candles,
+                "mtf_candles": payload.mtf_candles,
+                "daily_candles": payload.daily_candles,
+            }.items()
+            if value is not None
+        },
     )
     validated_signals, _data_source = validate_signals(
         signals,

@@ -12,10 +12,38 @@ class TradingService:
     def __init__(self, trading_engine: TradingEngine | None = None) -> None:
         self.trading_engine = trading_engine or TradingEngine()
 
-    def run_strategy(self, *, strategy_name: str, data: Any, symbol: str, capital: float, risk_pct: float, rr_ratio: float = 2.0) -> list[StrategySignal]:
-        context = StrategyContext(symbol=symbol, capital=capital, risk_pct=risk_pct, rr_ratio=rr_ratio)
+    def run_strategy(
+        self,
+        *,
+        strategy_name: str,
+        data: Any,
+        symbol: str,
+        capital: float,
+        risk_pct: float,
+        rr_ratio: float = 2.0,
+        params: dict[str, Any] | None = None,
+    ) -> list[StrategySignal]:
+        context = StrategyContext(symbol=symbol, capital=capital, risk_pct=risk_pct, rr_ratio=rr_ratio, params=params or {})
         return self.trading_engine.scan(strategy_name, data, context)
 
-    def create_orders_from_strategy(self, *, strategy_name: str, data: Any, symbol: str, capital: float, risk_pct: float, rr_ratio: float = 2.0) -> list[Order]:
-        signals = self.run_strategy(strategy_name=strategy_name, data=data, symbol=symbol, capital=capital, risk_pct=risk_pct, rr_ratio=rr_ratio)
+    def create_orders_from_strategy(
+        self,
+        *,
+        strategy_name: str,
+        data: Any,
+        symbol: str,
+        capital: float,
+        risk_pct: float,
+        rr_ratio: float = 2.0,
+        params: dict[str, Any] | None = None,
+    ) -> list[Order]:
+        signals = self.run_strategy(
+            strategy_name=strategy_name,
+            data=data,
+            symbol=symbol,
+            capital=capital,
+            risk_pct=risk_pct,
+            rr_ratio=rr_ratio,
+            params=params,
+        )
         return self.trading_engine.create_orders(signals)

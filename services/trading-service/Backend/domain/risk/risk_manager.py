@@ -8,15 +8,17 @@ from Backend.domain.models.signal import StrategySignal
 class RiskManager:
     def risk_fraction(self, risk_pct: float) -> float:
         value = float(risk_pct or 0.0)
-        return value / 100.0 if value > 1 else value
+        return value / 100.0 if value >= 1 else value
 
     def position_size(self, capital: float, risk_pct: float, entry: float, stop_loss: float) -> int:
         risk_per_unit = abs(float(entry) - float(stop_loss))
         if risk_per_unit <= 0:
             return 0
+
         risk_amount = max(0.0, float(capital)) * self.risk_fraction(risk_pct)
         if risk_amount <= 0:
             return 1
+
         return max(1, floor(risk_amount / risk_per_unit))
 
     def validate_signal(self, signal: StrategySignal) -> bool:

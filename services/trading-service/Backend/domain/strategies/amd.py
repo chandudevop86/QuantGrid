@@ -1,52 +1,63 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, NamedTuple
+from typing import Any
 
 import pandas as pd
 
+from Backend.domain.indicators.indicators import IndicatorService
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
-from Backend.domain.strategies.base import BaseStrategy, StrategyConfig
-from Backend.domain.strategies.scoring import ScoringEngine
+from Backend.domain.smc.amd_phase import AMDPhaseDetector
+from Backend.domain.smc.fvg import FVGDetector
+from Backend.domain.smc.models import AMDContext, FVGZone, Side, SupplyDemandZone
+from Backend.domain.smc.risk import SMCRiskManager
+from Backend.domain.smc.scoring import SMCScoringEngine
+from Backend.domain.smc.zones import ZoneConfluenceEngine
+from Backend.domain.strategies.base import BaseStrategy, StrategyConfig, normalize_mode
 from Backend.domain.strategies.signal_builder import SignalBuilder
-from Backend.domain.strategies.strategy_utils import normalize_mode, recent_true
+
+
 @dataclass(slots=True)
 class ConfluenceConfig(StrategyConfig):
-    accumulation_lookback: int = 10
-    manipulation_lookback: int = 6
-    min_fvg_size: float = 0.35
-    retest_tolerance_pct: float = 0.0015
-    max_retest_bars: int = 6
-    min_score_conservative: float = 7.4
-    min_score_balanced: float = 6.2
-    min_score_aggressive: float = 4.8
+    range_lookback: int = 18
+    distribution_lookback: int = 10
+    fvg_max_age_bars: int = 12
+    zone_lookback: int = 48
+    max_zone_touches: int = 1
+    min_atr_pct: float = 0.0008
+    min_score: int = 10
+    min_rr: float = 2.0
+    ideal_rr: float = 3.0
+    require_htf_alignment: bool = True
     require_vwap_alignment: bool = True
-    require_trend_alignment: bool = True
-    require_liquidity_sweep: bool = True
-    require_fvg_confirmation: bool = True
-    require_distribution_phase: bool = True
+    require_ema_alignment: bool = True
+    require_extreme_entry: bool = True
 
     @classmethod
     def for_mode(cls, mode: str) -> "ConfluenceConfig":
         normalized = normalize_mode(mode)
         base = cls(mode=normalized)
         if normalized == "Conservative":
-            return replace(base, accumulation_lookback=12, manipulation_lookback=7, min_fvg_size=0.45, max_retest_bars=4, duplicate_signal_cooldown_bars=14)
+            return replace(
+                base,
+                range_lookback=24,
+                distribution_lookback=8,
+                fvg_max_age_bars=10,
+                max_zone_touches=0,
+                min_atr_pct=0.001,
+                min_score=12,
+            )
         if normalized == "Aggressive":
-            return replace(base, accumulation_lookback=8, manipulation_lookback=4, min_fvg_size=0.25, max_retest_bars=8, require_distribution_phase=False, duplicate_signal_cooldown_bars=8)
+            return replace(
+                base,
+                range_lookback=14,
+                distribution_lookback=12,
+                fvg_max_age_bars=16,
+                min_atr_pct=0.0005,
+                min_score=10,
+            )
         return base
-
-
-class _Alignments(NamedTuple):
-    trend_ok: bool
-    vwap_ok: bool
-    momentum_ok: bool
-
-
-class _Levels(NamedTuple):
-    stop_loss: float
-    target_price: float
 
 
 class AMDStrategy(BaseStrategy):
@@ -55,110 +66,249 @@ class AMDStrategy(BaseStrategy):
     def __init__(self, config: ConfluenceConfig | None = None) -> None:
         super().__init__(config or ConfluenceConfig())
         self.config: ConfluenceConfig
-        self.scoring = ScoringEngine()
         self.signal_builder = SignalBuilder()
+        self.indicator_service = IndicatorService()
+        self.amd_detector = AMDPhaseDetector()
+        self.fvg_detector = FVGDetector(max_age_bars=self.config.fvg_max_age_bars)
+        self.zone_engine = ZoneConfluenceEngine(lookback=self.config.zone_lookback, max_touches=self.config.max_zone_touches)
+        self.scoring = SMCScoringEngine()
+        self.risk = SMCRiskManager()
 
     def prepare_data(self, data: Any) -> pd.DataFrame:
         candles = super().prepare_data(data)
         if candles.empty:
             return candles
-        out = candles.copy()
-        out["bullish_manipulation"] = (out["low"] < out["recent_low"]) & (out["close"] > out["recent_low"])
-        out["bearish_manipulation"] = (out["high"] > out["recent_high"]) & (out["close"] < out["recent_high"])
-        out["bullish_distribution"] = (out["close"] > out["recent_high"]) & (out["close"] > out["ema_fast"])
-        out["bearish_distribution"] = (out["close"] < out["recent_low"]) & (out["close"] < out["ema_fast"])
-        out["bullish_fvg"] = out["bullish_fvg_gap"] >= float(self.config.min_fvg_size)
-        out["bearish_fvg"] = out["bearish_fvg_gap"] >= float(self.config.min_fvg_size)
-        return out
+        return candles
 
     def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
-        threshold = self.scoring.threshold(self.config.mode, conservative=self.config.min_score_conservative, balanced=self.config.min_score_balanced, aggressive=self.config.min_score_aggressive)
-        trades: list[StrategySignal] = []
-        trade_counts: dict[str, int] = {}
-        last_signal_index = {"BUY": -10_000, "SELL": -10_000}
-        start_index = max(5, int(self.config.accumulation_lookback), int(self.config.manipulation_lookback))
+        htf_candles = self._prepare_htf(context)
+        signals: list[StrategySignal] = []
+        traded_sessions: set[str] = set()
+        start_index = max(self.config.range_lookback + 3, 20)
+
         for index in range(start_index, len(candles)):
             row = candles.iloc[index]
-            day_key = str(row["session_day"])
-            if trade_counts.get(day_key, 0) >= max(1, int(self.config.max_trades_per_day)):
+            session = str(row["session_day"])
+            if session in traded_sessions:
                 continue
+            if self._low_volatility(row):
+                continue
+
             for side in ("BUY", "SELL"):
-                if index - last_signal_index[side] < int(self.config.duplicate_signal_cooldown_bars):
-                    continue
-                signal = self._evaluate_bar(candles, index, side=side, context=context, threshold=threshold)
+                signal = self._evaluate_setup(candles, index, side=side, context=context, htf_candles=htf_candles)
                 if signal is None:
                     continue
-                trades.append(signal)
-                trade_counts[day_key] = trade_counts.get(day_key, 0) + 1
-                last_signal_index[side] = index
+                signals.append(signal)
+                traded_sessions.add(session)
                 break
-        return trades
+
+        return signals
+
+    def _evaluate_setup(
+        self,
+        candles: pd.DataFrame,
+        index: int,
+        *,
+        side: Side,
+        context: StrategyContext,
+        htf_candles: pd.DataFrame | None,
+    ) -> StrategySignal | None:
+        row = candles.iloc[index]
+        amd = self.amd_detector.detect(
+            candles,
+            index,
+            side=side,
+            range_lookback=self.config.range_lookback,
+            distribution_lookback=self.config.distribution_lookback,
+        )
+        if amd is None:
+            return None
+        if self.config.require_extreme_entry and self._is_mid_range_entry(float(row["close"]), amd, side):
+            return None
+        if not self._passes_vwap_ema(row, side):
+            return None
+
+        fvg = self.fvg_detector.find_active_return(candles, index, side, after_index=amd.sweep.sweep_index)
+        if fvg is None:
+            return None
+        zone = self.zone_engine.find_zone(candles, index, side, fvg=fvg, after_index=amd.sweep.sweep_index)
+        if zone is None:
+            return None
+        zone_overlaps_fvg = self.zone_engine.has_confluence(zone, fvg)
+        if not zone_overlaps_fvg:
+            return None
+
+        entry_confirmation = self._entry_confirmation(candles, index, side)
+        if entry_confirmation is None:
+            return None
+
+        htf_aligned = self._htf_aligned(htf_candles, row, side)
+        if self.config.require_htf_alignment and not htf_aligned:
+            return None
+
+        score = self.scoring.score(
+            amd=amd,
+            sweep=amd.sweep,
+            fvg=fvg,
+            zone=zone,
+            zone_overlaps_fvg=zone_overlaps_fvg,
+            htf_aligned=htf_aligned,
+            entry_confirmation=entry_confirmation,
+        )
+        if score.total < int(self.config.min_score):
+            return None
+
+        stop_loss, target_price = self.risk.levels(
+            candles,
+            index,
+            side=side,
+            zone=zone,
+            entry=float(row["close"]),
+            min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
+            ideal_rr=max(float(context.rr_ratio), float(self.config.ideal_rr)),
+        )
+        return self.signal_builder.build(
+            row,
+            strategy_name=self.name,
+            symbol=context.symbol,
+            side=side,
+            capital=context.capital,
+            risk_pct=1.0,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            score=score.total,
+            metadata=self._metadata(amd, fvg, zone, score.to_dict(), entry_confirmation),
+        )
+
+    def _metadata(
+        self,
+        amd: AMDContext,
+        fvg: FVGZone,
+        zone: SupplyDemandZone,
+        score_breakdown: dict[str, Any],
+        entry_confirmation: str,
+    ) -> dict[str, Any]:
+        reason = "; ".join(str(item) for item in score_breakdown["reasons"])
+        return {
+            "amd_phase": amd.phase,
+            "fvg_zone": [round(fvg.low, 4), round(fvg.high, 4)],
+            "zone_type": zone.zone_type,
+            "zone": [round(zone.low, 4), round(zone.high, 4)],
+            "liquidity_range": [round(amd.liquidity_range.low, 4), round(amd.liquidity_range.high, 4)],
+            "swept_level": round(amd.sweep.swept_level, 4),
+            "entry_confirmation": entry_confirmation,
+            "score_breakdown": score_breakdown,
+            "reason": reason,
+            "market_signal": f"{amd.sweep.side} sweep + FVG return + {zone.zone_type} rejection",
+        }
+
+    def _passes_vwap_ema(self, row: pd.Series, side: Side) -> bool:
+        close = float(row["close"])
+        vwap = float(row["vwap"])
+        ema9, ema21, ema50, ema200 = float(row["ema_9"]), float(row["ema_21"]), float(row["ema_50"]), float(row["ema_200"])
+        if side == "BUY":
+            vwap_ok = close > vwap
+            ema_ok = ema9 > ema21 > ema50 > ema200
+        else:
+            vwap_ok = close < vwap
+            ema_ok = ema9 < ema21 < ema50 < ema200
+        if self.config.require_vwap_alignment and not vwap_ok:
+            return False
+        if self.config.require_ema_alignment and not ema_ok:
+            return False
+        return True
+
+    def _htf_aligned(self, htf_candles: pd.DataFrame | None, ltf_row: pd.Series, side: Side) -> bool:
+        row = self._matching_htf_row(htf_candles, ltf_row) if htf_candles is not None else ltf_row
+        ema9, ema21, ema50, ema200 = float(row["ema_9"]), float(row["ema_21"]), float(row["ema_50"]), float(row["ema_200"])
+        close = float(row["close"])
+        if side == "BUY":
+            return close > float(row["vwap"]) and ema9 > ema21 > ema50 > ema200
+        return close < float(row["vwap"]) and ema9 < ema21 < ema50 < ema200
+
+    @staticmethod
+    def _matching_htf_row(htf_candles: pd.DataFrame | None, ltf_row: pd.Series) -> pd.Series:
+        if htf_candles is None or htf_candles.empty:
+            return ltf_row
+        timestamp = pd.Timestamp(ltf_row["timestamp"])
+        matches = htf_candles[htf_candles["timestamp"] <= timestamp]
+        return matches.iloc[-1] if not matches.empty else htf_candles.iloc[0]
+
+    def _prepare_htf(self, context: StrategyContext) -> pd.DataFrame | None:
+        htf_data = context.params.get("htf_candles") or context.params.get("higher_timeframe")
+        if htf_data is None:
+            return None
+        return self.indicator_service.prepare(htf_data)
+
+    @staticmethod
+    def _entry_confirmation(candles: pd.DataFrame, index: int, side: Side) -> str | None:
+        if index < 1:
+            return None
+        row = candles.iloc[index]
+        previous = candles.iloc[index - 1]
+        bar_range = max(float(row["bar_range"]), 0.01)
+        upper_wick = float(row["high"]) - max(float(row["open"]), float(row["close"]))
+        lower_wick = min(float(row["open"]), float(row["close"])) - float(row["low"])
+
+        if side == "BUY":
+            bullish_close = float(row["close"]) > float(row["open"])
+            rejection = bullish_close and lower_wick >= bar_range * 0.35
+            engulfing = bullish_close and float(row["close"]) > float(previous["open"]) and float(row["open"]) < float(previous["close"])
+        else:
+            bearish_close = float(row["close"]) < float(row["open"])
+            rejection = bearish_close and upper_wick >= bar_range * 0.35
+            engulfing = bearish_close and float(row["close"]) < float(previous["open"]) and float(row["open"]) > float(previous["close"])
+        if engulfing:
+            return "engulfing"
+        if rejection:
+            return "rejection"
+        return None
+
+    @staticmethod
+    def _is_mid_range_entry(entry: float, amd: AMDContext, side: Side) -> bool:
+        liquidity_range = amd.liquidity_range
+        if liquidity_range.width <= 0:
+            return True
+        location = (entry - liquidity_range.low) / liquidity_range.width
+        if side == "BUY":
+            return location > 0.40
+        return location < 0.60
+
+    def _low_volatility(self, row: pd.Series) -> bool:
+        close = max(float(row["close"]), 0.01)
+        atr_pct = float(row.get("atr_14", row.get("avg_range_5", 0.0)) or 0.0) / close
+        return atr_pct < float(self.config.min_atr_pct)
 
     def calculate_levels(self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext) -> tuple[float, float]:
-        row = candles.iloc[index]
-        is_buy = side.upper() == "BUY"
-        fvg_col = "bullish_fvg" if is_buy else "bearish_fvg"
-        recent_fvg = recent_true(candles[fvg_col], index, int(self.config.max_retest_bars))
-        levels = self._compute_levels(row, is_buy=is_buy, recent_fvg=recent_fvg, candles=candles, rr_ratio=context.rr_ratio)
-        return levels.stop_loss, levels.target_price
+        typed_side: Side = "BUY" if side.upper() == "BUY" else "SELL"
+        zone = self.zone_engine.find_zone(candles, index, typed_side)
+        if zone is None:
+            row = candles.iloc[index]
+            entry = float(row["close"])
+            atr = max(float(row.get("atr_14", row.get("avg_range_5", 0.0)) or 0.0), 0.05)
+            if typed_side == "BUY":
+                return entry - atr, entry + atr * max(2.0, float(context.rr_ratio))
+            return entry + atr, entry - atr * max(2.0, float(context.rr_ratio))
+        return self.risk.levels(
+            candles,
+            index,
+            side=typed_side,
+            zone=zone,
+            entry=float(candles.iloc[index]["close"]),
+            min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
+            ideal_rr=max(float(context.rr_ratio), float(self.config.ideal_rr)),
+        )
 
-    def _evaluate_bar(self, candles: pd.DataFrame, index: int, *, side: str, context: StrategyContext, threshold: float) -> StrategySignal | None:
-        is_buy = side == "BUY"
-        row = candles.iloc[index]
-        manip_col = "bullish_manipulation" if is_buy else "bearish_manipulation"
-        fvg_col = "bullish_fvg" if is_buy else "bearish_fvg"
-        recent_manip = recent_true(candles[manip_col], index, int(self.config.max_retest_bars))
-        recent_fvg = recent_true(candles[fvg_col], index, int(self.config.max_retest_bars))
-        alignments = self._compute_alignments(row, is_buy)
-        dist_col = "bullish_distribution" if is_buy else "bearish_distribution"
-        if self.config.require_liquidity_sweep and recent_manip is None:
-            return None
-        if self.config.require_fvg_confirmation and recent_fvg is None:
-            return None
-        if self.config.require_distribution_phase and not bool(row[dist_col]):
-            return None
-        if self.config.require_trend_alignment and not alignments.trend_ok:
-            return None
-        if self.config.require_vwap_alignment and not alignments.vwap_ok:
-            return None
-        score = self._compute_score(row, is_buy=is_buy, recent_manip=recent_manip, recent_fvg=recent_fvg, alignments=alignments)
-        if not self.scoring.passed(score, threshold):
-            return None
-        levels = self._compute_levels(row, is_buy=is_buy, recent_fvg=recent_fvg, candles=candles, rr_ratio=context.rr_ratio)
-        amd_phase = "manipulation" if is_buy else "distribution"
-        return self.signal_builder.build(row, strategy_name=self.name, symbol=context.symbol, side=side, capital=context.capital, risk_pct=context.risk_pct, stop_loss=levels.stop_loss, target_price=levels.target_price, score=score, metadata={"zone_type": "demand" if is_buy else "supply", "imbalance_type": "FVG", "amd_phase": amd_phase, "market_signal": f"{side} + FVG + {amd_phase}"})
 
-    def _compute_alignments(self, row: pd.Series, is_buy: bool) -> _Alignments:
-        close = float(row["close"])
-        e9, e21, e50, e200 = float(row["ema_9"]), float(row["ema_21"]), float(row["ema_50"]), float(row["ema_200"])
-        macd, macd_sig, rsi = float(row["macd"]), float(row["macd_signal"]), float(row["rsi"])
-        if is_buy:
-            return _Alignments(close >= e9 >= e21 >= e50 >= e200, close >= float(row["vwap"]), macd >= macd_sig and rsi >= 50.0)
-        return _Alignments(close <= e9 <= e21 <= e50 <= e200, close <= float(row["vwap"]), macd <= macd_sig and rsi <= 50.0)
-
-    def _compute_score(self, row: pd.Series, *, is_buy: bool, recent_manip: int | None, recent_fvg: int | None, alignments: _Alignments) -> float:
-        dist_col = "bullish_distribution" if is_buy else "bearish_distribution"
-        fvg_gap_col = "bullish_fvg_gap" if is_buy else "bearish_fvg_gap"
-        score = 4.0 if recent_manip is not None else 0.0
-        score += 3.0 if bool(row[dist_col]) else 0.0
-        score += 3.0 if recent_fvg is not None else 0.0
-        score += 1.0 if float(row[fvg_gap_col]) >= float(self.config.min_fvg_size) * 1.25 else 0.0
-        score += 2.0 if alignments.trend_ok else 0.0
-        score += 1.0 if alignments.vwap_ok else 0.0
-        score += 1.0 if alignments.momentum_ok else 0.0
-        return score
-
-    def _compute_levels(self, row: pd.Series, *, is_buy: bool, recent_fvg: int | None, candles: pd.DataFrame, rr_ratio: float) -> _Levels:
-        close = float(row["close"])
-        buffer = max(float(row["avg_range_5"]) * 0.2, close * float(self.config.retest_tolerance_pct), 0.05)
-        if is_buy:
-            anchor = float(candles.iloc[recent_fvg]["high"]) if recent_fvg is not None else float(row["low"])
-            stop_loss = min(float(row["low"]), anchor) - buffer
-            if stop_loss >= close:
-                stop_loss = close - max(buffer, 0.1)
-            return _Levels(stop_loss, close + (close - stop_loss) * float(rr_ratio))
-        anchor = float(candles.iloc[recent_fvg]["low"]) if recent_fvg is not None else float(row["high"])
-        stop_loss = max(float(row["high"]), anchor) + buffer
-        if stop_loss <= close:
-            stop_loss = close + max(buffer, 0.1)
-        return _Levels(stop_loss, close - (stop_loss - close) * float(rr_ratio))
+def run_amd_strategy(
+    data: Any,
+    symbol: str,
+    capital: float,
+    risk_pct: float,
+    rr_ratio: float = 2.0,
+    config: ConfluenceConfig | None = None,
+) -> list[StrategySignal]:
+    return AMDStrategy(config).run(
+        data,
+        StrategyContext(symbol=symbol, capital=capital, risk_pct=risk_pct, rr_ratio=rr_ratio),
+    )

@@ -65,6 +65,9 @@ def create_app():
     from Backend.presentation.api.trading_api import router as trading_router
     app.include_router(trading_router, prefix="/trading", tags=["Trading"])
 
+    from Backend.presentation.api.production_api import router as production_router
+    app.include_router(production_router)
+
     # Execution
     from Backend.presentation.api.execution import router as execution_router
     app.include_router(execution_router, prefix="/execution")

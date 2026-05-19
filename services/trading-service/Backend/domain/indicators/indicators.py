@@ -14,7 +14,16 @@ def prepare_ohlcv(data: Any) -> pd.DataFrame:
         return pd.DataFrame(columns=OHLCV_COLUMNS)
 
     df.columns = [str(column).strip().lower() for column in df.columns]
-    rename_map = {"datetime": "timestamp", "date": "timestamp", "time": "timestamp", "o": "open", "h": "high", "l": "low", "c": "close", "vol": "volume"}
+    rename_map = {
+        "datetime": "timestamp",
+        "date": "timestamp",
+        "time": "timestamp",
+        "o": "open",
+        "h": "high",
+        "l": "low",
+        "c": "close",
+        "vol": "volume",
+    }
     for source, target in rename_map.items():
         if source in df.columns and target not in df.columns:
             df = df.rename(columns={source: target})
@@ -28,12 +37,18 @@ def prepare_ohlcv(data: Any) -> pd.DataFrame:
     for column in ["open", "high", "low", "close", "volume"]:
         df[column] = pd.to_numeric(df[column], errors="coerce")
 
-    return df.dropna(subset=["timestamp", "open", "high", "low", "close"]).drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+    return (
+        df.dropna(subset=["timestamp", "open", "high", "low", "close"])
+        .drop_duplicates(subset=["timestamp"])
+        .sort_values("timestamp")
+        .reset_index(drop=True)
+    )
 
 
 def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
+
     out = df.copy()
     out["bar_range"] = (out["high"] - out["low"]).clip(lower=0.0)
     out["body_size"] = (out["close"] - out["open"]).abs()
@@ -49,6 +64,7 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["rsi"] = rsi(out["close"], 14)
     out["session_day"] = out["timestamp"].dt.strftime("%Y-%m-%d")
     out["vwap"] = session_vwap(out)
+    out["atr_14"] = atr(out, 14)
     out["avg_range_5"] = out["bar_range"].rolling(5, min_periods=1).mean()
     out["recent_high"] = out["high"].shift(1).rolling(6, min_periods=2).max()
     out["recent_low"] = out["low"].shift(1).rolling(6, min_periods=2).min()
@@ -71,6 +87,19 @@ def rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return (100.0 - (100.0 / (1.0 + rs))).fillna(50.0)
 
 
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    previous_close = df["close"].shift(1)
+    true_range = pd.concat(
+        [
+            df["high"] - df["low"],
+            (df["high"] - previous_close).abs(),
+            (df["low"] - previous_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return true_range.ewm(alpha=1 / int(period), adjust=False).mean().fillna(df["bar_range"])
+
+
 def session_vwap(df: pd.DataFrame) -> pd.Series:
     typical_price = (df["high"] + df["low"] + df["close"]) / 3.0
     volume = df["volume"].fillna(0.0)
@@ -90,9 +119,17 @@ class IndicatorService:
         return rsi(close, period)
 
     def macd(self, close: pd.Series, fast: int = 9, slow: int = 21, signal: int = 9) -> pd.DataFrame:
-        macd_line = ema(close, fast) - ema(close, slow)
+        fast_ema = ema(close, fast)
+        slow_ema = ema(close, slow)
+        macd_line = fast_ema - slow_ema
         signal_line = ema(macd_line, signal)
-        return pd.DataFrame({"macd": macd_line, "macd_signal": signal_line, "macd_hist": macd_line - signal_line})
+        return pd.DataFrame(
+            {
+                "macd": macd_line,
+                "macd_signal": signal_line,
+                "macd_hist": macd_line - signal_line,
+            }
+        )
 
     def vwap(self, df: pd.DataFrame) -> pd.Series:
         return session_vwap(df)
