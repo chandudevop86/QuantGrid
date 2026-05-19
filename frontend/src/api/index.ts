@@ -6,6 +6,7 @@ export type SignalPayload = {
   capital: number;
   risk_pct: number;
   rr_ratio?: number;
+  include_diagnostics?: boolean;
   candles: Array<{
     timestamp?: string;
     open: number;

@@ -305,3 +305,63 @@ def validate_signals(
         return [], source_tag
 
     return [max(valid_signals, key=_quality_rank)], source_tag
+
+
+def diagnose_signal_run(
+    signals: list[StrategySignal],
+    *,
+    symbol: str,
+    candles: list[dict[str, Any]],
+    candle_source: str | None,
+) -> list[str]:
+    diagnostics: list[str] = []
+    source_tag = data_source_tag(candle_source)
+    latest = _latest_candle(candles)
+
+    if latest is None:
+        return ["No candle data available for diagnostics."]
+    if candle_source != LIVE_SOURCE:
+        diagnostics.append(f"Market data source is {source_tag}; validator requires live yahoo-finance candles.")
+    if not _is_recent(latest):
+        diagnostics.append("Latest candle is stale or outside the live 5-minute validation window.")
+
+    if not signals:
+        diagnostics.append("Strategy generated no raw setup from the supplied candles.")
+        return diagnostics
+
+    price_response = get_price(symbol)
+    market_price = price_response.get("price")
+    if price_response.get("source") != LIVE_SOURCE:
+        diagnostics.append("Live market price is unavailable; signal cannot be market-aligned.")
+    if not _finite_number(market_price):
+        diagnostics.append("Market price is not a finite number.")
+
+    for signal in signals:
+        prefix = f"{signal.strategy_name} {signal.side}"
+        reasons: list[str] = []
+        if not _matches_latest_candle(signal, latest):
+            reasons.append("signal is not on the latest candle")
+        if not _is_valid_trade_shape(signal):
+            reasons.append("entry/stop/target shape is invalid")
+        if not _valid_indicator_metadata(signal.metadata):
+            reasons.append("indicator metadata is missing or invalid")
+        if _finite_number(market_price) and not _is_market_aligned(signal, float(market_price)):
+            reasons.append("entry is too far from live market price")
+        if _score(signal) < MIN_SIGNAL_SCORE:
+            reasons.append(f"score {_score(signal):.1f} is below validator threshold {MIN_SIGNAL_SCORE:.1f}")
+        if _risk_reward(signal) < MIN_RISK_REWARD:
+            reasons.append(f"RR {_risk_reward(signal):.2f} is below {MIN_RISK_REWARD:.2f}")
+        if _stop_distance(signal) > MAX_STOP_DISTANCE:
+            reasons.append(f"stop distance {_stop_distance(signal) * 100:.2f}% exceeds {MAX_STOP_DISTANCE * 100:.2f}%")
+        if not _trend_aligned(signal):
+            reasons.append("trend alignment failed")
+        if not _momentum_aligned(signal):
+            reasons.append("RSI/MACD momentum alignment failed")
+        if not _zone_confirmed(signal):
+            reasons.append("zone/FVG/supply-demand confluence not present")
+        if reasons:
+            diagnostics.append(f"{prefix} rejected: {', '.join(reasons)}.")
+
+    if not diagnostics:
+        diagnostics.append("Raw signal passed local diagnostics but was not selected by final quality ranking.")
+    return diagnostics

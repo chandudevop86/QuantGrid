@@ -39,6 +39,7 @@ export default function Strategies() {
           const signal = signalsByStrategy[strategy];
           const hasSignalError = Boolean(signal?.error);
           const signals = Array.isArray(signal?.data) ? signal.data : [];
+          const diagnostics = Array.isArray(signal?.diagnostics) ? signal.diagnostics : [];
           const hasSignals = signals.length > 0;
           const updatedAt = signal?.updated_at
             ? new Date(signal.updated_at).toLocaleTimeString()
@@ -69,12 +70,12 @@ export default function Strategies() {
                     Candles
                   </span>
                   <span>
-                    <strong>{signals.length}</strong>
-                    Signals
+                    <strong>{signal.validated_signals ?? signals.length}</strong>
+                    Validated
                   </span>
                   <span>
-                    <strong>{formatMarketSource(signal.market_data?.source)}</strong>
-                    Source
+                    <strong>{signal.raw_signals ?? signals.length}</strong>
+                    Raw
                   </span>
                 </div>
               )}
@@ -85,9 +86,17 @@ export default function Strategies() {
                 </div>
               )}
 
+              {!hasSignalError && diagnostics.length > 0 && (
+                <div className="diagnostic-list" role="status" aria-label={`${formatStrategyName(strategy)} diagnostics`}>
+                  {diagnostics.slice(0, 4).map((item, index) => (
+                    <div key={`${strategy}-diagnostic-${index}`}>{item}</div>
+                  ))}
+                </div>
+              )}
+
               <pre>
                 {signal
-                  ? JSON.stringify(hasSignalError ? signal : signals, null, 2)
+                  ? JSON.stringify(hasSignalError ? signal : { signals, diagnostics }, null, 2)
                   : "Waiting for the first signal response..."}
               </pre>
             </div>

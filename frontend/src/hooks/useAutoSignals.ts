@@ -3,6 +3,9 @@ import { api } from "../api";
 
 type AutoSignalState = {
   data?: any;
+  diagnostics?: string[];
+  raw_signals?: number;
+  validated_signals?: number;
   candles_analyzed?: number;
   updated_at?: string;
   market_data?: {
@@ -37,12 +40,18 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
           capital: 100000,
           risk_pct: 1,
           rr_ratio: 2,
+          include_diagnostics: true,
           candles,
         });
+        const signals = Array.isArray(result) ? result : result?.signals ?? [];
 
         if (isMounted) {
           setSignal({
-            data: result,
+            data: signals,
+            diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+            raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
+            validated_signals:
+              typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
             candles_analyzed: candles.length,
             updated_at: new Date().toISOString(),
             market_data: {
@@ -100,11 +109,17 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
               capital: 100000,
               risk_pct: 1,
               rr_ratio: 2,
+              include_diagnostics: true,
               candles,
             });
+            const signals = Array.isArray(result) ? result : result?.signals ?? [];
 
             nextSignals[strategy] = {
-              data: result,
+              data: signals,
+              diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+              raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
+              validated_signals:
+                typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
               candles_analyzed: candles.length,
               updated_at: updatedAt,
               market_data: {
