@@ -50,11 +50,13 @@ Live market prices and candles are stored in SQLite at
 `services/trading-service/Backend/data/market_data.sqlite3`; set
 `MARKET_DATA_DB_FILE` to move this database.
 
-Authentication is token based. Configure users with `QUANTGRID_USERS` as a
-comma-separated list of `username:password:role` entries, and set
-`QUANTGRID_AUTH_SECRET` to a strong secret. If `QUANTGRID_USERS` is not set, the
-local fallback logins are `admin:admin123`, `trader:trader123`,
-`analyst:analyst123`, and `viewer:viewer`.
+Authentication is token based. Set `QUANTGRID_AUTH_SECRET` to a strong secret
+before starting the API. Configure bootstrap users with `QUANTGRID_USERS` as a
+comma-separated list of `username:password:role` entries. Users created in the UI
+are stored in SQLite at `services/trading-service/Backend/data/auth.sqlite3`;
+set `QUANTGRID_AUTH_DB_FILE` to move this database. Local fallback logins
+(`admin:admin123`, `trader:trader123`, `analyst:analyst123`, `viewer:viewer`)
+exist only when `QUANTGRID_DEV_MODE=true`.
 
 Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
 offline demos where generated fallback prices and candles are acceptable.

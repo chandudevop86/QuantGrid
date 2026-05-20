@@ -7,6 +7,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
+from Backend.presentation.api.auth import init_auth_store
 from Backend.presentation.api.websocket_manager import manager
 
 
@@ -38,6 +39,7 @@ def create_app():
 
     @app.on_event("startup")
     def startup():
+        init_auth_store()
         init_job_store()
         init_market_data_store()
         manager.set_loop(asyncio.get_running_loop())
