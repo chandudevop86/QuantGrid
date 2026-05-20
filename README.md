@@ -46,6 +46,9 @@ python -m Backend.application.live_analysis_worker
 Set `CORS_ALLOWED_ORIGINS` as a comma-separated list in production. Set
 `JOB_STORE_DB_FILE` if the SQLite job database should live outside the default
 `services/trading-service/data/dashboard_jobs.sqlite3` path.
+Live market prices and candles are stored in SQLite at
+`services/trading-service/Backend/data/market_data.sqlite3`; set
+`MARKET_DATA_DB_FILE` to move this database.
 
 Authentication is token based. Configure users with `QUANTGRID_USERS` as a
 comma-separated list of `username:password:role` entries, and set
@@ -82,6 +85,8 @@ Useful routes:
 - `POST /execution/order`
 - `GET /market/price`
 - `GET /market/candles/{symbol}`
+- `GET /market/stored/{symbol}`
+- `GET /market/store/status`
 
 ## Infrastructure
 

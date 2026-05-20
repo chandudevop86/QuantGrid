@@ -23,6 +23,7 @@ export default function Candles() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedInterval, setSelectedInterval] = useState(intervals[0].value);
+  const [storeStatus, setStoreStatus] = useState<any>(null);
 
   const loadCandles = useCallback((showInitialLoading = false) => {
     if (showInitialLoading) {
@@ -41,6 +42,10 @@ export default function Candles() {
         setVolumeStatus(data?.volume_status ?? null);
         setWarning(data?.warning ?? null);
         setLastRefreshed(new Date());
+        return api.marketStoreStatus("NIFTY", selectedInterval);
+      })
+      .then((status) => {
+        setStoreStatus(status);
       })
       .catch((err: any) => {
         const message = err?.message === "Network Error"
@@ -102,6 +107,15 @@ export default function Candles() {
           <span className="metric-label">Latest Volume</span>
           <strong className="metric-value">{latestVolume}</strong>
           <span className="metric-helper">{volumeHelper}</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">Stored Live Data</span>
+          <strong className="metric-value">{storeStatus?.candles ?? candles.length}</strong>
+          <span className="metric-helper">
+            {storeStatus?.latest_candle_at
+              ? `Latest ${new Date(storeStatus.latest_candle_at).toLocaleTimeString()}`
+              : "SQLite market store"}
+          </span>
         </div>
       </div>
 

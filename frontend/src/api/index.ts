@@ -28,6 +28,10 @@ export const api = {
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
   candles: (symbol: string, interval = "5m") =>
     API.get(`/market/candles/${symbol}`, { params: { interval } }).then((res) => res.data),
+  storedCandles: (symbol: string, interval = "1m", limit = 100) =>
+    API.get(`/market/stored/${symbol}`, { params: { interval, limit } }).then((res) => res.data),
+  marketStoreStatus: (symbol = "NIFTY", interval = "1m") =>
+    API.get("/market/store/status", { params: { symbol, interval } }).then((res) => res.data),
   getPrice: () => API.get("/market/price").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),

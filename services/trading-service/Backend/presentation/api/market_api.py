@@ -9,6 +9,13 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from Backend.application.market_data_store import (
+    latest_candles,
+    latest_price_tick,
+    market_data_summary,
+    store_candles,
+    store_price_tick,
+)
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["market"])
@@ -31,6 +38,24 @@ def _market_data_unavailable(exc: Exception) -> HTTPException:
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail=f"Live market data unavailable: {exc}",
     )
+
+
+def _stored_candle_response(symbol: str, interval: str, period: str, limit: int) -> dict[str, Any] | None:
+    candles = latest_candles(symbol, interval, limit)
+    if not candles:
+        return None
+
+    return {
+        "symbol": symbol.upper(),
+        "market_symbol": _market_symbol(symbol),
+        "interval": interval,
+        "period": period,
+        "source": "stored-live-cache",
+        "volume_status": _volume_status(_market_symbol(symbol), candles),
+        "candles": candles,
+        "cached": True,
+        "warning": "Live market data provider is unavailable; served latest stored live candles.",
+    }
 
 
 def _market_symbol(symbol: str) -> str:
@@ -134,7 +159,7 @@ def get_price(
         if price is not None and previous_close:
             change_pct = round(((float(price) - float(previous_close)) / float(previous_close)) * 100, 2)
 
-        return {
+        payload = {
             "symbol": symbol.upper(),
             "market_symbol": meta.get("symbol", _market_symbol(symbol)),
             "price": round(float(price), 2) if price is not None else None,
@@ -143,7 +168,13 @@ def get_price(
             "source": "yahoo-finance",
             "exchange_timezone": meta.get("timezone"),
         }
+        store_price_tick(payload)
+        return payload
     except Exception as exc:
+        cached = latest_price_tick(symbol)
+        if cached:
+            cached["warning"] = "Live market data provider is unavailable; served latest stored live price."
+            return cached
         if not _allow_sample_market_data():
             raise _market_data_unavailable(exc) from exc
         latest = _sample_candles(symbol, limit=1)[-1]
@@ -180,7 +211,7 @@ def get_candles(
             raise RuntimeError("No complete candles returned")
         market_symbol = chart.get("meta", {}).get("symbol", _market_symbol(symbol))
 
-        return {
+        payload = {
             "symbol": symbol.upper(),
             "market_symbol": market_symbol,
             "interval": interval,
@@ -189,7 +220,18 @@ def get_candles(
             "volume_status": _volume_status(market_symbol, candles),
             "candles": candles,
         }
+        store_candles(
+            symbol=symbol,
+            market_symbol=market_symbol,
+            interval=interval,
+            source="yahoo-finance",
+            candles=candles,
+        )
+        return payload
     except Exception as exc:
+        cached = _stored_candle_response(symbol, interval, period, limit)
+        if cached:
+            return cached
         if not _allow_sample_market_data():
             raise _market_data_unavailable(exc) from exc
         return {
@@ -202,3 +244,28 @@ def get_candles(
             "warning": f"Live market data unavailable: {exc}",
             "candles": _sample_candles(symbol, limit=min(limit, 100)),
         }
+
+
+@router.get("/stored/{symbol}")
+def get_stored_candles(
+    symbol: str,
+    interval: str = "1m",
+    limit: int = 100,
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+):
+    limit = max(1, min(limit, 500))
+    return {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "source": "stored-live-cache",
+        "candles": latest_candles(symbol, interval, limit),
+    }
+
+
+@router.get("/store/status")
+def get_market_store_status(
+    symbol: str = "NIFTY",
+    interval: str = "1m",
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops")),
+):
+    return market_data_summary(symbol, interval)
