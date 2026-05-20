@@ -16,6 +16,21 @@ export default function ExecutionForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const demoSignal = {
+    strategy_name: "demo",
+    symbol: "NIFTY",
+    side: "BUY",
+    entry_price: 22500,
+    stop_loss: 22450,
+    target_price: 22600,
+    signal_time: new Date().toISOString(),
+    metadata: {
+      quantity: 1,
+      mode: "PAPER",
+      account_id: "paper-demo",
+    },
+  };
+
   const submit = async () => {
     try {
       setLoading(true);
@@ -79,6 +94,31 @@ export default function ExecutionForm() {
     }
   };
 
+  const submitDemo = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setResult(null);
+      setSignal(demoSignal);
+
+      const res = await api.executeOrder(demoSignal);
+      setResult({
+        ...res,
+        strategy_checked: "demo",
+        signal: demoSignal,
+        note: "Demo signal for paper execution testing only.",
+      });
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.detail ??
+        err?.message ??
+        "Demo execution failed";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="form-panel execution-panel">
       <div className="form-panel-header">
@@ -114,6 +154,15 @@ export default function ExecutionForm() {
         className="primary-action"
       >
         {loading ? "Scanning..." : "Auto Execute Trade"}
+      </button>
+
+      <button
+        type="button"
+        onClick={submitDemo}
+        disabled={loading}
+        className="refresh-button"
+      >
+        Demo Paper Signal
       </button>
 
       {error && (

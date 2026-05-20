@@ -12,6 +12,7 @@ function isActiveJob(job: any) {
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [marketStore, setMarketStore] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const { jobs, error: jobsError } = useLiveJobs();
@@ -30,14 +31,20 @@ export default function Dashboard() {
     setError(null);
     if (!isAuthenticated) {
       setSummary(null);
+      setMarketStore(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    api
-      .getSummary()
-      .then(setSummary)
+    Promise.all([
+      api.getSummary(),
+      api.marketStoreStatus("NIFTY", "1m"),
+    ])
+      .then(([summaryData, marketStoreData]) => {
+        setSummary(summaryData);
+        setMarketStore(marketStoreData);
+      })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
   }, [isAuthenticated]);
@@ -83,6 +90,11 @@ export default function Dashboard() {
               label="Open Positions"
               value={summary?.open_positions ?? 0}
               helper="Paper execution mode"
+            />
+            <MetricCard
+              label="Stored Live Candles"
+              value={marketStore?.candles ?? 0}
+              helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
             />
           </div>
 

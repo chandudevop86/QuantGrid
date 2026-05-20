@@ -23,6 +23,11 @@ function formatMarketSource(source?: string) {
   return source ?? "-";
 }
 
+function noTradeSummary(diagnostics: string[]) {
+  if (diagnostics.length === 0) return "No validated signal right now.";
+  return diagnostics[0].replace(/\.$/, "");
+}
+
 export default function Strategies() {
   const strategyList = useMemo(() => strategies, []);
   const { signalsByStrategy, loading } = useStrategySignals(strategyList, 5000);
@@ -82,7 +87,14 @@ export default function Strategies() {
 
               {!hasSignalError && signal && !hasSignals && (
                 <div className="alert alert-warning" role="status">
-                  No validated signal right now.
+                  No trade: {noTradeSummary(diagnostics)}.
+                </div>
+              )}
+
+              {!hasSignalError && signal && (
+                <div className="diagnostic-list" role="status">
+                  <div>Data source: {formatMarketSource(signal.market_data?.source)}</div>
+                  <div>Validated {signal.validated_signals ?? 0} of {signal.raw_signals ?? 0} raw setups.</div>
                 </div>
               )}
 

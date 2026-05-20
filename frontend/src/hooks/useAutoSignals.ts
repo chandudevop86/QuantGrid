@@ -16,6 +16,23 @@ type AutoSignalState = {
   error?: string;
 };
 
+async function loadStrategyCandles() {
+  const [ltf, mtf, htf, daily] = await Promise.all([
+    api.candles("NIFTY", "1m"),
+    api.candles("NIFTY", "15m"),
+    api.candles("NIFTY", "60m"),
+    api.candles("NIFTY", "1d"),
+  ]);
+
+  return {
+    candleData: ltf,
+    candles: Array.isArray(ltf?.candles) ? ltf.candles : [],
+    mtf_candles: Array.isArray(mtf?.candles) ? mtf.candles : [],
+    htf_candles: Array.isArray(htf?.candles) ? htf.candles : [],
+    daily_candles: Array.isArray(daily?.candles) ? daily.candles : [],
+  };
+}
+
 export function useAutoSignals(strategy: string | null, interval = 5000) {
   const [signal, setSignal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -32,8 +49,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
       try {
         setLoading(true);
 
-        const candleData = await api.candles("NIFTY", "1m");
-        const candles = Array.isArray(candleData?.candles) ? candleData.candles : [];
+        const { candleData, candles, mtf_candles, htf_candles, daily_candles } = await loadStrategyCandles();
         const result = await api.runSignals({
           strategy_name: strategy,
           symbol: "NIFTY",
@@ -42,6 +58,9 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
           rr_ratio: 2,
           include_diagnostics: true,
           candles,
+          mtf_candles,
+          htf_candles,
+          daily_candles,
         });
         const signals = Array.isArray(result) ? result : result?.signals ?? [];
 
@@ -96,8 +115,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
       try {
         setLoading(true);
 
-        const candleData = await api.candles("NIFTY", "1m");
-        const candles = Array.isArray(candleData?.candles) ? candleData.candles : [];
+        const { candleData, candles, mtf_candles, htf_candles, daily_candles } = await loadStrategyCandles();
         const updatedAt = new Date().toISOString();
         const nextSignals: Record<string, AutoSignalState> = {};
 
@@ -111,6 +129,9 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
               rr_ratio: 2,
               include_diagnostics: true,
               candles,
+              mtf_candles,
+              htf_candles,
+              daily_candles,
             });
             const signals = Array.isArray(result) ? result : result?.signals ?? [];
 

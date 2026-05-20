@@ -15,6 +15,9 @@ export type SignalPayload = {
     close: number;
     volume?: number;
   }>;
+  htf_candles?: SignalPayload["candles"];
+  mtf_candles?: SignalPayload["candles"];
+  daily_candles?: SignalPayload["candles"];
 };
 
 export const api = {
