@@ -18,6 +18,10 @@ export default function Topbar() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
+  const [newUsername, setNewUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<Role>("viewer");
+  const [userMessage, setUserMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const syncRole = () => {
@@ -71,6 +75,25 @@ export default function Topbar() {
     setMode(nextMode);
   };
 
+  const createUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setUserMessage(null);
+
+    try {
+      const created = await api.createUser({
+        username: newUsername,
+        password: newPassword,
+        role: newRole,
+      });
+      setUserMessage(`Created ${created.username} as ${roleLabels[created.role as Role]}.`);
+      setNewUsername("");
+      setNewPassword("");
+      setNewRole("viewer");
+    } catch (error: any) {
+      setUserMessage(error?.response?.data?.detail ?? error?.message ?? "User creation failed");
+    }
+  };
+
   return (
     <header className="topbar">
       <div>
@@ -117,6 +140,36 @@ export default function Topbar() {
           ))}
         </div>
       </div>
+      {isAuthenticated && role === "admin" && (
+        <form className="create-user-form" onSubmit={createUser}>
+          <input
+            value={newUsername}
+            onChange={(event) => setNewUsername(event.target.value)}
+            placeholder="New username"
+            aria-label="New username"
+          />
+          <input
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            placeholder="New password"
+            type="password"
+            aria-label="New password"
+          />
+          <select
+            value={newRole}
+            onChange={(event) => setNewRole(event.target.value as Role)}
+            aria-label="New user role"
+          >
+            {roles.map((item) => (
+              <option key={item} value={item}>
+                {roleLabels[item]}
+              </option>
+            ))}
+          </select>
+          <button type="submit">Create User</button>
+          {userMessage && <span>{userMessage}</span>}
+        </form>
+      )}
     </header>
   );
 }
