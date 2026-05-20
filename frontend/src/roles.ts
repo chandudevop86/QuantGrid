@@ -35,6 +35,22 @@ export function setCurrentRole(role: Role) {
   window.dispatchEvent(new CustomEvent("quantgrid-role-change", { detail: role }));
 }
 
+export function setCurrentAuth(role: Role, token: string) {
+  window.localStorage.setItem("quantgrid_role", role);
+  window.localStorage.setItem("quantgrid_token", token);
+  window.dispatchEvent(new CustomEvent("quantgrid-role-change", { detail: role }));
+}
+
+export function clearCurrentAuth() {
+  window.localStorage.removeItem("quantgrid_role");
+  window.localStorage.removeItem("quantgrid_token");
+  window.dispatchEvent(new CustomEvent("quantgrid-role-change", { detail: "viewer" }));
+}
+
+export function hasAuthToken() {
+  return typeof window !== "undefined" && Boolean(window.localStorage.getItem("quantgrid_token"));
+}
+
 export function canAccessRoute(role: Role, path: string) {
   return routeRoles[path]?.includes(role) ?? false;
 }

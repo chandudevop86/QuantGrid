@@ -47,6 +47,18 @@ Set `CORS_ALLOWED_ORIGINS` as a comma-separated list in production. Set
 `JOB_STORE_DB_FILE` if the SQLite job database should live outside the default
 `services/trading-service/data/dashboard_jobs.sqlite3` path.
 
+Authentication is token based. Configure users with `QUANTGRID_USERS` as a
+comma-separated list of `username:password:role` entries, and set
+`QUANTGRID_AUTH_SECRET` to a strong secret. If `QUANTGRID_USERS` is not set, only
+`viewer:viewer` is available for local read-only access.
+
+Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
+offline demos where generated fallback prices and candles are acceptable.
+
+Execution is paper-only unless live trading is explicitly enabled. The current
+API rejects live execution because no live broker order adapter is wired into the
+execution endpoint yet.
+
 ## Websocket Updates
 
 ```bash
@@ -77,3 +89,4 @@ docker compose -f Docker-compose.yml up -d
 ```
 
 This starts Kafka, Zookeeper, Redis, and Postgres for the local services.
+Set `POSTGRES_PASSWORD` before starting the stack.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { getCurrentMode } from "../mode";
 import { createSocket } from "../socket";
 
 const strategies = [
@@ -56,6 +57,7 @@ export default function LiveAnalysis() {
         risk_pct: 1,
         rr_ratio: 2,
         auto_trade: autoTrade,
+        execution_mode: getCurrentMode(),
       });
 
       setJobId(res.job_id);

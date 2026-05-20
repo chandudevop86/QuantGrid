@@ -18,6 +18,8 @@ export type SignalPayload = {
 };
 
 export const api = {
+  login: (payload: { username: string; password: string }) =>
+    API.post("/auth/login", payload).then((res) => res.data),
   health: () => API.get("/health").then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),

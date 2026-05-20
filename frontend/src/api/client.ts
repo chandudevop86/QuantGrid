@@ -13,16 +13,16 @@ const API = axios.create({
 });
 
 API.interceptors.request.use((config) => {
-  const role =
-    typeof window === "undefined"
-      ? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer"
-      : window.localStorage.getItem("quantgrid_role") ?? import.meta.env.VITE_DEFAULT_ROLE ?? "viewer";
   const mode =
     typeof window === "undefined"
       ? import.meta.env.VITE_DEFAULT_MODE ?? "paper"
       : window.localStorage.getItem("quantgrid_mode") ?? import.meta.env.VITE_DEFAULT_MODE ?? "paper";
+  const token =
+    typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_token");
 
-  config.headers.set("X-QuantGrid-Role", role);
+  if (token) {
+    config.headers.set("Authorization", `Bearer ${token}`);
+  }
   config.headers.set("X-QuantGrid-Mode", mode);
   return config;
 });

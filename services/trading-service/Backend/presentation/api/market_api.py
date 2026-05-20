@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from Backend.presentation.api.roles import require_roles
 
@@ -19,6 +20,17 @@ YAHOO_SYMBOLS = {
     "BANKNIFTY": "^NSEBANK",
     "NIFTYBANK": "^NSEBANK",
 }
+
+
+def _allow_sample_market_data() -> bool:
+    return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
+
+
+def _market_data_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Live market data unavailable: {exc}",
+    )
 
 
 def _market_symbol(symbol: str) -> str:
@@ -132,6 +144,8 @@ def get_price(
             "exchange_timezone": meta.get("timezone"),
         }
     except Exception as exc:
+        if not _allow_sample_market_data():
+            raise _market_data_unavailable(exc) from exc
         latest = _sample_candles(symbol, limit=1)[-1]
         return {
             "symbol": symbol.upper(),
@@ -176,6 +190,8 @@ def get_candles(
             "candles": candles,
         }
     except Exception as exc:
+        if not _allow_sample_market_data():
+            raise _market_data_unavailable(exc) from exc
         return {
             "symbol": symbol.upper(),
             "market_symbol": _market_symbol(symbol),

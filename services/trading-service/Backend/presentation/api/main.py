@@ -17,10 +17,6 @@ def _allowed_origins() -> list[str]:
     return [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "http://chandudevopai.shop:5173",
-        "https://chandudevopai.shop:5173",
-        "https://chandudevopai.shop",
-        "http://13.222.179.171:5173",
     ]
 
 

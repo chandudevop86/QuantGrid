@@ -31,6 +31,7 @@ class LiveAnalysisPayload(BaseModel):
     risk_pct: float = 1
     rr_ratio: float = 2
     auto_trade: bool = False
+    execution_mode: str = "paper"
 
 
 def _serialize_order(order: Order) -> dict[str, Any]:
@@ -60,6 +61,10 @@ def _prepare_strategy_candles(candles_response: dict[str, Any]) -> list[dict[str
 
 
 def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
+    execution_mode = payload.execution_mode.strip().lower()
+    if execution_mode != "paper":
+        raise ValueError("Live auto-trading is disabled; only paper execution is supported.")
+
     candles_response = get_candles(
         payload.symbol,
         interval=payload.interval,
@@ -94,6 +99,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         "data_source": data_source,
         "candles_analyzed": len(candles),
         "auto_trade": payload.auto_trade,
+        "execution_mode": execution_mode,
         "market_data": {
             "source": candles_response.get("source"),
             "market_symbol": candles_response.get("market_symbol"),

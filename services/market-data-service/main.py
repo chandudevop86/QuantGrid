@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 
 app = FastAPI(title="QuantGrid Market Data Service")
 
@@ -17,6 +18,17 @@ YAHOO_SYMBOLS = {
     "BANKNIFTY": "^NSEBANK",
     "NIFTYBANK": "^NSEBANK",
 }
+
+
+def allow_sample_market_data() -> bool:
+    return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
+
+
+def market_data_unavailable(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Live market data unavailable: {exc}",
+    )
 
 
 def market_symbol(symbol: str) -> str:
@@ -131,6 +143,8 @@ def price(symbol: str):
             "exchange_timezone": meta.get("timezone"),
         }
     except Exception as exc:
+        if not allow_sample_market_data():
+            raise market_data_unavailable(exc) from exc
         latest = sample_candles(symbol, 1)[-1]
         return {
             "symbol": symbol.upper(),
@@ -164,6 +178,8 @@ def candles(symbol: str, interval: str = "1m", period: str = "1d", limit: int = 
             "candles": rows,
         }
     except Exception as exc:
+        if not allow_sample_market_data():
+            raise market_data_unavailable(exc) from exc
         return {
             "symbol": symbol.upper(),
             "market_symbol": market_symbol(symbol),

@@ -23,9 +23,9 @@ services:
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: quant
-      POSTGRES_PASSWORD: quant
-      POSTGRES_DB: quantgrid
+      POSTGRES_USER: ${POSTGRES_USER:-quant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-quantgrid}
     ports:
       - "5432:5432"
       #this is docker file

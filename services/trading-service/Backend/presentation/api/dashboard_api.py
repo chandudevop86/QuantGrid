@@ -24,7 +24,7 @@ def _present_job(job: dict) -> dict:
 
 
 @router.get("/summary")
-def summary():
+def summary(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
     return {
         "status": "ready",
         "open_positions": 0,
@@ -59,5 +59,5 @@ def create_live_analysis_job(
 
 
 @router.get("/live-analysis/jobs")
-def list_live_analysis_jobs():
+def list_live_analysis_jobs(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
     return {"jobs": [_present_job(job) for job in list_jobs()]}
