@@ -1,9 +1,10 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { canAccessRoute, getCurrentRole, hasAuthToken } from "../roles";
 
 export default function Sidebar() {
-  const role = getCurrentRole();
-  const authenticated = hasAuthToken();
+  const [role, setRole] = useState(getCurrentRole());
+  const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const navItems = [
     { to: "/", label: "Dashboard" },
     { to: "/candles", label: "Candles" },
@@ -13,6 +14,20 @@ export default function Sidebar() {
     { to: "/execution", label: "Execution" },
     { to: "/trade", label: "Trade" },
   ];
+
+  useEffect(() => {
+    const syncAuth = () => {
+      setRole(getCurrentRole());
+      setAuthenticated(hasAuthToken());
+    };
+
+    window.addEventListener("quantgrid-role-change", syncAuth);
+    window.addEventListener("storage", syncAuth);
+    return () => {
+      window.removeEventListener("quantgrid-role-change", syncAuth);
+      window.removeEventListener("storage", syncAuth);
+    };
+  }, []);
 
   return (
     <aside className="sidebar">

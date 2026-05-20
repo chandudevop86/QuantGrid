@@ -46,7 +46,6 @@ export default function Topbar() {
       setRole(response.role);
       setIsAuthenticated(true);
       setPassword("");
-      window.location.assign("/");
     } catch (error: any) {
       setAuthError(error?.response?.data?.detail ?? "Login failed");
     }
@@ -56,7 +55,6 @@ export default function Topbar() {
     clearCurrentAuth();
     setRole("viewer");
     setIsAuthenticated(false);
-    window.location.assign("/");
   };
 
   const changeMode = (nextMode: TradingMode) => {

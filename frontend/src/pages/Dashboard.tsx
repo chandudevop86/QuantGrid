@@ -13,15 +13,28 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const isAuthenticated = hasAuthToken();
+  const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const { jobs, error: jobsError } = useLiveJobs();
 
   useEffect(() => {
+    const syncAuth = () => setIsAuthenticated(hasAuthToken());
+    window.addEventListener("quantgrid-role-change", syncAuth);
+    window.addEventListener("storage", syncAuth);
+    return () => {
+      window.removeEventListener("quantgrid-role-change", syncAuth);
+      window.removeEventListener("storage", syncAuth);
+    };
+  }, []);
+
+  useEffect(() => {
+    setError(null);
     if (!isAuthenticated) {
+      setSummary(null);
       setLoading(false);
       return;
     }
 
+    setLoading(true);
     api
       .getSummary()
       .then(setSummary)
