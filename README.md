@@ -51,12 +51,16 @@ Live market prices and candles are stored in SQLite at
 `MARKET_DATA_DB_FILE` to move this database.
 
 Authentication is token based. Set `QUANTGRID_AUTH_SECRET` to a strong secret
-before starting the API. Configure bootstrap users with `QUANTGRID_USERS` as a
-comma-separated list of `username:password:role` entries. Users created in the UI
-are stored in SQLite at `services/trading-service/Backend/data/auth.sqlite3`;
-set `QUANTGRID_AUTH_DB_FILE` to move this database. Local fallback logins
-(`admin:admin123`, `trader:trader123`, `analyst:analyst123`, `viewer:viewer`)
-exist only when `QUANTGRID_DEV_MODE=true`.
+with at least 32 characters before starting the API. Users are stored in the
+configured database table `users`, with security events in `audit_logs`.
+
+Local-only seed users are allowed only when both `QUANTGRID_ENV=local` and
+`QUANTGRID_ALLOW_DEV_SEED_USERS=true` are set. Provide local seed users with
+`QUANTGRID_USERS=username:StrongPass1!:admin`. Do not use known default
+passwords.
+
+Production must set `DATABASE_URL=postgresql+psycopg://...`; production startup
+fails if `DATABASE_URL` is missing or points to SQLite.
 
 Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
 offline demos where generated fallback prices and candles are acceptable.
@@ -64,6 +68,9 @@ offline demos where generated fallback prices and candles are acceptable.
 Execution is paper-only unless live trading is explicitly enabled. The current
 API rejects live execution because no live broker order adapter is wired into the
 execution endpoint yet.
+
+Market data defaults to `QUANTGRID_MARKET_DATA_PROVIDER=yahoo`. Yahoo data is
+not trading-grade and should not be used for live execution.
 
 ## Websocket Updates
 

@@ -19,11 +19,13 @@ export const routeRoles: Record<string, Role[]> = {
   "/jobs": ["admin", "trader", "analyst", "viewer", "ops"],
   "/strategies": ["admin", "trader", "analyst"],
   "/trade": ["admin", "trader"],
+  "/admin/users": ["admin"],
 };
 
 type AuthClaims = {
   role?: string;
   exp?: number;
+  uid?: number;
 };
 
 function decodeAuthClaims(): AuthClaims | null {
@@ -49,6 +51,11 @@ export function getCurrentRole(): Role {
   const role = claims?.role ?? "viewer";
 
   return roles.includes(role as Role) ? (role as Role) : "viewer";
+}
+
+export function getCurrentUserId(): number | null {
+  const claims = decodeAuthClaims();
+  return typeof claims?.uid === "number" ? claims.uid : null;
 }
 
 export function setCurrentRole(role: Role) {

@@ -4,3 +4,9 @@ pandas
 kafka-python
 pydantic
 redis
+SQLAlchemy
+passlib[bcrypt]
+bcrypt<5
+psycopg[binary]
+pytest
+httpx

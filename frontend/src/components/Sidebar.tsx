@@ -13,6 +13,7 @@ export default function Sidebar() {
     { to: "/strategies", label: "Strategies" },
     { to: "/execution", label: "Execution" },
     { to: "/trade", label: "Trade" },
+    { to: "/admin/users", label: "Users" },
   ];
 
   useEffect(() => {

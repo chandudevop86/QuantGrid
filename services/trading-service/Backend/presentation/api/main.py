@@ -5,9 +5,11 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketDisconnect
 
+from Backend.core.config import validate_security_config
+from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
-from Backend.presentation.api.auth import init_auth_store
+from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
 from Backend.presentation.api.websocket_manager import manager
 
 
@@ -39,7 +41,10 @@ def create_app():
 
     @app.on_event("startup")
     def startup():
+        validate_security_config()
         init_auth_store()
+        with SessionLocal() as db:
+            seed_bootstrap_users(db)
         init_job_store()
         init_market_data_store()
         manager.set_loop(asyncio.get_running_loop())
@@ -62,8 +67,9 @@ def create_app():
     app.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 
     # Auth
-    from Backend.presentation.api.auth import router as auth_router
+    from Backend.presentation.api.auth import admin_router, router as auth_router
     app.include_router(auth_router, prefix="/auth")
+    app.include_router(admin_router)
 
     # Trading
     from Backend.presentation.api.trading_api import router as trading_router

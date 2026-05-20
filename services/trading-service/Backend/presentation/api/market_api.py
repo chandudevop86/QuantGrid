@@ -4,8 +4,6 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -16,18 +14,14 @@ from Backend.application.market_data_store import (
     store_candles,
     store_price_tick,
 )
+from Backend.infrastructure.data.market_data_provider import (
+    YAHOO_TRADING_GRADE_WARNING,
+    get_market_data_provider,
+    market_symbol,
+)
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["market"])
-
-YAHOO_SYMBOLS = {
-    "NIFTY": "^NSEI",
-    "NIFTY50": "^NSEI",
-    "NIFTY_50": "^NSEI",
-    "BANKNIFTY": "^NSEBANK",
-    "NIFTYBANK": "^NSEBANK",
-}
-
 
 def _allow_sample_market_data() -> bool:
     return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
@@ -59,29 +53,11 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
 
 
 def _market_symbol(symbol: str) -> str:
-    normalized = symbol.upper().replace(" ", "").replace("-", "_")
-    return YAHOO_SYMBOLS.get(normalized, symbol.upper())
+    return market_symbol(symbol)
 
 
 def _fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
-    yahoo_symbol = _market_symbol(symbol)
-    params = urlencode({
-        "range": period,
-        "interval": interval,
-        "includePrePost": "false",
-    })
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(yahoo_symbol, safe='')}?{params}"
-    request = Request(url, headers={"User-Agent": "QuantGrid/1.0"})
-
-    with urlopen(request, timeout=10) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    result = payload.get("chart", {}).get("result") or []
-    if not result:
-        error = payload.get("chart", {}).get("error") or "No market data returned"
-        raise RuntimeError(str(error))
-
-    return result[0]
+    return get_market_data_provider().fetch_chart(symbol, interval=interval, period=period)
 
 
 def _sample_candles(symbol: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -167,6 +143,7 @@ def get_price(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": "yahoo-finance",
             "exchange_timezone": meta.get("timezone"),
+            "provider_warning": YAHOO_TRADING_GRADE_WARNING,
         }
         store_price_tick(payload)
         return payload
@@ -218,6 +195,7 @@ def get_candles(
             "period": period,
             "source": "yahoo-finance",
             "volume_status": _volume_status(market_symbol, candles),
+            "provider_warning": YAHOO_TRADING_GRADE_WARNING,
             "candles": candles,
         }
         store_candles(

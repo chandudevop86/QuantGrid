@@ -24,7 +24,13 @@ export const api = {
   login: (payload: { username: string; password: string }) =>
     API.post("/auth/login", payload).then((res) => res.data),
   createUser: (payload: { username: string; password: string; role: string }) =>
-    API.post("/auth/users", payload).then((res) => res.data),
+    API.post("/admin/users/create", payload).then((res) => res.data),
+  listUsers: () => API.get("/admin/users").then((res) => res.data),
+  resetUserPassword: (userId: number, password: string) =>
+    API.post(`/admin/users/${userId}/reset-password`, { password }).then((res) => res.data),
+  changeUserPassword: (userId: number, oldPassword: string | null, newPassword: string) =>
+    API.post(`/admin/users/${userId}/change-password`, { old_password: oldPassword, new_password: newPassword }).then((res) => res.data),
+  deleteUser: (userId: number) => API.delete(`/admin/users/${userId}`).then((res) => res.data),
   health: () => API.get("/health").then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),

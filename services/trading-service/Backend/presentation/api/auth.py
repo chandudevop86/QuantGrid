@@ -1,28 +1,28 @@
 from __future__ import annotations
 
 import base64
-import hashlib
-import hmac
 import json
-import os
-import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from Backend.core.config import get_settings
+from Backend.core.database import get_db, init_database
+from Backend.domain.security.audit import request_ip, write_audit_log
+from Backend.domain.security.models import User
+from Backend.domain.security.passwords import hash_password, validate_password_policy, verify_password
+from Backend.domain.security.rate_limit import rate_limiter
 
 router = APIRouter()
+admin_router = APIRouter()
 
-
-TOKEN_TTL_SECONDS = int(os.getenv("QUANTGRID_TOKEN_TTL_SECONDS", "28800"))
+TOKEN_TTL_SECONDS = 28800
 ALL_ROLES = {"admin", "trader", "analyst", "viewer", "ops"}
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-AUTH_DB_FILE = Path(os.getenv("QUANTGRID_AUTH_DB_FILE", DATA_DIR / "auth.sqlite3"))
-LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-MAX_LOGIN_ATTEMPTS = int(os.getenv("QUANTGRID_MAX_LOGIN_ATTEMPTS", "8"))
-LOGIN_WINDOW_SECONDS = int(os.getenv("QUANTGRID_LOGIN_WINDOW_SECONDS", "300"))
+TRADE_EXECUTE_ROLES = {"admin", "trader"}
 
 
 class LoginRequest(BaseModel):
@@ -43,145 +43,23 @@ class CreateUserRequest(BaseModel):
     role: str
 
 
+class ResetPasswordRequest(BaseModel):
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str | None = None
+    new_password: str
+
+
 class UserResponse(BaseModel):
+    id: int
     username: str
     role: str
 
 
-def _auth_secret() -> bytes:
-    secret = os.getenv("QUANTGRID_AUTH_SECRET")
-    if not secret:
-        if os.getenv("QUANTGRID_DEV_MODE", "false").strip().lower() not in {"1", "true", "yes"}:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="QUANTGRID_AUTH_SECRET must be set.",
-            )
-        secret = "quantgrid-local-dev-secret"
-    return secret.encode("utf-8")
-
-
-def _password_hash(username: str, password: str) -> str:
-    message = f"{username}:{password}".encode("utf-8")
-    return hmac.new(_auth_secret(), message, hashlib.sha256).hexdigest()
-
-
-def _env_users() -> dict[str, dict[str, str]]:
-    configured = os.getenv("QUANTGRID_USERS")
-    if not configured and os.getenv("QUANTGRID_DEV_MODE", "false").strip().lower() in {"1", "true", "yes"}:
-        configured = "admin:admin123:admin,trader:trader123:trader,analyst:analyst123:analyst,viewer:viewer:viewer"
-
-    users: dict[str, dict[str, str]] = {}
-    if not configured:
-        return users
-
-    for item in configured.split(","):
-        parts = [part.strip() for part in item.split(":")]
-        if len(parts) != 3:
-            continue
-        username, password, role = parts
-        role = role.lower()
-        if username and password and role in ALL_ROLES:
-            users[username] = {
-                "password_hash": _password_hash(username, password),
-                "role": role,
-            }
-
-    return users
-
-
-def _connect() -> sqlite3.Connection:
-    AUTH_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(AUTH_DB_FILE, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 30000")
-    return connection
-
-
 def init_auth_store() -> None:
-    with _connect() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS auth_users (
-                username TEXT PRIMARY KEY,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL,
-                created_by TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS auth_audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                actor TEXT NOT NULL,
-                action TEXT NOT NULL,
-                target_username TEXT,
-                target_role TEXT,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-
-
-def _read_user_store() -> dict[str, dict[str, str]]:
-    init_auth_store()
-    users: dict[str, dict[str, str]] = {}
-    with _connect() as connection:
-        rows = connection.execute(
-            "SELECT username, password_hash, role FROM auth_users"
-        ).fetchall()
-    for row in rows:
-        role = str(row["role"]).lower()
-        if role in ALL_ROLES:
-            users[str(row["username"])] = {
-                "password_hash": str(row["password_hash"]),
-                "role": role,
-            }
-
-    return users
-
-
-def _create_stored_user(username: str, password_hash: str, role: str, actor: str) -> None:
-    init_auth_store()
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    with _connect() as connection:
-        connection.execute(
-            """
-            INSERT INTO auth_users (username, password_hash, role, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (username, password_hash, role, actor, now),
-        )
-        connection.execute(
-            """
-            INSERT INTO auth_audit_log (actor, action, target_username, target_role, created_at)
-            VALUES (?, 'create_user', ?, ?, ?)
-            """,
-            (actor, username, role, now),
-        )
-
-
-def _configured_users() -> dict[str, dict[str, str]]:
-    return {**_env_users(), **_read_user_store()}
-
-
-def _check_login_rate_limit(username: str) -> None:
-    now = time.time()
-    key = username.lower()
-    attempts = [item for item in LOGIN_ATTEMPTS.get(key, []) if now - item < LOGIN_WINDOW_SECONDS]
-    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
-        LOGIN_ATTEMPTS[key] = attempts
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Try again later.",
-        )
-    attempts.append(now)
-    LOGIN_ATTEMPTS[key] = attempts
-
-
-def _clear_login_rate_limit(username: str) -> None:
-    LOGIN_ATTEMPTS.pop(username.lower(), None)
+    init_database()
 
 
 def _b64encode(payload: bytes) -> str:
@@ -194,15 +72,18 @@ def _b64decode(payload: str) -> bytes:
 
 
 def _sign(payload: str) -> str:
-    digest = hmac.new(_auth_secret(), payload.encode("ascii"), hashlib.sha256).digest()
+    import hashlib
+    import hmac
+
+    digest = hmac.new(get_settings().auth_secret.encode("utf-8"), payload.encode("ascii"), hashlib.sha256).digest()
     return _b64encode(digest)
 
 
-def create_token(username: str, role: str) -> tuple[str, int]:
+def create_token(user: User) -> tuple[str, int]:
     expires_at = int(time.time()) + TOKEN_TTL_SECONDS
     payload = _b64encode(
         json.dumps(
-            {"sub": username, "role": role, "exp": expires_at},
+            {"sub": user.username, "uid": user.id, "role": user.role, "exp": expires_at},
             separators=(",", ":"),
         ).encode("utf-8")
     )
@@ -210,6 +91,8 @@ def create_token(username: str, role: str) -> tuple[str, int]:
 
 
 def verify_token(token: str) -> dict[str, Any]:
+    import hmac
+
     try:
         payload, signature = token.split(".", 1)
     except ValueError as exc:
@@ -233,59 +116,238 @@ def verify_token(token: str) -> dict[str, Any]:
     return claims
 
 
-def _require_admin(authorization: str | None = Header(default=None)) -> str:
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(id=user.id, username=user.username, role=user.role)
+
+
+def _rate_key(*parts: str | None) -> str:
+    return ":".join(str(part or "-").lower() for part in parts)
+
+
+def _find_user_by_username(db: Session, username: str) -> User | None:
+    return db.query(User).filter(User.username == username).one_or_none()
+
+
+def _find_user_by_id(db: Session, user_id: int) -> User:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return user
+
+
+def current_user(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing bearer token",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
     claims = verify_token(authorization.split(" ", 1)[1].strip())
-    if str(claims.get("role", "")).lower() != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can create users.",
+    user = db.get(User, int(claims["uid"]))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+    return user
+
+
+def require_admin(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if user.role != "admin":
+        write_audit_log(
+            db,
+            action="admin_action_failed",
+            actor=user,
+            target_type="permission",
+            target_id="admin",
+            request=request,
         )
-    return str(claims.get("sub") or "")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admins can perform this action.")
+    return user
+
+
+def require_trade_execute(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    if user.role not in TRADE_EXECUTE_ROLES:
+        write_audit_log(
+            db,
+            action="execution_blocked",
+            actor=user,
+            target_type="permission",
+            target_id="trade_execute",
+            request=request,
+            metadata={"reason": "missing trade_execute permission"},
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User lacks trade_execute permission.")
+    return user
+
+
+def require_roles(*allowed_roles: str):
+    allowed = set(allowed_roles)
+
+    def dependency(user: User = Depends(current_user)) -> str:
+        if user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This role is not allowed to perform this action.",
+            )
+        return user.role
+
+    return dependency
+
+
+def seed_bootstrap_users(db: Session) -> None:
+    settings = get_settings()
+    if not settings.bootstrap_users or not settings.allow_dev_seed_users:
+        return
+
+    for item in settings.bootstrap_users.split(","):
+        parts = [part.strip() for part in item.split(":")]
+        if len(parts) != 3:
+            continue
+        username, password, role = parts
+        if role not in ALL_ROLES or _find_user_by_username(db, username):
+            continue
+        validate_password_policy(password)
+        db.add(User(username=username, password_hash=hash_password(password), role=role))
+    db.commit()
 
 
 @router.post("/login")
-def login(payload: LoginRequest) -> TokenResponse:
-    users = _configured_users()
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     username = payload.username.strip()
-    _check_login_rate_limit(username)
-    stored = users.get(username)
+    rate_limiter.check(_rate_key("login", request_ip(request), username), limit=5, window_seconds=60)
+    user = _find_user_by_username(db, username)
 
-    if stored is None or not hmac.compare_digest(
-        stored["password_hash"],
-        _password_hash(username, payload.password),
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid username or password",
+    if user is None or not verify_password(payload.password, user.password_hash):
+        write_audit_log(
+            db,
+            action="login_failure",
+            actor_username=username,
+            target_type="user",
+            target_id=username,
+            request=request,
         )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
-    _clear_login_rate_limit(username)
-    token, expires_at = create_token(username, stored["role"])
-    return TokenResponse(access_token=token, role=stored["role"], expires_at=expires_at)
+    rate_limiter.clear(_rate_key("login", request_ip(request), username))
+    write_audit_log(db, action="login_success", actor=user, target_type="user", target_id=user.id, request=request)
+    token, expires_at = create_token(user)
+    return TokenResponse(access_token=token, role=user.role, expires_at=expires_at)
 
 
-@router.post("/users", response_model=UserResponse)
-def create_user(payload: CreateUserRequest, _admin: str = Depends(_require_admin)) -> UserResponse:
+@admin_router.get("/admin/users", response_model=list[UserResponse])
+def list_users(_admin: User = Depends(require_admin), db: Session = Depends(get_db)) -> list[UserResponse]:
+    return [_user_response(user) for user in db.query(User).order_by(User.username).all()]
+
+
+@admin_router.post("/admin/users/create", response_model=UserResponse)
+def create_admin_user(
+    payload: CreateUserRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    rate_limiter.check(_rate_key("create_user", admin.id), limit=10, window_seconds=3600)
     username = payload.username.strip()
-    password = payload.password
     role = payload.role.strip().lower()
-
     if not username:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username is required.")
-    if len(password) < 6:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters.")
     if role not in ALL_ROLES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.")
+    try:
+        validate_password_policy(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    if username in _configured_users():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists.")
+    user = User(username=username, password_hash=hash_password(payload.password), role=role)
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        write_audit_log(db, action="admin_action_failed", actor=admin, target_type="user", target_id=username, request=request)
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists.") from exc
+    db.refresh(user)
+    write_audit_log(db, action="user_created", actor=admin, target_type="user", target_id=user.id, request=request, metadata={"role": role})
+    return _user_response(user)
 
-    _create_stored_user(username, _password_hash(username, password), role, _admin)
 
-    return UserResponse(username=username, role=role)
+@admin_router.post("/admin/users/{user_id}/reset-password", response_model=UserResponse)
+def reset_password(
+    user_id: int,
+    payload: ResetPasswordRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    rate_limiter.check(_rate_key("reset_password", user_id), limit=5, window_seconds=3600)
+    try:
+        validate_password_policy(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    user = _find_user_by_id(db, user_id)
+    user.password_hash = hash_password(payload.password)
+    db.commit()
+    write_audit_log(db, action="password_reset", actor=admin, target_type="user", target_id=user.id, request=request)
+    return _user_response(user)
+
+
+@admin_router.post("/admin/users/{user_id}/change-password", response_model=UserResponse)
+def change_password(
+    user_id: int,
+    payload: ChangePasswordRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    user = _find_user_by_id(db, user_id)
+    if actor.role != "admin" and actor.id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Users can only change their own password.")
+    if actor.role != "admin" and not payload.old_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is required.")
+    if actor.role != "admin" and not verify_password(payload.old_password or "", user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect.")
+    try:
+        validate_password_policy(payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    write_audit_log(db, action="password_changed", actor=actor, target_type="user", target_id=user.id, request=request)
+    return _user_response(user)
+
+
+@admin_router.delete("/admin/users/{user_id}", response_model=UserResponse)
+def delete_user(
+    user_id: int,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    user = _find_user_by_id(db, user_id)
+    if user.id == admin.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admins cannot delete their own account.")
+    response = _user_response(user)
+    db.delete(user)
+    db.commit()
+    write_audit_log(db, action="user_deleted", actor=admin, target_type="user", target_id=user_id, request=request)
+    return response
+
+
+# Backward-compatible endpoint for the existing topbar form.
+@router.post("/users", response_model=UserResponse)
+def create_user_alias(
+    payload: CreateUserRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    return create_admin_user(payload, request, admin, db)
+
+
+router.include_router(admin_router)
