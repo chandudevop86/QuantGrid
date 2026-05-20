@@ -38,7 +38,10 @@ def _auth_secret() -> bytes:
 
 
 def _configured_users() -> dict[str, tuple[str, str]]:
-    configured = os.getenv("QUANTGRID_USERS", "viewer:viewer:viewer")
+    configured = os.getenv(
+        "QUANTGRID_USERS",
+        "admin:admin123:admin,trader:trader123:trader,analyst:analyst123:analyst,viewer:viewer:viewer",
+    )
     users: dict[str, tuple[str, str]] = {}
 
     for item in configured.split(","):

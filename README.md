@@ -49,8 +49,9 @@ Set `CORS_ALLOWED_ORIGINS` as a comma-separated list in production. Set
 
 Authentication is token based. Configure users with `QUANTGRID_USERS` as a
 comma-separated list of `username:password:role` entries, and set
-`QUANTGRID_AUTH_SECRET` to a strong secret. If `QUANTGRID_USERS` is not set, only
-`viewer:viewer` is available for local read-only access.
+`QUANTGRID_AUTH_SECRET` to a strong secret. If `QUANTGRID_USERS` is not set, the
+local fallback logins are `admin:admin123`, `trader:trader123`,
+`analyst:analyst123`, and `viewer:viewer`.
 
 Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
 offline demos where generated fallback prices and candles are acceptable.
