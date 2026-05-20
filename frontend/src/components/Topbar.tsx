@@ -6,6 +6,7 @@ import {
   getCurrentRole,
   hasAuthToken,
   roleLabels,
+  roles,
   setCurrentAuth,
   type Role,
 } from "../roles";
@@ -42,12 +43,20 @@ export default function Topbar() {
 
     try {
       const response = await api.login({ username, password });
-      setCurrentAuth(response.role, response.access_token);
-      setRole(response.role);
+      const nextRole = response?.role as Role;
+      const token = response?.access_token;
+
+      if (!token || !roles.includes(nextRole)) {
+        clearCurrentAuth();
+        throw new Error("Login API is out of date. Redeploy the backend and try again.");
+      }
+
+      setCurrentAuth(nextRole, token);
+      setRole(nextRole);
       setIsAuthenticated(true);
       setPassword("");
     } catch (error: any) {
-      setAuthError(error?.response?.data?.detail ?? "Login failed");
+      setAuthError(error?.response?.data?.detail ?? error?.message ?? "Login failed");
     }
   };
 
