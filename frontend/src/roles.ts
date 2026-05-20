@@ -21,11 +21,32 @@ export const routeRoles: Record<string, Role[]> = {
   "/trade": ["admin", "trader"],
 };
 
+type AuthClaims = {
+  role?: string;
+  exp?: number;
+};
+
+function decodeAuthClaims(): AuthClaims | null {
+  if (typeof window === "undefined") return null;
+
+  const token = window.localStorage.getItem("quantgrid_token");
+  if (!token) return null;
+
+  const [payload] = token.split(".");
+  if (!payload) return null;
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
+    return JSON.parse(window.atob(padded)) as AuthClaims;
+  } catch {
+    return null;
+  }
+}
+
 export function getCurrentRole(): Role {
-  const storedRole =
-    typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_role");
-  const configuredRole = import.meta.env.VITE_DEFAULT_ROLE;
-  const role = storedRole ?? configuredRole ?? "viewer";
+  const claims = decodeAuthClaims();
+  const role = claims?.role ?? "viewer";
 
   return roles.includes(role as Role) ? (role as Role) : "viewer";
 }
@@ -48,7 +69,9 @@ export function clearCurrentAuth() {
 }
 
 export function hasAuthToken() {
-  return typeof window !== "undefined" && Boolean(window.localStorage.getItem("quantgrid_token"));
+  const claims = decodeAuthClaims();
+  if (!claims?.exp || !roles.includes(claims.role as Role)) return false;
+  return claims.exp * 1000 > Date.now();
 }
 
 export function canAccessRoute(role: Role, path: string) {

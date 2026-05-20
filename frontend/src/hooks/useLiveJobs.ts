@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { hasAuthToken } from "../roles";
 import { createSocket } from "../socket";
 
 function mergeJob(jobs: any[], incoming: any) {
@@ -22,6 +23,13 @@ export function useLiveJobs() {
   const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
+    if (!hasAuthToken()) {
+      setJobs([]);
+      setError(null);
+      setSocketConnected(false);
+      return;
+    }
+
     let active = true;
     let socket: WebSocket | null = null;
     let pollId: number | null = null;

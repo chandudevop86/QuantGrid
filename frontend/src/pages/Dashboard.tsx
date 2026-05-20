@@ -3,6 +3,7 @@ import { api } from "../api";
 import Loader from "../components/Loader";
 import MetricCard from "../components/MetricCard";
 import { useLiveJobs } from "../hooks/useLiveJobs";
+import { hasAuthToken } from "../roles";
 
 function isActiveJob(job: any) {
   return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
@@ -12,15 +13,21 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const isAuthenticated = hasAuthToken();
   const { jobs, error: jobsError } = useLiveJobs();
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     api
       .getSummary()
       .then(setSummary)
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   const activeJobs = jobs.filter(isActiveJob).length;
   const lastUpdated = summary?.updated_at
@@ -36,10 +43,16 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {loading && <Loader label="Loading dashboard..." />}
+      {!isAuthenticated && (
+        <div className="alert alert-warning" role="status">
+          Login with an authorized account to view dashboard data and trading workflows.
+        </div>
+      )}
+
+      {isAuthenticated && loading && <Loader label="Loading dashboard..." />}
       {(error || jobsError) && <p className="error-text">{error ?? jobsError}</p>}
 
-      {!loading && !error && !jobsError && (
+      {isAuthenticated && !loading && !error && !jobsError && (
         <>
           <div className="metric-grid">
             <MetricCard
