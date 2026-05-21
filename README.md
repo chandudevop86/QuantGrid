@@ -72,6 +72,27 @@ existing local `admin` password is updated to match `QUANTGRID_USERS`.
 Production must set `DATABASE_URL=postgresql+psycopg://...`; production startup
 fails if `DATABASE_URL` is missing or points to SQLite.
 
+For production database setup, start Postgres with a persistent Docker volume:
+
+```bash
+cd ~/QuantGrid
+export POSTGRES_PASSWORD='replace-with-a-strong-postgres-password'
+bash deploy/scripts/start_postgres.sh
+```
+
+Then use `services/trading-service/.env.production.example` as the server
+template:
+
+```bash
+cd ~/QuantGrid/services/trading-service
+cp .env.production.example .env
+nano .env
+python -m Backend.tools.check_database
+```
+
+The check command creates missing auth/audit tables and prints the active
+database dialect without exposing the database password.
+
 Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
 offline demos where generated fallback prices and candles are acceptable.
 

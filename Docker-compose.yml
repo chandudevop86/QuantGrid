@@ -22,10 +22,20 @@ services:
 
   postgres:
     image: postgres:15
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-quant}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting postgres}
       POSTGRES_DB: ${POSTGRES_DB:-quantgrid}
     ports:
       - "5432:5432"
-      #this is docker file
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quant} -d ${POSTGRES_DB:-quantgrid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
