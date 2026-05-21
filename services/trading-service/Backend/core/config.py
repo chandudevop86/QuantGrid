@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+ENV_FILE_LOADED = False
 
 @dataclass(frozen=True)
 class Settings:
@@ -37,7 +38,46 @@ def _default_sqlite_url() -> str:
     return f"sqlite:///{data_dir / 'quantgrid.sqlite3'}"
 
 
+def _default_env_file() -> Path:
+    return Path(__file__).resolve().parents[2] / ".env"
+
+
+def _strip_optional_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def load_env_file(path: str | Path | None = None, *, override: bool = False) -> None:
+    env_path = Path(path or os.getenv("QUANTGRID_ENV_FILE") or _default_env_file())
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("export "):
+            key = key.removeprefix("export ").strip()
+        if not key:
+            continue
+        if not override and key in os.environ:
+            continue
+        os.environ[key] = _strip_optional_quotes(value.strip())
+
+
+def ensure_env_loaded() -> None:
+    global ENV_FILE_LOADED
+    if ENV_FILE_LOADED:
+        return
+    load_env_file()
+    ENV_FILE_LOADED = True
+
+
 def get_settings() -> Settings:
+    ensure_env_loaded()
     environment = os.getenv("QUANTGRID_ENV", "local").strip().lower()
     auth_secret = os.getenv("QUANTGRID_AUTH_SECRET")
 

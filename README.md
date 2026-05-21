@@ -35,6 +35,11 @@ pip install -r requirements.txt
 uvicorn Backend.presentation.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+For persistent server configuration, copy `services/trading-service/.env.example`
+to `services/trading-service/.env` and set real values there. The backend loads
+that file automatically, and OS environment variables still take precedence.
+This prevents accidental restarts with a temporary auth secret.
+
 Live analysis jobs are stored in SQLite, queued by the REST API, executed by a
 worker, and published to Redis channel `updates`. The API starts a background
 task after creating a job, and you can also run the durable worker loop as a
@@ -118,6 +123,19 @@ export SMTP_TO=admin@example.com,ops@example.com
 ```
 
 Set `QUANTGRID_ALERTS_ENABLED=false` to disable all alert delivery.
+
+## Systemd
+
+Example service files live in `deploy/systemd/`. On the EC2 host, copy them into
+`/etc/systemd/system/`, adjust paths if needed, then run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now quantgrid-backend
+sudo systemctl enable --now quantgrid-frontend
+sudo systemctl status quantgrid-backend
+sudo systemctl status quantgrid-frontend
+```
 
 Useful routes:
 
