@@ -127,16 +127,25 @@ Set `QUANTGRID_ALERTS_ENABLED=false` to disable all alert delivery.
 
 ## Systemd
 
-Example service files live in `deploy/systemd/`. On the EC2 host, copy them into
-`/etc/systemd/system/`, adjust paths if needed, then run:
+The backend should run as a systemd service instead of a terminal process.
+Example service files live in `deploy/systemd/`, and helper scripts live in
+`deploy/scripts/`.
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now quantgrid-backend
-sudo systemctl enable --now quantgrid-frontend
+cd ~/QuantGrid
+git pull origin main
+
+cd services/trading-service
+cp .env.example .env
+nano .env
+
+cd ~/QuantGrid
+bash deploy/scripts/install_backend_service.sh
 sudo systemctl status quantgrid-backend
-sudo systemctl status quantgrid-frontend
 ```
+
+The frontend is served as static files through Nginx in production, so it does
+not need a long-running Vite service.
 
 ## HTTPS Reverse Proxy
 
@@ -150,27 +159,15 @@ Typical EC2 setup:
 cd ~/QuantGrid
 git pull origin main
 
-cd frontend
-cp .env.production.example .env.production
-npm install
-npm run build
-sudo mkdir -p /var/www/quantgrid
-sudo rsync -a --delete dist/ /var/www/quantgrid/
-
-sudo mkdir -p /var/www/certbot
-sudo cp ~/QuantGrid/deploy/nginx/quantgrid-http.conf /etc/nginx/sites-available/quantgrid
-sudo ln -sf /etc/nginx/sites-available/quantgrid /etc/nginx/sites-enabled/quantgrid
-sudo nginx -t
-sudo systemctl reload nginx
+bash deploy/scripts/deploy_frontend.sh
+bash deploy/scripts/install_nginx.sh http
 ```
 
 Issue the TLS certificate, then switch to the HTTPS config:
 
 ```bash
 sudo certbot certonly --webroot -w /var/www/certbot -d chandudevopai.shop -d www.chandudevopai.shop
-sudo cp ~/QuantGrid/deploy/nginx/quantgrid.conf /etc/nginx/sites-available/quantgrid
-sudo nginx -t
-sudo systemctl reload nginx
+bash deploy/scripts/install_nginx.sh https
 ```
 
 Useful routes:

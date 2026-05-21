@@ -1,6 +1,7 @@
 [Unit]
 Description=QuantGrid backend API
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -9,6 +10,10 @@ EnvironmentFile=/root/QuantGrid/services/trading-service/.env
 ExecStart=/root/venv/bin/uvicorn Backend.presentation.api.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
