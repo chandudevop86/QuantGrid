@@ -1,10 +1,14 @@
 function defaultSocketUrl() {
   if (typeof window === "undefined") {
-    return "ws://13.222.179.171:8000/ws";
+    return "ws://localhost:8000/ws";
   }
 
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${protocol}://${window.location.hostname}:8000/ws`;
+  if (window.location.port === "5173") {
+    return `${protocol}://${window.location.hostname}:8000/ws`;
+  }
+
+  return `${protocol}://${window.location.host}/ws`;
 }
 
 export function createSocket() {

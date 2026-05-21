@@ -23,9 +23,10 @@ npm run build
 npm run dev
 ```
 
-The frontend reads `VITE_API_BASE_URL` or `VITE_API_URL` and defaults to the
-same hostname on port `8000`. For `http://chandudevopai.shop:5173`, set one of
-these to `http://chandudevopai.shop:8000` before building or starting Vite.
+The frontend reads `VITE_API_BASE_URL` or `VITE_API_URL`. In Vite dev on port
+`5173`, it defaults to the same hostname on backend port `8000`. In production
+it defaults to same-origin `/api`, which should be reverse-proxied to the
+backend.
 
 ## Trading API
 
@@ -135,6 +136,41 @@ sudo systemctl enable --now quantgrid-backend
 sudo systemctl enable --now quantgrid-frontend
 sudo systemctl status quantgrid-backend
 sudo systemctl status quantgrid-frontend
+```
+
+## HTTPS Reverse Proxy
+
+Example Nginx configs live in `deploy/nginx/`. They serve the built frontend
+from `/var/www/quantgrid`, proxy `/api/` to the backend on `127.0.0.1:8000`, and
+proxy `/ws` for websocket job updates.
+
+Typical EC2 setup:
+
+```bash
+cd ~/QuantGrid
+git pull origin main
+
+cd frontend
+cp .env.production.example .env.production
+npm install
+npm run build
+sudo mkdir -p /var/www/quantgrid
+sudo rsync -a --delete dist/ /var/www/quantgrid/
+
+sudo mkdir -p /var/www/certbot
+sudo cp ~/QuantGrid/deploy/nginx/quantgrid-http.conf /etc/nginx/sites-available/quantgrid
+sudo ln -sf /etc/nginx/sites-available/quantgrid /etc/nginx/sites-enabled/quantgrid
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Issue the TLS certificate, then switch to the HTTPS config:
+
+```bash
+sudo certbot certonly --webroot -w /var/www/certbot -d chandudevopai.shop -d www.chandudevopai.shop
+sudo cp ~/QuantGrid/deploy/nginx/quantgrid.conf /etc/nginx/sites-available/quantgrid
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 Useful routes:
