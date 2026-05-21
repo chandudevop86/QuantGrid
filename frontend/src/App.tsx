@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import AppLayout from "./layouts/AppLayout";
+import AdminNotifications from "./pages/AdminNotifications";
 import AdminUsers from "./pages/AdminUsers";
 import Candles from "./pages/Candles";
 import Dashboard from "./pages/Dashboard";
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade" element={protect("/trade", <Trade />)} />
           <Route path="/admin/users" element={protect("/admin/users", <AdminUsers />)} />
+          <Route path="/admin/notifications" element={protect("/admin/notifications", <AdminNotifications />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppLayout>

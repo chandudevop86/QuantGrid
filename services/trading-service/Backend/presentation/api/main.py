@@ -85,6 +85,9 @@ def create_app():
     from Backend.presentation.api.market_api import router as market_router
     app.include_router(market_router, prefix="/market")
 
+    from Backend.presentation.api.notifications_api import router as notifications_router
+    app.include_router(notifications_router)
+
     return app
 
 

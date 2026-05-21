@@ -3,6 +3,7 @@ from __future__ import annotations
 from email.message import EmailMessage
 
 from Backend.application import notifications
+from conftest import admin_headers
 
 
 class _FakeResponse:
@@ -96,3 +97,23 @@ def test_send_alert_sends_email(monkeypatch):
     assert message["From"] == "alerts@example.test"
     assert message["To"] == "admin@example.test, ops@example.test"
     assert "Message" in message.get_content()
+
+
+def test_admin_can_view_notification_status_and_send_test(app_client, monkeypatch):
+    headers = admin_headers(app_client)
+    sent = []
+    monkeypatch.setattr(
+        "Backend.presentation.api.notifications_api.send_alert",
+        lambda subject, message: sent.append((subject, message)),
+    )
+
+    status = app_client.get("/admin/notifications/status", headers=headers)
+    assert status.status_code == 200
+    assert "telegram" in status.json()["channels"]
+    assert "slack" in status.json()["channels"]
+    assert "email" in status.json()["channels"]
+
+    response = app_client.post("/admin/notifications/test", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"status": "sent"}
+    assert sent

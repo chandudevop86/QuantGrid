@@ -14,6 +14,7 @@ export default function Sidebar() {
     { to: "/execution", label: "Execution" },
     { to: "/trade", label: "Trade" },
     { to: "/admin/users", label: "Users" },
+    { to: "/admin/notifications", label: "Notifications" },
   ];
 
   useEffect(() => {

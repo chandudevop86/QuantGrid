@@ -20,6 +20,7 @@ export const routeRoles: Record<string, Role[]> = {
   "/strategies": ["admin", "trader", "analyst"],
   "/trade": ["admin", "trader"],
   "/admin/users": ["admin"],
+  "/admin/notifications": ["admin"],
 };
 
 type AuthClaims = {

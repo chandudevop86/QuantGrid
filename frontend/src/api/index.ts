@@ -26,6 +26,8 @@ export const api = {
   createUser: (payload: { username: string; password: string; role: string }) =>
     API.post("/admin/users/create", payload).then((res) => res.data),
   listUsers: () => API.get("/admin/users").then((res) => res.data),
+  getNotificationStatus: () => API.get("/admin/notifications/status").then((res) => res.data),
+  sendTestNotification: () => API.post("/admin/notifications/test").then((res) => res.data),
   resetUserPassword: (userId: number, password: string) =>
     API.post(`/admin/users/${userId}/reset-password`, { password }).then((res) => res.data),
   changeUserPassword: (userId: number, oldPassword: string | null, newPassword: string) =>
