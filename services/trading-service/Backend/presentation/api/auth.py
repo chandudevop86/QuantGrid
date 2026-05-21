@@ -210,10 +210,15 @@ def seed_bootstrap_users(db: Session) -> None:
         if len(parts) != 3:
             continue
         username, password, role = parts
-        if role not in ALL_ROLES or _find_user_by_username(db, username):
+        if role not in ALL_ROLES:
             continue
         validate_password_policy(password)
-        db.add(User(username=username, password_hash=hash_password(password), role=role))
+        user = _find_user_by_username(db, username)
+        if user is None:
+            db.add(User(username=username, password_hash=hash_password(password), role=role))
+            continue
+        user.password_hash = hash_password(password)
+        user.role = role
     db.commit()
 
 

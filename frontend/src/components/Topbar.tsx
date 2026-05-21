@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { getApiErrorMessage } from "../api/client";
 import { getCurrentMode, modeLabels, modes, setCurrentMode, type TradingMode } from "../mode";
 import {
   clearCurrentAuth,
@@ -46,7 +47,7 @@ export default function Topbar() {
     setAuthError(null);
 
     try {
-      const response = await api.login({ username, password });
+      const response = await api.login({ username: username.trim(), password });
       const nextRole = response?.role as Role;
       const token = response?.access_token;
 
@@ -60,7 +61,7 @@ export default function Topbar() {
       setIsAuthenticated(true);
       setPassword("");
     } catch (error: any) {
-      setAuthError(error?.response?.data?.detail ?? error?.message ?? "Login failed");
+      setAuthError(getApiErrorMessage(error, "Login failed"));
     }
   };
 

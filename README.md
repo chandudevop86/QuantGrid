@@ -23,7 +23,9 @@ npm run build
 npm run dev
 ```
 
-The frontend reads `VITE_API_BASE_URL` and defaults to `http://localhost:8000`.
+The frontend reads `VITE_API_BASE_URL` or `VITE_API_URL` and defaults to the
+same hostname on port `8000`. For `http://chandudevopai.shop:5173`, set one of
+these to `http://chandudevopai.shop:8000` before building or starting Vite.
 
 ## Trading API
 
@@ -56,8 +58,10 @@ configured database table `users`, with security events in `audit_logs`.
 
 Local-only seed users are allowed only when both `QUANTGRID_ENV=local` and
 `QUANTGRID_ALLOW_DEV_SEED_USERS=true` are set. Provide local seed users with
-`QUANTGRID_USERS=username:StrongPass1!:admin`. Do not use known default
-passwords.
+`QUANTGRID_USERS=admin:AdminPass1!:admin`. Seed passwords must satisfy the
+password policy and must not be known defaults such as `admin123`. In local
+seed mode, explicitly configured seed users are reconciled on startup, so an
+existing local `admin` password is updated to match `QUANTGRID_USERS`.
 
 Production must set `DATABASE_URL=postgresql+psycopg://...`; production startup
 fails if `DATABASE_URL` is missing or points to SQLite.
