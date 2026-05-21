@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from Backend.application.dto import serialize_signal
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
+from Backend.application.notifications import alert_job_finished
 from Backend.application.signal_validation import validate_signals
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.models.order import Order
@@ -136,6 +137,7 @@ def _finish_claimed_job(job_id: str, payload_data: dict[str, Any]) -> dict[str, 
 
     if finished_job:
         publish_job_update(finished_job)
+        alert_job_finished(finished_job)
     return finished_job
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import count_jobs, create_job, list_jobs, utc_now
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, execute_job
+from Backend.application.notifications import alert_job_created
 from Backend.core.database import get_db
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -71,6 +72,7 @@ def create_live_analysis_job(
         metadata={"symbol": job["symbol"], "strategy": job["strategy"]},
     )
     publish_job_update(created)
+    alert_job_created(created)
     background_tasks.add_task(execute_job, created["job_id"])
     return created
 

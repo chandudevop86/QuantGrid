@@ -5,6 +5,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
+from Backend.application.notifications import alert_execution_event
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.audit import write_audit_log
@@ -99,11 +100,15 @@ async def place_order(
             request=request,
             metadata={"reason": "market_alignment_failed"},
         )
-        return {
+        result = {
             "status": "no_trade",
+            "symbol": signal.symbol,
             "reason": "Signal entry price is not aligned with market price.",
+            "execution_mode": execution_mode,
             "source": "signal_based",
         }
+        alert_execution_event(result)
+        return result
 
     order = engine.order_from_signal(signal)
 
@@ -112,9 +117,11 @@ async def place_order(
     # - DB save
     # - queue system
 
-    return {
+    result = {
         "status": "paper_simulated",
         "execution_mode": execution_mode,
         "source": "signal_based",
         "order": jsonable_encoder(order),
     }
+    alert_execution_event(result)
+    return result

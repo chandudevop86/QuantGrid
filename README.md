@@ -87,6 +87,38 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8005
 Set `REDIS_URL` for both the trading API and websocket service if Redis is not
 running at `redis://localhost:6379/0`.
 
+## Alerts
+
+QuantGrid can send operational alerts for queued/completed analysis jobs and
+paper execution outcomes. Alerts are optional and disabled automatically when no
+channel is configured.
+
+Telegram:
+
+```bash
+export TELEGRAM_BOT_TOKEN=123456:bot-token
+export TELEGRAM_CHAT_ID=123456789
+```
+
+Slack:
+
+```bash
+export SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+Email:
+
+```bash
+export SMTP_HOST=smtp.example.com
+export SMTP_PORT=587
+export SMTP_USERNAME=alerts@example.com
+export SMTP_PASSWORD=app-password
+export SMTP_FROM=alerts@example.com
+export SMTP_TO=admin@example.com,ops@example.com
+```
+
+Set `QUANTGRID_ALERTS_ENABLED=false` to disable all alert delivery.
+
 Useful routes:
 
 - `GET /health`
