@@ -100,6 +100,42 @@ Execution is paper-only unless live trading is explicitly enabled. The current
 API rejects live execution because no live broker order adapter is wired into the
 execution endpoint yet.
 
+Broker login can be checked while execution remains paper-only. For Dhan, set:
+
+```bash
+QUANTGRID_BROKER_PROVIDER=dhan
+QUANTGRID_BROKER_CLIENT_ID=your_dhan_client_id
+QUANTGRID_BROKER_ACCESS_TOKEN=your_dhan_access_token
+QUANTGRID_ENABLE_LIVE_TRADING=false
+```
+
+Then call `GET /broker/status` or view the dashboard Broker Login card. This
+validates the Dhan token with Dhan's profile API but does not enable real-money
+orders.
+
+Paper execution applies broker-style sizing safeguards before simulation:
+
+```bash
+QUANTGRID_LOT_SIZE_NIFTY=75
+QUANTGRID_MAX_ORDER_NOTIONAL=1000000
+QUANTGRID_MARGIN_MULTIPLIER=1
+QUANTGRID_ROUND_DOWN_TO_LOT=true
+MIN_SIGNAL_SCORE=7
+SIGNAL_MAX_AGE_MINUTES=2
+QUANTGRID_MAX_DAILY_LOSS=3000
+QUANTGRID_MAX_TRADES_PER_DAY=3
+QUANTGRID_MAX_CONSECUTIVE_LOSSES=2
+```
+
+Signals below one lot or above the configured margin/notional limit are rejected
+as `no_trade`.
+
+Professional paper-trading safeguards separate signals into active, rejected,
+and stale buckets. Stale signals older than the latest candle by more than two
+minutes are not actionable, scores below `MIN_SIGNAL_SCORE` are rejected as
+`LOW_SCORE`, and choppy/MTF-conflicting signals are blocked before paper
+execution.
+
 Market data defaults to `QUANTGRID_MARKET_DATA_PROVIDER=yahoo`. Yahoo data is
 not trading-grade and should not be used for live execution.
 
@@ -204,6 +240,11 @@ Useful routes:
 - `GET /market/candles/{symbol}`
 - `GET /market/stored/{symbol}`
 - `GET /market/store/status`
+- `GET /broker/status`
+- `GET /api/signals/latest`
+- `GET /api/trades/paper`
+- `GET /api/risk/status`
+- `GET /api/strategies/{strategy}/backtest`
 
 ## Infrastructure
 

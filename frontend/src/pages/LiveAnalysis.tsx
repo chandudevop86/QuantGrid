@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { getCurrentMode } from "../mode";
 import { createSocket } from "../socket";
+import { localizeTimestamps } from "../utils/time";
 
 const strategies = [
   "amd",
@@ -245,9 +246,42 @@ export default function LiveAnalysis() {
             </div>
           )}
 
+          {result?.result?.institutional_analysis && (
+            <div className="institutional-panel" role="status">
+              <div>
+                <span>Decision</span>
+                <strong>{result.result.institutional_analysis.trade_decision}</strong>
+              </div>
+              <div>
+                <span>Bias</span>
+                <strong>{result.result.institutional_analysis.bias}</strong>
+              </div>
+              <div>
+                <span>Structure</span>
+                <strong>{result.result.institutional_analysis.market_structure}</strong>
+              </div>
+              <div>
+                <span>Score</span>
+                <strong>{result.result.institutional_analysis.confidence_score}/10</strong>
+              </div>
+              <div className="institutional-wide">
+                <span>Liquidity</span>
+                <p>{result.result.institutional_analysis.liquidity_analysis}</p>
+              </div>
+              <div className="institutional-wide">
+                <span>Reasoning</span>
+                <ul>
+                  {result.result.institutional_analysis.reasoning?.slice(0, 5).map((item: string, index: number) => (
+                    <li key={`${index}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           <pre>
             {result
-              ? JSON.stringify(result, null, 2)
+              ? JSON.stringify(localizeTimestamps(result), null, 2)
               : "Select a strategy and run analysis to create a job."}
           </pre>
         </div>

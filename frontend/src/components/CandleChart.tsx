@@ -26,7 +26,7 @@ export default function CandleChart({ candles }: CandleChartProps) {
   const maxPrice = Math.max(...prices);
   const priceRange = Math.max(maxPrice - minPrice, 1);
 
-  const yFor = (price: number) => 8 + ((maxPrice - price) / priceRange) * 164;
+  const yFor = (price: number) => 8 + ((maxPrice - price) / priceRange) * 118;
 
   return (
     <div className="candle-chart" role="img" aria-label="NIFTY candlestick chart">

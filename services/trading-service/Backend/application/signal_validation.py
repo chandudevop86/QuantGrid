@@ -41,6 +41,21 @@ def _latest_candle(candles: list[dict[str, Any]]) -> dict[str, Any] | None:
     return candles[-1] if candles else None
 
 
+def candle_freshness(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    latest = _latest_candle(candles)
+    timestamp = _parse_timestamp(latest.get("timestamp")) if latest else None
+    age_seconds = (now - timestamp).total_seconds() if timestamp else None
+
+    return {
+        "server_time": now.isoformat(),
+        "latest_candle_at": timestamp.isoformat() if timestamp else None,
+        "latest_candle_age_seconds": round(age_seconds, 1) if age_seconds is not None else None,
+        "max_candle_age_seconds": MAX_CANDLE_AGE_SECONDS,
+        "is_recent": age_seconds is not None and 0 <= age_seconds <= MAX_CANDLE_AGE_SECONDS,
+    }
+
+
 def _is_recent(candle: dict[str, Any]) -> bool:
     timestamp = _parse_timestamp(candle.get("timestamp"))
     if timestamp is None:
@@ -317,13 +332,29 @@ def diagnose_signal_run(
     diagnostics: list[str] = []
     source_tag = data_source_tag(candle_source)
     latest = _latest_candle(candles)
+    freshness = candle_freshness(candles)
 
     if latest is None:
         return ["No candle data available for diagnostics."]
     if candle_source != LIVE_SOURCE:
         diagnostics.append(f"Market data source is {source_tag}; validator requires live yahoo-finance candles.")
     if not _is_recent(latest):
-        diagnostics.append("Latest candle is stale or outside the live 5-minute validation window.")
+        latest_at = freshness.get("latest_candle_at") or "unknown"
+        age_seconds = freshness.get("latest_candle_age_seconds")
+        if isinstance(age_seconds, (int, float)) and age_seconds < 0:
+            diagnostics.append(
+                f"Latest candle timestamp {latest_at} is ahead of the server clock; check clock synchronization."
+            )
+        elif isinstance(age_seconds, (int, float)):
+            diagnostics.append(
+                "Latest candle is stale or outside the live 5-minute validation window "
+                f"(latest {latest_at}, age {age_seconds:.0f}s, limit {MAX_CANDLE_AGE_SECONDS}s)."
+            )
+        else:
+            diagnostics.append(
+                "Latest candle is stale or outside the live 5-minute validation window "
+                f"(latest timestamp {latest_at} could not be parsed)."
+            )
 
     if not signals:
         diagnostics.append("Strategy generated no raw setup from the supplied candles.")

@@ -30,6 +30,7 @@ export default function StrategyForm() {
         capital: 100000,
         risk_pct: 1,
         rr_ratio: 2,
+        candle_source: "sample-fallback",
 
         candles: [
           { timestamp: new Date().toISOString(), open: 100, high: 105, low: 98, close: 103, volume: 1000 },

@@ -9,6 +9,7 @@ from Backend.core.config import validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
+from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
 from Backend.presentation.api.websocket_manager import manager
 
@@ -47,6 +48,7 @@ def create_app():
             seed_bootstrap_users(db)
         init_job_store()
         init_market_data_store()
+        init_paper_trade_store()
         manager.set_loop(asyncio.get_running_loop())
 
     @app.get("/health")
@@ -84,6 +86,12 @@ def create_app():
 
     from Backend.presentation.api.market_api import router as market_router
     app.include_router(market_router, prefix="/market")
+
+    from Backend.presentation.api.broker_api import router as broker_router
+    app.include_router(broker_router, prefix="/broker")
+
+    from Backend.presentation.api.professional_api import router as professional_router
+    app.include_router(professional_router)
 
     from Backend.presentation.api.notifications_api import router as notifications_router
     app.include_router(notifications_router)

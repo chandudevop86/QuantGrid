@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
+  const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const { jobs, error: jobsError } = useLiveJobs();
@@ -32,6 +33,7 @@ export default function Dashboard() {
     if (!isAuthenticated) {
       setSummary(null);
       setMarketStore(null);
+      setBrokerStatus(null);
       setLoading(false);
       return;
     }
@@ -40,10 +42,12 @@ export default function Dashboard() {
     Promise.all([
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
+      api.brokerStatus(),
     ])
-      .then(([summaryData, marketStoreData]) => {
+      .then(([summaryData, marketStoreData, brokerData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
+        setBrokerStatus(brokerData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -90,6 +94,12 @@ export default function Dashboard() {
               label="Open Positions"
               value={summary?.open_positions ?? 0}
               helper="Paper execution mode"
+            />
+            <MetricCard
+              label="Broker Login"
+              value={brokerStatus?.provider === "dhan" && brokerStatus?.connected ? "Dhan OK" : "Paper"}
+              helper={brokerStatus?.message ?? "Real-money orders disabled"}
+              tone={brokerStatus?.connected ? "good" : "warn"}
             />
             <MetricCard
               label="Stored Live Candles"

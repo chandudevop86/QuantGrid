@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStrategySignals } from "../hooks/useAutoSignals";
+import { formatLocalDateTime, localizeTimestamps } from "../utils/time";
 
 const strategies = [
   "amd",
@@ -19,8 +20,17 @@ function formatStrategyName(strategy: string) {
 
 function formatMarketSource(source?: string) {
   if (source === "yahoo-finance") return "Live NIFTY";
+  if (source === "stored-live-cache") return "Stored live cache";
   if (source === "sample-fallback") return "Fallback";
   return source ?? "-";
+}
+
+function formatAge(seconds?: number | null) {
+  if (typeof seconds !== "number" || Number.isNaN(seconds)) return "-";
+  const absolute = Math.abs(seconds);
+  if (absolute < 60) return `${Math.round(seconds)}s`;
+  if (absolute < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${(seconds / 3600).toFixed(1)}h`;
 }
 
 function noTradeSummary(diagnostics: string[]) {
@@ -46,9 +56,18 @@ export default function Strategies() {
           const signals = Array.isArray(signal?.data) ? signal.data : [];
           const diagnostics = Array.isArray(signal?.diagnostics) ? signal.diagnostics : [];
           const hasSignals = signals.length > 0;
+          const freshness = signal?.validation_context;
+          const isStale = freshness?.is_recent === false;
           const updatedAt = signal?.updated_at
             ? new Date(signal.updated_at).toLocaleTimeString()
             : null;
+          const statusLabel = loading && !signal
+            ? "Updating"
+            : hasSignalError
+              ? "Offline"
+              : isStale
+                ? "Stale"
+                : "Live";
 
           return (
             <div key={strategy} className="form-panel signal-panel strategy-signal-card">
@@ -57,8 +76,8 @@ export default function Strategies() {
                   <h2>{formatStrategyName(strategy)}</h2>
                   <p>{updatedAt ? `Updated ${updatedAt}` : "Waiting for first refresh."}</p>
                 </div>
-                <span className={`status-pill${hasSignalError ? " error" : ""}`}>
-                  {loading && !signal ? "Updating" : hasSignalError ? "Offline" : "Live"}
+                <span className={`status-pill${hasSignalError ? " error" : isStale ? " stale" : ""}`}>
+                  {statusLabel}
                 </span>
               </div>
 
@@ -94,6 +113,10 @@ export default function Strategies() {
               {!hasSignalError && signal && (
                 <div className="diagnostic-list" role="status">
                   <div>Data source: {formatMarketSource(signal.market_data?.source)}</div>
+                  <div>
+                    Latest candle: {formatLocalDateTime(freshness?.latest_candle_at)} | Age {formatAge(freshness?.latest_candle_age_seconds)}
+                  </div>
+                  <div>Freshness limit: {formatAge(freshness?.max_candle_age_seconds)}</div>
                   <div>Validated {signal.validated_signals ?? 0} of {signal.raw_signals ?? 0} raw setups.</div>
                 </div>
               )}
@@ -108,7 +131,13 @@ export default function Strategies() {
 
               <pre>
                 {signal
-                  ? JSON.stringify(hasSignalError ? signal : { signals, diagnostics }, null, 2)
+                  ? JSON.stringify(
+                    hasSignalError
+                      ? localizeTimestamps(signal)
+                      : localizeTimestamps({ signals, diagnostics, validation_context: freshness }),
+                    null,
+                    2
+                  )
                   : "Waiting for the first signal response..."}
               </pre>
             </div>

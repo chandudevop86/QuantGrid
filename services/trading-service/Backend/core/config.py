@@ -15,6 +15,7 @@ class Settings:
     auth_secret: str
     database_url: str
     market_data_provider: str
+    broker_provider: str | None
     live_trading_enabled: bool
     broker_configured: bool
     allow_dev_seed_users: bool
@@ -93,10 +94,23 @@ def get_settings() -> Settings:
 
     database_url = os.getenv("DATABASE_URL") or _default_sqlite_url()
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
+    broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
+    broker_token = (
+        os.getenv("QUANTGRID_BROKER_ACCESS_TOKEN")
+        or os.getenv("DHAN_ACCESS_TOKEN")
+        or os.getenv("ZERODHA_ACCESS_TOKEN")
+    )
+    broker_key = (
+        os.getenv("QUANTGRID_BROKER_API_KEY")
+        or os.getenv("QUANTGRID_BROKER_CLIENT_ID")
+        or os.getenv("DHAN_CLIENT_ID")
+        or os.getenv("ZERODHA_API_KEY")
+    )
     broker_configured = bool(
-        os.getenv("QUANTGRID_BROKER_PROVIDER")
-        and (os.getenv("QUANTGRID_BROKER_ACCESS_TOKEN") or os.getenv("QUANTGRID_BROKER_API_KEY"))
+        broker_provider
+        and broker_token
+        and (broker_provider == "dhan" or broker_key)
     )
     allow_dev_seed_users = environment == "local" and _truthy(os.getenv("QUANTGRID_ALLOW_DEV_SEED_USERS"))
     bootstrap_users = os.getenv("QUANTGRID_USERS")
@@ -106,6 +120,7 @@ def get_settings() -> Settings:
         auth_secret=auth_secret,
         database_url=database_url,
         market_data_provider=market_data_provider,
+        broker_provider=broker_provider,
         live_trading_enabled=live_trading_enabled,
         broker_configured=broker_configured,
         allow_dev_seed_users=allow_dev_seed_users,

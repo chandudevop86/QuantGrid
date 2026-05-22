@@ -13,6 +13,13 @@ type AutoSignalState = {
     volume_status?: string;
     warning?: string;
   };
+  validation_context?: {
+    server_time?: string;
+    latest_candle_at?: string;
+    latest_candle_age_seconds?: number | null;
+    max_candle_age_seconds?: number;
+    is_recent?: boolean;
+  };
   error?: string;
 };
 
@@ -57,6 +64,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
           risk_pct: 1,
           rr_ratio: 2,
           include_diagnostics: true,
+          candle_source: candleData?.source,
           candles,
           mtf_candles,
           htf_candles,
@@ -73,6 +81,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
               typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
             candles_analyzed: candles.length,
             updated_at: new Date().toISOString(),
+            validation_context: result?.validation_context,
             market_data: {
               source: candleData?.source,
               volume_status: candleData?.volume_status,
@@ -128,6 +137,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
               risk_pct: 1,
               rr_ratio: 2,
               include_diagnostics: true,
+              candle_source: candleData?.source,
               candles,
               mtf_candles,
               htf_candles,
@@ -143,6 +153,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
                 typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
               candles_analyzed: candles.length,
               updated_at: updatedAt,
+              validation_context: result?.validation_context,
               market_data: {
                 source: candleData?.source,
                 volume_status: candleData?.volume_status,

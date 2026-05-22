@@ -50,6 +50,7 @@ export default function ExecutionForm() {
           capital: 100000,
           risk_pct: 1,
           rr_ratio: 2,
+          candle_source: candleData?.source,
           candles,
         });
 

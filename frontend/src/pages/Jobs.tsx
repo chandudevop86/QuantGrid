@@ -1,4 +1,5 @@
 import { useLiveJobs } from "../hooks/useLiveJobs";
+import { formatLocalDateTime } from "../utils/time";
 
 export default function Jobs() {
   const { jobs, error, socketConnected } = useLiveJobs();
@@ -20,6 +21,7 @@ export default function Jobs() {
               <th>ID</th>
               <th>Status</th>
               <th>Symbol</th>
+              <th>Updated</th>
             </tr>
           </thead>
           <tbody>
@@ -28,11 +30,12 @@ export default function Jobs() {
                 <td>{job.job_id ?? job.id}</td>
                 <td>{job.status ?? "unknown"}</td>
                 <td>{job.symbol ?? "-"}</td>
+                <td>{formatLocalDateTime(job.updated_at ?? job.created_at)}</td>
               </tr>
             ))}
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={3}>No jobs have been created yet.</td>
+                <td colSpan={4}>No jobs have been created yet.</td>
               </tr>
             )}
           </tbody>

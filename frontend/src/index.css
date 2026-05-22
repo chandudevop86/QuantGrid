@@ -667,6 +667,52 @@ select {
   font-size: 18px;
 }
 
+.institutional-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.48);
+}
+
+.institutional-panel div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.institutional-panel span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.institutional-panel strong {
+  color: #f8fafc;
+  font-size: 14px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.institutional-panel p,
+.institutional-panel ul {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.institutional-panel ul {
+  padding-left: 16px;
+}
+
+.institutional-wide {
+  grid-column: span 4;
+}
+
 .status-pill {
   flex: 0 0 auto;
   padding: 7px 10px;
@@ -684,14 +730,22 @@ select {
   color: #fecaca;
 }
 
+.status-pill.stale {
+  border-color: rgba(251, 191, 36, 0.46);
+  background: rgba(120, 53, 15, 0.28);
+  color: #fde68a;
+}
+
 .chart-panel {
   max-width: none;
+  gap: 14px;
+  padding: 18px;
 }
 
 .candle-chart {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  min-height: 260px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  min-height: 184px;
   overflow: hidden;
   border: 1px solid #1e293b;
   border-radius: 8px;
@@ -702,27 +756,27 @@ select {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px 12px;
+  padding: 12px 10px;
   border-right: 1px solid #1e293b;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .candle-plot {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(56px, 1fr);
-  gap: 12px;
+  grid-auto-columns: minmax(42px, 1fr);
+  gap: 8px;
   min-width: 0;
-  min-height: 220px;
-  padding: 18px 18px 34px;
+  min-height: 158px;
+  padding: 12px 14px 30px;
   overflow-x: auto;
 }
 
 .candle-column {
   position: relative;
-  min-width: 48px;
-  height: 190px;
+  min-width: 38px;
+  height: 140px;
 }
 
 .candle-column span {
@@ -747,7 +801,7 @@ select {
 .candle-body {
   position: absolute;
   left: 50%;
-  width: 18px;
+  width: 14px;
   border-radius: 4px;
   transform: translateX(-50%);
 }
@@ -765,7 +819,7 @@ select {
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 220px;
+  min-height: 160px;
   border: 1px dashed #334155;
   border-radius: 8px;
   color: #94a3b8;
@@ -808,6 +862,14 @@ select {
 
   .strategy-signal-grid {
     grid-template-columns: 1fr;
+  }
+
+  .institutional-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .institutional-wide {
+    grid-column: span 2;
   }
 
   .candle-chart {

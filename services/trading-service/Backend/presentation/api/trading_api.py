@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 
 from Backend.application.dto import serialize_signal
-from Backend.application.signal_validation import diagnose_signal_run, validate_signals
+from Backend.application.signal_validation import candle_freshness, diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.roles import require_roles
 
@@ -22,6 +22,7 @@ class StrategyRunRequest(BaseModel):
     htf_candles: list[dict[str, Any]] | None = None
     mtf_candles: list[dict[str, Any]] | None = None
     daily_candles: list[dict[str, Any]] | None = None
+    candle_source: str | None = None
     include_diagnostics: bool = False
 
 
@@ -31,6 +32,7 @@ def generate_signals(
     _role: str = Depends(require_roles("admin", "trader", "analyst")),
 ):
     service = TradingService()
+    candle_source = payload.candle_source or "yahoo-finance"
     params = {
         key: value
         for key, value in {
@@ -53,7 +55,7 @@ def generate_signals(
         signals,
         symbol=payload.symbol,
         candles=payload.candles,
-        candle_source="yahoo-finance",
+        candle_source=candle_source,
     )
     serialized = [serialize_signal(s) for s in validated_signals]
     if not payload.include_diagnostics:
@@ -63,7 +65,7 @@ def generate_signals(
         signals,
         symbol=payload.symbol,
         candles=payload.candles,
-        candle_source="yahoo-finance",
+        candle_source=candle_source,
     )
     strategy = payload.strategy_name.lower()
     if strategy == "mtf" and ("htf_candles" not in params or "mtf_candles" not in params):
@@ -79,9 +81,11 @@ def generate_signals(
         "validated_signals": len(serialized),
         "diagnostics": diagnostics,
         "data_source": _data_source,
+        "validation_context": candle_freshness(payload.candles),
     }
 
 
 @router.get("/strategies")
 def list_strategies():
+    service = TradingService()
     return service.trading_engine.strategy_engine.available()

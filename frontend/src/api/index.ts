@@ -7,6 +7,7 @@ export type SignalPayload = {
   risk_pct: number;
   rr_ratio?: number;
   include_diagnostics?: boolean;
+  candle_source?: string;
   candles: Array<{
     timestamp?: string;
     open: number;
@@ -34,6 +35,7 @@ export const api = {
     API.post(`/admin/users/${userId}/change-password`, { old_password: oldPassword, new_password: newPassword }).then((res) => res.data),
   deleteUser: (userId: number) => API.delete(`/admin/users/${userId}`).then((res) => res.data),
   health: () => API.get("/health").then((res) => res.data),
+  brokerStatus: () => API.get("/broker/status").then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
@@ -54,4 +56,9 @@ export const api = {
     API.post("/dashboard/live-analysis/jobs", payload).then((res) => res.data),
   getJobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
   jobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
+  latestSignals: () => API.get("/api/signals/latest").then((res) => res.data),
+  paperTrades: () => API.get("/api/trades/paper").then((res) => res.data),
+  riskStatus: () => API.get("/api/risk/status").then((res) => res.data),
+  backtestStrategy: (strategy: string) =>
+    API.get(`/api/strategies/${strategy}/backtest`).then((res) => res.data),
 };
