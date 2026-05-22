@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 from fastapi import Request
@@ -33,9 +34,7 @@ def write_audit_log(
     request: Request | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    sanitized_metadata = metadata or {}
-    for forbidden in ("password", "new_password", "old_password", "token", "access_token"):
-        sanitized_metadata.pop(forbidden, None)
+    sanitized_metadata = _sanitize_metadata(deepcopy(metadata or {}))
 
     db.add(
         AuditLog(
@@ -50,3 +49,15 @@ def write_audit_log(
         )
     )
     db.commit()
+
+
+def _sanitize_metadata(value: Any) -> Any:
+    forbidden = {"password", "new_password", "old_password", "token", "access_token", "authorization"}
+    if isinstance(value, dict):
+        return {
+            key: ("[redacted]" if str(key).lower() in forbidden else _sanitize_metadata(item))
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_metadata(item) for item in value]
+    return value

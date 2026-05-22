@@ -142,7 +142,7 @@ def decide_signal(
 
     if age is None or age > max_signal_age_minutes():
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
-    if not candle_validation.valid:
+    if not candle_validation.valid_for_analysis:
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
     if score < min_signal_score():
         return SignalDecision(False, "REJECTED", "LOW_SCORE", age, latest.isoformat() if latest else None, score, regime.regime, bias)

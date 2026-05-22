@@ -54,6 +54,8 @@ class FeedDelay(BaseModel):
 
 class CandleValidationResult(BaseModel):
     valid: bool
+    valid_for_analysis: bool
+    valid_for_execution: bool
     market_live: bool
     market_status: str
     ui_status: str
@@ -233,6 +235,8 @@ def validate_live_candle(
         diagnostics.append("Backtest mode: live stale-candle rejection is disabled.")
         result = CandleValidationResult(
             valid=latest is not None,
+            valid_for_analysis=latest is not None,
+            valid_for_execution=False,
             market_live=False,
             market_status="BACKTEST",
             ui_status="⚫ BACKTEST",
@@ -254,6 +258,8 @@ def validate_live_candle(
         diagnostics.append("No latest candle timestamp is available.")
         result = CandleValidationResult(
             valid=False,
+            valid_for_analysis=False,
+            valid_for_execution=False,
             market_live=session.market_live,
             market_status=session.status,
             ui_status=_status_icon(session.status),
@@ -281,6 +287,8 @@ def validate_live_candle(
         warnings.append(f"{session.status}: stale rejection disabled; final/latest candle analysis is allowed.")
         result = CandleValidationResult(
             valid=True,
+            valid_for_analysis=True,
+            valid_for_execution=False,
             market_live=False,
             market_status=session.status,
             ui_status=_status_icon(session.status),
@@ -316,6 +324,8 @@ def validate_live_candle(
 
     result = CandleValidationResult(
         valid=valid,
+        valid_for_analysis=valid,
+        valid_for_execution=valid and status == "LIVE MARKET",
         market_live=True,
         market_status=status,
         ui_status=_status_icon(status),

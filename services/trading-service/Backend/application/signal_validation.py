@@ -261,7 +261,7 @@ def validate_signals(
     source_tag = data_source_tag(candle_source)
     latest = _latest_candle(candles)
     candle_validation = validate_live_candle(candles, source=candle_source, mode="paper")
-    if candle_source != LIVE_SOURCE or latest is None or not candle_validation.valid:
+    if candle_source != LIVE_SOURCE or latest is None or not candle_validation.valid_for_analysis:
         return [], source_tag
 
     price_response = get_price(symbol)

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from Backend.application.dto import serialize_signal
@@ -13,6 +13,7 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.execution import ExecutionEngine
 from Backend.trading_system.risk import GlobalRiskManager
+from Backend.presentation.api.roles import require_roles, require_trade_execute
 
 
 router = APIRouter(tags=["production-trading"])
@@ -67,7 +68,10 @@ class ExecuteTradeRequest(BaseModel):
 
 
 @router.post("/generate-signal")
-def generate_signal(payload: StrategyRequest) -> list[dict[str, Any]]:
+def generate_signal(
+    payload: StrategyRequest,
+    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+) -> list[dict[str, Any]]:
     signals = service.run_strategy(
         strategy_name=payload.strategy_name,
         data=payload.candles,
@@ -89,7 +93,10 @@ def generate_signal(payload: StrategyRequest) -> list[dict[str, Any]]:
 
 
 @router.post("/backtest")
-def backtest(payload: BacktestRequest) -> dict[str, Any]:
+def backtest(
+    payload: BacktestRequest,
+    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+) -> dict[str, Any]:
     engine = BacktestEngine(risk_manager=GlobalRiskManager())
     return engine.run(
         candles=payload.candles,
@@ -104,16 +111,16 @@ def backtest(payload: BacktestRequest) -> dict[str, Any]:
 
 
 @router.post("/execute-trade")
-async def execute_trade(payload: ExecuteTradeRequest) -> dict[str, Any]:
-    result = await execution_engine.execute_signal(payload.signal.to_signal(), market_price=payload.market_price)
-    response = asdict(result)
-    if result.order is not None:
-        response["order"] = asdict(result.order)
-        response["order"]["created_at"] = result.order.created_at.isoformat()
-        response["order"]["updated_at"] = result.order.updated_at.isoformat()
-    return response
+async def execute_trade(
+    payload: ExecuteTradeRequest,
+    _actor=Depends(require_trade_execute),
+) -> dict[str, Any]:
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Use /execution/order or /execution/auto-paper. Legacy production execution is disabled.",
+    )
 
 
 @router.get("/metrics")
-def metrics() -> dict[str, Any]:
+def metrics(_role: str = Depends(require_roles("admin", "ops"))) -> dict[str, Any]:
     return asdict(risk_manager.snapshot())

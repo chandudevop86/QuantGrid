@@ -75,6 +75,22 @@ def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
     monkeypatch.setattr(execution_api, "_market_aligned", lambda item: True)
     monkeypatch.setattr(
         execution_api,
+        "validate_live_candle",
+        lambda *args, **kwargs: SimpleNamespace(
+            valid=True,
+            valid_for_analysis=True,
+            valid_for_execution=True,
+            market_status="LIVE MARKET",
+            model_dump=lambda: {
+                "valid": True,
+                "valid_for_analysis": True,
+                "valid_for_execution": True,
+                "market_status": "LIVE MARKET",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        execution_api,
         "decide_signal",
         lambda item, **kwargs: SimpleNamespace(
             score=9,
@@ -119,3 +135,67 @@ def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
     assert payload["target"] == 110
     assert payload["reason"] == "OK"
     assert "amd" in payload["strategy_diagnostics"]
+
+
+def test_auto_paper_rejects_valid_signal_after_market_close(app_client, monkeypatch):
+    import Backend.presentation.api.execution as execution_api
+    from Backend.application.trading_service import TradingService
+
+    signal = StrategySignal(
+        strategy_name="AMD + FVG + Supply/Demand",
+        symbol="NIFTY",
+        side="BUY",
+        entry_price=103,
+        stop_loss=100,
+        target_price=110,
+        signal_time=datetime.fromisoformat("2026-05-22T15:30:00+05:30"),
+        metadata={"score": 9, "quantity": 75},
+    )
+
+    monkeypatch.setattr(execution_api, "get_candles", lambda symbol, interval="1m", period="1d", limit=150: _market_response(interval))
+    monkeypatch.setattr(TradingService, "run_strategy", lambda self, **kwargs: [signal])
+    monkeypatch.setattr(execution_api, "validate_signals", lambda raw, **kwargs: (raw, "live"))
+    monkeypatch.setattr(execution_api, "diagnose_signal_run", lambda raw, **kwargs: ["validated"])
+
+    headers = admin_headers(app_client)
+    response = app_client.post(
+        "/execution/auto-paper",
+        json={"symbol": "NIFTY", "strategies": ["amd"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "rejected"
+    assert payload["reason"] == "MARKET_NOT_LIVE_FOR_EXECUTION: MARKET CLOSED"
+
+
+def test_manual_paper_rejects_invalid_signal_side(app_client, monkeypatch):
+    import Backend.presentation.api.execution as execution_api
+
+    monkeypatch.setattr(
+        execution_api,
+        "validate_live_candle",
+        lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True, model_dump=lambda: {}),
+    )
+
+    headers = admin_headers(app_client)
+    response = app_client.post(
+        "/execution/order",
+        json={
+            "strategy_name": "bad",
+            "symbol": "NIFTY",
+            "side": "HOLD",
+            "entry_price": 103,
+            "stop_loss": 100,
+            "target_price": 110,
+            "signal_time": "2026-05-22T10:00:00Z",
+            "metadata": {"score": 9, "quantity": 75},
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "rejected"
+    assert payload["reason"] == "Signal side must be BUY or SELL."

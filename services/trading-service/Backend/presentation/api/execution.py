@@ -45,6 +45,8 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
 
 def _market_aligned(signal: StrategySignal) -> bool:
     price_response = get_price(signal.symbol)
+    if price_response.get("source") != "yahoo-finance":
+        return False
     market_price = price_response.get("price")
     if market_price is None or float(market_price) <= 0:
         return False
@@ -96,11 +98,14 @@ def _trade_shape_reason(signal: StrategySignal) -> str | None:
         target = float(signal.target_price)
     except (TypeError, ValueError):
         return "Entry, stop, and target must be numeric."
+    side = str(signal.side or "").upper()
+    if side not in {"BUY", "SELL"}:
+        return "Signal side must be BUY or SELL."
     if entry <= 0 or stop <= 0 or target <= 0:
         return "Entry, stop, and target must be positive."
-    if signal.side == "BUY" and not stop < entry < target:
+    if side == "BUY" and not stop < entry < target:
         return "BUY signal requires stop < entry < target."
-    if signal.side == "SELL" and not target < entry < stop:
+    if side == "SELL" and not target < entry < stop:
         return "SELL signal requires target < entry < stop."
     risk = abs(entry - stop)
     reward = abs(target - entry)
@@ -150,6 +155,28 @@ def _submit_paper_signal(
 
     candles_1m = candles_1m if candles_1m is not None else latest_candles(signal.symbol, "1m", 100)
     candles_15m = candles_15m if candles_15m is not None else latest_candles(signal.symbol, "15m", 100)
+    if not candles_1m:
+        try:
+            candles_1m = _strategy_candles(get_candles(signal.symbol, interval="1m", period="1d", limit=100))
+        except Exception:
+            candles_1m = []
+    if not candles_15m:
+        try:
+            candles_15m = _strategy_candles(get_candles(signal.symbol, interval="15m", period="1d", limit=100))
+        except Exception:
+            candles_15m = []
+    candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
+    if not candle_validation.valid_for_execution:
+        return _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"MARKET_NOT_LIVE_FOR_EXECUTION: {candle_validation.market_status}",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={"allowed": False, "validation": candle_validation.model_dump()},
+        )
     decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
     gate = evaluate_risk_gate(decision)
     if not gate.allowed:
@@ -317,16 +344,6 @@ async def auto_paper_order(
 
             selected = validated_signals[0]
             strategy_diagnostics[strategy]["selected_signal"] = serialize_signal(selected)
-            result = _submit_paper_signal(
-                selected,
-                engine=engine,
-                execution_mode=execution_mode,
-                candles_1m=candles,
-                candles_15m=trend_candles,
-                strategy_diagnostics=strategy_diagnostics,
-            )
-            alert_execution_event(result)
-            return result
         except Exception as exc:
             strategy_diagnostics[strategy] = {
                 "raw_signals": 0,
@@ -335,6 +352,20 @@ async def auto_paper_order(
                 "validation": candle_validation.model_dump(),
                 "diagnostics": [f"Strategy scan failed: {exc}"],
             }
+            continue
+
+        selected = validated_signals[0]
+        strategy_diagnostics[strategy]["selected_signal"] = serialize_signal(selected)
+        result = _submit_paper_signal(
+            selected,
+            engine=engine,
+            execution_mode=execution_mode,
+            candles_1m=candles,
+            candles_15m=trend_candles,
+            strategy_diagnostics=strategy_diagnostics,
+        )
+        alert_execution_event(result)
+        return result
 
     result = _paper_response(
         status_value="no_trade",
