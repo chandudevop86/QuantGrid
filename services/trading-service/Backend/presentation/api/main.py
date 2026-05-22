@@ -1,7 +1,7 @@
 import os
 import asyncio
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketDisconnect
 
@@ -54,6 +54,14 @@ def create_app():
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/metrics")
+    def metrics():
+        try:
+            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+        except Exception:
+            return Response("# prometheus_client is not installed\n", media_type="text/plain")
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):

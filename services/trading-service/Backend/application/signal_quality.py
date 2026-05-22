@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from Backend.application.candle_validation import normalize_timestamp, validate_live_candle
 from Backend.domain.indicators.indicators import IndicatorService
 from Backend.domain.models.signal import StrategySignal
 
@@ -59,18 +60,8 @@ def max_signal_age_minutes() -> float:
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        timestamp = value
-    else:
-        try:
-            timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
-            return None
-    if timestamp.tzinfo is None:
-        return timestamp.replace(tzinfo=timezone.utc)
-    return timestamp.astimezone(timezone.utc)
+    timestamp = normalize_timestamp(value)
+    return timestamp.astimezone(timezone.utc) if timestamp else None
 
 
 def _score(signal: StrategySignal) -> float:
@@ -147,8 +138,11 @@ def decide_signal(
     score = _score(signal)
     regime = detect_market_regime(candles_1m)
     bias = mtf_bias(candles_15m)
+    candle_validation = validate_live_candle(candles_1m, mode="paper")
 
     if age is None or age > max_signal_age_minutes():
+        return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+    if not candle_validation.valid:
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
     if score < min_signal_score():
         return SignalDecision(False, "REJECTED", "LOW_SCORE", age, latest.isoformat() if latest else None, score, regime.regime, bias)

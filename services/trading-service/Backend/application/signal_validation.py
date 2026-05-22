@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from Backend.application.candle_validation import normalize_timestamp, validate_live_candle, validation_settings
 from Backend.domain.models.signal import StrategySignal
 from Backend.presentation.api.market_api import get_price
 
@@ -12,7 +13,7 @@ MAX_ENTRY_MARKET_DRIFT = float(os.getenv("SIGNAL_MAX_ENTRY_MARKET_DRIFT", "0.01"
 MAX_STOP_DISTANCE = float(os.getenv("SIGNAL_MAX_STOP_DISTANCE", "0.025"))
 MIN_RISK_REWARD = float(os.getenv("SIGNAL_MIN_RISK_REWARD", "1.5"))
 MIN_SIGNAL_SCORE = float(os.getenv("SIGNAL_MIN_SCORE", "7.0"))
-MAX_CANDLE_AGE_SECONDS = 5 * 60
+MAX_CANDLE_AGE_SECONDS = validation_settings().reject_after_seconds
 LIVE_SOURCE = "yahoo-finance"
 
 
@@ -21,20 +22,8 @@ def data_source_tag(source: str | None) -> str:
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
-    if value is None:
-        return None
-
-    try:
-        if isinstance(value, datetime):
-            timestamp = value
-        else:
-            timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-    if timestamp.tzinfo is None:
-        return timestamp.replace(tzinfo=timezone.utc)
-    return timestamp.astimezone(timezone.utc)
+    timestamp = normalize_timestamp(value)
+    return timestamp.astimezone(timezone.utc) if timestamp else None
 
 
 def _latest_candle(candles: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -42,27 +31,25 @@ def _latest_candle(candles: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def candle_freshness(candles: list[dict[str, Any]]) -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
-    latest = _latest_candle(candles)
-    timestamp = _parse_timestamp(latest.get("timestamp")) if latest else None
-    age_seconds = (now - timestamp).total_seconds() if timestamp else None
-
+    validation = validate_live_candle(candles)
     return {
-        "server_time": now.isoformat(),
-        "latest_candle_at": timestamp.isoformat() if timestamp else None,
-        "latest_candle_age_seconds": round(age_seconds, 1) if age_seconds is not None else None,
+        "server_time": validation.server_time,
+        "server_time_ist": validation.server_time_ist,
+        "latest_candle_at": validation.latest_candle,
+        "latest_candle_at_ist": validation.latest_candle_ist,
+        "latest_candle_age_seconds": validation.delay_seconds,
         "max_candle_age_seconds": MAX_CANDLE_AGE_SECONDS,
-        "is_recent": age_seconds is not None and 0 <= age_seconds <= MAX_CANDLE_AGE_SECONDS,
+        "market_status": validation.market_status,
+        "ui_status": validation.ui_status,
+        "market_live": validation.market_live,
+        "is_recent": validation.valid,
+        "diagnostics": validation.diagnostics,
+        "warnings": validation.warnings,
     }
 
 
 def _is_recent(candle: dict[str, Any]) -> bool:
-    timestamp = _parse_timestamp(candle.get("timestamp"))
-    if timestamp is None:
-        return False
-
-    age = datetime.now(timezone.utc) - timestamp
-    return 0 <= age.total_seconds() <= MAX_CANDLE_AGE_SECONDS
+    return validate_live_candle([candle]).valid
 
 
 def _matches_latest_candle(signal: StrategySignal, latest_candle: dict[str, Any]) -> bool:
@@ -273,7 +260,8 @@ def validate_signals(
 ) -> tuple[list[StrategySignal], str]:
     source_tag = data_source_tag(candle_source)
     latest = _latest_candle(candles)
-    if candle_source != LIVE_SOURCE or latest is None or not _is_recent(latest):
+    candle_validation = validate_live_candle(candles, source=candle_source, mode="paper")
+    if candle_source != LIVE_SOURCE or latest is None or not candle_validation.valid:
         return [], source_tag
 
     price_response = get_price(symbol)
@@ -332,13 +320,16 @@ def diagnose_signal_run(
     diagnostics: list[str] = []
     source_tag = data_source_tag(candle_source)
     latest = _latest_candle(candles)
+    validation = validate_live_candle(candles, source=candle_source, mode="paper")
     freshness = candle_freshness(candles)
 
     if latest is None:
         return ["No candle data available for diagnostics."]
     if candle_source != LIVE_SOURCE:
         diagnostics.append(f"Market data source is {source_tag}; validator requires live yahoo-finance candles.")
-    if not _is_recent(latest):
+    diagnostics.extend(validation.diagnostics)
+    diagnostics.extend(validation.warnings)
+    if not validation.valid:
         latest_at = freshness.get("latest_candle_at") or "unknown"
         age_seconds = freshness.get("latest_candle_age_seconds")
         if isinstance(age_seconds, (int, float)) and age_seconds < 0:
@@ -347,12 +338,12 @@ def diagnose_signal_run(
             )
         elif isinstance(age_seconds, (int, float)):
             diagnostics.append(
-                "Latest candle is stale or outside the live 5-minute validation window "
+                "Latest candle is stale during live market validation "
                 f"(latest {latest_at}, age {age_seconds:.0f}s, limit {MAX_CANDLE_AGE_SECONDS}s)."
             )
         else:
             diagnostics.append(
-                "Latest candle is stale or outside the live 5-minute validation window "
+                "Latest candle could not be validated "
                 f"(latest timestamp {latest_at} could not be parsed)."
             )
 

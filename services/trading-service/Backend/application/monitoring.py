@@ -1,0 +1,32 @@
+from __future__ import annotations
+
+from typing import Any
+
+try:
+    from prometheus_client import Counter, Gauge
+except Exception:  # pragma: no cover - optional production dependency
+    Counter = None  # type: ignore[assignment]
+    Gauge = None  # type: ignore[assignment]
+
+
+if Counter and Gauge:
+    candle_validation_total = Counter(
+        "quantgrid_candle_validation_total",
+        "Candle validation decisions.",
+        ("status", "valid"),
+    )
+    candle_feed_delay_seconds = Gauge(
+        "quantgrid_candle_feed_delay_seconds",
+        "Latest market data feed delay in seconds.",
+        ("status",),
+    )
+else:
+    candle_validation_total = None
+    candle_feed_delay_seconds = None
+
+
+def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
+    if candle_validation_total is not None:
+        candle_validation_total.labels(status=status, valid=str(valid).lower()).inc()
+    if candle_feed_delay_seconds is not None and delay_seconds is not None:
+        candle_feed_delay_seconds.labels(status=status).set(delay_seconds)

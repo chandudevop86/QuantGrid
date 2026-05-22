@@ -122,6 +122,13 @@ QUANTGRID_MARGIN_MULTIPLIER=1
 QUANTGRID_ROUND_DOWN_TO_LOT=true
 MIN_SIGNAL_SCORE=7
 SIGNAL_MAX_AGE_MINUTES=2
+QUANTGRID_CANDLE_WARNING_SECONDS=120
+QUANTGRID_CANDLE_REJECT_SECONDS=300
+QUANTGRID_FEED_DELAY_TOLERANCE_SECONDS=60
+QUANTGRID_MAX_MISSING_CANDLES=2
+QUANTGRID_NSE_HOLIDAYS=2026-01-26,2026-03-03,2026-03-31,2026-04-03,2026-04-14,2026-05-01,2026-08-15,2026-10-02,2026-11-09,2026-12-25
+QUANTGRID_MARKET_CACHE_TTL_SECONDS=10
+REDIS_URL=redis://localhost:6379/0
 QUANTGRID_MAX_DAILY_LOSS=3000
 QUANTGRID_MAX_TRADES_PER_DAY=3
 QUANTGRID_MAX_CONSECUTIVE_LOSSES=2
@@ -138,6 +145,14 @@ execution.
 
 Market data defaults to `QUANTGRID_MARKET_DATA_PROVIDER=yahoo`. Yahoo data is
 not trading-grade and should not be used for live execution.
+
+The candle validator normalizes timestamps to `Asia/Kolkata`, understands the
+NSE regular session, and disables stale-candle rejection after close, on
+weekends, and on configured holidays. During live market hours, candles warn
+after `QUANTGRID_CANDLE_WARNING_SECONDS` and reject only after
+`QUANTGRID_CANDLE_REJECT_SECONDS + QUANTGRID_FEED_DELAY_TOLERANCE_SECONDS`.
+Use `GET /market/validation/NIFTY?interval=1m` to inspect the structured feed
+status, delay, missing-candle count, and human-readable diagnostics.
 
 ## Websocket Updates
 

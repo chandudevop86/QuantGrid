@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from Backend.application.candle_validation import validate_live_candle
 from Backend.application.dto import serialize_signal
 from Backend.application.job_events import publish_job_update
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
@@ -110,6 +111,13 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     confirmation_candles = _prepare_strategy_candles(confirmation_response)
     trend_candles = _prepare_strategy_candles(trend_response)
     service = TradingService()
+    candle_validation = validate_live_candle(
+        candles,
+        interval=payload.interval,
+        mode="paper",
+        source=candles_response.get("source"),
+        provider_fetched_at=candles_response.get("fetched_at"),
+    )
     raw_signals = service.run_strategy(
         strategy_name=payload.strategy,
         data=candles,
@@ -150,7 +158,9 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
             "market_symbol": candles_response.get("market_symbol"),
             "volume_status": candles_response.get("volume_status"),
             "warning": candles_response.get("warning"),
+            "validation": candle_validation.model_dump(),
         },
+        "validation": candle_validation.model_dump(),
         "institutional_analysis": institutional_analysis,
         "signals": serialized_signals,
         "active_signals": serialized_signals,

@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from Backend.application.candle_validation import validate_live_candle
 from Backend.application.market_data_store import (
     latest_candles,
     latest_price_tick,
@@ -87,7 +88,7 @@ def _candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> li
     lows = quote_data.get("low") or []
     closes = quote_data.get("close") or []
     volumes = quote_data.get("volume") or []
-    timezone_name = chart.get("meta", {}).get("timezone", "UTC")
+    timezone_name = chart.get("meta", {}).get("timezone", "Asia/Kolkata")
 
     candles = []
     for index, timestamp in enumerate(timestamps):
@@ -143,6 +144,7 @@ def get_price(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": "yahoo-finance",
             "exchange_timezone": meta.get("timezone"),
+            "provider_latency_ms": chart.get("provider_latency_ms"),
             "provider_warning": YAHOO_TRADING_GRADE_WARNING,
         }
         store_price_tick(payload)
@@ -196,7 +198,16 @@ def get_candles(
             "source": "yahoo-finance",
             "volume_status": _volume_status(market_symbol, candles),
             "provider_warning": YAHOO_TRADING_GRADE_WARNING,
+            "provider_latency_ms": chart.get("provider_latency_ms"),
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
             "candles": candles,
+            "validation": validate_live_candle(
+                candles,
+                interval=interval,
+                mode="paper",
+                source="yahoo-finance",
+                provider_fetched_at=datetime.now(timezone.utc),
+            ).model_dump(),
         }
         store_candles(
             symbol=symbol,
@@ -221,7 +232,33 @@ def get_candles(
             "volume_status": "reported",
             "warning": f"Live market data unavailable: {exc}",
             "candles": _sample_candles(symbol, limit=min(limit, 100)),
+            "validation": validate_live_candle(_sample_candles(symbol, limit=min(limit, 100)), interval=interval, source="sample-fallback").model_dump(),
         }
+
+
+@router.get("/validation/{symbol}")
+def get_candle_validation(
+    symbol: str,
+    interval: str = "1m",
+    period: str = "1d",
+    limit: int = 100,
+    mode: str = "paper",
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops")),
+):
+    response = get_candles(symbol, interval=interval, period=period, limit=limit)
+    validation = validate_live_candle(
+        list(response.get("candles", [])),
+        interval=interval,
+        mode=mode if mode in {"live", "paper", "backtest"} else "paper",
+        source=response.get("source"),
+        provider_fetched_at=response.get("fetched_at"),
+    )
+    return {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "source": response.get("source"),
+        **validation.model_dump(),
+    }
 
 
 @router.get("/stored/{symbol}")
