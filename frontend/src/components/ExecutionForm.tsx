@@ -1,20 +1,14 @@
 import { useState } from "react";
 import { api } from "../services/api";
 
-const strategies = [
-  "amd",
-  "breakout",
-  "btst",
-  "mean_reversion",
-  "mtf",
-  "supply_demand",
-];
-
 export default function ExecutionForm() {
   const [result, setResult] = useState<any>(null);
   const [signal, setSignal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const entry = signal?.entry_price ?? signal?.entry ?? "Signal";
+  const stop = signal?.stop_loss ?? signal?.stop ?? "Signal";
+  const target = signal?.target_price ?? signal?.target ?? "Signal";
 
   const demoSignal = {
     strategy_name: "demo",
@@ -38,48 +32,16 @@ export default function ExecutionForm() {
       setResult(null);
       setSignal(null);
 
-      const candleData = await api.candles("NIFTY", "1m");
-      const candles = Array.isArray(candleData?.candles) ? candleData.candles : [];
-      let selectedSignal: any = null;
-      let selectedStrategy: string | null = null;
-
-      for (const strategy of strategies) {
-        const signals = await api.runSignals({
-          strategy_name: strategy,
-          symbol: "NIFTY",
-          capital: 100000,
-          risk_pct: 1,
-          rr_ratio: 2,
-          candle_source: candleData?.source,
-          candles,
-        });
-
-        if (Array.isArray(signals) && signals.length > 0) {
-          selectedSignal = signals[0];
-          selectedStrategy = strategy;
-          break;
-        }
-      }
-
-      if (!selectedSignal) {
-        setResult({
-          status: "no_trade",
-          source: "signal_based",
-          reason: "No validated signal found across auto-scan strategies.",
-          candles_analyzed: candles.length,
-          strategies_checked: strategies,
-        });
-        return;
-      }
-
-      setSignal(selectedSignal);
-      const res = await api.executeOrder(selectedSignal);
-
-      setResult({
-        ...res,
-        strategy_checked: selectedStrategy,
-        signal: selectedSignal,
+      const res = await api.executeAutoPaper({
+        symbol: "NIFTY",
+        interval: "1m",
+        period: "1d",
+        capital: 100000,
+        risk_pct: 1,
+        rr_ratio: 2,
       });
+      setSignal(res?.order ?? res);
+      setResult(res);
     } catch (err: any) {
       const message =
         err?.response?.data?.detail ??
@@ -136,15 +98,15 @@ export default function ExecutionForm() {
           Symbol
         </span>
         <span>
-          <strong>{signal ? signal.entry_price : "Signal"}</strong>
+          <strong>{entry}</strong>
           Entry
         </span>
         <span>
-          <strong>{signal ? signal.stop_loss : "Signal"}</strong>
+          <strong>{stop}</strong>
           Stop
         </span>
         <span>
-          <strong>{signal ? signal.target_price : "Signal"}</strong>
+          <strong>{target}</strong>
           Target
         </span>
       </div>

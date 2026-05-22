@@ -50,6 +50,8 @@ export const api = {
     API.post("/trading/signals", payload).then((res) => res.data),
   executeOrder: (payload: unknown) =>
     API.post("/execution/order", payload).then((res) => res.data),
+  executeAutoPaper: (payload: unknown = {}) =>
+    API.post("/execution/auto-paper", payload).then((res) => res.data),
   execution: (payload: unknown) =>
     API.post("/execution/order", payload).then((res) => res.data),
   runAnalysis: (payload: unknown) =>
