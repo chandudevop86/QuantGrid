@@ -1,0 +1,20 @@
+project_name = "quantgrid"
+environment  = "staging"
+aws_region   = "ap-south-1"
+
+vpc_cidr           = "10.40.0.0/16"
+allowed_http_cidrs = ["0.0.0.0/0"]
+
+app_ami_id             = "ami-xxxxxxxxxxxxxxxxx"
+app_instance_type      = "t3.small"
+app_desired_capacity   = 2
+app_min_size           = 2
+app_max_size           = 4
+app_ssm_env_path       = "/quantgrid/staging/app/"
+
+db_name              = "quantgrid"
+db_username          = "quantgrid"
+db_password          = "replace-via-secure-tfvars-or-ci-secret"
+db_deletion_protection = true
+
+redis_node_type = "cache.t4g.micro"

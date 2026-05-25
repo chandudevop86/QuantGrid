@@ -26,6 +26,23 @@ uvicorn Backend.presentation.api.main:app --app-dir services/trading-service --r
 - Set explicit `CORS_ALLOWED_ORIGINS`.
 - Keep live trading disabled unless broker execution has been formally approved.
 
+## Terraform AWS 3-Tier
+
+The AWS infrastructure baseline lives in `infra/terraform/aws` and models:
+
+`ALB public tier -> EC2 app private tier -> RDS Postgres / ElastiCache Redis data tier`
+
+```bash
+cd infra/terraform/aws
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform fmt -check
+terraform validate
+terraform plan -var-file=terraform.tfvars
+```
+
+Do not commit `terraform.tfvars`. Supply `db_password`, AMI IDs, and environment-specific values through CI/CD secrets or a secure Terraform workspace.
+
 ## Systemd
 
 ```bash

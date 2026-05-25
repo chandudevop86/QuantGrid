@@ -269,3 +269,5 @@ docker compose -f docker-compose.yml up -d
 
 This starts Kafka, Zookeeper, Redis, and Postgres for the local services.
 Set `POSTGRES_PASSWORD` before starting the stack.
+
+AWS 3-tier Terraform lives in `infra/terraform/aws`; see `infra/terraform/aws/README.md` before planning or applying infrastructure.

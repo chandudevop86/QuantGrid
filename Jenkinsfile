@@ -87,6 +87,17 @@ pipeline {
       }
     }
 
+    stage('Terraform validation') {
+      steps {
+        echo 'Validating Terraform AWS 3-tier infrastructure'
+        sh 'terraform fmt -check -recursive infra/terraform'
+        dir('infra/terraform/aws') {
+          sh 'terraform init -backend=false'
+          sh 'terraform validate'
+        }
+      }
+    }
+
     stage('Smoke tests') {
       steps {
         echo 'Running local smoke checks'

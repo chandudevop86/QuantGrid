@@ -62,3 +62,20 @@ jobs:
         env:
           POSTGRES_PASSWORD: ci-postgres-password
         run: docker compose -f docker-compose.yml config
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive infra/terraform
+      - name: Terraform init
+        working-directory: infra/terraform/aws
+        run: terraform init -backend=false
+      - name: Terraform validate
+        working-directory: infra/terraform/aws
+        run: terraform validate

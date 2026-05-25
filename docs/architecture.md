@@ -37,6 +37,14 @@ Placeholder microservices live in `experimental/` and are non-production.
 - Postgres stores users, audit logs, and persistent application state in production.
 - Redis carries websocket/job update events.
 
+## AWS Deployment Shape
+
+The Terraform baseline in `infra/terraform/aws` maps the modular monolith onto a 3-tier AWS network:
+
+- Public tier: ALB in public subnets.
+- Application tier: EC2 Auto Scaling Group in private subnets.
+- Data tier: RDS Postgres and ElastiCache Redis in isolated subnets.
+
 ## Safety Principles
 
 - Paper mode and live mode remain separated.

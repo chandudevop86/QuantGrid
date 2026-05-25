@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "QuantGrid app instance bootstrapping on port ${app_port}."
+echo "Runtime configuration should be loaded from SSM path ${app_ssm_env_path} by the deployed AMI."
+
+systemctl enable quantgrid-backend || true
+systemctl restart quantgrid-backend || true
