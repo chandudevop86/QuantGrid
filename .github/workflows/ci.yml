@@ -61,4 +61,4 @@ jobs:
       - name: Validate docker compose config
         env:
           POSTGRES_PASSWORD: ci-postgres-password
-        run: docker compose -f Docker-compose.yml config
+        run: docker compose -f docker-compose.yml config

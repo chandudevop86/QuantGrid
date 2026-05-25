@@ -1,32 +1,15 @@
 from __future__ import annotations
 
-import uuid
+from fastapi import APIRouter, FastAPI
 
-from fastapi import FastAPI
-
-from db import list_orders, save_order
-from kafka_client import publisher
-
-app = FastAPI()
+from Backend.presentation.api.trading_api import router as trading_router
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "trading"}
+def create_app() -> FastAPI:
+    app = FastAPI(title="Clean Trading System", version="1.0.0")
+    app.include_router(trading_router)
+    return app
 
 
-@app.post("/order")
-def place_order(order: dict):
-    order["id"] = str(uuid.uuid4())
-    save_order(order["id"], order)
-    published = publisher.publish("orders", order)
-
-    return {
-        "status": "sent" if published else "queued",
-        "order_id": order["id"],
-    }
-
-
-@app.get("/orders")
-def orders():
-    return {"orders": list_orders()}
+app = create_app()
+router = APIRouter(prefix="/api")

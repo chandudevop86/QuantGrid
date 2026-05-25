@@ -264,7 +264,7 @@ Useful routes:
 ## Infrastructure
 
 ```bash
-docker compose -f Docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 This starts Kafka, Zookeeper, Redis, and Postgres for the local services.

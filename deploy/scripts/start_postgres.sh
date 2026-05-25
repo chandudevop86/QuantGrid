@@ -9,5 +9,5 @@ if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
 fi
 
 cd "${APP_DIR}"
-docker compose -f Docker-compose.yml up -d postgres
-docker compose -f Docker-compose.yml ps postgres
+docker compose -f docker-compose.yml up -d postgres
+docker compose -f docker-compose.yml ps postgres

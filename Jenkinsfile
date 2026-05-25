@@ -82,7 +82,7 @@ pipeline {
       steps {
         echo 'Validating Docker Compose configuration'
         withCredentials([usernamePassword(credentialsId: 'quantgrid-docker-registry', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASSWORD')]) {
-          sh 'POSTGRES_PASSWORD=ci-postgres-password docker compose -f Docker-compose.yml config'
+          sh 'POSTGRES_PASSWORD=ci-postgres-password docker compose -f docker-compose.yml config'
         }
       }
     }

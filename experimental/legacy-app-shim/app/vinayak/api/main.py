@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-TRADING_SERVICE = Path(__file__).resolve().parents[3] / "services" / "trading-service"
+TRADING_SERVICE = Path(__file__).resolve().parents[5] / "services" / "trading-service"
 
 if str(TRADING_SERVICE) not in sys.path:
     sys.path.insert(0, str(TRADING_SERVICE))
