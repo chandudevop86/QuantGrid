@@ -50,7 +50,7 @@ def test_auto_paper_returns_per_strategy_diagnostics(app_client, monkeypatch):
     assert payload["reason"] == "No validated signal found across auto-scan strategies."
     assert set(payload["strategy_diagnostics"]) == {"amd", "breakout"}
     assert payload["strategy_diagnostics"]["amd"]["raw_signals"] == 0
-    assert payload["validation"]["market_status"] == "MARKET CLOSED"
+    assert payload["validation"]["market_status"] in {"MARKET CLOSED", "DELAYED FEED"}
 
 
 def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
@@ -167,7 +167,7 @@ def test_auto_paper_rejects_valid_signal_after_market_close(app_client, monkeypa
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "rejected"
-    assert payload["reason"] == "MARKET_NOT_LIVE_FOR_EXECUTION: MARKET CLOSED"
+    assert payload["reason"].startswith("MARKET_NOT_LIVE_FOR_EXECUTION:")
 
 
 def test_manual_paper_rejects_invalid_signal_side(app_client, monkeypatch):

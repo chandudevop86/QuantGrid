@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from Backend.infrastructure.broker.base import MarketDataAdapter
 
 class DhanAdapter(MarketDataAdapter):
+    timeout_seconds = 10
 
     def __init__(self, client_id: str, access_token: str):
         self.client_id = client_id
@@ -27,8 +28,10 @@ class DhanAdapter(MarketDataAdapter):
         res = requests.post(
             f"{self.base_url}/charts/historical",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=self.timeout_seconds,
         )
+        res.raise_for_status()
 
         candles = res.json()["data"]["candles"]
 

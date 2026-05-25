@@ -1,0 +1,6 @@
+-r services/trading-service/requirements.txt
+ruff
+bandit
+pip-audit
+pytest-cov
+mypy

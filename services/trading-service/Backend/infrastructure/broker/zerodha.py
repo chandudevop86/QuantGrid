@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from Backend.infrastructure.broker.base import MarketDataAdapter
 
 class ZerodhaAdapter(MarketDataAdapter):
+    timeout_seconds = 10
 
     def __init__(self, api_key: str, access_token: str):
         self.api_key = api_key
@@ -25,8 +26,10 @@ class ZerodhaAdapter(MarketDataAdapter):
         res = requests.get(
             f"{self.base_url}/instruments/historical",
             headers=headers,
-            params=params
+            params=params,
+            timeout=self.timeout_seconds,
         )
+        res.raise_for_status()
 
         data = res.json()["data"]["candles"]
 

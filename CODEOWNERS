@@ -1,0 +1,9 @@
+# QuantGrid ownership rules
+* @quantgrid/core
+
+/services/trading-service/Backend/presentation/api/auth.py @quantgrid/security
+/services/trading-service/Backend/presentation/api/execution.py @quantgrid/trading
+/services/trading-service/Backend/domain/ @quantgrid/trading
+/deploy/ @quantgrid/platform
+/.github/ @quantgrid/platform
+/Jenkinsfile @quantgrid/platform

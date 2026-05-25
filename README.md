@@ -1,23 +1,28 @@
 # QuantGrid
 
-QuantGrid is a trading dashboard and service playground with a React/Vite frontend and FastAPI-based backend services for trading signals, execution, market data, live analysis jobs, and websocket updates.
+QuantGrid is a trading dashboard with a React/Vite frontend and a FastAPI trading-service for trading signals, execution safety, market data validation, live analysis jobs, auth, audit logs, and websocket updates.
+
+The official production architecture is a modular monolith:
+
+`Nginx -> React frontend -> FastAPI trading-service -> Postgres/Redis`
+
+Placeholder services and service-extraction experiments live in `experimental/` and are not production systems.
 
 ## Project Layout
 
-- `frontend/` - React dashboard built with Vite.
+- `apps/frontend/` - React dashboard built with Vite.
 - `services/trading-service/` - Main FastAPI trading API.
-- `services/strategy-service/` - Minimal strategy signal service.
-- `services/market-data-service/` - Placeholder market data service.
-- `services/auth-service/` - Placeholder auth service.
-- `gateway/` - FastAPI proxy gateway.
-- `engine/` - Kafka order execution worker.
-- `websocket/` - Redis-backed websocket broadcaster.
+- `experimental/` - Non-production service experiments and placeholders.
 - `infra/` - Kafka topic initialization helpers.
+- `deploy/` - systemd, Nginx, and deployment scripts.
+- `docs/` - Architecture, operations, release, security, and process docs.
+- `scripts/` - CI/CD and project automation scripts.
+- `tests/` - Backend test suite and category directories.
 
 ## Frontend
 
 ```bash
-cd frontend
+cd apps/frontend
 npm install
 npm run build
 npm run dev
@@ -156,14 +161,9 @@ status, delay, missing-candle count, and human-readable diagnostics.
 
 ## Websocket Updates
 
-```bash
-cd websocket
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8005
-```
-
-Set `REDIS_URL` for both the trading API and websocket service if Redis is not
-running at `redis://localhost:6379/0`.
+Websocket updates are served by the production trading service at `/ws`. Set
+`REDIS_URL` for the trading API if Redis is not running at
+`redis://localhost:6379/0`.
 
 ## Alerts
 

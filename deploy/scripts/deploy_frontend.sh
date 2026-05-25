@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/root/QuantGrid}"
-FRONTEND_DIR="${APP_DIR}/frontend"
+FRONTEND_DIR="${APP_DIR}/apps/frontend"
 WEB_ROOT="${WEB_ROOT:-/var/www/quantgrid}"
 
 cd "${FRONTEND_DIR}"

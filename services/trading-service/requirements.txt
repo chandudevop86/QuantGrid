@@ -8,5 +8,6 @@ SQLAlchemy
 passlib[bcrypt]
 bcrypt==4.0.1
 psycopg[binary]
+prometheus_client
 pytest
 httpx

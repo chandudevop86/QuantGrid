@@ -5,27 +5,60 @@ on:
   pull_request:
 
 jobs:
-  test:
+  backend:
+    name: Backend quality gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Ruff lint
+        run: ruff check services/trading-service tests
+      - name: Python syntax check
+        run: python -m compileall services/trading-service tests
+      - name: Security scan
+        run: bandit -q -r services/trading-service -x "*/tests/*"
+      - name: Dependency audit
+        run: pip-audit -r services/trading-service/requirements.txt
+      - name: Block checked-in secrets/default credentials
+        run: python scripts/check_no_secrets.py
+      - name: Production config guard
+        run: python scripts/check_production_config.py
+      - name: Pytest with coverage
+        env:
+          QUANTGRID_ENV: local
+          QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
+          QUANTGRID_ALLOW_DEV_SEED_USERS: "true"
+        run: pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install backend dependencies
-        run: python -m pip install --upgrade pip && pip install -r services/trading-service/requirements.txt
+          cache-dependency-path: apps/frontend/package-lock.json
       - name: Install frontend dependencies
         run: npm ci
-        working-directory: frontend
-      - name: Python syntax check
-        run: python -m compileall services/trading-service
-      - name: Frontend typecheck
-        run: npx tsc -b --pretty false
-        working-directory: frontend
-      - name: Pytest
-        run: pytest
+        working-directory: apps/frontend
+      - name: Frontend build
+        run: npm run build
+        working-directory: apps/frontend
+
+  docker:
+    name: Docker build validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker compose config
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+        run: docker compose -f Docker-compose.yml config

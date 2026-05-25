@@ -1,15 +1,20 @@
 import os
 import asyncio
+import logging
+import time
+import uuid
 
-from fastapi import FastAPI, Response, WebSocket
+from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketDisconnect
 
+from Backend.application.monitoring import observe_api_request
 from Backend.core.config import validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
 from Backend.application.paper_trade_store import init_paper_trade_store
+from Backend.logging_config import configure_logging
 from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
 from Backend.presentation.api.websocket_manager import manager
 
@@ -18,6 +23,9 @@ def _allowed_origins() -> list[str]:
     configured = os.getenv("CORS_ALLOWED_ORIGINS")
     if configured:
         return [origin.strip() for origin in configured.split(",") if origin.strip()]
+
+    if os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"prod", "production"}:
+        raise RuntimeError("CORS_ALLOWED_ORIGINS must be explicitly configured in production.")
 
     return [
         "http://localhost:5173",
@@ -30,7 +38,9 @@ def _allowed_origins() -> list[str]:
 
 
 def create_app():
+    configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     app = FastAPI(title="QuantGrid API")
+    logger = logging.getLogger("quantgrid.api")
 
     app.add_middleware(
         CORSMiddleware,
@@ -39,6 +49,37 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def request_context_middleware(request: Request, call_next):
+        request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+        started_at = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        except Exception:
+            logger.exception(
+                "api_request_failed",
+                extra={"request_id": request_id, "method": request.method, "path": request.url.path},
+            )
+            raise
+        finally:
+            latency = time.perf_counter() - started_at
+            observe_api_request(request.method, request.url.path, status_code, latency)
+            logger.info(
+                "api_request",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status_code": status_code,
+                    "latency_seconds": round(latency, 6),
+                },
+            )
+            if "response" in locals():
+                response.headers["X-Request-ID"] = request_id
 
     @app.on_event("startup")
     def startup():

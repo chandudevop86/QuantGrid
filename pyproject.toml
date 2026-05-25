@@ -1,0 +1,38 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [
+  ".git",
+  ".pytest_cache",
+  "apps/frontend/node_modules",
+  "apps/frontend/dist",
+  "experimental",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"scripts/**" = ["S603", "S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["services/trading-service"]
+addopts = "-ra"
+
+[tool.coverage.run]
+branch = true
+source = ["services/trading-service/Backend"]
+omit = ["*/__pycache__/*"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "experimental", "apps/frontend/node_modules"]
+skips = ["B101"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_configs = true
+files = ["services/trading-service/Backend"]

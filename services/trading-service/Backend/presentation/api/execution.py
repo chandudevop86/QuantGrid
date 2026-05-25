@@ -25,6 +25,7 @@ from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.application.market_data_store import latest_candles
+from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
 from Backend.presentation.api.roles import require_roles, require_trade_execute
 
 router = APIRouter()
@@ -131,6 +132,7 @@ def _submit_paper_signal(
     strategy_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if execution_mode != "paper":
+        observe_rejected_order("paper_mode_required", execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -143,6 +145,7 @@ def _submit_paper_signal(
 
     shape_reason = _trade_shape_reason(signal)
     if shape_reason:
+        observe_rejected_order(shape_reason, execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -167,6 +170,7 @@ def _submit_paper_signal(
             candles_15m = []
     candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
     if not candle_validation.valid_for_execution:
+        observe_rejected_order(f"MARKET_NOT_LIVE_FOR_EXECUTION: {candle_validation.market_status}", execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -180,6 +184,7 @@ def _submit_paper_signal(
     decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
     gate = evaluate_risk_gate(decision)
     if not gate.allowed:
+        observe_rejected_order(gate.reason, execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -192,6 +197,7 @@ def _submit_paper_signal(
         )
 
     if not _market_aligned(signal):
+        observe_rejected_order("market_alignment_failed", execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -205,6 +211,7 @@ def _submit_paper_signal(
 
     constraints = validate_execution_constraints(signal)
     if not constraints.accepted:
+        observe_rejected_order(constraints.reason, execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
@@ -258,6 +265,7 @@ def _submit_paper_signal(
             "signal_time": signal.signal_time.isoformat(),
         }
     )
+    observe_paper_order("paper_order_submitted", signal.strategy_name, signal.symbol)
     return result
 
 
@@ -319,6 +327,7 @@ async def auto_paper_order(
                 rr_ratio=payload.rr_ratio,
                 params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles},
             )
+            observe_signal_generation(strategy, "success")
             validated_signals, data_source = validate_signals(
                 raw_signals,
                 symbol=symbol,
@@ -345,6 +354,7 @@ async def auto_paper_order(
             selected = validated_signals[0]
             strategy_diagnostics[strategy]["selected_signal"] = serialize_signal(selected)
         except Exception as exc:
+            observe_signal_generation(strategy, "error")
             strategy_diagnostics[strategy] = {
                 "raw_signals": 0,
                 "validated_signals": 0,

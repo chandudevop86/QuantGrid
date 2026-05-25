@@ -138,7 +138,7 @@ def decide_signal(
     score = _score(signal)
     regime = detect_market_regime(candles_1m)
     bias = mtf_bias(candles_15m)
-    candle_validation = validate_live_candle(candles_1m, mode="paper")
+    candle_validation = validate_live_candle(candles_1m, mode="paper", now=latest)
 
     if age is None or age > max_signal_age_minutes():
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
