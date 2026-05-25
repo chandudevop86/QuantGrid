@@ -1,14 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getCurrentMode, getCurrentUiMode, type UiMode } from "../mode";
 import { api } from "../services/api";
 
 export default function ExecutionForm() {
   const [result, setResult] = useState<any>(null);
   const [signal, setSignal] = useState<any>(null);
+  const [operations, setOperations] = useState<any>(null);
+  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
+  const [tradingMode, setTradingMode] = useState(getCurrentMode());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const entry = signal?.entry_price ?? signal?.entry ?? "Signal";
   const stop = signal?.stop_loss ?? signal?.stop ?? "Signal";
   const target = signal?.target_price ?? signal?.target ?? "Signal";
+  const market = operations?.market_status;
+  const risk = operations?.risk_summary;
+  const isLive = tradingMode === "live";
 
   const demoSignal = {
     strategy_name: "demo",
@@ -57,6 +64,24 @@ export default function ExecutionForm() {
     }
   };
 
+  useEffect(() => {
+    const refreshOperations = () => api.operationsStatus().then(setOperations).catch(() => undefined);
+    const syncMode = () => setTradingMode(getCurrentMode());
+    const syncUiMode = () => setUiMode(getCurrentUiMode());
+
+    refreshOperations();
+    window.addEventListener("quantgrid-mode-change", syncMode);
+    window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
+    window.addEventListener("storage", syncMode);
+    window.addEventListener("storage", syncUiMode);
+    return () => {
+      window.removeEventListener("quantgrid-mode-change", syncMode);
+      window.removeEventListener("quantgrid-ui-mode-change", syncUiMode);
+      window.removeEventListener("storage", syncMode);
+      window.removeEventListener("storage", syncUiMode);
+    };
+  }, []);
+
   const submitDemo = async () => {
     try {
       setLoading(true);
@@ -91,6 +116,37 @@ export default function ExecutionForm() {
         </div>
         <span className="environment-badge">{signal?.side ?? "AUTO"}</span>
       </div>
+
+      {isLive && (
+        <div className="alert alert-error live-warning" role="alert">
+          LIVE TRADING ENABLED
+        </div>
+      )}
+
+      <div className="execution-safety-grid">
+        <span>
+          <strong>{market?.valid_for_execution ? "Eligible" : "Blocked"}</strong>
+          Validation status
+        </span>
+        <span>
+          <strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong>
+          Risk status
+        </span>
+        <span>
+          <strong>{market?.session_state ?? "unknown"}</strong>
+          Market session
+        </span>
+        <span>
+          <strong>{market?.feed_delay_seconds ?? "-"}s</strong>
+          Feed delay
+        </span>
+      </div>
+
+      {market?.warnings?.length > 0 && (
+        <div className="alert alert-warning" role="status">
+          {market.warnings[0]}
+        </div>
+      )}
 
       <div className="order-summary">
         <span>
@@ -134,10 +190,19 @@ export default function ExecutionForm() {
         </div>
       )}
 
-      {result && (
-        <pre>
-          {JSON.stringify(result, null, 2)}
-        </pre>
+      {result && uiMode === "trader" && (
+        <div className="alert alert-success" role="status">
+          Paper execution request accepted. Validation and risk gates remained active.
+        </div>
+      )}
+
+      {result && uiMode === "developer" && (
+        <details className="technical-details" open>
+          <summary>Execution API Payload</summary>
+          <pre>
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );

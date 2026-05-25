@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { getApiErrorMessage } from "../api/client";
-import { getCurrentMode, modeLabels, modes, setCurrentMode, type TradingMode } from "../mode";
+import {
+  getCurrentMode,
+  getCurrentUiMode,
+  modeLabels,
+  modes,
+  setCurrentMode,
+  setCurrentUiMode,
+  type TradingMode,
+  type UiMode,
+  uiModeLabels,
+  uiModes,
+} from "../mode";
 import {
   clearCurrentAuth,
   getCurrentRole,
@@ -15,6 +26,7 @@ import {
 export default function Topbar() {
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
+  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -30,15 +42,20 @@ export default function Topbar() {
       setIsAuthenticated(hasAuthToken());
     };
     const syncMode = () => setMode(getCurrentMode());
+    const syncUiMode = () => setUiMode(getCurrentUiMode());
     window.addEventListener("quantgrid-role-change", syncRole);
     window.addEventListener("quantgrid-mode-change", syncMode);
+    window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
     window.addEventListener("storage", syncRole);
     window.addEventListener("storage", syncMode);
+    window.addEventListener("storage", syncUiMode);
     return () => {
       window.removeEventListener("quantgrid-role-change", syncRole);
       window.removeEventListener("quantgrid-mode-change", syncMode);
+      window.removeEventListener("quantgrid-ui-mode-change", syncUiMode);
       window.removeEventListener("storage", syncRole);
       window.removeEventListener("storage", syncMode);
+      window.removeEventListener("storage", syncUiMode);
     };
   }, []);
 
@@ -74,6 +91,11 @@ export default function Topbar() {
   const changeMode = (nextMode: TradingMode) => {
     setCurrentMode(nextMode);
     setMode(nextMode);
+  };
+
+  const changeUiMode = (nextMode: UiMode) => {
+    setCurrentUiMode(nextMode);
+    setUiMode(nextMode);
   };
 
   const createUser = async (event: React.FormEvent) => {
@@ -137,6 +159,18 @@ export default function Topbar() {
               onClick={() => changeMode(item)}
             >
               {modeLabels[item]}
+            </button>
+          ))}
+        </div>
+        <div className="mode-toggle" aria-label="Dashboard mode">
+          {uiModes.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={uiMode === item ? "active" : ""}
+              onClick={() => changeUiMode(item)}
+            >
+              {uiModeLabels[item]}
             </button>
           ))}
         </div>

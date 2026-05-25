@@ -10,6 +10,7 @@ export default function Sidebar() {
     { to: "/candles", label: "Candles" },
     { to: "/live", label: "Live Analysis" },
     { to: "/jobs", label: "Jobs" },
+    { to: "/operations", label: "Operations" },
     { to: "/signals", label: "Signals" },
     { to: "/strategies", label: "Strategies" },
     { to: "/execution", label: "Execution" },

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { createSocket } from "../socket";
 
 type AutoSignalState = {
   data?: any;
@@ -43,6 +44,7 @@ async function loadStrategyCandles() {
 export function useAutoSignals(strategy: string | null, interval = 5000) {
   const [signal, setSignal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
     if (!strategy) {
@@ -97,20 +99,35 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
     };
 
     fetchSignal();
-    const id = window.setInterval(fetchSignal, interval);
+    const socket = createSocket();
+    socket.onopen = () => {
+      if (isMounted) setSocketConnected(true);
+    };
+    socket.onmessage = () => fetchSignal();
+    socket.onclose = () => {
+      if (isMounted) setSocketConnected(false);
+    };
+    socket.onerror = () => {
+      if (isMounted) setSocketConnected(false);
+    };
+    const id = window.setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN) fetchSignal();
+    }, interval);
 
     return () => {
       isMounted = false;
       window.clearInterval(id);
+      socket.close();
     };
   }, [strategy, interval]);
 
-  return { signal, loading };
+  return { signal, loading, socketConnected };
 }
 
 export function useStrategySignals(strategies: string[], interval = 5000) {
   const [signalsByStrategy, setSignalsByStrategy] = useState<Record<string, AutoSignalState>>({});
   const [loading, setLoading] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
     if (strategies.length === 0) {
@@ -181,13 +198,27 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
     };
 
     fetchSignals();
-    const id = window.setInterval(fetchSignals, interval);
+    const socket = createSocket();
+    socket.onopen = () => {
+      if (isMounted) setSocketConnected(true);
+    };
+    socket.onmessage = () => fetchSignals();
+    socket.onclose = () => {
+      if (isMounted) setSocketConnected(false);
+    };
+    socket.onerror = () => {
+      if (isMounted) setSocketConnected(false);
+    };
+    const id = window.setInterval(() => {
+      if (socket.readyState !== WebSocket.OPEN) fetchSignals();
+    }, interval);
 
     return () => {
       isMounted = false;
       window.clearInterval(id);
+      socket.close();
     };
   }, [strategies, interval]);
 
-  return { signalsByStrategy, loading };
+  return { signalsByStrategy, loading, socketConnected };
 }

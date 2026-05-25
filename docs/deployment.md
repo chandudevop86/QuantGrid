@@ -55,10 +55,17 @@ sudo journalctl -u quantgrid-backend -n 200 --no-pager
 
 ```bash
 bash deploy/scripts/deploy_frontend.sh
+sudo apt-get update
+sudo apt-get install -y nginx certbot python3-certbot-nginx
+bash deploy/scripts/install_nginx.sh http
+sudo certbot certonly --webroot -w /var/www/certbot -d your-domain.example -d www.your-domain.example
 bash deploy/scripts/install_nginx.sh https
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+The HTTPS config redirects all HTTP traffic to HTTPS after ACME challenges and sets HSTS, X-Frame-Options,
+X-Content-Type-Options, and Referrer-Policy headers. Production browsers should show a secure lock icon.
 
 ## Database Check
 

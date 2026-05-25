@@ -37,6 +37,7 @@ export const api = {
   health: () => API.get("/health").then((res) => res.data),
   brokerStatus: () => API.get("/broker/status").then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
+  operationsStatus: () => API.get("/dashboard/operations").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
   candles: (symbol: string, interval = "5m") =>

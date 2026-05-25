@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
+  const [operations, setOperations] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const { jobs, error: jobsError } = useLiveJobs();
@@ -34,6 +35,7 @@ export default function Dashboard() {
       setSummary(null);
       setMarketStore(null);
       setBrokerStatus(null);
+      setOperations(null);
       setLoading(false);
       return;
     }
@@ -43,11 +45,13 @@ export default function Dashboard() {
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
       api.brokerStatus(),
+      api.operationsStatus(),
     ])
-      .then(([summaryData, marketStoreData, brokerData]) => {
+      .then(([summaryData, marketStoreData, brokerData, operationsData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setBrokerStatus(brokerData);
+        setOperations(operationsData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -57,6 +61,17 @@ export default function Dashboard() {
   const lastUpdated = summary?.updated_at
     ? new Date(summary.updated_at).toLocaleString()
     : "Not available";
+  const market = operations?.market_status;
+  const health = operations?.system_health;
+  const risk = operations?.risk_summary;
+  const healthItems = [
+    ["API", health?.api?.healthy],
+    ["Redis", health?.redis?.connected],
+    ["DB", health?.db?.healthy],
+    ["WebSocket", health?.websocket?.active],
+    ["Broker", health?.broker?.connected],
+    ["Worker", health?.background_worker?.healthy],
+  ];
 
   return (
     <section className="dashboard-page">
@@ -78,6 +93,49 @@ export default function Dashboard() {
 
       {isAuthenticated && !loading && !error && !jobsError && (
         <>
+          <div className="status-panel-grid">
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>Market Status</span>
+                <strong>{market?.label ?? "Checking"}</strong>
+              </div>
+              <div className="status-panel-body">
+                <span>Feed delay: {market?.feed_delay_seconds ?? "-"}s</span>
+                <span>
+                  Last candle: {market?.last_candle_timestamp ? new Date(market.last_candle_timestamp).toLocaleTimeString() : "-"}
+                </span>
+                <span>Session: {market?.session_state ?? "unknown"}</span>
+              </div>
+            </div>
+
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>System Health</span>
+                <strong>{healthItems.every(([, ok]) => ok === true) ? "Healthy" : "Needs attention"}</strong>
+              </div>
+              <div className="health-dot-grid">
+                {healthItems.map(([label, ok]) => (
+                  <span key={String(label)} className={ok ? "health-ok" : "health-warn"}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="status-panel risk-panel">
+              <div className="status-panel-header">
+                <span>Risk Summary</span>
+                <strong>{risk?.execution_mode ?? "PAPER"}</strong>
+              </div>
+              <div className="status-panel-body">
+                <span>Trades today: {risk?.trades_today ?? 0}</span>
+                <span>Daily PnL: {risk?.daily_pnl ?? 0}</span>
+                <span>Loss remaining: {risk?.daily_loss_remaining ?? "-"}</span>
+                <span>Risk state: {risk?.active_risk_state ?? "UNKNOWN"}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="metric-grid">
             <MetricCard
               label="API Status"

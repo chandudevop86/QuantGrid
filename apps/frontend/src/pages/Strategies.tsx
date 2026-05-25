@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
 import { useStrategySignals } from "../hooks/useAutoSignals";
+import { getCurrentUiMode, type UiMode } from "../mode";
 import { formatLocalDateTime, localizeTimestamps } from "../utils/time";
 
 const strategies = [
@@ -34,19 +36,81 @@ function formatAge(seconds?: number | null) {
 }
 
 function noTradeSummary(diagnostics: string[]) {
-  if (diagnostics.length === 0) return "No validated signal right now.";
-  return diagnostics[0].replace(/\.$/, "");
+  if (diagnostics.length === 0) return "Current market conditions do not meet confirmation criteria.";
+  return "Current market conditions do not meet confirmation criteria.";
+}
+
+function numeric(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function signalScore(signals: any[]) {
+  const signal = signals[0] ?? {};
+  return numeric(signal?.score ?? signal?.confidence ?? signal?.metadata?.score ?? signal?.metadata?.confidence, 0);
+}
+
+function signalRiskReward(signals: any[]) {
+  const signal = signals[0] ?? {};
+  const explicit = numeric(signal?.rr_ratio ?? signal?.risk_reward ?? signal?.metadata?.rr_ratio, 0);
+  if (explicit > 0) return explicit;
+  const entry = numeric(signal?.entry_price ?? signal?.entry, 0);
+  const stop = numeric(signal?.stop_loss ?? signal?.stop, 0);
+  const target = numeric(signal?.target_price ?? signal?.target, 0);
+  const risk = Math.abs(entry - stop);
+  return risk > 0 ? Math.abs(target - entry) / risk : 0;
+}
+
+function qualityTier(signals: any[], rawSignals: number) {
+  const score = signalScore(signals);
+  if (signals.length > 0 && score >= 8) return "HIGH QUALITY";
+  if (signals.length > 0 && score >= 6) return "MEDIUM QUALITY";
+  if (rawSignals > 0) return "WATCHLIST";
+  return "REJECTED";
+}
+
+function useUiMode() {
+  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
+
+  useEffect(() => {
+    const sync = () => setUiMode(getCurrentUiMode());
+    window.addEventListener("quantgrid-ui-mode-change", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("quantgrid-ui-mode-change", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+
+  return uiMode;
 }
 
 export default function Strategies() {
   const strategyList = useMemo(() => strategies, []);
-  const { signalsByStrategy, loading } = useStrategySignals(strategyList, 5000);
+  const { signalsByStrategy, loading, socketConnected } = useStrategySignals(strategyList, 30000);
+  const [backtests, setBacktests] = useState<Record<string, any>>({});
+  const uiMode = useUiMode();
+  const developerMode = uiMode === "developer";
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all(
+      strategyList.map((strategy) =>
+        api.backtestStrategy(strategy).then((data) => [strategy, data] as const).catch(() => [strategy, null] as const)
+      )
+    ).then((entries) => {
+      if (isMounted) setBacktests(Object.fromEntries(entries));
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [strategyList]);
 
   return (
     <section className="dashboard-page">
       <div className="page-heading">
         <h1>Strategies</h1>
-        <p>Watch strategy-wise NIFTY signals refresh every 5 seconds.</p>
+        <p>{socketConnected ? "Live strategy updates are event-driven." : "WebSocket offline; using conservative fallback refresh."}</p>
       </div>
 
       <div className="strategy-signal-grid">
@@ -56,8 +120,14 @@ export default function Strategies() {
           const signals = Array.isArray(signal?.data) ? signal.data : [];
           const diagnostics = Array.isArray(signal?.diagnostics) ? signal.diagnostics : [];
           const hasSignals = signals.length > 0;
+          const rawSignals = signal?.raw_signals ?? signals.length;
           const freshness = signal?.validation_context;
           const isStale = freshness?.is_recent === false;
+          const score = signalScore(signals);
+          const rr = signalRiskReward(signals);
+          const tier = qualityTier(signals, rawSignals);
+          const backtest = backtests[strategy];
+          const backtestMetrics = backtest?.metrics ?? {};
           const updatedAt = signal?.updated_at
             ? new Date(signal.updated_at).toLocaleTimeString()
             : null;
@@ -79,6 +149,11 @@ export default function Strategies() {
                 <span className={`status-pill${hasSignalError ? " error" : isStale ? " stale" : ""}`}>
                   {statusLabel}
                 </span>
+              </div>
+
+              <div className={`quality-banner quality-${tier.toLowerCase().replace(" ", "-")}`}>
+                <strong>{tier}</strong>
+                <span>Confidence {score ? score.toFixed(1) : "-"} | RR {rr ? rr.toFixed(2) : "-"}</span>
               </div>
 
               {hasSignalError && (
@@ -104,42 +179,65 @@ export default function Strategies() {
                 </div>
               )}
 
+              <div className="strategy-context">
+                <span>
+                  <strong>{numeric(backtestMetrics?.win_rate, 0).toFixed(1)}%</strong>
+                  Historical win rate
+                </span>
+                <span>
+                  <strong>{numeric(backtestMetrics?.sharpe_ratio, 0).toFixed(2)}</strong>
+                  Sharpe
+                </span>
+                <span>
+                  <strong>{numeric(backtestMetrics?.recent_accuracy ?? backtestMetrics?.win_rate, 0).toFixed(1)}%</strong>
+                  Recent accuracy
+                </span>
+              </div>
+
               {!hasSignalError && signal && !hasSignals && (
                 <div className="alert alert-warning" role="status">
-                  No trade: {noTradeSummary(diagnostics)}.
+                  {noTradeSummary(diagnostics)}
                 </div>
               )}
 
               {!hasSignalError && signal && (
-                <div className="diagnostic-list" role="status">
+                <div className="diagnostic-list trader-summary" role="status">
                   <div>Data source: {formatMarketSource(signal.market_data?.source)}</div>
                   <div>
                     Latest candle: {formatLocalDateTime(freshness?.latest_candle_at)} | Age {formatAge(freshness?.latest_candle_age_seconds)}
                   </div>
-                  <div>Freshness limit: {formatAge(freshness?.max_candle_age_seconds)}</div>
-                  <div>Validated {signal.validated_signals ?? 0} of {signal.raw_signals ?? 0} raw setups.</div>
+                  <div>Validated {signal.validated_signals ?? 0} of {rawSignals} candidate setups.</div>
                 </div>
               )}
 
-              {!hasSignalError && diagnostics.length > 0 && (
-                <div className="diagnostic-list" role="status" aria-label={`${formatStrategyName(strategy)} diagnostics`}>
-                  {diagnostics.slice(0, 4).map((item, index) => (
-                    <div key={`${strategy}-diagnostic-${index}`}>{item}</div>
-                  ))}
-                </div>
+              {developerMode && !hasSignalError && diagnostics.length > 0 && (
+                <details className="technical-details">
+                  <summary>Show Technical Details</summary>
+                  <div className="diagnostic-list" role="status" aria-label={`${formatStrategyName(strategy)} diagnostics`}>
+                    <div>Freshness limit: {formatAge(freshness?.max_candle_age_seconds)}</div>
+                    {diagnostics.slice(0, 6).map((item, index) => (
+                      <div key={`${strategy}-diagnostic-${index}`}>{item}</div>
+                    ))}
+                  </div>
+                </details>
               )}
 
-              <pre>
-                {signal
-                  ? JSON.stringify(
-                    hasSignalError
-                      ? localizeTimestamps(signal)
-                      : localizeTimestamps({ signals, diagnostics, validation_context: freshness }),
-                    null,
-                    2
-                  )
-                  : "Waiting for the first signal response..."}
-              </pre>
+              {developerMode && (
+                <details className="technical-details">
+                  <summary>API Payload</summary>
+                  <pre>
+                    {signal
+                      ? JSON.stringify(
+                        hasSignalError
+                          ? localizeTimestamps(signal)
+                          : localizeTimestamps({ signals, diagnostics, validation_context: freshness, backtest }),
+                        null,
+                        2
+                      )
+                      : "Waiting for the first signal response..."}
+                  </pre>
+                </details>
+              )}
             </div>
           );
         })}
