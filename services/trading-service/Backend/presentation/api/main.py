@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import FastAPI, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import RedirectResponse
 from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.monitoring import observe_api_request
@@ -49,6 +50,22 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        force_https = os.getenv("QUANTGRID_FORCE_HTTPS", "").strip().lower() in {"1", "true", "yes"}
+        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        if force_https and forwarded_proto == "http":
+            https_url = request.url.replace(scheme="https")
+            return RedirectResponse(str(https_url), status_code=308)
+
+        response = await call_next(request)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        return response
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
@@ -110,7 +127,12 @@ def create_app():
 
         try:
             while True:
-                await websocket.receive_text()
+                try:
+                    await asyncio.wait_for(websocket.receive_text(), timeout=5)
+                except asyncio.TimeoutError:
+                    from Backend.presentation.api.dashboard_api import operations
+
+                    await websocket.send_json({"type": "dashboard_status", "payload": operations()})
         except WebSocketDisconnect:
             manager.disconnect(websocket)
 

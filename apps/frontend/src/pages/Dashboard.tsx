@@ -1,12 +1,129 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
 import MetricCard from "../components/MetricCard";
 import { useLiveJobs } from "../hooks/useLiveJobs";
+import { getCurrentUiMode, setCurrentUiMode, type UiMode } from "../mode";
 import { hasAuthToken } from "../roles";
+import { createSocket } from "../socket";
 
 function isActiveJob(job: any) {
   return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
+}
+
+function statusTone(ok: boolean | undefined) {
+  if (ok === true) return "health-ok";
+  return "health-warn";
+}
+
+function formatMoney(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(Number.isFinite(numeric) ? numeric : 0);
+}
+
+function formatTime(value: unknown) {
+  if (!value) return "-";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString();
+}
+
+function friendlyMarketMessage(market: any) {
+  if (market?.valid_for_execution) return "Market data is fresh enough for confirmation checks.";
+  if (market?.state === "holiday") return "Market is closed for a holiday.";
+  if (market?.session_state === "closed") return "Market session is closed.";
+  return "Current market conditions do not meet confirmation criteria.";
+}
+
+function useDashboardOperations(isAuthenticated: boolean) {
+  const [operations, setOperations] = useState<any>(null);
+  const [socketActive, setSocketActive] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setOperations(null);
+      setSocketActive(false);
+      setError(null);
+      return;
+    }
+
+    let active = true;
+    let socket: WebSocket | null = null;
+    let fallbackId: number | null = null;
+    let reconnectId: number | null = null;
+
+    const load = async () => {
+      try {
+        const data = await api.operationsStatus();
+        if (!active) return;
+        setOperations(data);
+        setError(null);
+      } catch {
+        if (active) setError("Dashboard API is not available yet.");
+      }
+    };
+
+    const stopFallback = () => {
+      if (fallbackId !== null) {
+        window.clearInterval(fallbackId);
+        fallbackId = null;
+      }
+    };
+
+    const startFallback = () => {
+      if (fallbackId !== null) return;
+      void load();
+      fallbackId = window.setInterval(load, 15000);
+    };
+
+    const connect = () => {
+      socket = createSocket();
+
+      socket.onopen = () => {
+        if (!active) return;
+        setSocketActive(true);
+        stopFallback();
+        void load();
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message?.type === "dashboard_status" && message?.payload) {
+            setOperations(message.payload);
+            setError(null);
+          }
+        } catch {
+          if (active) setError("Received an invalid dashboard status update.");
+        }
+      };
+
+      socket.onerror = () => socket?.close();
+
+      socket.onclose = () => {
+        if (!active) return;
+        setSocketActive(false);
+        startFallback();
+        reconnectId = window.setTimeout(connect, 5000);
+      };
+    };
+
+    void load();
+    connect();
+
+    return () => {
+      active = false;
+      stopFallback();
+      if (reconnectId !== null) window.clearTimeout(reconnectId);
+      socket?.close();
+    };
+  }, [isAuthenticated]);
+
+  return { operations, socketActive, error };
 }
 
 export default function Dashboard() {
@@ -14,18 +131,22 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
-  const [operations, setOperations] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
-  const { jobs, error: jobsError } = useLiveJobs();
+  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
+  const { jobs, error: jobsError, socketConnected: jobsSocketConnected } = useLiveJobs();
+  const { operations, socketActive, error: operationsError } = useDashboardOperations(isAuthenticated);
 
   useEffect(() => {
     const syncAuth = () => setIsAuthenticated(hasAuthToken());
+    const syncUiMode = () => setUiMode(getCurrentUiMode());
     window.addEventListener("quantgrid-role-change", syncAuth);
     window.addEventListener("storage", syncAuth);
+    window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
     return () => {
       window.removeEventListener("quantgrid-role-change", syncAuth);
       window.removeEventListener("storage", syncAuth);
+      window.removeEventListener("quantgrid-ui-mode-change", syncUiMode);
     };
   }, []);
 
@@ -35,7 +156,6 @@ export default function Dashboard() {
       setSummary(null);
       setMarketStore(null);
       setBrokerStatus(null);
-      setOperations(null);
       setLoading(false);
       return;
     }
@@ -45,13 +165,11 @@ export default function Dashboard() {
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
       api.brokerStatus(),
-      api.operationsStatus(),
     ])
-      .then(([summaryData, marketStoreData, brokerData, operationsData]) => {
+      .then(([summaryData, marketStoreData, brokerData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setBrokerStatus(brokerData);
-        setOperations(operationsData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -64,23 +182,58 @@ export default function Dashboard() {
   const market = operations?.market_status;
   const health = operations?.system_health;
   const risk = operations?.risk_summary;
-  const healthItems = [
-    ["API", health?.api?.healthy],
-    ["Redis", health?.redis?.connected],
-    ["DB", health?.db?.healthy],
-    ["WebSocket", health?.websocket?.active],
-    ["Broker", health?.broker?.connected],
-    ["Worker", health?.background_worker?.healthy],
-  ];
+  const observability = operations?.observability;
+  const backtest = operations?.backtest_context;
+  const liveTrading = risk?.live_trading_enabled || risk?.execution_mode === "LIVE";
+
+  const healthItems = useMemo(
+    () => [
+      ["API", health?.api?.healthy],
+      ["Redis", health?.redis?.connected],
+      ["DB", health?.db?.healthy],
+      ["WebSocket", socketActive || health?.websocket?.active],
+      ["Broker", health?.broker?.connected],
+      ["Worker", health?.background_worker?.healthy],
+    ],
+    [health, socketActive],
+  );
+  const allHealthy = healthItems.every(([, ok]) => ok === true);
+
+  const diagnostics = operations?.diagnostics ?? {
+    trader_message: friendlyMarketMessage(market),
+    validation_summary: market?.valid_for_execution ? "Confirmation checks available." : "Confirmation criteria are not met.",
+    technical_details: market?.warnings ?? [],
+  };
 
   return (
     <section className="dashboard-page">
-      <div className="page-heading">
+      <div className="page-heading dashboard-heading">
         <div>
           <h1>QuantGrid Dashboard</h1>
-          <p>Service health, live-analysis jobs, and trading activity at a glance.</p>
+          <p>Production trading status, operational health, and execution safety.</p>
+        </div>
+        <div className="mode-toggle" aria-label="Dashboard display mode">
+          {(["trader", "developer"] as UiMode[]).map((mode) => (
+            <button
+              key={mode}
+              className={uiMode === mode ? "active" : ""}
+              type="button"
+              onClick={() => {
+                setCurrentUiMode(mode);
+                setUiMode(mode);
+              }}
+            >
+              {mode === "trader" ? "Trader" : "Developer"}
+            </button>
+          ))}
         </div>
       </div>
+
+      {liveTrading && (
+        <div className="alert alert-error live-warning" role="alert">
+          LIVE TRADING ENABLED
+        </div>
+      )}
 
       {!isAuthenticated && (
         <div className="alert alert-warning" role="status">
@@ -89,7 +242,7 @@ export default function Dashboard() {
       )}
 
       {isAuthenticated && loading && <Loader label="Loading dashboard..." />}
-      {(error || jobsError) && <p className="error-text">{error ?? jobsError}</p>}
+      {(error || jobsError || operationsError) && <p className="error-text">{error ?? jobsError ?? operationsError}</p>}
 
       {isAuthenticated && !loading && !error && !jobsError && (
         <>
@@ -101,21 +254,20 @@ export default function Dashboard() {
               </div>
               <div className="status-panel-body">
                 <span>Feed delay: {market?.feed_delay_seconds ?? "-"}s</span>
-                <span>
-                  Last candle: {market?.last_candle_timestamp ? new Date(market.last_candle_timestamp).toLocaleTimeString() : "-"}
-                </span>
+                <span>Last candle: {formatTime(market?.last_candle_timestamp)}</span>
                 <span>Session: {market?.session_state ?? "unknown"}</span>
+                <span>{friendlyMarketMessage(market)}</span>
               </div>
             </div>
 
             <div className="status-panel">
               <div className="status-panel-header">
                 <span>System Health</span>
-                <strong>{healthItems.every(([, ok]) => ok === true) ? "Healthy" : "Needs attention"}</strong>
+                <strong>{allHealthy ? "Healthy" : "Needs attention"}</strong>
               </div>
               <div className="health-dot-grid">
                 {healthItems.map(([label, ok]) => (
-                  <span key={String(label)} className={ok ? "health-ok" : "health-warn"}>
+                  <span key={String(label)} className={statusTone(Boolean(ok))}>
                     {label}
                   </span>
                 ))}
@@ -129,8 +281,9 @@ export default function Dashboard() {
               </div>
               <div className="status-panel-body">
                 <span>Trades today: {risk?.trades_today ?? 0}</span>
-                <span>Daily PnL: {risk?.daily_pnl ?? 0}</span>
-                <span>Loss remaining: {risk?.daily_loss_remaining ?? "-"}</span>
+                <span>Daily PnL: {formatMoney(risk?.daily_pnl)}</span>
+                <span>Loss remaining: {formatMoney(risk?.daily_loss_remaining)}</span>
+                <span>Consecutive losses: {risk?.consecutive_losses ?? 0}</span>
                 <span>Risk state: {risk?.active_risk_state ?? "UNKNOWN"}</span>
               </div>
             </div>
@@ -144,14 +297,15 @@ export default function Dashboard() {
               tone={summary?.status === "ready" ? "good" : "warn"}
             />
             <MetricCard
+              label="Realtime Channel"
+              value={socketActive ? "WebSocket" : "Fallback"}
+              helper={jobsSocketConnected ? "Job stream active" : "Polling only after socket failure"}
+              tone={socketActive ? "good" : "warn"}
+            />
+            <MetricCard
               label="Active Jobs"
               value={activeJobs}
               helper={`${jobs.length} total jobs`}
-            />
-            <MetricCard
-              label="Open Positions"
-              value={summary?.open_positions ?? 0}
-              helper="Paper execution mode"
             />
             <MetricCard
               label="Broker Login"
@@ -164,7 +318,72 @@ export default function Dashboard() {
               value={marketStore?.candles ?? 0}
               helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
             />
+            <MetricCard
+              label="Feed Delay"
+              value={`${observability?.feed_delay_seconds ?? market?.feed_delay_seconds ?? 0}s`}
+              helper="Market data freshness"
+              tone={(observability?.feed_delay_seconds ?? 0) > 60 ? "warn" : "good"}
+            />
           </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Execution Safety</h2>
+              <span>{risk?.active_risk_state ?? "UNKNOWN"}</span>
+            </div>
+            <div className="execution-safety-grid">
+              <span><small>Validation status</small><strong>{market?.valid_for_execution ? "Ready" : "Waiting"}</strong></span>
+              <span><small>Risk status</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
+              <span><small>Execution eligibility</small><strong>{market?.valid_for_execution && risk?.active_risk_state === "NORMAL" ? "Eligible" : "Blocked"}</strong></span>
+              <span><small>Market session</small><strong>{market?.session_state ?? "unknown"}</strong></span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Strategy Context</h2>
+              <span>Backtest and replay</span>
+            </div>
+            <div className="strategy-context">
+              <span><small>Historical win rate</small><strong>{Math.round((backtest?.historical_win_rate ?? 0) * 100)}%</strong></span>
+              <span><small>Sharpe ratio</small><strong>{backtest?.sharpe_ratio ?? 0}</strong></span>
+              <span><small>Recent outcomes</small><strong>{backtest?.recent_trade_outcomes?.length ?? 0}</strong></span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Diagnostics</h2>
+              <span>{uiMode === "trader" ? "Trader mode" : "Developer mode"}</span>
+            </div>
+            <div className="diagnostic-list">
+              <span>{diagnostics.trader_message}</span>
+              <span>{diagnostics.validation_summary}</span>
+            </div>
+            {uiMode === "developer" && (
+              <details className="technical-details" open>
+                <summary>Show Technical Details</summary>
+                <pre>{JSON.stringify({ operations, summary, marketStore, brokerStatus }, null, 2)}</pre>
+              </details>
+            )}
+          </div>
+
+          {uiMode === "developer" && (
+            <div className="dashboard-section">
+              <div className="section-header">
+                <h2>Operational Dashboard</h2>
+                <span>{socketActive ? "WebSocket active" : "Polling fallback"}</span>
+              </div>
+              <div className="metric-grid observability-grid">
+                <MetricCard label="WebSocket Connections" value={observability?.websocket_connections ?? 0} helper="Connected dashboard clients" />
+                <MetricCard label="API Latency" value={observability?.api_latency_status ?? "tracked"} helper="Prometheus metric" />
+                <MetricCard label="Signals" value={observability?.signal_generation_metrics ?? "tracked"} helper="Generation metrics" />
+                <MetricCard label="Rejected Orders" value={observability?.rejected_order_metrics ?? "tracked"} helper="Safety rejection metric" />
+                <MetricCard label="Redis" value={observability?.redis_healthy ? "OK" : "Review"} helper="Pub/sub and cache" tone={observability?.redis_healthy ? "good" : "warn"} />
+                <MetricCard label="DB" value={observability?.db_healthy ? "OK" : "Review"} helper="Persistence health" tone={observability?.db_healthy ? "good" : "warn"} />
+              </div>
+            </div>
+          )}
 
           <div className="dashboard-section">
             <div className="section-header">

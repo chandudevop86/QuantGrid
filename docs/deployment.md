@@ -24,6 +24,8 @@ uvicorn Backend.presentation.api.main:app --app-dir services/trading-service --r
 - Set `DATABASE_URL=postgresql+psycopg://...`.
 - Set `QUANTGRID_AUTH_SECRET` to a strong secret.
 - Set explicit `CORS_ALLOWED_ORIGINS`.
+- Set `QUANTGRID_FORCE_HTTPS=true` when the API is behind the HTTPS Nginx proxy.
+- Set frontend API variables to HTTPS URLs only, for example `VITE_API_URL=https://chandudevopai.shop/api`.
 - Keep live trading disabled unless broker execution has been formally approved.
 
 ## Terraform AWS 3-Tier
@@ -66,6 +68,8 @@ sudo systemctl reload nginx
 
 The HTTPS config redirects all HTTP traffic to HTTPS after ACME challenges and sets HSTS, X-Frame-Options,
 X-Content-Type-Options, and Referrer-Policy headers. Production browsers should show a secure lock icon.
+Do not point a production browser session at `http://<server-ip>:8000`; HTTPS frontends cannot call HTTP APIs without
+being blocked as mixed content.
 
 ## Database Check
 

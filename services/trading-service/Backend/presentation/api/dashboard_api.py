@@ -90,6 +90,12 @@ def operations(_role: str = Depends(require_roles("admin", "trader", "analyst", 
         or daily_loss_remaining <= 0
     )
 
+    trader_message = (
+        "Market data is fresh enough for confirmation checks."
+        if validation.valid_for_execution
+        else "Current market conditions do not meet confirmation criteria."
+    )
+
     return {
         "updated_at": utc_now(),
         "market_status": {
@@ -136,6 +142,22 @@ def operations(_role: str = Depends(require_roles("admin", "trader", "analyst", 
             "redis_healthy": redis["connected"],
             "db_healthy": db_status["healthy"],
             "stored_live_candles": market_store["candles"],
+        },
+        "diagnostics": {
+            "trader_message": trader_message,
+            "validation_summary": "Execution checks are preserved; advanced validator details are available in developer mode.",
+            "technical_details": {
+                "warnings": validation.warnings,
+                "market_validation": validation.model_dump() if hasattr(validation, "model_dump") else validation.__dict__,
+                "risk": risk,
+            },
+        },
+        "backtest_context": {
+            "historical_win_rate": 0.0,
+            "sharpe_ratio": 0.0,
+            "recent_trade_outcomes": [],
+            "replay_links": [],
+            "message": "Run a backtest or replay to attach historical confidence to this strategy.",
         },
     }
 

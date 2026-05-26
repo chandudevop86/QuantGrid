@@ -321,8 +321,15 @@ select {
 
 .dashboard-page {
   display: grid;
-  gap: 22px;
-  max-width: 1200px;
+  gap: 20px;
+  max-width: 1360px;
+}
+
+.dashboard-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .page-heading h1 {
@@ -351,9 +358,9 @@ select {
 
 .status-panel {
   display: grid;
-  gap: 14px;
-  min-height: 150px;
-  padding: 18px;
+  gap: 12px;
+  min-height: 164px;
+  padding: 16px;
   border: 1px solid rgba(45, 212, 191, 0.2);
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.76));
@@ -382,9 +389,10 @@ select {
 
 .status-panel-body {
   display: grid;
-  gap: 7px;
+  gap: 8px;
   color: #cbd5e1;
   font-size: 13px;
+  line-height: 1.45;
 }
 
 .health-dot-grid {
@@ -741,6 +749,13 @@ select {
   font-size: 16px;
 }
 
+.strategy-context small,
+.execution-safety-grid small {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .technical-details {
   display: grid;
   gap: 10px;
@@ -774,6 +789,10 @@ select {
   color: #bfdbfe;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.diagnostic-list span {
+  display: block;
 }
 
 .strategy-chip {
@@ -1028,8 +1047,13 @@ select {
 
   .status-panel-grid,
   .strategy-context,
-  .execution-safety-grid {
+  .execution-safety-grid,
+  .dashboard-heading {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-heading {
+    display: grid;
   }
 
   .order-summary {
