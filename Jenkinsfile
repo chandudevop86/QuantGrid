@@ -14,6 +14,7 @@ pipeline {
     BACKEND_DIR = 'services/trading-service'
     STAGING_URL = "${env.STAGING_URL ?: 'http://staging.example.invalid/api'}"
     PRODUCTION_URL = "${env.PRODUCTION_URL ?: 'http://production.example.invalid/api'}"
+    PRODUCTION_DEPLOY_STARTED = 'false'
   }
 
   stages {
@@ -46,7 +47,14 @@ pipeline {
           string(credentialsId: 'quantgrid-database-url', variable: 'DATABASE_URL'),
           string(credentialsId: 'quantgrid-auth-secret', variable: 'QUANTGRID_AUTH_SECRET')
         ]) {
-          sh 'QUANTGRID_ENV=local QUANTGRID_ALLOW_DEV_SEED_USERS=true pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45'
+          sh label: 'Run pytest and fail pipeline on test failure', script: '''
+            set -eu
+            QUANTGRID_ENV=local QUANTGRID_ALLOW_DEV_SEED_USERS=true \
+              python -m pytest tests \
+                --cov=services/trading-service/Backend \
+                --cov-report=term-missing \
+                --cov-fail-under=45
+          '''
         }
       }
     }
@@ -126,6 +134,9 @@ pipeline {
       when { branch 'main' }
       steps {
         echo 'Deploying to production'
+        script {
+          env.PRODUCTION_DEPLOY_STARTED = 'true'
+        }
         sshagent(credentials: ['quantgrid-ssh-deploy-key']) {
           sh 'bash scripts/jenkins/deploy_production.sh'
         }
@@ -143,12 +154,14 @@ pipeline {
 
   post {
     failure {
-      echo 'Pipeline failed. Attempting rollback for main branch deployments.'
       script {
-        if (env.BRANCH_NAME == 'main') {
+        if (env.BRANCH_NAME == 'main' && env.PRODUCTION_DEPLOY_STARTED == 'true') {
+          echo 'Pipeline failed after production deploy started. Attempting production rollback.'
           sshagent(credentials: ['quantgrid-ssh-deploy-key']) {
             sh 'bash scripts/jenkins/rollback.sh "${ROLLBACK_REF:-HEAD~1}" production'
           }
+        } else {
+          echo 'Pipeline failed before production deploy. Skipping production rollback.'
         }
       }
     }
