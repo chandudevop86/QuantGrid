@@ -162,6 +162,11 @@ export default function Topbar() {
             </button>
           ))}
         </div>
+        {mode === "live" && (
+          <div className="topbar-live-warning" role="alert">
+            LIVE TRADING ENABLED
+          </div>
+        )}
         <div className="mode-toggle" aria-label="Dashboard mode">
           {uiModes.map((item) => (
             <button

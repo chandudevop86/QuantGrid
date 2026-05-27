@@ -257,6 +257,29 @@ select {
   color: #ffffff;
 }
 
+.mode-toggle[aria-label="Trading mode"] button.active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.mode-toggle[aria-label="Trading mode"] button.active:last-child {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.topbar-live-warning {
+  min-height: 34px;
+  padding: 8px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.62);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.42);
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-align: center;
+}
+
 .chart-controls {
   display: flex;
   align-items: center;
