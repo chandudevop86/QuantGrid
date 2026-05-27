@@ -12,9 +12,8 @@ function isActiveJob(job: any) {
   return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
 }
 
-function statusTone(ok: boolean | undefined) {
-  if (ok === true) return "health-ok";
-  return "health-warn";
+function statusTone(ok: boolean) {
+  return ok ? "health-ok" : "health-fail";
 }
 
 function formatMoney(value: unknown) {
@@ -190,16 +189,15 @@ export default function Dashboard() {
 
   const healthItems = useMemo(
     () => [
-      ["API", health?.api?.healthy],
-      ["Redis", health?.redis?.connected],
-      ["DB", health?.db?.healthy],
-      ["WebSocket", socketActive || health?.websocket?.active],
-      ["Broker", health?.broker?.connected],
-      ["Worker", health?.background_worker?.healthy],
+      { label: "API", ok: health?.api?.healthy === true },
+      { label: "DB", ok: health?.db?.healthy === true },
+      { label: "Redis", ok: health?.redis?.connected === true },
+      { label: "WebSocket", ok: socketActive || health?.websocket?.active === true },
+      { label: "Broker", ok: health?.broker?.connected === true || brokerStatus?.connected === true },
     ],
-    [health, socketActive],
+    [brokerStatus, health, socketActive],
   );
-  const allHealthy = healthItems.every(([, ok]) => ok === true);
+  const allHealthy = healthItems.every((item) => item.ok);
 
   const diagnostics = operations?.diagnostics ?? {
     trader_message: friendlyMarketMessage(market),
@@ -271,9 +269,10 @@ export default function Dashboard() {
                 <strong>{allHealthy ? "Healthy" : "Needs attention"}</strong>
               </div>
               <div className="health-dot-grid">
-                {healthItems.map(([label, ok]) => (
-                  <span key={String(label)} className={statusTone(Boolean(ok))}>
-                    {label}
+                {healthItems.map((item) => (
+                  <span key={item.label} className={statusTone(item.ok)}>
+                    <strong>{item.label}</strong>
+                    <small>{item.ok ? "OK" : "FAIL"}</small>
                   </span>
                 ))}
               </div>

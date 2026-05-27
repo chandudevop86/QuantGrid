@@ -471,8 +471,12 @@ select {
 
 .health-dot-grid span {
   position: relative;
-  min-height: 30px;
-  padding: 7px 9px 7px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 9px 8px 24px;
   border: 1px solid #1e293b;
   border-radius: 8px;
   color: #cbd5e1;
@@ -482,7 +486,7 @@ select {
 
 .health-dot-grid span::before {
   position: absolute;
-  top: 11px;
+  top: 13px;
   left: 9px;
   width: 8px;
   height: 8px;
@@ -490,12 +494,41 @@ select {
   content: "";
 }
 
+.health-dot-grid strong,
+.health-dot-grid small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.health-dot-grid small {
+  font-weight: 900;
+}
+
 .health-ok::before {
   background: #22c55e;
 }
 
-.health-warn::before {
-  background: #f59e0b;
+.health-ok {
+  border-color: rgba(34, 197, 94, 0.48);
+  background: rgba(20, 83, 45, 0.22);
+}
+
+.health-ok small {
+  color: #bbf7d0;
+}
+
+.health-fail {
+  border-color: rgba(248, 113, 113, 0.52);
+  background: rgba(127, 29, 29, 0.28);
+}
+
+.health-fail::before {
+  background: #ef4444;
+}
+
+.health-fail small {
+  color: #fecaca;
 }
 
 .metric-card {
