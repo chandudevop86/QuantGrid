@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 
-from fastapi import FastAPI, Request, Response, WebSocket
+from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from starlette.websockets import WebSocketDisconnect
@@ -17,6 +17,7 @@ from Backend.application.market_data_store import init_market_data_store
 from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.logging_config import configure_logging
 from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
+from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 
 
@@ -115,11 +116,7 @@ def create_app():
 
     @app.get("/metrics")
     def metrics():
-        try:
-            from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-        except Exception:
-            return Response("# prometheus_client is not installed\n", media_type="text/plain")
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+        return prometheus_metrics_response()
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
