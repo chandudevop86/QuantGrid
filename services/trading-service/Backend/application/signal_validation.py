@@ -237,6 +237,8 @@ def _is_high_quality(signal: StrategySignal) -> bool:
         return False
     if not _momentum_aligned(signal):
         return False
+    if not _zone_confirmed(signal):
+        return False
 
     confluence_count = sum(
         [
