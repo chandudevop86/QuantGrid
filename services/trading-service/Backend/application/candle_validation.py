@@ -317,7 +317,7 @@ def validate_live_candle(
     status = "LIVE MARKET" if valid and delay.delay_seconds <= settings.warning_after_seconds else "DELAYED FEED"
     if not valid:
         diagnostics.append(
-            f"Latest candle is too old during live market: delay {delay.delay_seconds}s, "
+            f"Latest candle is stale during live market: delay {delay.delay_seconds}s, "
             f"reject threshold {settings.reject_after_seconds}s plus tolerance "
             f"{settings.delayed_feed_tolerance_seconds}s."
         )

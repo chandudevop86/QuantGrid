@@ -34,19 +34,19 @@ PATTERNS = [
 ]
 
 
-def should_scan(path: Path) -> bool:
-    relative = path.relative_to(ROOT)
+def should_scan(path: Path, root: Path = ROOT) -> bool:
+    relative = path.relative_to(root)
     if relative in ALLOW_FILES:
         return False
-    if any(part in SKIP_PARTS for part in path.parts):
+    if any(part in SKIP_PARTS for part in relative.parts):
         return False
     return path.suffix.lower() in TEXT_SUFFIXES or path.name in {"Jenkinsfile", "VERSION", "CODEOWNERS"}
 
 
-def main() -> int:
+def find_secrets(root: Path = ROOT) -> list[str]:
     findings: list[str] = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or not should_scan(path):
+    for path in root.rglob("*"):
+        if not path.is_file() or not should_scan(path, root):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -54,8 +54,13 @@ def main() -> int:
             continue
         for pattern in PATTERNS:
             if pattern.search(text):
-                findings.append(str(path.relative_to(ROOT)))
+                findings.append(str(path.relative_to(root)))
                 break
+    return findings
+
+
+def main() -> int:
+    findings = find_secrets()
 
     if findings:
         print("Potential secrets/default credentials detected:")

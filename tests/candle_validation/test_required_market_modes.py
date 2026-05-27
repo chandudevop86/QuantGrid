@@ -23,6 +23,24 @@ def test_market_closed_paper_simulation_allows_analysis_not_execution():
     assert result.market_status == "MARKET CLOSED"
 
 
+def test_fresh_candle_inside_threshold_passes_live_validation():
+    now = datetime(2026, 5, 22, 10, 0, tzinfo=IST)
+    latest = now - timedelta(seconds=45)
+
+    result = validate_live_candle(
+        [{"timestamp": latest.isoformat(), "open": 1, "high": 2, "low": 1, "close": 2}],
+        mode="live",
+        interval="1m",
+        now=now,
+        settings=CandleValidationSettings(warning_after_seconds=120, reject_after_seconds=300),
+    )
+
+    assert result.valid is True
+    assert result.valid_for_analysis is True
+    assert result.valid_for_execution is True
+    assert result.market_status == "LIVE MARKET"
+
+
 def test_live_execution_blocked_after_market_close():
     now = datetime(2026, 5, 22, 16, 10, tzinfo=IST)
     latest = datetime(2026, 5, 22, 15, 30, tzinfo=IST)
@@ -53,6 +71,7 @@ def test_stale_candle_rejected_in_live_mode():
     assert result.valid is False
     assert result.valid_for_execution is False
     assert result.market_status == "DELAYED FEED"
+    assert any("stale" in item.lower() and "candle" in item.lower() for item in result.diagnostics)
 
 
 def test_delayed_feed_warning_works_inside_tolerance():
