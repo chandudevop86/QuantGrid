@@ -5,6 +5,7 @@ import { createSocket } from "../socket";
 type AutoSignalState = {
   data?: any;
   diagnostics?: string[];
+  raw_response?: any;
   raw_signals?: number;
   validated_signals?: number;
   candles_analyzed?: number;
@@ -78,6 +79,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
           setSignal({
             data: signals,
             diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+            raw_response: result,
             raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
             validated_signals:
               typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
@@ -165,6 +167,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
             nextSignals[strategy] = {
               data: signals,
               diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+              raw_response: result,
               raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
               validated_signals:
                 typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,

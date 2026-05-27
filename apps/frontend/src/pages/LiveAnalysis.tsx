@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useUiMode } from "../hooks/useUiMode";
 import { getCurrentMode } from "../mode";
 import { createSocket } from "../socket";
 import { localizeTimestamps } from "../utils/time";
@@ -32,6 +33,7 @@ export default function LiveAnalysis() {
   const [wsWarning, setWsWarning] = useState<string | null>(null);
   const [strategy, setStrategy] = useState("breakout");
   const [autoTrade, setAutoTrade] = useState(true);
+  const developerMode = useUiMode() === "developer";
 
   const statusLabel = loading
     ? "Running"
@@ -279,11 +281,28 @@ export default function LiveAnalysis() {
             </div>
           )}
 
-          <pre>
-            {result
-              ? JSON.stringify(localizeTimestamps(result), null, 2)
-              : "Select a strategy and run analysis to create a job."}
-          </pre>
+          {!result && (
+            <div className="empty-state">
+              Select a strategy and run analysis to create a job.
+            </div>
+          )}
+
+          {result && !result?.result?.institutional_analysis && (
+            <div className="alert alert-success" role="status">
+              Job submitted. Status: {String(result.status ?? "submitted")}.
+            </div>
+          )}
+
+          {developerMode && (
+            <details className="technical-details" open>
+              <summary>Live Analysis API Payload</summary>
+              <pre>
+                {result
+                  ? JSON.stringify(localizeTimestamps(result), null, 2)
+                  : "Select a strategy and run analysis to create a job."}
+              </pre>
+            </details>
+          )}
         </div>
       </div>
     </section>

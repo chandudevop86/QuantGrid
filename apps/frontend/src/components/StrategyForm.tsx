@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useUiMode } from "../hooks/useUiMode";
 import { api } from "../services/api";
 
 export default function StrategyForm() {
@@ -7,6 +8,7 @@ export default function StrategyForm() {
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const developerMode = useUiMode() === "developer";
 
   useEffect(() => {
     api.strategies()
@@ -30,6 +32,7 @@ export default function StrategyForm() {
         capital: 100000,
         risk_pct: 1,
         rr_ratio: 2,
+        include_diagnostics: true,
         candle_source: "sample-fallback",
 
         candles: [
@@ -83,7 +86,13 @@ export default function StrategyForm() {
       )}
 
       {/* Result */}
-      {result && (
+      {result && !developerMode && (
+        <div className="alert alert-success mt-4" role="status">
+          Strategy run complete. Validated signals: {result?.validated_signals ?? result?.signals?.length ?? 0}.
+        </div>
+      )}
+
+      {result && developerMode && (
         <pre className="bg-black mt-4 p-3 rounded text-xs overflow-auto">
           {JSON.stringify(result, null, 2)}
         </pre>

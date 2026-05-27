@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { useUiMode } from "../hooks/useUiMode";
 
 type TradeSide = "BUY" | "SELL";
 
@@ -11,6 +12,7 @@ export default function Trade() {
   const [marketPrice, setMarketPrice] = useState<number | null>(null);
   const [marketSource, setMarketSource] = useState<string | null>(null);
   const [side, setSide] = useState<TradeSide>("BUY");
+  const developerMode = useUiMode() === "developer";
 
   const order = useMemo(() => {
     const entry = marketPrice ?? 0;
@@ -177,9 +179,14 @@ export default function Trade() {
         {result && (
           <>
             <div className="alert alert-success" role="status">
-              Paper order accepted.
+              Paper order accepted. Risk and validation gates stayed active.
             </div>
-            <pre>{JSON.stringify(result, null, 2)}</pre>
+            {developerMode && (
+              <details className="technical-details" open>
+                <summary>Execution API Payload</summary>
+                <pre>{JSON.stringify(result, null, 2)}</pre>
+              </details>
+            )}
           </>
         )}
       </div>

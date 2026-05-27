@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { useStrategySignals } from "../hooks/useAutoSignals";
-import { getCurrentUiMode, type UiMode } from "../mode";
+import { useUiMode } from "../hooks/useUiMode";
 import { formatLocalDateTime, localizeTimestamps } from "../utils/time";
 
 const strategies = [
@@ -67,22 +67,6 @@ function qualityTier(signals: any[], rawSignals: number) {
   if (signals.length > 0 && score >= 6) return "MEDIUM QUALITY";
   if (rawSignals > 0) return "WATCHLIST";
   return "REJECTED";
-}
-
-function useUiMode() {
-  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
-
-  useEffect(() => {
-    const sync = () => setUiMode(getCurrentUiMode());
-    window.addEventListener("quantgrid-ui-mode-change", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("quantgrid-ui-mode-change", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
-
-  return uiMode;
 }
 
 export default function Strategies() {
@@ -210,12 +194,13 @@ export default function Strategies() {
                 </div>
               )}
 
-              {developerMode && !hasSignalError && diagnostics.length > 0 && (
+              {developerMode && !hasSignalError && (
                 <details className="technical-details">
-                  <summary>Show Technical Details</summary>
+                  <summary>Raw Diagnostics</summary>
                   <div className="diagnostic-list" role="status" aria-label={`${formatStrategyName(strategy)} diagnostics`}>
                     <div>Freshness limit: {formatAge(freshness?.max_candle_age_seconds)}</div>
-                    {diagnostics.slice(0, 6).map((item, index) => (
+                    {diagnostics.length === 0 && <div>No diagnostics returned.</div>}
+                    {diagnostics.map((item, index) => (
                       <div key={`${strategy}-diagnostic-${index}`}>{item}</div>
                     ))}
                   </div>
@@ -224,13 +209,22 @@ export default function Strategies() {
 
               {developerMode && (
                 <details className="technical-details">
-                  <summary>API Payload</summary>
+                  <summary>Raw Signals and API Payload</summary>
                   <pre>
                     {signal
                       ? JSON.stringify(
                         hasSignalError
                           ? localizeTimestamps(signal)
-                          : localizeTimestamps({ signals, diagnostics, validation_context: freshness, backtest }),
+                          : localizeTimestamps({
+                            raw_signals: signal.raw_response?.raw_signals ?? signal.raw_signals ?? signals.length,
+                            validated_signals: signal.validated_signals ?? signals.length,
+                            signals,
+                            diagnostics,
+                            raw_response: signal.raw_response,
+                            validation_context: freshness,
+                            market_data: signal.market_data,
+                            backtest,
+                          }),
                         null,
                         2
                       )

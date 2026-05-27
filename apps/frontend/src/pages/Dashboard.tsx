@@ -6,6 +6,7 @@ import { useLiveJobs } from "../hooks/useLiveJobs";
 import { getCurrentUiMode, setCurrentUiMode, type UiMode } from "../mode";
 import { hasAuthToken } from "../roles";
 import { createSocket } from "../socket";
+import { getMarketStatusClass, getMarketStatusLabel } from "../utils/marketStatus";
 
 function isActiveJob(job: any) {
   return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
@@ -185,6 +186,7 @@ export default function Dashboard() {
   const observability = operations?.observability;
   const backtest = operations?.backtest_context;
   const liveTrading = risk?.live_trading_enabled || risk?.execution_mode === "LIVE";
+  const marketStatusLabel = getMarketStatusLabel(market);
 
   const healthItems = useMemo(
     () => [
@@ -250,9 +252,12 @@ export default function Dashboard() {
             <div className="status-panel">
               <div className="status-panel-header">
                 <span>Market Status</span>
-                <strong>{market?.label ?? "Checking"}</strong>
+                <strong className={`market-status-text ${getMarketStatusClass(marketStatusLabel)}`}>
+                  {marketStatusLabel}
+                </strong>
               </div>
               <div className="status-panel-body">
+                <span>System state: {marketStatusLabel}</span>
                 <span>Feed delay: {market?.feed_delay_seconds ?? "-"}s</span>
                 <span>Last candle: {formatTime(market?.last_candle_timestamp)}</span>
                 <span>Session: {market?.session_state ?? "unknown"}</span>

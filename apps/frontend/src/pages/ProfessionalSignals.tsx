@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
+import { useUiMode } from "../hooks/useUiMode";
 import { localizeTimestamps } from "../utils/time";
 
 const backtestStrategy = "amd";
@@ -22,6 +23,7 @@ export default function ProfessionalSignals() {
   const [backtest, setBacktest] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const developerMode = useUiMode() === "developer";
 
   useEffect(() => {
     setLoading(true);
@@ -133,7 +135,26 @@ export default function ProfessionalSignals() {
                   <p>{backtestStrategy.toUpperCase()} / NIFTY / 1m</p>
                 </div>
               </div>
-              <pre>{JSON.stringify(localizeTimestamps(backtest?.metrics ?? {}), null, 2)}</pre>
+              <div className="signal-summary">
+                <span>
+                  <strong>{backtest?.metrics?.win_rate ?? 0}%</strong>
+                  Win rate
+                </span>
+                <span>
+                  <strong>{backtest?.metrics?.sharpe_ratio ?? 0}</strong>
+                  Sharpe
+                </span>
+                <span>
+                  <strong>{backtest?.metrics?.total_trades ?? 0}</strong>
+                  Trades
+                </span>
+              </div>
+              {developerMode && (
+                <details className="technical-details" open>
+                  <summary>Backtest API Payload</summary>
+                  <pre>{JSON.stringify(localizeTimestamps(backtest?.metrics ?? {}), null, 2)}</pre>
+                </details>
+              )}
             </div>
             <div className="form-panel signal-panel">
               <div className="form-panel-header">
@@ -142,7 +163,37 @@ export default function ProfessionalSignals() {
                   <p>{trades.length} journal rows</p>
                 </div>
               </div>
-              <pre>{JSON.stringify(localizeTimestamps(trades.slice(0, 10)), null, 2)}</pre>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th>Side</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trades.slice(0, 5).map((trade: any, index) => (
+                      <tr key={trade.id ?? index}>
+                        <td>{trade.symbol ?? "-"}</td>
+                        <td>{trade.side ?? "-"}</td>
+                        <td>{trade.status ?? "-"}</td>
+                      </tr>
+                    ))}
+                    {trades.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>No paper trades recorded yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {developerMode && (
+                <details className="technical-details" open>
+                  <summary>Paper Trades API Payload</summary>
+                  <pre>{JSON.stringify(localizeTimestamps(trades.slice(0, 10)), null, 2)}</pre>
+                </details>
+              )}
             </div>
           </div>
         </>

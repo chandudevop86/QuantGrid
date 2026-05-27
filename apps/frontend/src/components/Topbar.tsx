@@ -22,6 +22,7 @@ import {
   setCurrentAuth,
   type Role,
 } from "../roles";
+import { getMarketStatusClass, getMarketStatusLabel, type MarketStatusLabel } from "../utils/marketStatus";
 
 export default function Topbar() {
   const [role, setRole] = useState<Role>(getCurrentRole());
@@ -35,6 +36,7 @@ export default function Topbar() {
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState<Role>("viewer");
   const [userMessage, setUserMessage] = useState<string | null>(null);
+  const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
 
   useEffect(() => {
     const syncRole = () => {
@@ -58,6 +60,32 @@ export default function Topbar() {
       window.removeEventListener("storage", syncUiMode);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setMarketStatus("CLOSED");
+      return;
+    }
+
+    let active = true;
+
+    const loadMarketStatus = async () => {
+      try {
+        const response = await api.operationsStatus();
+        if (active) setMarketStatus(getMarketStatusLabel(response?.market_status));
+      } catch {
+        if (active) setMarketStatus("CLOSED");
+      }
+    };
+
+    void loadMarketStatus();
+    const intervalId = window.setInterval(loadMarketStatus, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated]);
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -124,6 +152,9 @@ export default function Topbar() {
         <span>Service health and execution overview</span>
       </div>
       <div className="topbar-actions">
+        <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
+          {marketStatus}
+        </div>
         {isAuthenticated ? (
           <div className="auth-status">
             <span>{roleLabels[role]}</span>

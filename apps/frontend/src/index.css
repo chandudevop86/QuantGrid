@@ -176,6 +176,51 @@ select {
   gap: 10px;
 }
 
+.market-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  min-width: 82px;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.market-status-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.market-status-live {
+  border-color: rgba(34, 197, 94, 0.62);
+  background: rgba(20, 83, 45, 0.34);
+  color: #bbf7d0;
+}
+
+.market-status-delayed {
+  border-color: rgba(251, 191, 36, 0.56);
+  background: rgba(120, 53, 15, 0.3);
+  color: #fde68a;
+}
+
+.market-status-closed {
+  border-color: rgba(148, 163, 184, 0.36);
+  background: rgba(30, 41, 59, 0.62);
+  color: #cbd5e1;
+}
+
+.market-status-holiday {
+  border-color: rgba(56, 189, 248, 0.46);
+  background: rgba(12, 74, 110, 0.34);
+  color: #bae6fd;
+}
+
 .auth-form,
 .auth-status,
 .create-user-form {
