@@ -63,8 +63,8 @@ function signalRiskReward(signals: any[]) {
 
 function qualityTier(signals: any[], rawSignals: number) {
   const score = signalScore(signals);
-  if (signals.length > 0 && score >= 8) return "HIGH QUALITY";
-  if (signals.length > 0 && score >= 6) return "MEDIUM QUALITY";
+  if (signals.length > 0 && score >= 8) return "HIGH";
+  if (signals.length > 0 && score >= 6) return "MEDIUM";
   if (rawSignals > 0) return "WATCHLIST";
   return "REJECTED";
 }

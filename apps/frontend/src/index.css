@@ -800,12 +800,12 @@ select {
   font-weight: 700;
 }
 
-.quality-high-quality {
+.quality-high {
   border-color: rgba(34, 197, 94, 0.58);
   color: #bbf7d0;
 }
 
-.quality-medium-quality {
+.quality-medium {
   border-color: rgba(56, 189, 248, 0.5);
   color: #bae6fd;
 }
