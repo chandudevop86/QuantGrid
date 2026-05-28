@@ -10,8 +10,26 @@ const fallbackBaseURL =
 const configuredBaseURL =
   import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_URL ?? fallbackBaseURL;
 
+function normalizeBaseURL(baseURL: string) {
+  if (typeof window === "undefined") return baseURL;
+
+  try {
+    const target = new URL(baseURL, window.location.origin);
+    const isSameHostBackendPort = target.hostname === window.location.hostname && target.port === "8000";
+    const isDeployedFrontend = window.location.port !== "5173";
+
+    if (isDeployedFrontend && isSameHostBackendPort) {
+      return `${window.location.origin}/api`;
+    }
+  } catch {
+    return baseURL;
+  }
+
+  return baseURL;
+}
+
 const API = axios.create({
-  baseURL: configuredBaseURL.replace(/\/+$/, ""),
+  baseURL: normalizeBaseURL(configuredBaseURL).replace(/\/+$/, ""),
   headers: {
     "Content-Type": "application/json",
   },
@@ -43,7 +61,7 @@ export function getApiErrorMessage(error: any, fallback = "Request failed") {
     return detail ?? "This account is not allowed to access that action.";
   }
   if (error?.message === "Network Error" || !error?.response) {
-    return `Cannot reach the QuantGrid API at ${configuredBaseURL}. Check VITE_API_URL/VITE_API_BASE_URL, CORS, and that the backend is running.`;
+    return `Cannot reach the QuantGrid API at ${normalizeBaseURL(configuredBaseURL)}. Check VITE_API_URL/VITE_API_BASE_URL, CORS, and that the backend is running.`;
   }
 
   return detail ?? error?.message ?? fallback;
