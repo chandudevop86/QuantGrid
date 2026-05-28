@@ -12,8 +12,8 @@ pipeline {
     PIP_DISABLE_PIP_VERSION_CHECK = '1'
     FRONTEND_DIR = 'apps/frontend'
     BACKEND_DIR = 'services/trading-service'
-    STAGING_URL = "${env.STAGING_URL ?: 'http://staging.example.invalid/api'}"
-    PRODUCTION_URL = "${env.PRODUCTION_URL ?: 'http://production.example.invalid/api'}"
+    STAGING_URL = "${env.QUANTGRID_STAGING_URL}"
+    PRODUCTION_URL = "${env.QUANTGRID_PRODUCTION_URL}"
     PRODUCTION_DEPLOY_STARTED = 'false'
   }
 
@@ -106,10 +106,13 @@ pipeline {
       }
     }
 
-    stage('Smoke tests') {
+    stage('Validate deployment URLs') {
       steps {
-        echo 'Running local smoke checks'
-        sh 'bash scripts/jenkins/smoke_test.sh "${STAGING_URL}"'
+        sh label: 'Require Jenkins deployment URLs', script: '''
+          set -eu
+          test -n "${STAGING_URL}"
+          test -n "${PRODUCTION_URL}"
+        '''
       }
     }
 
@@ -120,6 +123,14 @@ pipeline {
         sshagent(credentials: ['quantgrid-ssh-deploy-key']) {
           sh 'bash scripts/jenkins/deploy_staging.sh'
         }
+      }
+    }
+
+    stage('Staging smoke test') {
+      when { branch 'main' }
+      steps {
+        echo 'Running staging smoke test'
+        sh 'bash scripts/jenkins/smoke_test.sh "${STAGING_URL}"'
       }
     }
 

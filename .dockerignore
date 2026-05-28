@@ -1,0 +1,15 @@
+.git
+.pytest_cache
+.pytest_*
+pytest-cache-files-*
+apps/frontend/node_modules
+apps/frontend/dist
+apps/frontend/.vite
+apps/frontend/*.tsbuildinfo
+**/__pycache__
+**/*.pyc
+**/*.sqlite3
+**/*.sqlite3-journal
+.env
+htmlcov
+coverage.xml
