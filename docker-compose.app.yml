@@ -32,9 +32,15 @@ services:
       context: .
       dockerfile: docker/backend.Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env.example
     environment:
+      QUANTGRID_ENV: ${QUANTGRID_ENV:-local}
+      QUANTGRID_AUTH_SECRET: ${QUANTGRID_AUTH_SECRET:-local-dev-auth-secret-at-least-32-characters}
+      QUANTGRID_ALLOW_DEV_SEED_USERS: ${QUANTGRID_ALLOW_DEV_SEED_USERS:-true}
+      QUANTGRID_USERS: ${QUANTGRID_USERS:-admin:AdminPass1!:admin}
+      QUANTGRID_MARKET_DATA_PROVIDER: ${QUANTGRID_MARKET_DATA_PROVIDER:-yahoo}
+      QUANTGRID_ENABLE_LIVE_TRADING: ${QUANTGRID_ENABLE_LIVE_TRADING:-false}
+      ALLOW_SAMPLE_MARKET_DATA: ${ALLOW_SAMPLE_MARKET_DATA:-true}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       JOB_STORE_DB_FILE: /app/data/dashboard_jobs.sqlite3
@@ -64,8 +70,6 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env.example
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
       VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000/ws}

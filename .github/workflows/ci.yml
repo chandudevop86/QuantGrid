@@ -34,7 +34,7 @@ jobs:
           QUANTGRID_ENV: local
           QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
           QUANTGRID_ALLOW_DEV_SEED_USERS: "true"
-        run: pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45
+        run: python -m pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45
 
   frontend:
     name: Frontend build
@@ -58,10 +58,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate docker compose config
+      - name: Validate infrastructure docker compose config
         env:
           POSTGRES_PASSWORD: ci-postgres-password
         run: docker compose -f docker-compose.yml config
+      - name: Validate app docker compose config
+        run: docker compose -f docker-compose.app.yml config
 
   terraform:
     name: Terraform validation
