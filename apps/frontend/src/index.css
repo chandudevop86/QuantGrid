@@ -387,6 +387,28 @@ select {
   background: rgba(15, 23, 42, 0.78);
 }
 
+.option-chain-wrap {
+  overflow-x: auto;
+}
+
+.option-chain-table th,
+.option-chain-table td {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.option-chain-table td:nth-child(3),
+.option-chain-table th:nth-child(3) {
+  border-right: 1px solid #1e293b;
+  border-left: 1px solid #1e293b;
+  background: rgba(2, 6, 23, 0.46);
+}
+
+.option-atm-row td {
+  background: rgba(20, 184, 166, 0.1);
+  color: #ccfbf1;
+}
+
 .dashboard-page {
   display: grid;
   gap: 20px;

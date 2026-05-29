@@ -47,6 +47,8 @@ export const api = {
   marketStoreStatus: (symbol = "NIFTY", interval = "1m") =>
     API.get("/market/store/status", { params: { symbol, interval } }).then((res) => res.data),
   getPrice: () => API.get("/market/price").then((res) => res.data),
+  optionChain: (symbol = "NIFTY") =>
+    API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),
   executeOrder: (payload: unknown) =>

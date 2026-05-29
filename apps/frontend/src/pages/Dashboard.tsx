@@ -31,6 +31,11 @@ function formatTime(value: unknown) {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString();
 }
 
+function formatNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "-";
+}
+
 function friendlyMarketMessage(market: any) {
   if (market?.valid_for_execution) return "Market data is fresh enough for confirmation checks.";
   if (market?.state === "holiday") return "Market is closed for a holiday.";
@@ -131,6 +136,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
+  const [optionChain, setOptionChain] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
@@ -156,6 +162,7 @@ export default function Dashboard() {
       setSummary(null);
       setMarketStore(null);
       setBrokerStatus(null);
+      setOptionChain(null);
       setLoading(false);
       return;
     }
@@ -165,11 +172,13 @@ export default function Dashboard() {
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
       api.brokerStatus(),
+      api.optionChain("NIFTY"),
     ])
-      .then(([summaryData, marketStoreData, brokerData]) => {
+      .then(([summaryData, marketStoreData, brokerData, optionChainData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setBrokerStatus(brokerData);
+        setOptionChain(optionChainData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -340,6 +349,48 @@ export default function Dashboard() {
               <span><small>Risk status</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
               <span><small>Execution eligibility</small><strong>{market?.valid_for_execution && risk?.active_risk_state === "NORMAL" ? "Eligible" : "Blocked"}</strong></span>
               <span><small>Market session</small><strong>{market?.session_state ?? "unknown"}</strong></span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>NIFTY Option Chain</h2>
+              <span>
+                CMP {formatNumber(optionChain?.underlying_price)} | ATM {optionChain?.atm_strike ?? "-"}
+              </span>
+            </div>
+            {optionChain?.warning && <div className="alert alert-warning">{optionChain.warning}</div>}
+            <div className="table-wrap option-chain-wrap">
+              <table className="table option-chain-table">
+                <thead>
+                  <tr>
+                    <th>CE LTP</th>
+                    <th>CE OI</th>
+                    <th>Strike</th>
+                    <th>PE OI</th>
+                    <th>PE LTP</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(optionChain?.rows ?? []).map((row: any) => (
+                    <tr key={row.strike} className={row.strike === optionChain?.atm_strike ? "option-atm-row" : ""}>
+                      <td>{formatNumber(row.ce?.ltp)}</td>
+                      <td>{formatNumber(row.ce?.oi)}</td>
+                      <td><strong>{row.strike}</strong></td>
+                      <td>{formatNumber(row.pe?.oi)}</td>
+                      <td>{formatNumber(row.pe?.ltp)}</td>
+                    </tr>
+                  ))}
+                  {(!optionChain?.rows || optionChain.rows.length === 0) && (
+                    <tr>
+                      <td colSpan={5}>Option chain data is not available yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="diagnostic-list">
+              <span>Source: {optionChain?.source ?? "not loaded"}{optionChain?.expiry ? ` | Expiry: ${optionChain.expiry}` : ""}</span>
             </div>
           </div>
 

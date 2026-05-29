@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -122,6 +124,64 @@ def _volume_status(market_symbol: str, candles: list[dict[str, Any]]) -> str:
     return "reported"
 
 
+def _nearest_strike(price: float, step: int = 50) -> int:
+    return int(round(float(price) / step) * step) if price > 0 else 0
+
+
+def _expiry_from_timestamp(timestamp: int | None) -> str | None:
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(int(timestamp), timezone.utc).date().isoformat()
+
+
+def _yahoo_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
+    yahoo_symbol = _market_symbol(symbol)
+    url = f"https://query2.finance.yahoo.com/v7/finance/options/{quote(yahoo_symbol, safe='')}"
+    request = Request(url, headers={"User-Agent": "QuantGrid/1.0"})
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    result = (payload.get("optionChain", {}).get("result") or [{}])[0]
+    options = (result.get("options") or [{}])[0]
+    expiry = _expiry_from_timestamp(options.get("expirationDate"))
+    calls = {int(round(float(item.get("strike")))): item for item in options.get("calls", []) if item.get("strike") is not None}
+    puts = {int(round(float(item.get("strike")))): item for item in options.get("puts", []) if item.get("strike") is not None}
+
+    rows = []
+    for strike in strikes:
+        call = calls.get(strike, {})
+        put = puts.get(strike, {})
+        rows.append({
+            "strike": strike,
+            "ce": {
+                "ltp": call.get("lastPrice"),
+                "change": call.get("change"),
+                "volume": call.get("volume"),
+                "oi": call.get("openInterest"),
+                "iv": call.get("impliedVolatility"),
+            },
+            "pe": {
+                "ltp": put.get("lastPrice"),
+                "change": put.get("change"),
+                "volume": put.get("volume"),
+                "oi": put.get("openInterest"),
+                "iv": put.get("impliedVolatility"),
+            },
+        })
+    return rows, expiry
+
+
+def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
+    return [
+        {
+            "strike": strike,
+            "ce": {"ltp": None, "change": None, "volume": None, "oi": None, "iv": None},
+            "pe": {"ltp": None, "change": None, "volume": None, "oi": None, "iv": None},
+        }
+        for strike in strikes
+    ]
+
+
 @router.get("/price")
 def get_price(
     symbol: str = "NIFTY",
@@ -166,6 +226,50 @@ def get_price(
             "source": "sample-fallback",
             "warning": f"Live market data unavailable: {exc}",
         }
+
+
+@router.get("/option-chain/{symbol}")
+def get_option_chain(
+    symbol: str,
+    strikes_each_side: int = 5,
+    step: int = 50,
+    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+):
+    price_payload = get_price(symbol, _role=_role)
+    price = float(price_payload.get("price") or 0.0)
+    if price <= 0:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Current market price is unavailable.")
+
+    strikes_each_side = max(1, min(int(strikes_each_side), 10))
+    step = max(1, int(step))
+    atm = _nearest_strike(price, step)
+    strikes = [atm + (offset * step) for offset in range(-strikes_each_side, strikes_each_side + 1)]
+    source = "derived-from-underlying"
+    expiry = None
+    warning = "Live option-chain provider unavailable; showing ATM strike ladder from current NIFTY price."
+
+    try:
+        rows, expiry = _yahoo_option_rows(symbol, strikes)
+        if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
+            source = "yahoo-finance-options"
+            warning = YAHOO_TRADING_GRADE_WARNING
+        else:
+            rows = _derived_option_rows(strikes)
+    except Exception as exc:
+        rows = _derived_option_rows(strikes)
+        warning = f"Live option-chain provider unavailable: {exc}. Showing ATM strike ladder from current NIFTY price."
+
+    return {
+        "symbol": symbol.upper(),
+        "underlying_price": round(price, 2),
+        "atm_strike": atm,
+        "step": step,
+        "expiry": expiry,
+        "source": source,
+        "warning": warning,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "rows": rows,
+    }
 
 
 @router.get("/signals")
