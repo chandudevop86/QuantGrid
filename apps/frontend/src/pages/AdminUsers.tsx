@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { getCurrentUserId, roleLabels, roles, type Role } from "../roles";
+import { getCurrentRole, getCurrentUserId, roleLabels, roles, type Role } from "../roles";
 
 type User = {
   id: number;
@@ -18,6 +18,7 @@ export default function AdminUsers() {
   const [resetPassword, setResetPassword] = useState("");
   const [ownOldPassword, setOwnOldPassword] = useState("");
   const [ownNewPassword, setOwnNewPassword] = useState("");
+  const currentRole = getCurrentRole();
   const currentUserId = getCurrentUserId();
 
   const loadUsers = () =>
@@ -97,24 +98,26 @@ export default function AdminUsers() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="strategy-layout">
-        <form className="form-panel" onSubmit={createUser}>
-          <div className="form-panel-header">
-            <div>
-              <h2>Create User</h2>
-              <p>Password must be 10+ chars with upper/lowercase, number, and special char.</p>
+        {currentRole === "admin" && (
+          <form className="form-panel" onSubmit={createUser}>
+            <div className="form-panel-header">
+              <div>
+                <h2>Create User</h2>
+                <p>Password must be 10+ chars with upper/lowercase, number, and special char.</p>
+              </div>
             </div>
-          </div>
-          <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" />
-          <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
-            {roles.map((item) => (
-              <option key={item} value={item}>
-                {roleLabels[item]}
-              </option>
-            ))}
-          </select>
-          <button className="primary-action" type="submit">Create User</button>
-        </form>
+            <input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" />
+            <select value={role} onChange={(event) => setRole(event.target.value as Role)}>
+              {roles.map((item) => (
+                <option key={item} value={item}>
+                  {roleLabels[item]}
+                </option>
+              ))}
+            </select>
+            <button className="primary-action" type="submit">Create User</button>
+          </form>
+        )}
 
         <form className="form-panel" onSubmit={changeOwnPassword}>
           <div className="form-panel-header">

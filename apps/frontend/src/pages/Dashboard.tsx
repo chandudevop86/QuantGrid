@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
 import MetricCard from "../components/MetricCard";
+import SystemHealthWidget from "../components/SystemHealthWidget";
 import { useLiveJobs } from "../hooks/useLiveJobs";
 import { getCurrentUiMode, setCurrentUiMode, type UiMode } from "../mode";
 import { hasAuthToken } from "../roles";
@@ -293,6 +294,8 @@ export default function Dashboard() {
             </div>
           </div>
 
+          <SystemHealthWidget operations={operations} websocketConnected={socketActive} />
+
           <div className="metric-grid">
             <MetricCard
               label="API Status"
@@ -349,8 +352,8 @@ export default function Dashboard() {
               <span>Backtest and replay</span>
             </div>
             <div className="strategy-context">
-              <span><small>Historical win rate</small><strong>{Math.round((backtest?.historical_win_rate ?? 0) * 100)}%</strong></span>
-              <span><small>Sharpe ratio</small><strong>{backtest?.sharpe_ratio ?? 0}</strong></span>
+              <span><small>Historical win rate</small><strong>{backtest?.historical_trade_count ? `${Math.round((backtest?.historical_win_rate ?? 0) * 100)}%` : "No trades yet"}</strong><small>Run backtest to calculate performance.</small></span>
+              <span><small>Sharpe ratio</small><strong>{backtest?.historical_trade_count ? backtest?.sharpe_ratio ?? 0 : "Backtest not run"}</strong><small>Run backtest to calculate performance.</small></span>
               <span><small>Recent outcomes</small><strong>{backtest?.recent_trade_outcomes?.length ?? 0}</strong></span>
             </div>
           </div>

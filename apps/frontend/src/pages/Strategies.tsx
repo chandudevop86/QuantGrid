@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import SystemHealthWidget from "../components/SystemHealthWidget";
 import { useStrategySignals } from "../hooks/useAutoSignals";
 import { useUiMode } from "../hooks/useUiMode";
 import { formatLocalDateTime, localizeTimestamps } from "../utils/time";
@@ -36,8 +37,7 @@ function formatAge(seconds?: number | null) {
 }
 
 function noTradeSummary(diagnostics: string[]) {
-  if (diagnostics.length === 0) return "Current market conditions do not meet confirmation criteria.";
-  return "Current market conditions do not meet confirmation criteria.";
+  return diagnostics[0] ?? "Current market conditions do not meet confirmation criteria.";
 }
 
 function numeric(value: unknown, fallback = 0) {
@@ -51,7 +51,11 @@ function signalScore(signals: any[]) {
 }
 
 function signalRiskReward(signals: any[]) {
-  const signal = signals[0] ?? {};
+  return signalRiskRewardValue(signals[0]);
+}
+
+function signalRiskRewardValue(signal: any) {
+  if (!signal) return 0;
   const explicit = numeric(signal?.rr_ratio ?? signal?.risk_reward ?? signal?.metadata?.rr_ratio, 0);
   if (explicit > 0) return explicit;
   const entry = numeric(signal?.entry_price ?? signal?.entry, 0);
@@ -61,12 +65,29 @@ function signalRiskReward(signals: any[]) {
   return risk > 0 ? Math.abs(target - entry) / risk : 0;
 }
 
-function qualityTier(signals: any[], rawSignals: number) {
-  const score = signalScore(signals);
-  if (signals.length > 0 && score >= 8) return "HIGH";
-  if (signals.length > 0 && score >= 6) return "MEDIUM";
+function signalConfidence(signal: any) {
+  return numeric(signal?.score ?? signal?.confidence ?? signal?.confidence_score ?? signal?.metadata?.score ?? signal?.metadata?.confidence, 0);
+}
+
+function formatPrice(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed.toFixed(2) : "-";
+}
+
+function signalDirection(signal: any, rawSignals: number, hasResponse: boolean) {
+  const side = String(signal?.side ?? "").toUpperCase();
+  if (side === "BUY" || side === "SELL") return side;
+  if (!hasResponse) return "NEUTRAL";
   if (rawSignals > 0) return "WATCHLIST";
   return "REJECTED";
+}
+
+function hasHistoricalTrades(backtest: any) {
+  return numeric(backtest?.metrics?.total_trades, 0) > 0;
+}
+
+function performanceValue(backtest: any, value: unknown, formatter: (value: number) => string) {
+  return hasHistoricalTrades(backtest) ? formatter(numeric(value, 0)) : "No trades yet";
 }
 
 export default function Strategies() {
@@ -97,6 +118,8 @@ export default function Strategies() {
         <p>{socketConnected ? "Live strategy updates are event-driven." : "WebSocket offline; using conservative fallback refresh."}</p>
       </div>
 
+      <SystemHealthWidget websocketConnected={socketConnected} compact />
+
       <div className="strategy-signal-grid">
         {strategyList.map((strategy) => {
           const signal = signalsByStrategy[strategy];
@@ -107,9 +130,10 @@ export default function Strategies() {
           const rawSignals = signal?.raw_signals ?? signals.length;
           const freshness = signal?.validation_context;
           const isStale = freshness?.is_recent === false;
-          const score = signalScore(signals);
-          const rr = signalRiskReward(signals);
-          const tier = qualityTier(signals, rawSignals);
+          const selectedSignal = signals[0] ?? null;
+          const score = selectedSignal ? signalConfidence(selectedSignal) : signalScore(signals);
+          const rr = selectedSignal ? signalRiskRewardValue(selectedSignal) : signalRiskReward(signals);
+          const direction = signalDirection(selectedSignal, rawSignals, Boolean(signal));
           const backtest = backtests[strategy];
           const backtestMetrics = backtest?.metrics ?? {};
           const updatedAt = signal?.updated_at
@@ -135,14 +159,39 @@ export default function Strategies() {
                 </span>
               </div>
 
-              <div className={`quality-banner quality-${tier.toLowerCase().replace(" ", "-")}`}>
-                <strong>{tier}</strong>
+              <div className={`quality-banner quality-${direction.toLowerCase()}`}>
+                <strong>{direction}</strong>
                 <span>Confidence {score ? score.toFixed(1) : "-"} | RR {rr ? rr.toFixed(2) : "-"}</span>
               </div>
 
               {hasSignalError && (
                 <div className="alert alert-error" role="alert">
                   Signal API unavailable. Check that the trading backend is running on port 8000.
+                </div>
+              )}
+
+              {!hasSignalError && selectedSignal && (
+                <div className="signal-trade-grid">
+                  <span>
+                    <small>Entry</small>
+                    <strong>{formatPrice(selectedSignal.entry_price ?? selectedSignal.entry)}</strong>
+                  </span>
+                  <span>
+                    <small>Stop Loss</small>
+                    <strong>{formatPrice(selectedSignal.stop_loss ?? selectedSignal.stop)}</strong>
+                  </span>
+                  <span>
+                    <small>Target</small>
+                    <strong>{formatPrice(selectedSignal.target_price ?? selectedSignal.target)}</strong>
+                  </span>
+                  <span>
+                    <small>Risk Reward</small>
+                    <strong>{rr ? rr.toFixed(2) : "-"}</strong>
+                  </span>
+                  <span>
+                    <small>Confidence</small>
+                    <strong>{score ? score.toFixed(1) : "-"}</strong>
+                  </span>
                 </div>
               )}
 
@@ -165,22 +214,25 @@ export default function Strategies() {
 
               <div className="strategy-context">
                 <span>
-                  <strong>{numeric(backtestMetrics?.win_rate, 0).toFixed(1)}%</strong>
+                  <strong>{performanceValue(backtest, backtestMetrics?.win_rate, (value) => `${value.toFixed(1)}%`)}</strong>
                   Historical win rate
+                  <small>{hasHistoricalTrades(backtest) ? "Backtest complete" : "Run backtest to calculate performance."}</small>
                 </span>
                 <span>
-                  <strong>{numeric(backtestMetrics?.sharpe_ratio, 0).toFixed(2)}</strong>
+                  <strong>{hasHistoricalTrades(backtest) ? numeric(backtestMetrics?.sharpe_ratio, 0).toFixed(2) : "Backtest not run"}</strong>
                   Sharpe
+                  <small>Run backtest to calculate performance.</small>
                 </span>
                 <span>
-                  <strong>{numeric(backtestMetrics?.recent_accuracy ?? backtestMetrics?.win_rate, 0).toFixed(1)}%</strong>
+                  <strong>{performanceValue(backtest, backtestMetrics?.recent_accuracy ?? backtestMetrics?.win_rate, (value) => `${value.toFixed(1)}%`)}</strong>
                   Recent accuracy
+                  <small>{hasHistoricalTrades(backtest) ? "Backtest complete" : "Run backtest to calculate performance."}</small>
                 </span>
               </div>
 
               {!hasSignalError && signal && !hasSignals && (
                 <div className="alert alert-warning" role="status">
-                  {noTradeSummary(diagnostics)}
+                  <strong>{direction}:</strong> {noTradeSummary(diagnostics)}
                 </div>
               )}
 

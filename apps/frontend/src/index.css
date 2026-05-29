@@ -325,6 +325,55 @@ select {
   text-align: center;
 }
 
+.market-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 44px;
+  padding: 9px 28px;
+  border-bottom: 1px solid #1e293b;
+  background: rgba(2, 6, 23, 0.92);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.market-banner strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.market-banner span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.market-banner-open strong {
+  background: #047857;
+}
+
+.market-banner-closed strong {
+  background: #334155;
+}
+
+.market-banner-warning {
+  border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(120, 53, 15, 0.2);
+  color: #fde68a;
+}
+
+.market-banner-warning strong {
+  background: #b45309;
+}
+
 .chart-controls {
   display: flex;
   align-items: center;
@@ -551,6 +600,145 @@ select {
 
 .health-fail small {
   color: #fecaca;
+}
+
+.health-warn {
+  border-color: rgba(251, 191, 36, 0.46);
+  background: rgba(120, 53, 15, 0.24);
+}
+
+.health-warn::before {
+  background: #f59e0b;
+}
+
+.health-warn small {
+  color: #fde68a;
+}
+
+.system-health-widget {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.78));
+}
+
+.system-health-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.system-health-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.system-health-header p {
+  margin: 5px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.system-health-summary,
+.health-badge strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.system-health-summary {
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.system-health-summary-green {
+  background: #047857;
+}
+
+.system-health-summary-yellow {
+  background: #b45309;
+}
+
+.system-health-summary-red {
+  background: #b91c1c;
+}
+
+.system-health-badges {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.health-badge {
+  display: grid;
+  gap: 5px;
+  min-height: 86px;
+  padding: 11px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #020617;
+  min-width: 0;
+}
+
+.health-badge small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.health-badge strong {
+  justify-content: flex-start;
+  color: #f8fafc;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.health-badge em {
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+}
+
+.health-badge-green {
+  border-color: rgba(34, 197, 94, 0.48);
+  background: rgba(20, 83, 45, 0.2);
+}
+
+.health-badge-green strong {
+  color: #bbf7d0;
+}
+
+.health-badge-yellow {
+  border-color: rgba(251, 191, 36, 0.46);
+  background: rgba(120, 53, 15, 0.22);
+}
+
+.health-badge-yellow strong {
+  color: #fde68a;
+}
+
+.health-badge-red {
+  border-color: rgba(248, 113, 113, 0.52);
+  background: rgba(127, 29, 29, 0.26);
+}
+
+.health-badge-red strong {
+  color: #fecaca;
+}
+
+.system-health-widget-compact .system-health-badges {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .metric-card {
@@ -863,6 +1051,51 @@ select {
 .quality-rejected {
   border-color: rgba(148, 163, 184, 0.32);
   color: #cbd5e1;
+}
+
+.quality-buy {
+  border-color: rgba(34, 197, 94, 0.58);
+  color: #bbf7d0;
+}
+
+.quality-sell {
+  border-color: rgba(248, 113, 113, 0.58);
+  color: #fecaca;
+}
+
+.quality-neutral {
+  border-color: rgba(56, 189, 248, 0.46);
+  color: #bae6fd;
+}
+
+.signal-trade-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.signal-trade-grid span {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.78);
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.signal-trade-grid small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.signal-trade-grid strong {
+  color: #f8fafc;
+  font-size: 15px;
 }
 
 .strategy-context,
@@ -1221,6 +1454,11 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .system-health-badges,
+  .system-health-widget-compact .system-health-badges {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-heading {
     display: grid;
   }
@@ -1234,6 +1472,10 @@ select {
   }
 
   .strategy-signal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signal-trade-grid {
     grid-template-columns: 1fr;
   }
 

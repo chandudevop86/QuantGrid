@@ -111,6 +111,7 @@ def create_app():
         manager.set_loop(asyncio.get_running_loop())
 
     @app.get("/health")
+    @app.get("/api/health")
     def health():
         return {"status": "ok"}
 

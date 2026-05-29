@@ -16,6 +16,10 @@ function StatusPill({ label }: { label: string }) {
   return <span className={className}>{label}</span>;
 }
 
+function hasBacktestTrades(backtest: any) {
+  return Number(backtest?.metrics?.total_trades ?? 0) > 0;
+}
+
 export default function ProfessionalSignals() {
   const [signals, setSignals] = useState<any>(null);
   const [trades, setTrades] = useState<any[]>([]);
@@ -137,16 +141,19 @@ export default function ProfessionalSignals() {
               </div>
               <div className="signal-summary">
                 <span>
-                  <strong>{backtest?.metrics?.win_rate ?? 0}%</strong>
+                  <strong>{hasBacktestTrades(backtest) ? `${backtest?.metrics?.win_rate ?? 0}%` : "No trades yet"}</strong>
                   Win rate
+                  <small>Run backtest to calculate performance.</small>
                 </span>
                 <span>
-                  <strong>{backtest?.metrics?.sharpe_ratio ?? 0}</strong>
+                  <strong>{hasBacktestTrades(backtest) ? backtest?.metrics?.sharpe_ratio ?? 0 : "Backtest not run"}</strong>
                   Sharpe
+                  <small>Run backtest to calculate performance.</small>
                 </span>
                 <span>
-                  <strong>{backtest?.metrics?.total_trades ?? 0}</strong>
+                  <strong>{hasBacktestTrades(backtest) ? backtest?.metrics?.total_trades ?? 0 : "No trades yet"}</strong>
                   Trades
+                  <small>Run backtest to calculate performance.</small>
                 </span>
               </div>
               {developerMode && (
