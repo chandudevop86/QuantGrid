@@ -30,7 +30,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Create or reset a QuantGrid user password.")
     parser.add_argument("username")
     parser.add_argument("password")
-    parser.add_argument("--role", default="admin", choices=["admin", "trader", "analyst", "viewer", "ops"])
+    parser.add_argument("--role", default="admin", choices=["admin", "developer", "trader", "analyst", "viewer", "ops"])
     args = parser.parse_args()
 
     reset_user_password(args.username, args.password, args.role)

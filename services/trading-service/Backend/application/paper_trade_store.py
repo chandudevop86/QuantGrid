@@ -97,10 +97,18 @@ def list_paper_trades(limit: int = 100) -> list[dict[str, Any]]:
 
 def risk_status() -> dict[str, Any]:
     init_paper_trade_store()
+    from Backend.core.config import get_settings
+
+    settings = get_settings()
     today = datetime.now(timezone.utc).date().isoformat()
     trades = list_paper_trades(500)
     today_trades = [trade for trade in trades if str(trade.get("created_at", "")).startswith(today)]
+    open_trades = [
+        trade for trade in trades
+        if str(trade.get("status") or "").lower() in {"paper_order_submitted", "open", "live_order_submitted"}
+    ]
     daily_pnl = round(sum(float(trade.get("pnl") or 0.0) for trade in today_trades), 2)
+    current_exposure = round(sum(abs(float(trade.get("entry") or 0.0)) for trade in open_trades), 2)
     consecutive_losses = 0
     for trade in trades:
         if float(trade.get("pnl") or 0.0) < 0:
@@ -111,8 +119,14 @@ def risk_status() -> dict[str, Any]:
     return {
         "daily_pnl": daily_pnl,
         "trades_today": len(today_trades),
+        "capital": settings.capital,
+        "risk_per_trade_pct": settings.risk_per_trade_pct,
+        "risk_per_trade_amount": round(settings.capital * settings.risk_per_trade_pct / 100, 2),
+        "open_positions": len(open_trades),
+        "current_exposure": current_exposure,
         "consecutive_losses": consecutive_losses,
-        "max_daily_loss": float(os.getenv("QUANTGRID_MAX_DAILY_LOSS", "3000")),
+        "max_daily_loss": settings.max_daily_loss,
         "max_trades_per_day": int(os.getenv("QUANTGRID_MAX_TRADES_PER_DAY", "3")),
         "max_consecutive_losses": int(os.getenv("QUANTGRID_MAX_CONSECUTIVE_LOSSES", "2")),
+        "risk_configured": settings.risk_configured,
     }

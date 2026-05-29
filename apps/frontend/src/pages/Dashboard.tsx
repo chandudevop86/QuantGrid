@@ -26,6 +26,11 @@ function formatMoney(value: unknown) {
   }).format(Number.isFinite(numeric) ? numeric : 0);
 }
 
+function formatPercent(value: unknown) {
+  const numeric = Number(value ?? 0);
+  return `${Number.isFinite(numeric) ? numeric.toFixed(2).replace(/\.?0+$/, "") : "0"}%`;
+}
+
 function formatTime(value: unknown) {
   if (!value) return "-";
   const date = new Date(String(value));
@@ -331,6 +336,45 @@ export default function Dashboard() {
               helper="Market data freshness"
               tone={(observability?.feed_delay_seconds ?? 0) > 60 ? "warn" : "good"}
             />
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Risk Summary</h2>
+              <span>{risk?.risk_configured ? "Configured" : "Using defaults"}</span>
+            </div>
+            {liveTrading && !risk?.risk_configured && (
+              <div className="alert alert-error" role="alert">
+                Live trading blocked until capital, risk per trade, and max daily loss are configured.
+              </div>
+            )}
+            <div className="risk-summary-grid">
+              <span>
+                <small>Capital</small>
+                <strong>{formatMoney(risk?.capital ?? 100000)}</strong>
+              </span>
+              <span>
+                <small>Risk per trade</small>
+                <strong>{formatPercent(risk?.risk_per_trade_pct ?? 1)}</strong>
+                <small>{formatMoney(risk?.risk_per_trade_amount ?? 1000)}</small>
+              </span>
+              <span>
+                <small>Open positions</small>
+                <strong>{risk?.open_positions ?? summary?.open_positions ?? 0}</strong>
+              </span>
+              <span>
+                <small>Current exposure</small>
+                <strong>{formatMoney(risk?.current_exposure ?? 0)}</strong>
+              </span>
+              <span>
+                <small>Paper/live mode</small>
+                <strong>{risk?.execution_mode ?? "PAPER"}</strong>
+              </span>
+              <span>
+                <small>Max daily loss</small>
+                <strong>{formatMoney(risk?.max_daily_loss ?? 3000)}</strong>
+              </span>
+            </div>
           </div>
 
           <div className="dashboard-section">

@@ -16,7 +16,7 @@ from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
 from Backend.core.config import get_settings
 from Backend.core.database import SessionLocal, get_db
-from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.audit import list_audit_events, write_audit_log
 from Backend.domain.security.models import User
 from Backend.presentation.api.auth import current_user
 from Backend.presentation.api.roles import require_roles
@@ -37,7 +37,7 @@ def _present_job(job: dict) -> dict:
 
 
 @router.get("/summary")
-def summary(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
+def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     return {
         "status": "ready",
         "open_positions": 0,
@@ -63,7 +63,7 @@ def _redis_status() -> dict:
 
 
 @router.get("/operations")
-def operations(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
+def operations(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     settings = get_settings()
     candles = latest_candles("NIFTY", "1m", 100)
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
@@ -132,6 +132,7 @@ def operations(_role: str = Depends(require_roles("admin", "trader", "analyst", 
             "daily_loss_remaining": round(daily_loss_remaining, 2),
             "active_risk_state": "BLOCKED" if risk_blocked else "NORMAL",
             "live_trading_enabled": settings.live_trading_enabled,
+            "risk_configured": settings.risk_configured,
         },
         "observability": {
             "websocket_connections": len(manager.active_connections),
@@ -200,5 +201,14 @@ def create_live_analysis_job(
 
 
 @router.get("/live-analysis/jobs")
-def list_live_analysis_jobs(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
+def list_live_analysis_jobs(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     return {"jobs": [_present_job(job) for job in list_jobs()]}
+
+
+@router.get("/audit-trail")
+def audit_trail(
+    limit: int = 20,
+    _role: str = Depends(require_roles("admin", "developer", "ops")),
+    db: Session = Depends(get_db),
+):
+    return {"events": list_audit_events(db, limit)}

@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 from typing import Any
 
 from Backend.application.dto import serialize_signal
 from Backend.application.signal_validation import candle_freshness, diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
+from Backend.core.database import get_db
+from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.models import User
+from Backend.presentation.api.auth import current_user
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["Trading"])
@@ -29,7 +34,10 @@ class StrategyRunRequest(BaseModel):
 @router.post("/signals")
 def generate_signals(
     payload: StrategyRunRequest,
-    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    request: Request = None,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
 ):
     service = TradingService()
     candle_source = payload.candle_source or "yahoo-finance"
@@ -59,6 +67,20 @@ def generate_signals(
     )
     serialized = [serialize_signal(s) for s in validated_signals]
     if not payload.include_diagnostics:
+        write_audit_log(
+            db,
+            action="signal_generated",
+            actor=actor,
+            target_type="strategy",
+            target_id=payload.strategy_name,
+            request=request,
+            metadata={
+                "symbol": payload.symbol,
+                "raw_signals": len(signals),
+                "validated_signals": len(serialized),
+                "status": "generated" if serialized else "no_signal",
+            },
+        )
         return serialized
 
     diagnostics = diagnose_signal_run(
@@ -75,7 +97,7 @@ def generate_signals(
     if strategy in {"amd", "supply_demand"} and "htf_candles" not in params:
         diagnostics.insert(0, "Higher-timeframe candles were not supplied, so HTF confluence may reject strict setups.")
 
-    return {
+    response = {
         "signals": serialized,
         "raw_signals": len(signals),
         "validated_signals": len(serialized),
@@ -83,6 +105,21 @@ def generate_signals(
         "data_source": _data_source,
         "validation_context": candle_freshness(payload.candles),
     }
+    write_audit_log(
+        db,
+        action="signal_generated",
+        actor=actor,
+        target_type="strategy",
+        target_id=payload.strategy_name,
+        request=request,
+        metadata={
+            "symbol": payload.symbol,
+            "raw_signals": len(signals),
+            "validated_signals": len(serialized),
+            "status": "generated" if serialized else "no_signal",
+        },
+    )
+    return response
 
 
 @router.get("/strategies")

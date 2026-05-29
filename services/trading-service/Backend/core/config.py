@@ -18,6 +18,10 @@ class Settings:
     broker_provider: str | None
     live_trading_enabled: bool
     broker_configured: bool
+    risk_configured: bool
+    capital: float
+    risk_per_trade_pct: float
+    max_daily_loss: float
     allow_dev_seed_users: bool
     bootstrap_users: str | None
 
@@ -112,6 +116,15 @@ def get_settings() -> Settings:
         and broker_token
         and (broker_provider == "dhan" or broker_key)
     )
+    risk_env_keys = {
+        "QUANTGRID_CAPITAL",
+        "QUANTGRID_RISK_PER_TRADE_PCT",
+        "QUANTGRID_MAX_DAILY_LOSS",
+    }
+    risk_configured = all(os.getenv(key) not in {None, ""} for key in risk_env_keys)
+    capital = float(os.getenv("QUANTGRID_CAPITAL", "100000"))
+    risk_per_trade_pct = float(os.getenv("QUANTGRID_RISK_PER_TRADE_PCT", "1"))
+    max_daily_loss = float(os.getenv("QUANTGRID_MAX_DAILY_LOSS", "3000"))
     allow_dev_seed_users = environment == "local" and _truthy(os.getenv("QUANTGRID_ALLOW_DEV_SEED_USERS"))
     bootstrap_users = os.getenv("QUANTGRID_USERS")
 
@@ -123,6 +136,10 @@ def get_settings() -> Settings:
         broker_provider=broker_provider,
         live_trading_enabled=live_trading_enabled,
         broker_configured=broker_configured,
+        risk_configured=risk_configured,
+        capital=capital,
+        risk_per_trade_pct=risk_per_trade_pct,
+        max_daily_loss=max_daily_loss,
         allow_dev_seed_users=allow_dev_seed_users,
         bootstrap_users=bootstrap_users,
     )
@@ -162,5 +179,9 @@ def validate_security_config(settings: Settings | None = None) -> Settings:
 
     if settings.live_trading_enabled and not settings.broker_configured:
         raise RuntimeError("Live trading requires broker provider and credentials.")
+    if settings.live_trading_enabled and not settings.risk_configured:
+        raise RuntimeError(
+            "Live trading requires QUANTGRID_CAPITAL, QUANTGRID_RISK_PER_TRADE_PCT, and QUANTGRID_MAX_DAILY_LOSS."
+        )
 
     return settings

@@ -185,7 +185,7 @@ def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
 @router.get("/price")
 def get_price(
     symbol: str = "NIFTY",
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     try:
         chart = _fetch_yahoo_chart(symbol)
@@ -233,7 +233,7 @@ def get_option_chain(
     symbol: str,
     strikes_each_side: int = 5,
     step: int = 50,
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     price_payload = get_price(symbol, _role=_role)
     price = float(price_payload.get("price") or 0.0)
@@ -283,7 +283,7 @@ def get_candles(
     interval: str = "1m",
     period: str = "1d",
     limit: int = 100,
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     limit = max(1, min(limit, 500))
 
@@ -347,7 +347,7 @@ def get_candle_validation(
     period: str = "1d",
     limit: int = 100,
     mode: str = "paper",
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
     response = get_candles(symbol, interval=interval, period=period, limit=limit)
     validation = validate_live_candle(
@@ -370,7 +370,7 @@ def get_stored_candles(
     symbol: str,
     interval: str = "1m",
     limit: int = 100,
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     limit = max(1, min(limit, 500))
     return {
@@ -385,6 +385,6 @@ def get_stored_candles(
 def get_market_store_status(
     symbol: str = "NIFTY",
     interval: str = "1m",
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
     return market_data_summary(symbol, interval)

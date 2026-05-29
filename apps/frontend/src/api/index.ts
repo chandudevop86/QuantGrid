@@ -43,6 +43,7 @@ export const api = {
     API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   operationsStatus: () => API.get("/dashboard/operations").then((res) => res.data),
+  auditTrail: () => API.get("/dashboard/audit-trail", { params: { limit: 20 } }).then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
   candles: (symbol: string, interval = "5m") =>

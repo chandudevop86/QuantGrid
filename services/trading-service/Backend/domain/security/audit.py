@@ -5,9 +5,33 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import Request
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from Backend.domain.security.models import AuditLog, User
+
+
+TRACKED_ACTIONS = {
+    "login_success",
+    "login_failure",
+    "signal_generated",
+    "paper_order_submitted",
+    "execution_blocked",
+    "user_created",
+    "password_changed",
+    "password_reset",
+}
+
+ACTION_LABELS = {
+    "login_success": "Login",
+    "login_failure": "Login",
+    "signal_generated": "Signal generated",
+    "paper_order_submitted": "Order submitted",
+    "execution_blocked": "Order rejected",
+    "user_created": "User created",
+    "password_changed": "Password changed",
+    "password_reset": "Password changed",
+}
 
 
 def request_ip(request: Request | None) -> str | None:
@@ -49,6 +73,54 @@ def write_audit_log(
         )
     )
     db.commit()
+
+
+def list_audit_events(db: Session, limit: int = 20) -> list[dict[str, Any]]:
+    rows = (
+        db.query(AuditLog)
+        .filter(AuditLog.action.in_(TRACKED_ACTIONS))
+        .order_by(desc(AuditLog.created_at), desc(AuditLog.id))
+        .limit(max(1, min(int(limit), 100)))
+        .all()
+    )
+    return [_present_audit_event(row) for row in rows]
+
+
+def _present_audit_event(row: AuditLog) -> dict[str, Any]:
+    metadata = _safe_metadata(row.metadata_json)
+    return {
+        "id": row.id,
+        "timestamp": row.created_at.isoformat() if row.created_at else None,
+        "user": row.actor_username or "system",
+        "action": ACTION_LABELS.get(row.action, row.action.replace("_", " ").title()),
+        "status": _event_status(row.action, metadata),
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+    }
+
+
+def _safe_metadata(raw: str | None) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return _sanitize_metadata(parsed if isinstance(parsed, dict) else {})
+
+
+def _event_status(action: str, metadata: dict[str, Any]) -> str:
+    explicit = metadata.get("status")
+    if explicit:
+        return str(explicit)
+    if action.endswith("_failure"):
+        return "failed"
+    if action in {"execution_blocked"}:
+        return "rejected"
+    if action in {"signal_generated"}:
+        validated = metadata.get("validated_signals")
+        return "generated" if isinstance(validated, int) and validated > 0 else "no_signal"
+    return "success"
 
 
 def _sanitize_metadata(value: Any) -> Any:

@@ -1,9 +1,10 @@
-export type Role = "admin" | "trader" | "analyst" | "viewer" | "ops";
+export type Role = "admin" | "developer" | "trader" | "analyst" | "viewer" | "ops";
 
-export const roles: Role[] = ["admin", "trader", "analyst", "viewer", "ops"];
+export const roles: Role[] = ["admin", "developer", "trader", "analyst", "viewer", "ops"];
 
 export const roleLabels: Record<Role, string> = {
   admin: "Admin",
+  developer: "Developer",
   trader: "Trader",
   analyst: "Analyst",
   viewer: "Viewer",
@@ -11,20 +12,20 @@ export const roleLabels: Record<Role, string> = {
 };
 
 export const routeRoles: Record<string, Role[]> = {
-  "/": ["admin", "trader", "analyst", "viewer", "ops"],
-  "/candles": ["admin", "trader", "analyst", "viewer"],
-  "/option-chain": ["admin", "trader", "analyst", "viewer"],
-  "/dhan-login": ["admin", "trader"],
+  "/": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/candles": ["admin", "trader", "viewer"],
+  "/option-chain": ["admin"],
+  "/dhan-login": ["admin"],
   "/execution": ["admin", "trader"],
-  "/live": ["admin", "trader", "analyst"],
-  "/analysis": ["admin", "trader", "analyst"],
-  "/jobs": ["admin", "trader", "analyst", "viewer", "ops"],
-  "/operations": ["admin", "trader", "analyst", "viewer", "ops"],
-  "/signals": ["admin", "trader", "analyst", "viewer", "ops"],
-  "/strategies": ["admin", "trader", "analyst"],
+  "/live": ["admin"],
+  "/analysis": ["admin"],
+  "/jobs": ["admin", "developer"],
+  "/operations": ["admin", "developer"],
+  "/signals": ["admin", "trader"],
+  "/strategies": ["admin", "developer", "trader", "viewer"],
   "/trade": ["admin", "trader"],
   "/admin/users": ["admin"],
-  "/admin/notifications": ["admin"],
+  "/admin/notifications": ["admin", "developer"],
 };
 
 type AuthClaims = {
@@ -87,5 +88,6 @@ export function hasAuthToken() {
 }
 
 export function canAccessRoute(role: Role, path: string) {
+  if (role === "admin") return true;
   return routeRoles[path]?.includes(role) ?? false;
 }

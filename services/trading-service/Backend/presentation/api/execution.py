@@ -92,6 +92,29 @@ def _paper_response(
     return response
 
 
+def _audit_execution_result(
+    db: Session,
+    request: Request,
+    actor: User,
+    result: dict[str, Any],
+) -> None:
+    submitted = result.get("status") == "paper_order_submitted"
+    write_audit_log(
+        db,
+        action="paper_order_submitted" if submitted else "execution_blocked",
+        actor=actor,
+        target_type="symbol",
+        target_id=result.get("symbol"),
+        request=request,
+        metadata={
+            "strategy": result.get("strategy"),
+            "side": result.get("signal"),
+            "reason": result.get("reason"),
+            "status": "submitted" if submitted else "rejected",
+        },
+    )
+
+
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
     try:
         entry = float(signal.entry_price)
@@ -374,6 +397,7 @@ async def auto_paper_order(
             candles_15m=trend_candles,
             strategy_diagnostics=strategy_diagnostics,
         )
+        _audit_execution_result(db, request, actor, result)
         alert_execution_event(result)
         return result
 
@@ -438,6 +462,20 @@ async def place_order(
                 metadata={"reason": "broker_not_configured"},
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
+        if not settings.risk_configured:
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "risk_config_missing"},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Live trading requires risk config: QUANTGRID_CAPITAL, QUANTGRID_RISK_PER_TRADE_PCT, and QUANTGRID_MAX_DAILY_LOSS.",
+            )
         write_audit_log(
             db,
             action="execution_blocked",
@@ -450,25 +488,6 @@ async def place_order(
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Live broker execution is not implemented.")
 
     result = _submit_paper_signal(signal, engine=engine, execution_mode=execution_mode)
-    if result["status"] != "paper_order_submitted":
-        write_audit_log(
-            db,
-            action="execution_blocked",
-            actor=actor,
-            target_type="symbol",
-            target_id=signal.symbol,
-            request=request,
-            metadata={"reason": result.get("reason"), "result": result},
-        )
-    else:
-        write_audit_log(
-            db,
-            action="paper_order_submitted",
-            actor=actor,
-            target_type="symbol",
-            target_id=signal.symbol,
-            request=request,
-            metadata={"strategy": signal.strategy_name, "side": signal.side},
-        )
+    _audit_execution_result(db, request, actor, result)
     alert_execution_event(result)
     return result

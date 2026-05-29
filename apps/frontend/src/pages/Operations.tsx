@@ -4,14 +4,20 @@ import Loader from "../components/Loader";
 
 export default function Operations() {
   const [operations, setOperations] = useState<any>(null);
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     const load = () => {
-      api.operationsStatus()
-        .then((data) => {
-          if (isMounted) setOperations(data);
+      Promise.all([
+        api.operationsStatus(),
+        api.auditTrail().catch(() => ({ events: [] })),
+      ])
+        .then(([data, auditData]) => {
+          if (!isMounted) return;
+          setOperations(data);
+          setAuditEvents(Array.isArray(auditData?.events) ? auditData.events : []);
         })
         .catch(() => {
           if (isMounted) setError("Operations API is not available.");
@@ -39,6 +45,7 @@ export default function Operations() {
       {error && <p className="error-text">{error}</p>}
 
       {operations && (
+        <>
         <div className="metric-grid observability-grid">
           <div className="metric-card">
             <span className="metric-label">WebSocket Connections</span>
@@ -76,6 +83,41 @@ export default function Operations() {
             <span className="metric-helper">{health?.db?.message}</span>
           </div>
         </div>
+
+        <div className="dashboard-section">
+          <div className="section-header">
+            <h2>Audit Trail</h2>
+            <span>Latest {auditEvents.length} trading events</span>
+          </div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEvents.map((event) => (
+                  <tr key={event.id}>
+                    <td>{event.timestamp ? new Date(event.timestamp).toLocaleString() : "-"}</td>
+                    <td>{event.user ?? "system"}</td>
+                    <td>{event.action ?? "-"}</td>
+                    <td>{event.status ?? "-"}</td>
+                  </tr>
+                ))}
+                {auditEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>No audit events recorded yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        </>
       )}
     </section>
   );

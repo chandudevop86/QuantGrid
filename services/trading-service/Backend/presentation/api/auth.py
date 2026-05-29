@@ -21,7 +21,7 @@ router = APIRouter()
 admin_router = APIRouter()
 
 TOKEN_TTL_SECONDS = 28800
-ALL_ROLES = {"admin", "trader", "analyst", "viewer", "ops"}
+ALL_ROLES = {"admin", "developer", "trader", "analyst", "viewer", "ops"}
 TRADE_EXECUTE_ROLES = {"admin", "trader"}
 
 

@@ -1099,7 +1099,8 @@ select {
 }
 
 .strategy-context,
-.execution-safety-grid {
+.execution-safety-grid,
+.risk-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
@@ -1110,7 +1111,8 @@ select {
 }
 
 .strategy-context span,
-.execution-safety-grid span {
+.execution-safety-grid span,
+.risk-summary-grid span {
   display: grid;
   gap: 4px;
   min-height: 62px;
@@ -1123,13 +1125,15 @@ select {
 }
 
 .strategy-context strong,
-.execution-safety-grid strong {
+.execution-safety-grid strong,
+.risk-summary-grid strong {
   color: #f8fafc;
   font-size: 16px;
 }
 
 .strategy-context small,
-.execution-safety-grid small {
+.execution-safety-grid small,
+.risk-summary-grid small {
   color: #94a3b8;
   font-size: 12px;
   font-weight: 700;
@@ -1450,6 +1454,7 @@ select {
   .status-panel-grid,
   .strategy-context,
   .execution-safety-grid,
+  .risk-summary-grid,
   .dashboard-heading {
     grid-template-columns: 1fr;
   }

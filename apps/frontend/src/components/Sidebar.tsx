@@ -46,7 +46,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
-        {navItems.filter((item) => item.to === "/" || (authenticated && canAccessRoute(role, item.to))).map((item) => (
+        {navItems.filter((item) => authenticated && canAccessRoute(role, item.to)).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

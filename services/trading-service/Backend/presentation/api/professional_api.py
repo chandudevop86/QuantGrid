@@ -31,7 +31,7 @@ def backtest_strategy(
     capital: float = 100_000,
     risk_pct: float = 1,
     rr_ratio: float = 2,
-    _role: str = Depends(require_roles("admin", "trader", "analyst")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
 ):
     candles = _clean_candles(get_candles(symbol, interval=interval, period=period, limit=500))
     result = BacktestEngine().run(
@@ -48,13 +48,13 @@ def backtest_strategy(
 @router.get("/api/trades/paper")
 def paper_trades(
     limit: int = Query(default=100, ge=1, le=500),
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
     return {"trades": list_paper_trades(limit)}
 
 
 @router.get("/api/risk/status")
-def get_risk_status(_role: str = Depends(require_roles("admin", "trader", "analyst", "viewer", "ops"))):
+def get_risk_status(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     status = risk_status()
     status["minimum_score"] = 7
     return status
@@ -64,7 +64,7 @@ def get_risk_status(_role: str = Depends(require_roles("admin", "trader", "analy
 def latest_signals(
     symbol: str = "NIFTY",
     strategy: str | None = None,
-    _role: str = Depends(require_roles("admin", "trader", "analyst", "viewer")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     one_minute = _clean_candles(get_candles(symbol, interval="1m", period="1d", limit=100))
     five_minute = _clean_candles(get_candles(symbol, interval="5m", period="1d", limit=100))

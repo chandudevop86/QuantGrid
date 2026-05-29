@@ -52,7 +52,7 @@ def _write_env_values(path: Path, values: dict[str, str]) -> None:
 
 
 @router.get("/status")
-def broker_status(_role: str = Depends(require_roles("admin", "trader", "ops"))):
+def broker_status(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
     settings = get_settings()
     provider = settings.broker_provider or "none"
 
