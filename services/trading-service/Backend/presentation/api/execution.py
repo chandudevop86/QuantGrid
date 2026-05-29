@@ -26,8 +26,10 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
+from Backend.infrastructure.broker.dhan_status import check_dhan_profile
 from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.application.market_data_store import latest_candles
+from Backend.application.kill_switch import kill_switch_status
 from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
 from Backend.presentation.api.roles import require_roles, require_trade_execute
 
@@ -58,6 +60,50 @@ def _request_is_https(request: Request) -> bool:
 
 def _allow_insecure_live() -> bool:
     return str(os.getenv("LIVE_ALLOW_INSECURE", "")).strip().lower() in {"1", "true", "yes"}
+
+
+def _live_guardrail_failure(
+    *,
+    request: Request,
+    actor: User,
+    settings: Any,
+    candles_1m: list[dict[str, Any]],
+    risk_decision: Any,
+) -> str | None:
+    if not _request_is_https(request) and not _allow_insecure_live():
+        return "Live trading requires HTTPS."
+    if not settings.broker_live_enabled:
+        return "Live trading requires BROKER_LIVE_ENABLED=true."
+    if not settings.risk_engine_enabled:
+        return "Live trading requires risk engine enabled."
+    if kill_switch_status()["active"]:
+        return "Trading halted by kill switch."
+    market_validation = validate_live_candle(candles_1m, interval="1m", mode="live")
+    if not market_validation.valid_for_execution:
+        return f"Live trading requires fresh market data: {market_validation.market_status}."
+    if actor.role not in {"admin", "trader"}:
+        return "Live trading requires trader or admin role."
+    if not settings.broker_configured:
+        return "Live trading requires broker credentials."
+    if not _broker_session_valid(settings):
+        return "Live trading requires valid broker session."
+    if not risk_decision.allowed:
+        return f"Live trading rejected by risk engine: {risk_decision.reason}"
+    details = risk_decision.details if hasattr(risk_decision, "details") else {}
+    daily_pnl = float(details.get("daily_pnl") or 0.0)
+    max_daily_loss = float(details.get("max_daily_loss") or 0.0)
+    if abs(min(0.0, daily_pnl)) >= max_daily_loss:
+        return "Live trading blocked: max daily loss breached."
+    if not settings.audit_logging_enabled:
+        return "Live trading requires audit logging enabled."
+    return None
+
+
+def _broker_session_valid(settings: Any) -> bool:
+    provider = str(settings.broker_provider or "").lower()
+    if provider == "dhan":
+        return bool(check_dhan_profile(timeout=3.0).get("connected"))
+    return bool(settings.broker_configured and provider)
 
 
 def _market_aligned(signal: StrategySignal) -> bool:
@@ -131,6 +177,44 @@ def _audit_execution_result(
             "risk_decision": result.get("risk_decision"),
         },
     )
+
+
+def _reject_live_guardrail(
+    *,
+    db: Session,
+    request: Request,
+    actor: User,
+    signal: StrategySignal,
+    reason: str,
+    execution_mode: str,
+    risk_decision: Any,
+) -> dict[str, Any]:
+    result = _paper_response(
+        status_value="rejected",
+        symbol=signal.symbol,
+        strategy=signal.strategy_name,
+        signal=signal,
+        reason=reason,
+        execution_mode=execution_mode,
+        extra={**_risk_response_fields(risk_decision), "live_guardrail": "failed"},
+    )
+    write_audit_log(
+        db,
+        action="execution_blocked",
+        actor=actor,
+        target_type="symbol",
+        target_id=signal.symbol,
+        request=request,
+        metadata={
+            "reason": reason,
+            "status": "rejected",
+            "strategy": signal.strategy_name,
+            "side": signal.side,
+            "risk_decision": result.get("risk_decision"),
+            "live_guardrail": "failed",
+        },
+    )
+    return result
 
 
 def _audit_risk_decision(
@@ -613,6 +697,39 @@ async def place_order(
         except Exception:
             candles_1m = []
 
+    if execution_mode == "live" and not _request_is_https(request) and not _allow_insecure_live():
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason="Live trading requires HTTPS.",
+            execution_mode=execution_mode,
+            extra={
+                "allowed": False,
+                "risk_amount": 0.0,
+                "max_allowed_risk": 0.0,
+                "live_guardrail": "failed",
+            },
+        )
+        write_audit_log(
+            db,
+            action="execution_blocked",
+            actor=actor,
+            target_type="symbol",
+            target_id=signal.symbol,
+            request=request,
+            metadata={
+                "reason": "Live trading requires HTTPS.",
+                "status": "rejected",
+                "strategy": signal.strategy_name,
+                "side": signal.side,
+                "live_guardrail": "failed",
+            },
+        )
+        alert_execution_event(result)
+        return result
+
     risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
     _audit_risk_decision(
         db,
@@ -638,18 +755,26 @@ async def place_order(
         return result
 
     if execution_mode == "live":
-        if not _request_is_https(request) and not _allow_insecure_live():
-            write_audit_log(
-                db,
-                action="execution_blocked",
-                actor=actor,
-                target_type="symbol",
-                target_id=signal.symbol,
-                request=request,
-                metadata={"reason": "live_trading_requires_https"},
-            )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires HTTPS.")
         settings = get_settings()
+        guardrail_reason = _live_guardrail_failure(
+            request=request,
+            actor=actor,
+            settings=settings,
+            candles_1m=candles_1m,
+            risk_decision=risk_decision,
+        )
+        if guardrail_reason:
+            result = _reject_live_guardrail(
+                db=db,
+                request=request,
+                actor=actor,
+                signal=signal,
+                reason=guardrail_reason,
+                execution_mode=execution_mode,
+                risk_decision=risk_decision,
+            )
+            alert_execution_event(result)
+            return result
         if not settings.live_trading_enabled or not settings.broker_live_enabled:
             write_audit_log(
                 db,

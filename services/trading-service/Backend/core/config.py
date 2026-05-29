@@ -19,6 +19,8 @@ class Settings:
     live_trading_enabled: bool
     broker_live_enabled: bool
     broker_configured: bool
+    risk_engine_enabled: bool
+    audit_logging_enabled: bool
     risk_configured: bool
     capital: float
     risk_per_trade_pct: float
@@ -102,6 +104,8 @@ def get_settings() -> Settings:
     broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
     broker_live_enabled = _truthy(os.getenv("BROKER_LIVE_ENABLED"))
+    risk_engine_enabled = not _truthy(os.getenv("RISK_ENGINE_DISABLED")) and os.getenv("RISK_ENGINE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    audit_logging_enabled = os.getenv("AUDIT_LOGGING_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     broker_token = (
         os.getenv("QUANTGRID_BROKER_ACCESS_TOKEN")
         or os.getenv("DHAN_ACCESS_TOKEN")
@@ -139,6 +143,8 @@ def get_settings() -> Settings:
         live_trading_enabled=live_trading_enabled,
         broker_live_enabled=broker_live_enabled,
         broker_configured=broker_configured,
+        risk_engine_enabled=risk_engine_enabled,
+        audit_logging_enabled=audit_logging_enabled,
         risk_configured=risk_configured,
         capital=capital,
         risk_per_trade_pct=risk_per_trade_pct,
