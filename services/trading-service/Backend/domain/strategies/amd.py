@@ -94,13 +94,22 @@ class AMDStrategy(BaseStrategy):
             if self._low_volatility(row):
                 continue
 
+            session_candidate: StrategySignal | None = None
             for side in ("BUY", "SELL"):
                 signal = self._evaluate_setup(candles, index, side=side, context=context, htf_candles=htf_candles)
                 if signal is None:
                     continue
-                signals.append(signal)
+                if signal.metadata.get("validation_passed") is True:
+                    signals.append(signal)
+                    traded_sessions.add(session)
+                    break
+                if session_candidate is None:
+                    session_candidate = signal
+            if session in traded_sessions:
+                continue
+            if session_candidate is not None:
+                signals.append(session_candidate)
                 traded_sessions.add(session)
-                break
 
         return signals
 
@@ -124,27 +133,27 @@ class AMDStrategy(BaseStrategy):
         if amd is None:
             return None
         if self.config.require_extreme_entry and self._is_mid_range_entry(float(row["close"]), amd, side):
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, validation_reason="entry is not in liquidity range extreme")
         if not self._passes_vwap_ema(row, side):
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, validation_reason="vwap or ema alignment rejected setup")
 
         fvg = self.fvg_detector.find_active_return(candles, index, side, after_index=amd.sweep.sweep_index)
         if fvg is None:
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, validation_reason="no active fvg return after liquidity sweep")
         zone = self.zone_engine.find_zone(candles, index, side, fvg=fvg, after_index=amd.sweep.sweep_index)
         if zone is None:
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, fvg=fvg, validation_reason="no supply or demand zone confluence")
         zone_overlaps_fvg = self.zone_engine.has_confluence(zone, fvg)
         if not zone_overlaps_fvg:
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, fvg=fvg, zone=zone, validation_reason="supply or demand zone does not overlap fvg")
 
         entry_confirmation = self._entry_confirmation(candles, index, side)
         if entry_confirmation is None:
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, fvg=fvg, zone=zone, validation_reason="missing entry confirmation")
 
         htf_aligned = self._htf_aligned(htf_candles, row, side)
         if self.config.require_htf_alignment and not htf_aligned:
-            return None
+            return self._raw_candidate(candles, index, side, context, amd=amd, fvg=fvg, zone=zone, validation_reason="higher timeframe alignment rejected setup")
 
         score = self.scoring.score(
             amd=amd,
@@ -156,7 +165,19 @@ class AMDStrategy(BaseStrategy):
             entry_confirmation=entry_confirmation,
         )
         if score.total < int(self.config.min_score):
-            return None
+            return self._raw_candidate(
+                candles,
+                index,
+                side,
+                context,
+                amd=amd,
+                fvg=fvg,
+                zone=zone,
+                score_breakdown=score.to_dict(),
+                entry_confirmation=entry_confirmation,
+                score=score.total,
+                validation_reason="score below minimum confirmation threshold",
+            )
 
         stop_loss, target_price = self.risk.levels(
             candles,
@@ -177,8 +198,107 @@ class AMDStrategy(BaseStrategy):
             stop_loss=stop_loss,
             target_price=target_price,
             score=score.total,
-            metadata=self._metadata(amd, fvg, zone, score.to_dict(), entry_confirmation),
+            metadata={
+                **self._metadata(amd, fvg, zone, score.to_dict(), entry_confirmation),
+                "raw_setup": True,
+                "validation_passed": True,
+                "validation_reason": "confirmed AMD FVG supply/demand setup",
+            },
         )
+
+    def _raw_candidate(
+        self,
+        candles: pd.DataFrame,
+        index: int,
+        side: Side,
+        context: StrategyContext,
+        *,
+        amd: AMDContext,
+        validation_reason: str,
+        fvg: FVGZone | None = None,
+        zone: SupplyDemandZone | None = None,
+        score_breakdown: dict[str, Any] | None = None,
+        entry_confirmation: str | None = None,
+        score: float = 0.0,
+    ) -> StrategySignal | None:
+        stop_loss, target_price = self._candidate_levels(candles, index, side, context, zone=zone)
+        metadata = self._candidate_metadata(
+            amd=amd,
+            fvg=fvg,
+            zone=zone,
+            score_breakdown=score_breakdown,
+            entry_confirmation=entry_confirmation,
+            validation_reason=validation_reason,
+        )
+        return self.signal_builder.build(
+            candles.iloc[index],
+            strategy_name=self.name,
+            symbol=context.symbol,
+            side=side,
+            capital=context.capital,
+            risk_pct=1.0,
+            stop_loss=stop_loss,
+            target_price=target_price,
+            score=score,
+            metadata=metadata,
+        )
+
+    def _candidate_levels(
+        self,
+        candles: pd.DataFrame,
+        index: int,
+        side: Side,
+        context: StrategyContext,
+        *,
+        zone: SupplyDemandZone | None,
+    ) -> tuple[float, float]:
+        entry = float(candles.iloc[index]["close"])
+        if zone is not None:
+            return self.risk.levels(
+                candles,
+                index,
+                side=side,
+                zone=zone,
+                entry=entry,
+                min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
+                ideal_rr=max(float(context.rr_ratio), float(self.config.ideal_rr)),
+            )
+        atr = max(float(candles.iloc[index].get("atr_14", candles.iloc[index].get("avg_range_5", 0.0)) or 0.0), 0.05)
+        rr = max(float(context.rr_ratio), float(self.config.min_rr))
+        if side == "BUY":
+            return entry - atr, entry + atr * rr
+        return entry + atr, entry - atr * rr
+
+    def _candidate_metadata(
+        self,
+        *,
+        amd: AMDContext,
+        fvg: FVGZone | None,
+        zone: SupplyDemandZone | None,
+        score_breakdown: dict[str, Any] | None,
+        entry_confirmation: str | None,
+        validation_reason: str,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "raw_setup": True,
+            "validation_passed": False,
+            "validation_reason": validation_reason,
+            "amd_phase": amd.phase,
+            "liquidity_range": [round(amd.liquidity_range.low, 4), round(amd.liquidity_range.high, 4)],
+            "swept_level": round(amd.sweep.swept_level, 4),
+            "reason": validation_reason,
+            "market_signal": f"{amd.sweep.side} sweep detected; {validation_reason}",
+        }
+        if fvg is not None:
+            metadata["fvg_zone"] = [round(fvg.low, 4), round(fvg.high, 4)]
+        if zone is not None:
+            metadata["zone_type"] = zone.zone_type
+            metadata["zone"] = [round(zone.low, 4), round(zone.high, 4)]
+        if score_breakdown is not None:
+            metadata["score_breakdown"] = score_breakdown
+        if entry_confirmation is not None:
+            metadata["entry_confirmation"] = entry_confirmation
+        return metadata
 
     def _metadata(
         self,
