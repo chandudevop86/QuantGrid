@@ -175,6 +175,9 @@ def _audit_execution_result(
             "reason": result.get("reason"),
             "status": "submitted" if submitted else "rejected",
             "risk_decision": result.get("risk_decision"),
+            "broker_order_id": result.get("broker_order_id"),
+            "broker_status": result.get("broker_status"),
+            "raw_safe_broker_response": result.get("raw_safe_broker_response"),
         },
     )
 
@@ -446,8 +449,10 @@ async def _submit_paper_signal(
             extra={
                 **_risk_response_fields(risk_decision),
                 "broker_order_id": broker_status.broker_order_id,
+                "broker_status": broker_status.status,
                 "broker_confirmed": False,
                 "broker_order": broker_status.to_dict(),
+                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
             },
         )
 
@@ -826,8 +831,10 @@ async def place_order(
                 extra={
                     **_risk_response_fields(risk_decision),
                     "broker_order_id": broker_status.broker_order_id,
+                    "broker_status": broker_status.status,
                     "broker_confirmed": False,
                     "broker_order": broker_status.to_dict(),
+                    "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
                 },
             )
             _audit_execution_result(db, request, actor, result)
@@ -843,9 +850,24 @@ async def place_order(
             extra={
                 **_risk_response_fields(risk_decision),
                 "broker_order_id": broker_status.broker_order_id,
+                "broker_status": broker_status.status,
                 "broker_confirmed": True,
                 "broker_order": broker_status.to_dict(),
+                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
             },
+        )
+        create_open_position(
+            {
+                "broker_order_id": broker_status.broker_order_id,
+                "symbol": signal.symbol,
+                "side": signal.side,
+                "quantity": requested_quantity(signal),
+                "entry_price": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "target": signal.target_price,
+                "current_price": broker_status.price or signal.entry_price,
+                "opened_at": signal.signal_time.isoformat(),
+            }
         )
         _audit_execution_result(db, request, actor, result)
         alert_execution_event(result)

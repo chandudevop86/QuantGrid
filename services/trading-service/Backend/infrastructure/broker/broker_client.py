@@ -128,6 +128,10 @@ def broker_client_for_mode(mode: str) -> BrokerClient:
         return _PAPER_BROKER
     if not settings.broker_live_enabled:
         raise RuntimeError("Live broker is disabled. Set BROKER_LIVE_ENABLED=true to enable live broker integration.")
+    if str(settings.broker_provider or "").lower() == "dhan":
+        from Backend.infrastructure.broker.dhan_order_adapter import DhanBrokerClient
+
+        return DhanBrokerClient()
     return LiveBrokerClient()
 
 

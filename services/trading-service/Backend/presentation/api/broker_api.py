@@ -3,13 +3,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from Backend.core.config import get_settings
+from Backend.core.database import get_db
+from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
+from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import check_dhan_profile
-from Backend.presentation.api.roles import require_roles
+from Backend.presentation.api.roles import current_user, require_roles
+from sqlalchemy.orm import Session
 
 
 router = APIRouter(tags=["broker"])
@@ -158,3 +162,27 @@ async def get_holdings(
         return {"holdings": await broker_client_for_mode(execution_mode).get_holdings()}
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker holdings failed: {exc}") from exc
+
+
+@router.post("/reconcile")
+async def reconcile_broker(
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    try:
+        return await reconcile_broker_state(
+            db=db,
+            broker_client=broker_client_for_mode(execution_mode),
+            actor=actor,
+            request=request,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker reconciliation failed: {exc}") from exc
+
+
+@router.get("/reconciliation/status")
+def get_reconciliation_status(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
+    return reconciliation_status()
