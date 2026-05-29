@@ -13,6 +13,7 @@ export const roleLabels: Record<Role, string> = {
 export const routeRoles: Record<string, Role[]> = {
   "/": ["admin", "trader", "analyst", "viewer", "ops"],
   "/candles": ["admin", "trader", "analyst", "viewer"],
+  "/option-chain": ["admin", "trader", "analyst", "viewer"],
   "/execution": ["admin", "trader"],
   "/live": ["admin", "trader", "analyst"],
   "/analysis": ["admin", "trader", "analyst"],

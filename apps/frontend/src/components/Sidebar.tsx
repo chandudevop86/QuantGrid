@@ -8,6 +8,7 @@ export default function Sidebar() {
   const navItems = [
     { to: "/", label: "Dashboard" },
     { to: "/candles", label: "Candles" },
+    { to: "/option-chain", label: "Option Chain" },
     { to: "/live", label: "Live Analysis" },
     { to: "/jobs", label: "Jobs" },
     { to: "/operations", label: "Operations" },
