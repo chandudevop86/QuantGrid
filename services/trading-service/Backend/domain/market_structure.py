@@ -113,6 +113,49 @@ def _levels(frame: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def _nearest_strike(price: float, step: int = 50) -> int:
+    if price <= 0:
+        return 0
+    return int(round(price / step) * step)
+
+
+def _nifty_option_plan(frame: pd.DataFrame, bias: str, market_structure: str) -> dict[str, Any]:
+    window = frame.tail(20)
+    row = frame.iloc[-1]
+    current_price = float(row["close"])
+    high_20 = float(window["high"].max())
+    low_20 = float(window["low"].min())
+    atr = max(float(row.get("atr_14", 0.0) or 0.0), 1.0)
+    strike = _nearest_strike(current_price)
+
+    ce_trigger = max(high_20, current_price + atr * 0.25)
+    pe_trigger = min(low_20, current_price - atr * 0.25)
+    preferred_side = "CE" if bias == "bullish" or "bullish" in market_structure.lower() else "PE" if bias == "bearish" or "bearish" in market_structure.lower() else "WAIT"
+
+    return {
+        "underlying": "NIFTY",
+        "lookback_candles": int(len(window)),
+        "current_price": _round(current_price),
+        "atm_strike": strike,
+        "preferred_side": preferred_side,
+        "ce": {
+            "contract": f"NIFTY {strike} CE" if strike else "NIFTY ATM CE",
+            "trigger_above": _round(ce_trigger),
+            "invalid_below": _round(current_price - atr),
+        },
+        "pe": {
+            "contract": f"NIFTY {strike} PE" if strike else "NIFTY ATM PE",
+            "trigger_below": _round(pe_trigger),
+            "invalid_above": _round(current_price + atr),
+        },
+        "range": {
+            "high_20": _round(high_20),
+            "low_20": _round(low_20),
+        },
+        "note": "Use the 20-candle range from current NIFTY price: CE only above the 20-candle high, PE only below the 20-candle low.",
+    }
+
+
 def _best_signal(signals: list[StrategySignal]) -> StrategySignal | None:
     if not signals:
         return None
@@ -155,6 +198,7 @@ def analyze_market_structure(
     levels = _levels(frame)
     liquidity_text, liquidity_reasons = _liquidity(frame, row, levels["intraday_support"], levels["intraday_resistance"])
     volume_reason = _volume_behavior(row)
+    nifty_option = _nifty_option_plan(frame, bias, market_structure)
     selected = _best_signal(signals)
 
     reasoning = [trend_reason, *structure_reasons, *liquidity_reasons, volume_reason]
@@ -173,6 +217,7 @@ def analyze_market_structure(
             "confidence_score": 0,
             "liquidity_analysis": liquidity_text,
             "levels": levels,
+            "nifty_option": nifty_option,
             "institutional_activity_probability": "medium" if "sweep" in liquidity_text.lower() else "low",
             "trade_decision": "WAIT",
             "weak_signal_detected": bool(raw_signals),
@@ -203,6 +248,7 @@ def analyze_market_structure(
         "confidence_score": score,
         "liquidity_analysis": liquidity_text,
         "levels": levels,
+        "nifty_option": nifty_option,
         "institutional_activity_probability": "high" if score >= 8 and "sweep" in liquidity_text.lower() else "medium",
         "trade_decision": "TRADE" if score >= 7 and not side_bias_conflict else "WAIT",
         "weak_signal_detected": score < 7 or side_bias_conflict,

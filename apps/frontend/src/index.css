@@ -1007,6 +1007,29 @@ select {
   grid-column: span 4;
 }
 
+.option-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.option-plan-grid strong,
+.option-plan-grid p {
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.option-plan-grid strong {
+  display: grid;
+  place-items: center;
+  color: #ccfbf1;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
 .status-pill {
   flex: 0 0 auto;
   padding: 7px 10px;

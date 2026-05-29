@@ -270,6 +270,25 @@ export default function LiveAnalysis() {
                 <span>Liquidity</span>
                 <p>{result.result.institutional_analysis.liquidity_analysis}</p>
               </div>
+              {result.result.institutional_analysis.nifty_option && (
+                <div className="institutional-wide option-plan">
+                  <span>NIFTY Option</span>
+                  <div className="option-plan-grid">
+                    <strong>{result.result.institutional_analysis.nifty_option.preferred_side === "WAIT" ? "Wait for range break" : result.result.institutional_analysis.nifty_option.preferred_side}</strong>
+                    <p>
+                      CMP {result.result.institutional_analysis.nifty_option.current_price} |
+                      ATM {result.result.institutional_analysis.nifty_option.atm_strike} |
+                      20C range {result.result.institutional_analysis.nifty_option.range?.low_20} - {result.result.institutional_analysis.nifty_option.range?.high_20}
+                    </p>
+                    <p>
+                      CE: {result.result.institutional_analysis.nifty_option.ce?.contract} above {result.result.institutional_analysis.nifty_option.ce?.trigger_above}
+                    </p>
+                    <p>
+                      PE: {result.result.institutional_analysis.nifty_option.pe?.contract} below {result.result.institutional_analysis.nifty_option.pe?.trigger_below}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="institutional-wide">
                 <span>Reasoning</span>
                 <ul>
