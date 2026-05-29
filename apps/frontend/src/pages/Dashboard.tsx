@@ -341,19 +341,6 @@ export default function Dashboard() {
 
           <div className="dashboard-section">
             <div className="section-header">
-              <h2>Execution Safety</h2>
-              <span>{risk?.active_risk_state ?? "UNKNOWN"}</span>
-            </div>
-            <div className="execution-safety-grid">
-              <span><small>Validation status</small><strong>{market?.valid_for_execution ? "Ready" : "Waiting"}</strong></span>
-              <span><small>Risk status</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
-              <span><small>Execution eligibility</small><strong>{market?.valid_for_execution && risk?.active_risk_state === "NORMAL" ? "Eligible" : "Blocked"}</strong></span>
-              <span><small>Market session</small><strong>{market?.session_state ?? "unknown"}</strong></span>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
               <h2>NIFTY Option Chain</h2>
               <span>
                 CMP {formatNumber(optionChain?.underlying_price)} | ATM {optionChain?.atm_strike ?? "-"}
@@ -391,6 +378,19 @@ export default function Dashboard() {
             </div>
             <div className="diagnostic-list">
               <span>Source: {optionChain?.source ?? "not loaded"}{optionChain?.expiry ? ` | Expiry: ${optionChain.expiry}` : ""}</span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Execution Safety</h2>
+              <span>{risk?.active_risk_state ?? "UNKNOWN"}</span>
+            </div>
+            <div className="execution-safety-grid">
+              <span><small>Validation status</small><strong>{market?.valid_for_execution ? "Ready" : "Waiting"}</strong></span>
+              <span><small>Risk status</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
+              <span><small>Execution eligibility</small><strong>{market?.valid_for_execution && risk?.active_risk_state === "NORMAL" ? "Eligible" : "Blocked"}</strong></span>
+              <span><small>Market session</small><strong>{market?.session_state ?? "unknown"}</strong></span>
             </div>
           </div>
 
