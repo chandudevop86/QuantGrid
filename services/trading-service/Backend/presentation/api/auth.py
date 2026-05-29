@@ -60,6 +60,11 @@ class UserResponse(BaseModel):
 
 def init_auth_store() -> None:
     init_database()
+    from Backend.core.database import SessionLocal
+    from Backend.domain.security.audit import ensure_audit_schema
+
+    with SessionLocal() as db:
+        ensure_audit_schema(db)
 
 
 def _b64encode(payload: bytes) -> str:

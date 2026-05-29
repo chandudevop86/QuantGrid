@@ -43,7 +43,7 @@ export const api = {
     API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   operationsStatus: () => API.get("/dashboard/operations").then((res) => res.data),
-  auditTrail: () => API.get("/dashboard/audit-trail", { params: { limit: 20 } }).then((res) => res.data),
+  auditTrail: () => API.get("/audit/logs", { params: { limit: 50 } }).then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
   candles: (symbol: string, interval = "5m") =>
@@ -70,6 +70,9 @@ export const api = {
   latestSignals: () => API.get("/api/signals/latest").then((res) => res.data),
   paperTrades: () => API.get("/api/trades/paper").then((res) => res.data),
   riskStatus: () => API.get("/api/risk/status").then((res) => res.data),
+  positionSummary: () => API.get("/positions/summary").then((res) => res.data),
+  openPositions: () => API.get("/positions/open").then((res) => res.data),
+  closedPositions: () => API.get("/positions/closed").then((res) => res.data),
   backtestStrategy: (strategy: string) =>
     API.get(`/api/strategies/${strategy}/backtest`).then((res) => res.data),
 };

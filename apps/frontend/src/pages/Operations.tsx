@@ -33,6 +33,10 @@ export default function Operations() {
 
   const observability = operations?.observability;
   const health = operations?.system_health;
+  const formatMetadata = (metadata: any) => {
+    if (!metadata || Object.keys(metadata).length === 0) return "-";
+    return JSON.stringify(metadata);
+  };
 
   return (
     <section className="dashboard-page">
@@ -87,7 +91,7 @@ export default function Operations() {
         <div className="dashboard-section">
           <div className="section-header">
             <h2>Audit Trail</h2>
-            <span>Latest {auditEvents.length} trading events</span>
+            <span>Latest {auditEvents.length} audit events</span>
           </div>
           <div className="table-wrap">
             <table className="table">
@@ -95,8 +99,12 @@ export default function Operations() {
                 <tr>
                   <th>Timestamp</th>
                   <th>User</th>
+                  <th>Role</th>
                   <th>Action</th>
                   <th>Status</th>
+                  <th>Request ID</th>
+                  <th>Reason</th>
+                  <th>Metadata</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,13 +112,17 @@ export default function Operations() {
                   <tr key={event.id}>
                     <td>{event.timestamp ? new Date(event.timestamp).toLocaleString() : "-"}</td>
                     <td>{event.user ?? "system"}</td>
+                    <td>{event.role ?? "-"}</td>
                     <td>{event.action ?? "-"}</td>
                     <td>{event.status ?? "-"}</td>
+                    <td>{event.request_id ?? "-"}</td>
+                    <td>{event.reason ?? "-"}</td>
+                    <td>{formatMetadata(event.metadata)}</td>
                   </tr>
                 ))}
                 {auditEvents.length === 0 && (
                   <tr>
-                    <td colSpan={4}>No audit events recorded yet.</td>
+                    <td colSpan={8}>No audit events recorded yet.</td>
                   </tr>
                 )}
               </tbody>

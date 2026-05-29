@@ -8,6 +8,7 @@ import {
   modes,
   setCurrentMode,
   setCurrentUiMode,
+  isInsecureRemoteHttp,
   type TradingMode,
   type UiMode,
   uiModeLabels,
@@ -33,6 +34,7 @@ export default function Topbar() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
+  const insecureHttp = isInsecureRemoteHttp();
 
   useEffect(() => {
     const syncRole = () => {
@@ -113,6 +115,11 @@ export default function Topbar() {
   };
 
   const changeMode = (nextMode: TradingMode) => {
+    if (nextMode === "live" && insecureHttp) {
+      setCurrentMode("paper");
+      setMode("paper");
+      return;
+    }
     setCurrentMode(nextMode);
     setMode(nextMode);
   };
@@ -128,6 +135,11 @@ export default function Topbar() {
         <strong>Trading Dashboard</strong>
         <span>Service health and execution overview</span>
       </div>
+      {insecureHttp && (
+        <div className="topbar-https-warning" role="alert">
+          Connection is not secure. Enable HTTPS before live trading.
+        </div>
+      )}
       <div className="topbar-actions">
         <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
           {marketStatus}
@@ -164,6 +176,8 @@ export default function Topbar() {
               key={item}
               type="button"
               className={mode === item ? "active" : ""}
+              disabled={item === "live" && insecureHttp}
+              title={item === "live" && insecureHttp ? "Live trading requires HTTPS." : undefined}
               onClick={() => changeMode(item)}
             >
               {modeLabels[item]}

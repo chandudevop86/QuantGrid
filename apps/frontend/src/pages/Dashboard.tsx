@@ -137,6 +137,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
+  const [positionSummary, setPositionSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
@@ -162,6 +163,7 @@ export default function Dashboard() {
       setSummary(null);
       setMarketStore(null);
       setBrokerStatus(null);
+      setPositionSummary(null);
       setLoading(false);
       return;
     }
@@ -171,11 +173,13 @@ export default function Dashboard() {
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
       api.brokerStatus(),
+      api.positionSummary().catch(() => null),
     ])
-      .then(([summaryData, marketStoreData, brokerData]) => {
+      .then(([summaryData, marketStoreData, brokerData, positionData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setBrokerStatus(brokerData);
+        setPositionSummary(positionData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -374,6 +378,20 @@ export default function Dashboard() {
                 <small>Max daily loss</small>
                 <strong>{formatMoney(risk?.max_daily_loss ?? 3000)}</strong>
               </span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Positions</h2>
+              <span>{positionSummary?.open_positions ?? risk?.open_positions ?? 0} open</span>
+            </div>
+            <div className="risk-summary-grid">
+              <span><small>Open positions</small><strong>{positionSummary?.open_positions ?? risk?.open_positions ?? 0}</strong></span>
+              <span><small>Today's PnL</small><strong>{formatMoney(positionSummary?.todays_pnl ?? risk?.daily_pnl ?? 0)}</strong></span>
+              <span><small>Current exposure</small><strong>{formatMoney(positionSummary?.current_exposure ?? risk?.current_exposure ?? 0)}</strong></span>
+              <span><small>Realized PnL</small><strong>{formatMoney(positionSummary?.realized_pnl ?? risk?.realized_pnl ?? 0)}</strong></span>
+              <span><small>Unrealized PnL</small><strong>{formatMoney(positionSummary?.unrealized_pnl ?? risk?.unrealized_pnl ?? 0)}</strong></span>
             </div>
           </div>
 

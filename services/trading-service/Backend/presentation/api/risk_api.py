@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from Backend.application.kill_switch import activate_kill_switch, deactivate_kill_switch, kill_switch_status
+from Backend.core.database import get_db
+from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.models import User
+from Backend.presentation.api.auth import current_user, require_admin
+from Backend.presentation.api.roles import require_roles
+
+
+router = APIRouter(prefix="/risk", tags=["risk"])
+
+
+class KillSwitchActivationRequest(BaseModel):
+    reason: str | None = None
+
+
+@router.get("/kill-switch/status")
+def get_kill_switch_status(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
+    return kill_switch_status()
+
+
+@router.post("/kill-switch/activate")
+def activate(
+    payload: KillSwitchActivationRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    status = activate_kill_switch(reason=payload.reason, actor=actor.username)
+    write_audit_log(
+        db,
+        action="kill_switch_activated",
+        actor=actor,
+        target_type="risk",
+        target_id="kill-switch",
+        request=request,
+        metadata={"status": "activated", "reason": status.get("reason"), "kill_switch": status},
+    )
+    return status
+
+
+@router.post("/kill-switch/deactivate")
+def deactivate(
+    request: Request,
+    actor: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    status = deactivate_kill_switch(actor=actor.username)
+    write_audit_log(
+        db,
+        action="kill_switch_deactivated",
+        actor=actor,
+        target_type="risk",
+        target_id="kill-switch",
+        request=request,
+        metadata={"status": "deactivated", "reason": "Manual admin deactivation", "kill_switch": status},
+    )
+    return status

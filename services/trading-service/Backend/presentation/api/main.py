@@ -15,6 +15,8 @@ from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
 from Backend.application.paper_trade_store import init_paper_trade_store
+from Backend.application.position_store import init_position_store
+from Backend.application.kill_switch import init_kill_switch_store
 from Backend.logging_config import configure_logging
 from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
 from Backend.presentation.api.metrics import prometheus_metrics_response
@@ -71,6 +73,7 @@ def create_app():
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+        request.state.request_id = request_id
         started_at = time.perf_counter()
         status_code = 500
         try:
@@ -108,6 +111,8 @@ def create_app():
         init_job_store()
         init_market_data_store()
         init_paper_trade_store()
+        init_position_store()
+        init_kill_switch_store()
         manager.set_loop(asyncio.get_running_loop())
 
     @app.get("/health")
@@ -137,6 +142,9 @@ def create_app():
     from Backend.presentation.api.dashboard_api import router as dashboard_router
     app.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
 
+    from Backend.presentation.api.audit_api import router as audit_router
+    app.include_router(audit_router)
+
     # Auth
     from Backend.presentation.api.auth import admin_router, router as auth_router
     app.include_router(auth_router, prefix="/auth")
@@ -158,6 +166,12 @@ def create_app():
 
     from Backend.presentation.api.broker_api import router as broker_router
     app.include_router(broker_router, prefix="/broker")
+
+    from Backend.presentation.api.positions_api import router as positions_router
+    app.include_router(positions_router)
+
+    from Backend.presentation.api.risk_api import router as risk_router
+    app.include_router(risk_router)
 
     from Backend.presentation.api.professional_api import router as professional_router
     app.include_router(professional_router)

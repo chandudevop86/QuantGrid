@@ -17,6 +17,7 @@ class Settings:
     market_data_provider: str
     broker_provider: str | None
     live_trading_enabled: bool
+    broker_live_enabled: bool
     broker_configured: bool
     risk_configured: bool
     capital: float
@@ -100,6 +101,7 @@ def get_settings() -> Settings:
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
     broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
+    broker_live_enabled = _truthy(os.getenv("BROKER_LIVE_ENABLED"))
     broker_token = (
         os.getenv("QUANTGRID_BROKER_ACCESS_TOKEN")
         or os.getenv("DHAN_ACCESS_TOKEN")
@@ -135,6 +137,7 @@ def get_settings() -> Settings:
         market_data_provider=market_data_provider,
         broker_provider=broker_provider,
         live_trading_enabled=live_trading_enabled,
+        broker_live_enabled=broker_live_enabled,
         broker_configured=broker_configured,
         risk_configured=risk_configured,
         capital=capital,
@@ -179,6 +182,8 @@ def validate_security_config(settings: Settings | None = None) -> Settings:
 
     if settings.live_trading_enabled and not settings.broker_configured:
         raise RuntimeError("Live trading requires broker provider and credentials.")
+    if settings.live_trading_enabled and not settings.broker_live_enabled:
+        raise RuntimeError("Live trading requires BROKER_LIVE_ENABLED=true.")
     if settings.live_trading_enabled and not settings.risk_configured:
         raise RuntimeError(
             "Live trading requires QUANTGRID_CAPITAL, QUANTGRID_RISK_PER_TRADE_PCT, and QUANTGRID_MAX_DAILY_LOSS."

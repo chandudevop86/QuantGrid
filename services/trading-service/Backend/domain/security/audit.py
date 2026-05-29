@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from fastapi import Request
+from sqlalchemy import text
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -15,8 +16,13 @@ TRACKED_ACTIONS = {
     "login_success",
     "login_failure",
     "signal_generated",
+    "risk_decision",
+    "execution_triggered",
     "paper_order_submitted",
+    "live_order_submitted",
     "execution_blocked",
+    "kill_switch_activated",
+    "kill_switch_deactivated",
     "user_created",
     "password_changed",
     "password_reset",
@@ -26,8 +32,13 @@ ACTION_LABELS = {
     "login_success": "Login",
     "login_failure": "Login",
     "signal_generated": "Signal generated",
-    "paper_order_submitted": "Order submitted",
-    "execution_blocked": "Order rejected",
+    "risk_decision": "Risk decision",
+    "execution_triggered": "Order requested",
+    "paper_order_submitted": "Order placed",
+    "live_order_submitted": "Order placed",
+    "execution_blocked": "Order failed",
+    "kill_switch_activated": "Kill switch activated",
+    "kill_switch_deactivated": "Kill switch deactivated",
     "user_created": "User created",
     "password_changed": "Password changed",
     "password_reset": "Password changed",
@@ -47,6 +58,28 @@ def request_user_agent(request: Request | None) -> str | None:
     return request.headers.get("user-agent") if request is not None else None
 
 
+def request_id(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    state_id = getattr(getattr(request, "state", None), "request_id", None)
+    return state_id or request.headers.get("x-request-id")
+
+
+def ensure_audit_schema(db: Session) -> None:
+    rows = db.execute(text("PRAGMA table_info(audit_logs)")).fetchall()
+    columns = {row[1] for row in rows}
+    additions = {
+        "actor_role": "ALTER TABLE audit_logs ADD COLUMN actor_role VARCHAR(32)",
+        "status": "ALTER TABLE audit_logs ADD COLUMN status VARCHAR(40)",
+        "request_id": "ALTER TABLE audit_logs ADD COLUMN request_id VARCHAR(80)",
+        "reason": "ALTER TABLE audit_logs ADD COLUMN reason VARCHAR(255)",
+    }
+    for column, statement in additions.items():
+        if column not in columns:
+            db.execute(text(statement))
+    db.commit()
+
+
 def write_audit_log(
     db: Session,
     *,
@@ -59,12 +92,18 @@ def write_audit_log(
     metadata: dict[str, Any] | None = None,
 ) -> None:
     sanitized_metadata = _sanitize_metadata(deepcopy(metadata or {}))
+    status_value = _event_status(action, sanitized_metadata)
+    reason_value = _event_reason(action, sanitized_metadata)
 
     db.add(
         AuditLog(
             actor_user_id=actor.id if actor else None,
             actor_username=actor.username if actor else actor_username,
+            actor_role=actor.role if actor else sanitized_metadata.get("role"),
             action=action,
+            status=status_value,
+            request_id=request_id(request),
+            reason=reason_value,
             target_type=target_type,
             target_id=str(target_id) if target_id is not None else None,
             ip_address=request_ip(request),
@@ -75,7 +114,8 @@ def write_audit_log(
     db.commit()
 
 
-def list_audit_events(db: Session, limit: int = 20) -> list[dict[str, Any]]:
+def list_audit_events(db: Session, limit: int = 50) -> list[dict[str, Any]]:
+    ensure_audit_schema(db)
     rows = (
         db.query(AuditLog)
         .filter(AuditLog.action.in_(TRACKED_ACTIONS))
@@ -88,12 +128,17 @@ def list_audit_events(db: Session, limit: int = 20) -> list[dict[str, Any]]:
 
 def _present_audit_event(row: AuditLog) -> dict[str, Any]:
     metadata = _safe_metadata(row.metadata_json)
+    status_value = row.status or _event_status(row.action, metadata)
     return {
         "id": row.id,
         "timestamp": row.created_at.isoformat() if row.created_at else None,
         "user": row.actor_username or "system",
-        "action": ACTION_LABELS.get(row.action, row.action.replace("_", " ").title()),
-        "status": _event_status(row.action, metadata),
+        "role": row.actor_role or "-",
+        "action": _event_action_label(row.action, status_value),
+        "status": status_value,
+        "request_id": row.request_id,
+        "reason": row.reason or _event_reason(row.action, metadata),
+        "metadata": metadata,
         "target_type": row.target_type,
         "target_id": row.target_id,
     }
@@ -116,11 +161,39 @@ def _event_status(action: str, metadata: dict[str, Any]) -> str:
     if action.endswith("_failure"):
         return "failed"
     if action in {"execution_blocked"}:
-        return "rejected"
+        return "failed"
+    if action in {"paper_order_submitted", "live_order_submitted"}:
+        return "placed"
+    if action in {"execution_triggered"}:
+        return "requested"
     if action in {"signal_generated"}:
         validated = metadata.get("validated_signals")
         return "generated" if isinstance(validated, int) and validated > 0 else "no_signal"
+    if action in {"risk_decision"}:
+        return str(metadata.get("status") or "reviewed")
+    if action in {"kill_switch_activated"}:
+        return "activated"
+    if action in {"kill_switch_deactivated"}:
+        return "deactivated"
     return "success"
+
+
+def _event_reason(action: str, metadata: dict[str, Any]) -> str | None:
+    reason = metadata.get("reason")
+    if reason:
+        return str(reason)
+    risk_decision = metadata.get("risk_decision")
+    if isinstance(risk_decision, dict) and risk_decision.get("reason"):
+        return str(risk_decision["reason"])
+    if action == "login_failure":
+        return "Invalid username or password"
+    return None
+
+
+def _event_action_label(action: str, status_value: str) -> str:
+    if action == "risk_decision":
+        return "Risk approved" if status_value == "allowed" else "Risk rejected"
+    return ACTION_LABELS.get(action, action.replace("_", " ").title())
 
 
 def _sanitize_metadata(value: Any) -> Any:

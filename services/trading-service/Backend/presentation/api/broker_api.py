@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from Backend.core.config import get_settings
+from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import check_dhan_profile
 from Backend.presentation.api.roles import require_roles
 
@@ -18,6 +19,13 @@ class DhanLoginRequest(BaseModel):
     client_id: str = Field(min_length=1)
     access_token: str = Field(min_length=1)
     persist: bool = True
+
+
+def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-QuantGrid-Mode")) -> str:
+    mode = x_quantgrid_mode.strip().lower()
+    if mode not in {"paper", "live"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
+    return mode
 
 
 def _env_file_path() -> Path:
@@ -76,6 +84,7 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
         }
 
     status["live_trading_enabled"] = settings.live_trading_enabled
+    status["broker_live_enabled"] = settings.broker_live_enabled
     status["real_money_orders_enabled"] = False
     return status
 
@@ -99,4 +108,53 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
     status["saved"] = bool(payload.persist)
     status["real_money_orders_enabled"] = False
     status["live_trading_enabled"] = get_settings().live_trading_enabled
+    status["broker_live_enabled"] = get_settings().broker_live_enabled
     return status
+
+
+@router.post("/orders/{broker_order_id}/cancel")
+async def cancel_order(
+    broker_order_id: str,
+    _role: str = Depends(require_roles("admin", "trader")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    try:
+        result = await broker_client_for_mode(execution_mode).cancel_order(broker_order_id)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker cancel failed: {exc}") from exc
+    return result.to_dict()
+
+
+@router.get("/orders/{broker_order_id}")
+async def get_order_status(
+    broker_order_id: str,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    try:
+        result = await broker_client_for_mode(execution_mode).get_order_status(broker_order_id)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker status failed: {exc}") from exc
+    return result.to_dict()
+
+
+@router.get("/positions")
+async def get_positions(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    try:
+        return {"positions": await broker_client_for_mode(execution_mode).get_positions()}
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker positions failed: {exc}") from exc
+
+
+@router.get("/holdings")
+async def get_holdings(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    try:
+        return {"holdings": await broker_client_for_mode(execution_mode).get_holdings()}
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker holdings failed: {exc}") from exc

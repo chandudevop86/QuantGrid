@@ -38,6 +38,7 @@ def init_paper_trade_store() -> None:
                 status TEXT NOT NULL,
                 pnl REAL NOT NULL DEFAULT 0,
                 reason TEXT,
+                broker_order_id TEXT,
                 score REAL NOT NULL DEFAULT 0,
                 regime TEXT,
                 signal_time TEXT,
@@ -51,6 +52,12 @@ def init_paper_trade_store() -> None:
             ON paper_trades(created_at DESC)
             """
         )
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(paper_trades)").fetchall()
+        }
+        if "broker_order_id" not in columns:
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN broker_order_id TEXT")
 
 
 def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
@@ -66,6 +73,7 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         "status": str(payload.get("status") or "paper_simulated"),
         "pnl": float(payload.get("pnl") or 0.0),
         "reason": payload.get("reason"),
+        "broker_order_id": payload.get("broker_order_id"),
         "score": float(payload.get("score") or 0.0),
         "regime": payload.get("regime"),
         "signal_time": payload.get("signal_time"),
@@ -75,9 +83,9 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO paper_trades
-                (strategy, symbol, side, entry, stop_loss, target, status, pnl, reason, score, regime, signal_time, created_at)
+                (strategy, symbol, side, entry, stop_loss, target, status, pnl, reason, broker_order_id, score, regime, signal_time, created_at)
             VALUES
-                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :status, :pnl, :reason, :score, :regime, :signal_time, :created_at)
+                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :status, :pnl, :reason, :broker_order_id, :score, :regime, :signal_time, :created_at)
             """,
             row,
         )
@@ -98,17 +106,14 @@ def list_paper_trades(limit: int = 100) -> list[dict[str, Any]]:
 def risk_status() -> dict[str, Any]:
     init_paper_trade_store()
     from Backend.core.config import get_settings
+    from Backend.application.position_store import position_summary
 
     settings = get_settings()
+    positions = position_summary()
     today = datetime.now(timezone.utc).date().isoformat()
     trades = list_paper_trades(500)
     today_trades = [trade for trade in trades if str(trade.get("created_at", "")).startswith(today)]
-    open_trades = [
-        trade for trade in trades
-        if str(trade.get("status") or "").lower() in {"paper_order_submitted", "open", "live_order_submitted"}
-    ]
-    daily_pnl = round(sum(float(trade.get("pnl") or 0.0) for trade in today_trades), 2)
-    current_exposure = round(sum(abs(float(trade.get("entry") or 0.0)) for trade in open_trades), 2)
+    daily_pnl = round(float(positions["todays_pnl"]), 2)
     consecutive_losses = 0
     for trade in trades:
         if float(trade.get("pnl") or 0.0) < 0:
@@ -122,11 +127,15 @@ def risk_status() -> dict[str, Any]:
         "capital": settings.capital,
         "risk_per_trade_pct": settings.risk_per_trade_pct,
         "risk_per_trade_amount": round(settings.capital * settings.risk_per_trade_pct / 100, 2),
-        "open_positions": len(open_trades),
-        "current_exposure": current_exposure,
+        "open_positions": positions["open_positions"],
+        "current_exposure": positions["current_exposure"],
+        "realized_pnl": positions["realized_pnl"],
+        "unrealized_pnl": positions["unrealized_pnl"],
         "consecutive_losses": consecutive_losses,
         "max_daily_loss": settings.max_daily_loss,
         "max_trades_per_day": int(os.getenv("QUANTGRID_MAX_TRADES_PER_DAY", "3")),
         "max_consecutive_losses": int(os.getenv("QUANTGRID_MAX_CONSECUTIVE_LOSSES", "2")),
+        "max_open_positions": int(os.getenv("QUANTGRID_MAX_OPEN_POSITIONS", "3")),
+        "max_quantity": int(os.getenv("QUANTGRID_MAX_QUANTITY", "1800")),
         "risk_configured": settings.risk_configured,
     }

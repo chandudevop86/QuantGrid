@@ -207,7 +207,7 @@ def list_live_analysis_jobs(_role: str = Depends(require_roles("admin", "develop
 
 @router.get("/audit-trail")
 def audit_trail(
-    limit: int = 20,
+    limit: int = 50,
     _role: str = Depends(require_roles("admin", "developer", "ops")),
     db: Session = Depends(get_db),
 ):

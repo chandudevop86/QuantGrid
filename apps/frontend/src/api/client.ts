@@ -39,7 +39,9 @@ API.interceptors.request.use((config) => {
   const mode =
     typeof window === "undefined"
       ? import.meta.env.VITE_DEFAULT_MODE ?? "paper"
-      : window.localStorage.getItem("quantgrid_mode") ?? import.meta.env.VITE_DEFAULT_MODE ?? "paper";
+      : window.location.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+        ? "paper"
+        : window.localStorage.getItem("quantgrid_mode") ?? import.meta.env.VITE_DEFAULT_MODE ?? "paper";
   const token =
     typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_token");
 

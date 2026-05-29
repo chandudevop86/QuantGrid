@@ -1,4 +1,5 @@
 from typing import Any
+import os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -10,7 +11,8 @@ from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
 from Backend.application.paper_trade_store import create_paper_trade
-from Backend.application.risk_gate import evaluate_risk_gate
+from Backend.application.position_store import create_open_position
+from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
 from Backend.application.signal_quality import decide_signal
 from Backend.application.signal_validation import diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
@@ -23,6 +25,7 @@ from Backend.domain.execution_constraints import (
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
+from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
 from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.application.market_data_store import latest_candles
 from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
@@ -37,11 +40,24 @@ def get_engine():
     return ExecutionEngine()
 
 
+def get_broker_client(execution_mode: str) -> BrokerClient:
+    return broker_client_for_mode(execution_mode)
+
+
 def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-QuantGrid-Mode")) -> str:
     mode = x_quantgrid_mode.strip().lower()
     if mode not in {"paper", "live"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
     return mode
+
+
+def _request_is_https(request: Request) -> bool:
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return proto.split(",", 1)[0].strip().lower() == "https"
+
+
+def _allow_insecure_live() -> bool:
+    return str(os.getenv("LIVE_ALLOW_INSECURE", "")).strip().lower() in {"1", "true", "yes"}
 
 
 def _market_aligned(signal: StrategySignal) -> bool:
@@ -98,10 +114,11 @@ def _audit_execution_result(
     actor: User,
     result: dict[str, Any],
 ) -> None:
-    submitted = result.get("status") == "paper_order_submitted"
+    submitted = result.get("status") in {"paper_order_submitted", "live_order_submitted"}
+    action = "live_order_submitted" if result.get("status") == "live_order_submitted" else "paper_order_submitted"
     write_audit_log(
         db,
-        action="paper_order_submitted" if submitted else "execution_blocked",
+        action=action if submitted else "execution_blocked",
         actor=actor,
         target_type="symbol",
         target_id=result.get("symbol"),
@@ -111,8 +128,63 @@ def _audit_execution_result(
             "side": result.get("signal"),
             "reason": result.get("reason"),
             "status": "submitted" if submitted else "rejected",
+            "risk_decision": result.get("risk_decision"),
         },
     )
+
+
+def _audit_risk_decision(
+    db: Session,
+    request: Request,
+    actor: User,
+    *,
+    symbol: str,
+    strategy: str | None,
+    side: str | None,
+    risk_decision: Any,
+) -> None:
+    payload = risk_decision.to_dict() if hasattr(risk_decision, "to_dict") else dict(risk_decision or {})
+    write_audit_log(
+        db,
+        action="risk_decision",
+        actor=actor,
+        target_type="symbol",
+        target_id=symbol,
+        request=request,
+        metadata={
+            "strategy": strategy,
+            "side": side,
+            "status": "allowed" if payload.get("allowed") else "rejected",
+            "risk_decision": payload,
+        },
+    )
+    if not payload.get("allowed") and str(payload.get("reason") or "").upper() == "MAX_DAILY_LOSS_EXCEEDED":
+        write_audit_log(
+            db,
+            action="kill_switch_activated",
+            actor=actor,
+            target_type="symbol",
+            target_id=symbol,
+            request=request,
+            metadata={
+                "strategy": strategy,
+                "side": side,
+                "status": "activated",
+                "reason": "MAX_DAILY_LOSS_EXCEEDED",
+                "risk_decision": payload,
+            },
+        )
+
+
+def _risk_response_fields(risk_decision: Any) -> dict[str, Any]:
+    payload = risk_decision.to_dict() if hasattr(risk_decision, "to_dict") else dict(risk_decision or {})
+    return {
+        "allowed": bool(payload.get("allowed")),
+        "reason": str(payload.get("reason") or "UNKNOWN"),
+        "risk_amount": float(payload.get("risk_amount") or 0.0),
+        "max_allowed_risk": float(payload.get("max_allowed_risk") or 0.0),
+        "risk_decision": payload,
+    }
 
 
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
@@ -145,7 +217,7 @@ def _strategy_candles(candles_response: dict[str, Any]) -> list[dict[str, Any]]:
     return candles
 
 
-def _submit_paper_signal(
+async def _submit_paper_signal(
     signal: StrategySignal,
     *,
     engine: ExecutionEngine,
@@ -153,6 +225,7 @@ def _submit_paper_signal(
     candles_1m: list[dict[str, Any]] | None = None,
     candles_15m: list[dict[str, Any]] | None = None,
     strategy_diagnostics: dict[str, Any] | None = None,
+    broker_client: BrokerClient | None = None,
 ) -> dict[str, Any]:
     if execution_mode != "paper":
         observe_rejected_order("paper_mode_required", execution_mode)
@@ -191,19 +264,20 @@ def _submit_paper_signal(
             candles_15m = _strategy_candles(get_candles(signal.symbol, interval="15m", period="1d", limit=100))
         except Exception:
             candles_15m = []
-    candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
-    if not candle_validation.valid_for_execution:
-        observe_rejected_order(f"MARKET_NOT_LIVE_FOR_EXECUTION: {candle_validation.market_status}", execution_mode)
+    risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
+    if not risk_decision.allowed:
+        observe_rejected_order(risk_decision.reason, execution_mode)
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
             strategy=signal.strategy_name,
             signal=signal,
-            reason=f"MARKET_NOT_LIVE_FOR_EXECUTION: {candle_validation.market_status}",
+            reason=risk_decision.reason,
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
-            extra={"allowed": False, "validation": candle_validation.model_dump()},
+            extra=_risk_response_fields(risk_decision),
         )
+    candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
     decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
     gate = evaluate_risk_gate(decision)
     if not gate.allowed:
@@ -216,7 +290,7 @@ def _submit_paper_signal(
             reason=gate.reason,
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
-            extra={"allowed": False, "decision": decision.to_dict()},
+            extra={**_risk_response_fields(risk_decision), "allowed": False, "decision": decision.to_dict()},
         )
 
     if not _market_aligned(signal):
@@ -229,7 +303,7 @@ def _submit_paper_signal(
             reason="Signal entry price is not aligned with market price.",
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
-            extra={"allowed": False, "decision": decision.to_dict()},
+            extra={**_risk_response_fields(risk_decision), "allowed": False, "decision": decision.to_dict()},
         )
 
     constraints = validate_execution_constraints(signal)
@@ -245,6 +319,7 @@ def _submit_paper_signal(
             strategy_diagnostics=strategy_diagnostics,
             extra={
                 "allowed": False,
+                **_risk_response_fields(risk_decision),
                 "decision": decision.to_dict(),
                 "lot_size": constraints.lot_size,
                 "rounded_quantity": constraints.quantity,
@@ -257,6 +332,41 @@ def _submit_paper_signal(
         constraints,
         requested_quantity(signal),
     )
+    broker_client = broker_client or broker_client_for_mode(execution_mode)
+    try:
+        broker_order = await broker_client.place_order(order)
+        broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
+    except Exception as exc:
+        observe_rejected_order("broker_failure", execution_mode)
+        return _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"BROKER_FAILURE: {exc}",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
+        )
+
+    if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+        observe_rejected_order(f"broker_not_confirmed:{broker_status.status}", execution_mode)
+        return _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={
+                **_risk_response_fields(risk_decision),
+                "broker_order_id": broker_status.broker_order_id,
+                "broker_confirmed": False,
+                "broker_order": broker_status.to_dict(),
+            },
+        )
+
     result = _paper_response(
         status_value="paper_order_submitted",
         symbol=signal.symbol,
@@ -266,10 +376,13 @@ def _submit_paper_signal(
         execution_mode=execution_mode,
         strategy_diagnostics=strategy_diagnostics,
         extra={
-            "allowed": True,
+            **_risk_response_fields(risk_decision),
             "source": "signal_based",
             "decision": decision.to_dict(),
             "order": jsonable_encoder(order),
+            "broker_order_id": broker_status.broker_order_id,
+            "broker_confirmed": True,
+            "broker_order": broker_status.to_dict(),
         },
     )
     create_paper_trade(
@@ -283,9 +396,23 @@ def _submit_paper_signal(
             "status": "paper_order_submitted",
             "pnl": 0.0,
             "reason": "OK",
+            "broker_order_id": broker_status.broker_order_id,
             "score": decision.score,
             "regime": decision.regime,
             "signal_time": signal.signal_time.isoformat(),
+        }
+    )
+    create_open_position(
+        {
+            "broker_order_id": broker_status.broker_order_id,
+            "symbol": signal.symbol,
+            "side": signal.side,
+            "quantity": requested_quantity(signal),
+            "entry_price": signal.entry_price,
+            "stop_loss": signal.stop_loss,
+            "target": signal.target_price,
+            "current_price": broker_status.price or signal.entry_price,
+            "opened_at": signal.signal_time.isoformat(),
         }
     )
     observe_paper_order("paper_order_submitted", signal.strategy_name, signal.symbol)
@@ -302,6 +429,36 @@ async def auto_paper_order(
     db: Session = Depends(get_db),
 ):
     symbol = payload.symbol.upper()
+    from Backend.application.kill_switch import kill_switch_status
+
+    if execution_mode == "live" and not _request_is_https(request) and not _allow_insecure_live():
+        result = _paper_response(
+            status_value="rejected",
+            symbol=symbol,
+            strategy=None,
+            signal=None,
+            reason="Live trading requires HTTPS.",
+            execution_mode=execution_mode,
+            extra={"allowed": False},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
+    halt = kill_switch_status()
+    if halt["active"]:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=symbol,
+            strategy=None,
+            signal=None,
+            reason=f"KILL_SWITCH_ACTIVE: {halt.get('reason') or 'Trading halted'}",
+            execution_mode=execution_mode,
+            extra={"allowed": False, "kill_switch": halt},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
     write_audit_log(
         db,
         action="paper_auto_scan_triggered",
@@ -389,14 +546,25 @@ async def auto_paper_order(
 
         selected = validated_signals[0]
         strategy_diagnostics[strategy]["selected_signal"] = serialize_signal(selected)
-        result = _submit_paper_signal(
+        result = await _submit_paper_signal(
             selected,
             engine=engine,
             execution_mode=execution_mode,
             candles_1m=candles,
             candles_15m=trend_candles,
             strategy_diagnostics=strategy_diagnostics,
+            broker_client=broker_client_for_mode(execution_mode),
         )
+        if result.get("risk_decision"):
+            _audit_risk_decision(
+                db,
+                request,
+                actor,
+                symbol=selected.symbol,
+                strategy=selected.strategy_name,
+                side=selected.side,
+                risk_decision=result["risk_decision"],
+            )
         _audit_execution_result(db, request, actor, result)
         alert_execution_event(result)
         return result
@@ -438,9 +606,51 @@ async def place_order(
         metadata={"mode": execution_mode, "strategy": signal.strategy_name},
     )
 
+    candles_1m = latest_candles(signal.symbol, "1m", 100)
+    if not candles_1m:
+        try:
+            candles_1m = _strategy_candles(get_candles(signal.symbol, interval="1m", period="1d", limit=100))
+        except Exception:
+            candles_1m = []
+
+    risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
+    _audit_risk_decision(
+        db,
+        request,
+        actor,
+        symbol=signal.symbol,
+        strategy=signal.strategy_name,
+        side=signal.side,
+        risk_decision=risk_decision,
+    )
+    if not risk_decision.allowed:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=risk_decision.reason,
+            execution_mode=execution_mode,
+            extra=_risk_response_fields(risk_decision),
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
     if execution_mode == "live":
+        if not _request_is_https(request) and not _allow_insecure_live():
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "live_trading_requires_https"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires HTTPS.")
         settings = get_settings()
-        if not settings.live_trading_enabled:
+        if not settings.live_trading_enabled or not settings.broker_live_enabled:
             write_audit_log(
                 db,
                 action="execution_blocked",
@@ -450,7 +660,7 @@ async def place_order(
                 request=request,
                 metadata={"reason": "live_trading_disabled"},
             )
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading is disabled. Paper trading only.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading is disabled. Set BROKER_LIVE_ENABLED=true and enable live trading.")
         if not settings.broker_configured:
             write_audit_log(
                 db,
@@ -462,32 +672,61 @@ async def place_order(
                 metadata={"reason": "broker_not_configured"},
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
-        if not settings.risk_configured:
-            write_audit_log(
-                db,
-                action="execution_blocked",
-                actor=actor,
-                target_type="symbol",
-                target_id=signal.symbol,
-                request=request,
-                metadata={"reason": "risk_config_missing"},
+        order = engine.order_from_signal(signal)
+        try:
+            broker_client = broker_client_for_mode(execution_mode)
+            broker_order = await broker_client.place_order(order)
+            broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
+        except Exception as exc:
+            result = _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"BROKER_FAILURE: {exc}",
+                execution_mode=execution_mode,
+                extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
             )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Live trading requires risk config: QUANTGRID_CAPITAL, QUANTGRID_RISK_PER_TRADE_PCT, and QUANTGRID_MAX_DAILY_LOSS.",
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
+        if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+            result = _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                execution_mode=execution_mode,
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    "broker_order_id": broker_status.broker_order_id,
+                    "broker_confirmed": False,
+                    "broker_order": broker_status.to_dict(),
+                },
             )
-        write_audit_log(
-            db,
-            action="execution_blocked",
-            actor=actor,
-            target_type="symbol",
-            target_id=signal.symbol,
-            request=request,
-            metadata={"reason": "live_execution_not_implemented"},
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
+        result = _paper_response(
+            status_value="live_order_submitted",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason="OK",
+            execution_mode=execution_mode,
+            extra={
+                **_risk_response_fields(risk_decision),
+                "broker_order_id": broker_status.broker_order_id,
+                "broker_confirmed": True,
+                "broker_order": broker_status.to_dict(),
+            },
         )
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Live broker execution is not implemented.")
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
 
-    result = _submit_paper_signal(signal, engine=engine, execution_mode=execution_mode)
+    result = await _submit_paper_signal(signal, engine=engine, execution_mode=execution_mode, candles_1m=candles_1m)
     _audit_execution_result(db, request, actor, result)
     alert_execution_event(result)
     return result
