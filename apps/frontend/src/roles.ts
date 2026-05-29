@@ -14,6 +14,7 @@ export const routeRoles: Record<string, Role[]> = {
   "/": ["admin", "trader", "analyst", "viewer", "ops"],
   "/candles": ["admin", "trader", "analyst", "viewer"],
   "/option-chain": ["admin", "trader", "analyst", "viewer"],
+  "/dhan-login": ["admin", "trader"],
   "/execution": ["admin", "trader"],
   "/live": ["admin", "trader", "analyst"],
   "/analysis": ["admin", "trader", "analyst"],

@@ -5,6 +5,7 @@ import AdminNotifications from "./pages/AdminNotifications";
 import AdminUsers from "./pages/AdminUsers";
 import Candles from "./pages/Candles";
 import Dashboard from "./pages/Dashboard";
+import DhanLogin from "./pages/DhanLogin";
 import Execution from "./pages/Execution";
 import LiveAnalysis from "./pages/LiveAnalysis";
 import Jobs from "./pages/Jobs";
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/live" element={protect("/live", <LiveAnalysis />)} />
           <Route path="/analysis" element={protect("/analysis", <LiveAnalysis />)} />
           <Route path="/option-chain" element={protect("/option-chain", <OptionChain />)} />
+          <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />
           <Route path="/jobs" element={protect("/jobs", <Jobs />)} />
           <Route path="/operations" element={protect("/operations", <Operations />)} />
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />

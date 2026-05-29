@@ -10,6 +10,7 @@ export default function Sidebar() {
     { to: "/candles", label: "Candles" },
     { to: "/option-chain", label: "Option Chain" },
     { to: "/live", label: "Live Analysis" },
+    { to: "/dhan-login", label: "Dhan Login" },
     { to: "/jobs", label: "Jobs" },
     { to: "/operations", label: "Operations" },
     { to: "/signals", label: "Signals" },

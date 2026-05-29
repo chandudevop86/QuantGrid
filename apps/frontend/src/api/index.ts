@@ -36,6 +36,8 @@ export const api = {
   deleteUser: (userId: number) => API.delete(`/admin/users/${userId}`).then((res) => res.data),
   health: () => API.get("/health").then((res) => res.data),
   brokerStatus: () => API.get("/broker/status").then((res) => res.data),
+  dhanLogin: (payload: { client_id: string; access_token: string; persist?: boolean }) =>
+    API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
   operationsStatus: () => API.get("/dashboard/operations").then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
