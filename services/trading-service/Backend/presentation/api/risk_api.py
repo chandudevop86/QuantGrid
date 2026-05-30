@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from Backend.presentation.api.roles import require_roles
 
 
 router = APIRouter(prefix="/risk", tags=["risk"])
+KILL_SWITCH_ACTIVATION_ROLES = {"admin", "trader", "ops"}
 
 
 class KillSwitchActivationRequest(BaseModel):
@@ -31,6 +32,17 @@ def activate(
     actor: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    if actor.role not in KILL_SWITCH_ACTIVATION_ROLES:
+        write_audit_log(
+            db,
+            action="kill_switch_activation_denied",
+            actor=actor,
+            target_type="risk",
+            target_id="kill-switch",
+            request=request,
+            metadata={"reason": "missing kill-switch activation permission", "role": actor.role},
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This role cannot activate the kill switch.")
     status = activate_kill_switch(reason=payload.reason, actor=actor.username)
     write_audit_log(
         db,

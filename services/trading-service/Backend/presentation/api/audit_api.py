@@ -14,7 +14,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 @router.get("/logs")
 def audit_logs(
     limit: int = 50,
-    _role: str = Depends(require_roles("admin", "developer", "ops")),
+    _role: str = Depends(require_roles("admin", "ops")),
     db: Session = Depends(get_db),
 ):
     return {"events": list_audit_events(db, limit)}
