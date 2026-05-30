@@ -76,6 +76,8 @@ def _live_guardrail_failure(
         return "Live trading requires BROKER_LIVE_ENABLED=true."
     if not settings.risk_engine_enabled:
         return "Live trading requires risk engine enabled."
+    if getattr(settings, "market_data_provider", None) == "yahoo" and not getattr(settings, "allow_yahoo_for_live", False):
+        return "Live trading requires trading-grade market data; Yahoo is paper/demo only."
     if kill_switch_status()["active"]:
         return "Trading halted by kill switch."
     market_validation = validate_live_candle(candles_1m, interval="1m", mode="live")

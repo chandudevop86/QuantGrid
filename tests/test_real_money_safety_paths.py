@@ -363,9 +363,11 @@ def test_kill_switch_unauthorized_role_cannot_activate_deactivate(monkeypatch):
     with _app_client(monkeypatch) as app_client:
         admin = admin_headers(app_client)
         viewer = _role_headers(app_client, admin, "viewer-safety", "viewer")
+        developer = _role_headers(app_client, admin, "developer-ks-denied", "developer")
         trader = _role_headers(app_client, admin, "trader-safety", "trader")
 
         assert app_client.post("/risk/kill-switch/activate", json={"reason": "test"}, headers=viewer).status_code == 403
+        assert app_client.post("/risk/kill-switch/activate", json={"reason": "test"}, headers=developer).status_code == 403
         logs = app_client.get("/audit/logs", headers=admin).json()["events"]
         assert any(event["action"] == "Kill switch activation denied" for event in logs)
         assert app_client.post("/risk/kill-switch/deactivate", headers=trader).status_code == 403

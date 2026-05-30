@@ -136,6 +136,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [marketStore, setMarketStore] = useState<any>(null);
+  const [marketProvider, setMarketProvider] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [positionSummary, setPositionSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +163,7 @@ export default function Dashboard() {
     if (!isAuthenticated) {
       setSummary(null);
       setMarketStore(null);
+      setMarketProvider(null);
       setBrokerStatus(null);
       setPositionSummary(null);
       setLoading(false);
@@ -172,12 +174,14 @@ export default function Dashboard() {
     Promise.all([
       api.getSummary(),
       api.marketStoreStatus("NIFTY", "1m"),
+      api.marketProviderStatus("NIFTY", "1m").catch(() => null),
       api.brokerStatus(),
       api.positionSummary().catch(() => null),
     ])
-      .then(([summaryData, marketStoreData, brokerData, positionData]) => {
+      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
+        setMarketProvider(marketProviderData);
         setBrokerStatus(brokerData);
         setPositionSummary(positionData);
       })
@@ -330,6 +334,18 @@ export default function Dashboard() {
               tone={brokerStatus?.connected ? "good" : "warn"}
             />
             <MetricCard
+              label="Market Provider"
+              value={marketProvider?.provider_name ?? marketProvider?.provider ?? "Unknown"}
+              helper={`${marketProvider?.live_suitable ? "Live suitable" : "Paper/demo only"} - ${marketProvider?.fresh ? "Fresh" : "Stale"}`}
+              tone={marketProvider?.live_suitable && marketProvider?.fresh ? "good" : "warn"}
+            />
+            <MetricCard
+              label="Provider Fetch"
+              value={marketProvider?.fresh ? "Fresh" : "Stale"}
+              helper={marketProvider?.latest_fetch_at ? `Latest ${new Date(marketProvider.latest_fetch_at).toLocaleTimeString()}` : "No fetch yet"}
+              tone={marketProvider?.fresh ? "good" : "warn"}
+            />
+            <MetricCard
               label="Stored Live Candles"
               value={marketStore?.candles ?? 0}
               helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
@@ -432,7 +448,7 @@ export default function Dashboard() {
             {uiMode === "developer" && (
               <details className="technical-details" open>
                 <summary>Show Technical Details</summary>
-                <pre>{JSON.stringify({ operations, summary, marketStore, brokerStatus }, null, 2)}</pre>
+                <pre>{JSON.stringify({ operations, summary, marketStore, marketProvider, brokerStatus }, null, 2)}</pre>
               </details>
             )}
           </div>

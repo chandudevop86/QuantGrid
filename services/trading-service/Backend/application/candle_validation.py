@@ -274,6 +274,55 @@ def validate_live_candle(
         observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
         return result
 
+    if mode == "live":
+        source_name = str(source or "").lower()
+        if source_name == "yahoo-finance" and os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE", "false").strip().lower() not in {"1", "true", "yes"}:
+            diagnostics.append("Yahoo data is paper/demo only and is not allowed for live execution.")
+            result = CandleValidationResult(
+                valid=False,
+                valid_for_analysis=False,
+                valid_for_execution=False,
+                market_live=session.market_live,
+                market_status="DELAYED FEED",
+                ui_status=_status_icon("DELAYED FEED"),
+                delay_seconds=delay.delay_seconds,
+                provider_latency_seconds=delay.provider_latency_seconds,
+                stale_duration_seconds=delay.stale_duration_seconds,
+                missing_candles=delay.missing_candles,
+                latest_candle=latest.astimezone(UTC).isoformat(),
+                latest_candle_ist=latest.isoformat(),
+                server_time=current.astimezone(UTC).isoformat(),
+                server_time_ist=current.isoformat(),
+                diagnostics=diagnostics,
+                warnings=warnings,
+            )
+            observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
+            return result
+        latest_candle = candles[-1]
+        exchange_timezone = latest_candle.get("exchange_timezone")
+        if str(exchange_timezone or "") != "Asia/Kolkata":
+            diagnostics.append(f"Live market data timestamp timezone must be Asia/Kolkata; got {exchange_timezone}.")
+            result = CandleValidationResult(
+                valid=False,
+                valid_for_analysis=False,
+                valid_for_execution=False,
+                market_live=session.market_live,
+                market_status="DELAYED FEED",
+                ui_status=_status_icon("DELAYED FEED"),
+                delay_seconds=delay.delay_seconds,
+                provider_latency_seconds=delay.provider_latency_seconds,
+                stale_duration_seconds=delay.stale_duration_seconds,
+                missing_candles=delay.missing_candles,
+                latest_candle=latest.astimezone(UTC).isoformat(),
+                latest_candle_ist=latest.isoformat(),
+                server_time=current.astimezone(UTC).isoformat(),
+                server_time_ist=current.isoformat(),
+                diagnostics=diagnostics,
+                warnings=warnings,
+            )
+            observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
+            return result
+
     if delay.delay_seconds is not None:
         diagnostics.append(
             f"Latest candle {latest.isoformat()} IST from {source or 'unknown'} feed; "

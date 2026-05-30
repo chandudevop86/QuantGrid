@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -48,18 +49,52 @@ def market_symbol(symbol: str) -> str:
 class MarketDataProvider(ABC):
     provider_name: str
     warning: str | None = None
+    live_suitable: bool = False
+    paper_suitable: bool = True
+    latest_fetch_at: str | None = None
 
     @abstractmethod
     def fetch_chart(self, symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def get_latest_price(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_market_status(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def _mark_fetch(self) -> str:
+        self.latest_fetch_at = datetime.now(timezone.utc).isoformat()
+        return self.latest_fetch_at
+
+    def status_payload(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider_name,
+            "provider_name": self.provider_name,
+            "live_suitable": self.live_suitable,
+            "paper_suitable": self.paper_suitable,
+            "latest_fetch_at": self.latest_fetch_at,
+            "fresh": False,
+            "stale": True,
+            "warning": self.warning,
+        }
+
 
 class YahooMarketDataProvider(MarketDataProvider):
     provider_name = "yahoo-finance"
     warning = YAHOO_TRADING_GRADE_WARNING
+    live_suitable = False
+    paper_suitable = True
     retries = 2
 
     def fetch_chart(self, symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
+        self._mark_fetch()
         yahoo_symbol = market_symbol(symbol)
         cache = _redis_client()
         key = _cache_key(self.provider_name, yahoo_symbol, interval, period)
@@ -108,13 +143,77 @@ class YahooMarketDataProvider(MarketDataProvider):
 
         raise RuntimeError(str(last_error or "Yahoo market data fetch failed"))
 
+    def get_latest_price(self, symbol: str) -> dict[str, Any]:
+        chart = self.fetch_chart(symbol, interval="1m", period="1d")
+        meta = chart.get("meta", {})
+        price = meta.get("regularMarketPrice")
+        return {
+            "symbol": symbol.upper(),
+            "market_symbol": meta.get("symbol", market_symbol(symbol)),
+            "price": round(float(price), 2) if price not in {None, ""} else None,
+            "timestamp": self.latest_fetch_at,
+            "source": self.provider_name,
+            "exchange_timezone": meta.get("timezone"),
+            "provider_latency_ms": chart.get("provider_latency_ms"),
+            "provider_warning": self.warning,
+        }
+
+    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        chart = self.fetch_chart(symbol, interval=interval, period="1d")
+        timestamps = chart.get("timestamp") or []
+        quote_data = (chart.get("indicators", {}).get("quote") or [{}])[0]
+        opens = quote_data.get("open") or []
+        highs = quote_data.get("high") or []
+        lows = quote_data.get("low") or []
+        closes = quote_data.get("close") or []
+        volumes = quote_data.get("volume") or []
+        timezone_name = chart.get("meta", {}).get("timezone", "Asia/Kolkata")
+        candles: list[dict[str, Any]] = []
+        for index, timestamp in enumerate(timestamps):
+            values = [
+                opens[index] if index < len(opens) else None,
+                highs[index] if index < len(highs) else None,
+                lows[index] if index < len(lows) else None,
+                closes[index] if index < len(closes) else None,
+            ]
+            if any(value is None for value in values):
+                continue
+            candles.append({
+                "symbol": symbol.upper(),
+                "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
+                "exchange_timezone": timezone_name,
+                "open": round(float(values[0]), 2),
+                "high": round(float(values[1]), 2),
+                "low": round(float(values[2]), 2),
+                "close": round(float(values[3]), 2),
+                "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
+            })
+        return candles[-max(1, min(int(limit), 500)):]
+
+    def get_market_status(self, symbol: str) -> dict[str, Any]:
+        return self.status_payload() | {"symbol": symbol.upper()}
+
 
 class FutureBrokerMarketDataProvider(MarketDataProvider):
     provider_name = "broker"
     warning = None
+    live_suitable = True
+    paper_suitable = True
 
     def fetch_chart(self, symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
         raise NotImplementedError("Broker market data provider is not configured yet.")
+
+    def get_latest_price(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError("Broker latest price adapter is not configured yet.")
+
+    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        raise NotImplementedError("Broker candle adapter is not configured yet.")
+
+    def get_market_status(self, symbol: str) -> dict[str, Any]:
+        return self.status_payload() | {
+            "symbol": symbol.upper(),
+            "warning": "Broker/NSE-grade market data adapter is selected but not configured.",
+        }
 
 
 def get_market_data_provider() -> MarketDataProvider:

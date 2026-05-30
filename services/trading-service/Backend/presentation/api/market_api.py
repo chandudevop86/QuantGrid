@@ -22,6 +22,7 @@ from Backend.infrastructure.data.market_data_provider import (
     get_market_data_provider,
     market_symbol,
 )
+from Backend.core.config import get_settings
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["market"])
@@ -61,6 +62,26 @@ def _market_symbol(symbol: str) -> str:
 
 def _fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
     return get_market_data_provider().fetch_chart(symbol, interval=interval, period=period)
+
+
+def _provider_status_from_validation(provider: Any, validation: Any | None = None) -> dict[str, Any]:
+    latest_fetch_at = getattr(provider, "latest_fetch_at", None)
+    fresh = bool(validation and validation.valid_for_analysis)
+    return provider.status_payload() | {
+        "latest_fetch_at": latest_fetch_at,
+        "fresh": fresh,
+        "stale": not fresh,
+        "validation": validation.model_dump() if validation else None,
+    }
+
+
+def _ensure_live_provider_allowed(source: str) -> None:
+    settings = get_settings()
+    if settings.live_trading_enabled and source == "yahoo-finance" and not settings.allow_yahoo_for_live:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Yahoo market data is paper/demo only. Configure QUANTGRID_MARKET_DATA_PROVIDER=broker for live trading.",
+        )
 
 
 def _sample_candles(symbol: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -188,25 +209,26 @@ def get_price(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     try:
-        chart = _fetch_yahoo_chart(symbol)
-        meta = chart.get("meta", {})
-        price = meta.get("regularMarketPrice")
-        previous_close = meta.get("chartPreviousClose") or meta.get("previousClose")
+        provider = get_market_data_provider()
+        payload = provider.get_latest_price(symbol)
+        _ensure_live_provider_allowed(str(payload.get("source")))
+        price = payload.get("price")
+        meta_symbol = payload.get("market_symbol", _market_symbol(symbol))
         change_pct = None
-        if price is not None and previous_close:
-            change_pct = round(((float(price) - float(previous_close)) / float(previous_close)) * 100, 2)
+        if "change_pct" in payload:
+            change_pct = payload.get("change_pct")
 
         payload = {
+            **payload,
             "symbol": symbol.upper(),
-            "market_symbol": meta.get("symbol", _market_symbol(symbol)),
+            "market_symbol": meta_symbol,
             "price": round(float(price), 2) if price is not None else None,
             "change_pct": change_pct,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "source": "yahoo-finance",
-            "exchange_timezone": meta.get("timezone"),
-            "provider_latency_ms": chart.get("provider_latency_ms"),
-            "provider_warning": YAHOO_TRADING_GRADE_WARNING,
+            "timestamp": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+            "provider_warning": payload.get("provider_warning") or provider.warning,
         }
+        if payload["price"] is None or float(payload["price"]) <= 0:
+            raise RuntimeError("Market provider returned zero or missing price")
         store_price_tick(payload)
         return payload
     except Exception as exc:
@@ -288,36 +310,39 @@ def get_candles(
     limit = max(1, min(limit, 500))
 
     try:
-        chart = _fetch_yahoo_chart(symbol, interval=interval, period=period)
-        candles = _candles_from_chart(symbol, chart, limit=limit)
+        provider = get_market_data_provider()
+        candles = provider.get_candles(symbol, interval, limit)
         if not candles:
             raise RuntimeError("No complete candles returned")
-        market_symbol = chart.get("meta", {}).get("symbol", _market_symbol(symbol))
+        source = provider.provider_name
+        _ensure_live_provider_allowed(source)
+        market_symbol = _market_symbol(symbol)
+        provider_fetched_at = getattr(provider, "latest_fetch_at", None) or datetime.now(timezone.utc).isoformat()
+        validation = validate_live_candle(
+            candles,
+            interval=interval,
+            mode="paper",
+            source=source,
+            provider_fetched_at=provider_fetched_at,
+        )
 
         payload = {
             "symbol": symbol.upper(),
             "market_symbol": market_symbol,
             "interval": interval,
             "period": period,
-            "source": "yahoo-finance",
+            "source": source,
             "volume_status": _volume_status(market_symbol, candles),
-            "provider_warning": YAHOO_TRADING_GRADE_WARNING,
-            "provider_latency_ms": chart.get("provider_latency_ms"),
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "provider_warning": provider.warning,
+            "fetched_at": provider_fetched_at,
             "candles": candles,
-            "validation": validate_live_candle(
-                candles,
-                interval=interval,
-                mode="paper",
-                source="yahoo-finance",
-                provider_fetched_at=datetime.now(timezone.utc),
-            ).model_dump(),
+            "validation": validation.model_dump(),
         }
         store_candles(
             symbol=symbol,
             market_symbol=market_symbol,
             interval=interval,
-            source="yahoo-finance",
+            source=source,
             candles=candles,
         )
         return payload
@@ -388,3 +413,44 @@ def get_market_store_status(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
     return market_data_summary(symbol, interval)
+
+
+@router.get("/provider/status")
+def get_market_provider_status(
+    symbol: str = "NIFTY",
+    interval: str = "1m",
+    limit: int = 100,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    provider = get_market_data_provider()
+    settings = get_settings()
+    validation = None
+    errors: list[str] = []
+    try:
+        candles = provider.get_candles(symbol, interval, max(1, min(int(limit), 500)))
+        validation = validate_live_candle(
+            candles,
+            interval=interval,
+            mode="live" if settings.live_trading_enabled else "paper",
+            source=provider.provider_name,
+            provider_fetched_at=getattr(provider, "latest_fetch_at", None),
+        )
+        if not candles:
+            errors.append("missing candles")
+        if provider.provider_name == "yahoo-finance" and settings.live_trading_enabled and not settings.allow_yahoo_for_live:
+            errors.append("Yahoo is not allowed for live trading")
+    except Exception as exc:
+        errors.append(str(exc))
+    payload = _provider_status_from_validation(provider, validation)
+    payload.update(
+        {
+            "configured_provider": settings.market_data_provider,
+            "live_mode": settings.live_trading_enabled,
+            "allow_yahoo_for_live": settings.allow_yahoo_for_live,
+            "errors": errors,
+            "live_suitable": bool(payload.get("live_suitable")) and not errors,
+            "fresh": bool(payload.get("fresh")) and not errors,
+            "stale": bool(errors) or bool(payload.get("stale")),
+        }
+    )
+    return payload

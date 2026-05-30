@@ -15,6 +15,7 @@ class Settings:
     auth_secret: str
     database_url: str
     market_data_provider: str
+    allow_yahoo_for_live: bool
     broker_provider: str | None
     live_trading_enabled: bool
     broker_live_enabled: bool
@@ -101,6 +102,7 @@ def get_settings() -> Settings:
 
     database_url = os.getenv("DATABASE_URL") or _default_sqlite_url()
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
+    allow_yahoo_for_live = _truthy(os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE"))
     broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
     broker_live_enabled = _truthy(os.getenv("BROKER_LIVE_ENABLED"))
@@ -139,6 +141,7 @@ def get_settings() -> Settings:
         auth_secret=auth_secret,
         database_url=database_url,
         market_data_provider=market_data_provider,
+        allow_yahoo_for_live=allow_yahoo_for_live,
         broker_provider=broker_provider,
         live_trading_enabled=live_trading_enabled,
         broker_live_enabled=broker_live_enabled,
@@ -194,5 +197,7 @@ def validate_security_config(settings: Settings | None = None) -> Settings:
         raise RuntimeError(
             "Live trading requires QUANTGRID_CAPITAL, QUANTGRID_RISK_PER_TRADE_PCT, and QUANTGRID_MAX_DAILY_LOSS."
         )
+    if settings.live_trading_enabled and settings.market_data_provider == "yahoo" and not settings.allow_yahoo_for_live:
+        raise RuntimeError("Live trading requires a trading-grade market data provider. Yahoo is paper/demo only.")
 
     return settings

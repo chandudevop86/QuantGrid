@@ -52,6 +52,8 @@ export const api = {
     API.get(`/market/stored/${symbol}`, { params: { interval, limit } }).then((res) => res.data),
   marketStoreStatus: (symbol = "NIFTY", interval = "1m") =>
     API.get("/market/store/status", { params: { symbol, interval } }).then((res) => res.data),
+  marketProviderStatus: (symbol = "NIFTY", interval = "1m") =>
+    API.get("/market/provider/status", { params: { symbol, interval } }).then((res) => res.data),
   getPrice: () => API.get("/market/price").then((res) => res.data),
   optionChain: (symbol = "NIFTY") =>
     API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
