@@ -89,7 +89,7 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
 
     status["live_trading_enabled"] = settings.live_trading_enabled
     status["broker_live_enabled"] = settings.broker_live_enabled
-    status["real_money_orders_enabled"] = False
+    status["real_money_orders_enabled"] = bool(settings.live_trading_enabled and settings.broker_live_enabled and settings.broker_configured)
     return status
 
 
@@ -110,9 +110,9 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
 
     status = check_dhan_profile()
     status["saved"] = bool(payload.persist)
-    status["real_money_orders_enabled"] = False
     status["live_trading_enabled"] = get_settings().live_trading_enabled
     status["broker_live_enabled"] = get_settings().broker_live_enabled
+    status["real_money_orders_enabled"] = bool(get_settings().live_trading_enabled and get_settings().broker_live_enabled and get_settings().broker_configured)
     return status
 
 

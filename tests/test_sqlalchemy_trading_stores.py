@@ -68,12 +68,24 @@ def test_sqlalchemy_market_trade_position_and_kill_switch_stores(monkeypatch):
             "target": 110,
             "status": "paper_order_submitted",
             "broker_order_id": "BRK-1",
+            "broker_status": "open",
+            "raw_safe_broker_response": {"orderId": "BRK-1", "access-token": "secret"},
         }
     )
     assert trade["broker_order_id"] == "BRK-1"
-    updated_trade = paper_trade_store.update_paper_trade_status("BRK-1", status="broker_rejected", reason="test")
+    assert trade["broker_status"] == "open"
+    assert trade["raw_safe_broker_response"]["orderId"] == "BRK-1"
+    updated_trade = paper_trade_store.update_paper_trade_status(
+        "BRK-1",
+        status="broker_rejected",
+        reason="test",
+        broker_status="rejected",
+        raw_safe_broker_response={"status": "REJECTED"},
+    )
     assert updated_trade is not None
     assert updated_trade["status"] == "broker_rejected"
+    assert updated_trade["broker_status"] == "rejected"
+    assert updated_trade["raw_safe_broker_response"]["status"] == "REJECTED"
 
     position = position_store.create_open_position(
         {

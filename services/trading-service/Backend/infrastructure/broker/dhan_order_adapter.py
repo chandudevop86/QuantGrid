@@ -89,6 +89,11 @@ class DhanBrokerClient:
 
 
 def _extract_order_id(raw: Any) -> str | None:
+    if isinstance(raw, list):
+        for item in raw:
+            order_id = _extract_order_id(item)
+            if order_id:
+                return order_id
     if isinstance(raw, dict):
         for key in ("orderId", "order_id", "id"):
             value = raw.get(key)
@@ -107,7 +112,7 @@ def _result_from_raw(
     fallback_order: Order | None = None,
     message: str = "",
 ) -> BrokerOrderResult:
-    data = raw.get("data", raw) if isinstance(raw, dict) else {}
+    data = _raw_order_payload(raw)
     raw_status = data.get("orderStatus") or data.get("status")
     if not raw_status and isinstance(raw, dict):
         raw_status = raw.get("orderStatus")
@@ -127,6 +132,19 @@ def _result_from_raw(
     )
 
 
+def _raw_order_payload(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, list):
+        first = raw[0] if raw else {}
+        return first if isinstance(first, dict) else {}
+    if not isinstance(raw, dict):
+        return {}
+    data = raw.get("data", raw)
+    if isinstance(data, list):
+        first = data[0] if data else {}
+        return first if isinstance(first, dict) else {}
+    return data if isinstance(data, dict) else {}
+
+
 def _normalize_status(value: str) -> str:
     status = value.strip().lower().replace(" ", "_")
     if status in {"traded", "filled", "complete", "completed"}:
@@ -143,15 +161,15 @@ def _map_http_error(exc: HTTPError) -> str:
         payload = json.loads(exc.read().decode("utf-8"))
     except Exception:
         payload = {}
-    message = str(payload.get("remarks") or payload.get("message") or payload.get("errorMessage") or exc.reason or "")
+    message = str(payload.get("remarks") or payload.get("message") or payload.get("errorMessage") or payload.get("errorType") or exc.reason or "")
     lower = message.lower()
     if exc.code in {401, 403}:
         return "token expired or invalid"
     if "margin" in lower or "fund" in lower:
         return "insufficient margin"
-    if "market" in lower and "closed" in lower:
+    if "market" in lower and ("closed" in lower or "close" in lower):
         return "market closed"
-    if "reject" in lower:
+    if "reject" in lower or exc.code == 400:
         return f"order rejected: {message}"
     return f"broker rejected request: HTTP {exc.code} {message}".strip()
 

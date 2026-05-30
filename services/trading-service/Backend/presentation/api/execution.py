@@ -177,6 +177,7 @@ def _audit_execution_result(
             "risk_decision": result.get("risk_decision"),
             "broker_order_id": result.get("broker_order_id"),
             "broker_status": result.get("broker_status"),
+            "broker_order": result.get("broker_order"),
             "raw_safe_broker_response": result.get("raw_safe_broker_response"),
         },
     )
@@ -470,8 +471,10 @@ async def _submit_paper_signal(
             "decision": decision.to_dict(),
             "order": jsonable_encoder(order),
             "broker_order_id": broker_status.broker_order_id,
+            "broker_status": broker_status.status,
             "broker_confirmed": True,
             "broker_order": broker_status.to_dict(),
+            "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
         },
     )
     create_paper_trade(
@@ -489,6 +492,8 @@ async def _submit_paper_signal(
             "score": decision.score,
             "regime": decision.regime,
             "signal_time": signal.signal_time.isoformat(),
+            "broker_status": broker_status.status,
+            "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
         }
     )
     create_open_position(
@@ -855,6 +860,23 @@ async def place_order(
                 "broker_order": broker_status.to_dict(),
                 "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
             },
+        )
+        create_paper_trade(
+            {
+                "strategy": signal.strategy_name,
+                "symbol": signal.symbol,
+                "side": signal.side,
+                "entry": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "target": signal.target_price,
+                "status": "live_order_submitted",
+                "pnl": 0.0,
+                "reason": "OK",
+                "broker_order_id": broker_status.broker_order_id,
+                "broker_status": broker_status.status,
+                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+                "signal_time": signal.signal_time.isoformat(),
+            }
         )
         create_open_position(
             {

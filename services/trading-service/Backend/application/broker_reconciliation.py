@@ -80,7 +80,13 @@ async def reconcile_broker_state(
                 broker_order_id,
                 {"local_order": local_order, "broker_status": broker_order.to_dict()},
             )
-            update_paper_trade_status(broker_order_id, status="broker_missing", reason="Broker order was not found during reconciliation.")
+            update_paper_trade_status(
+                broker_order_id,
+                status="broker_missing",
+                reason="Broker order was not found during reconciliation.",
+                broker_status=broker_order.status,
+                raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
+            )
             if position and position.get("status") == "open":
                 close_open_position(int(position["id"]), reason="missing_broker_order")
             continue
@@ -95,7 +101,13 @@ async def reconcile_broker_state(
                 broker_order_id,
                 {"local_order": local_order, "broker_status": broker_order.to_dict()},
             )
-            update_paper_trade_status(broker_order_id, status=f"broker_{order_status}", reason=f"Broker status is {order_status}.")
+            update_paper_trade_status(
+                broker_order_id,
+                status=f"broker_{order_status}",
+                reason=f"Broker status is {order_status}.",
+                broker_status=broker_order.status,
+                raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
+            )
             if position and position.get("status") == "open":
                 close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
             continue
@@ -374,6 +386,9 @@ def _metadata(raw: str | None) -> dict[str, Any]:
 
 
 def _write_status(summary: dict[str, Any]) -> None:
-    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     payload = {"last_run_at": datetime.now(timezone.utc).isoformat(), **summary}
-    STATUS_FILE.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    try:
+        STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATUS_FILE.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        summary.setdefault("errors", []).append(f"reconciliation status not persisted: {exc}")

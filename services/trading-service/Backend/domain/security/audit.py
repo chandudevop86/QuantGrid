@@ -24,6 +24,7 @@ TRACKED_ACTIONS = {
     "broker_reconciliation_change",
     "kill_switch_activated",
     "kill_switch_deactivated",
+    "kill_switch_activation_denied",
     "user_created",
     "password_changed",
     "password_reset",
@@ -41,6 +42,7 @@ ACTION_LABELS = {
     "broker_reconciliation_change": "Broker reconciliation",
     "kill_switch_activated": "Kill switch activated",
     "kill_switch_deactivated": "Kill switch deactivated",
+    "kill_switch_activation_denied": "Kill switch activation denied",
     "user_created": "User created",
     "password_changed": "Password changed",
     "password_reset": "Password changed",
@@ -164,6 +166,8 @@ def _event_status(action: str, metadata: dict[str, Any]) -> str:
         return "failed"
     if action in {"execution_blocked"}:
         return "failed"
+    if action in {"kill_switch_activation_denied"}:
+        return "denied"
     if action in {"paper_order_submitted", "live_order_submitted"}:
         return "placed"
     if action in {"execution_triggered"}:
@@ -199,7 +203,18 @@ def _event_action_label(action: str, status_value: str) -> str:
 
 
 def _sanitize_metadata(value: Any) -> Any:
-    forbidden = {"password", "new_password", "old_password", "token", "access_token", "authorization"}
+    forbidden = {
+        "password",
+        "new_password",
+        "old_password",
+        "token",
+        "access_token",
+        "access-token",
+        "authorization",
+        "clientsecret",
+        "api_secret",
+        "apisecret",
+    }
     if isinstance(value, dict):
         return {
             key: ("[redacted]" if str(key).lower() in forbidden else _sanitize_metadata(item))

@@ -63,6 +63,8 @@ class PaperTradeRecord(Base):
     pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     broker_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    broker_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    raw_safe_broker_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     regime: Mapped[str | None] = mapped_column(String(80), nullable=True)
     signal_time: Mapped[str | None] = mapped_column(String(40), nullable=True)

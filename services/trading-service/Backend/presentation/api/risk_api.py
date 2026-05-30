@@ -43,7 +43,7 @@ def activate(
             metadata={"reason": "missing kill-switch activation permission", "role": actor.role},
         )
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This role cannot activate the kill switch.")
-    status = activate_kill_switch(reason=payload.reason, actor=actor.username)
+    kill_switch = activate_kill_switch(reason=payload.reason, actor=actor.username)
     write_audit_log(
         db,
         action="kill_switch_activated",
@@ -51,9 +51,9 @@ def activate(
         target_type="risk",
         target_id="kill-switch",
         request=request,
-        metadata={"status": "activated", "reason": status.get("reason"), "kill_switch": status},
+        metadata={"status": "activated", "reason": kill_switch.get("reason"), "kill_switch": kill_switch},
     )
-    return status
+    return kill_switch
 
 
 @router.post("/kill-switch/deactivate")

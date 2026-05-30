@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ def init_paper_trade_store() -> None:
                 pnl REAL NOT NULL DEFAULT 0,
                 reason TEXT,
                 broker_order_id TEXT,
+                broker_status TEXT,
+                raw_safe_broker_response TEXT,
                 score REAL NOT NULL DEFAULT 0,
                 regime TEXT,
                 signal_time TEXT,
@@ -61,6 +64,10 @@ def init_paper_trade_store() -> None:
         }
         if "broker_order_id" not in columns:
             connection.execute("ALTER TABLE paper_trades ADD COLUMN broker_order_id TEXT")
+        if "broker_status" not in columns:
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN broker_status TEXT")
+        if "raw_safe_broker_response" not in columns:
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT")
 
 
 def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +86,8 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         "pnl": float(payload.get("pnl") or 0.0),
         "reason": payload.get("reason"),
         "broker_order_id": payload.get("broker_order_id"),
+        "broker_status": payload.get("broker_status"),
+        "raw_safe_broker_response": _json_or_none(payload.get("raw_safe_broker_response")),
         "score": float(payload.get("score") or 0.0),
         "regime": payload.get("regime"),
         "signal_time": payload.get("signal_time"),
@@ -88,9 +97,9 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO paper_trades
-                (strategy, symbol, side, entry, stop_loss, target, status, pnl, reason, broker_order_id, score, regime, signal_time, created_at)
+                (strategy, symbol, side, entry, stop_loss, target, status, pnl, reason, broker_order_id, broker_status, raw_safe_broker_response, score, regime, signal_time, created_at)
             VALUES
-                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :status, :pnl, :reason, :broker_order_id, :score, :regime, :signal_time, :created_at)
+                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :status, :pnl, :reason, :broker_order_id, :broker_status, :raw_safe_broker_response, :score, :regime, :signal_time, :created_at)
             """,
             row,
         )
@@ -116,10 +125,19 @@ def update_paper_trade_status(
     status: str,
     reason: str | None = None,
     pnl: float | None = None,
+    broker_status: str | None = None,
+    raw_safe_broker_response: Any | None = None,
 ) -> dict[str, Any] | None:
     init_paper_trade_store()
     if not _use_sqlite():
-        return _db_update_paper_trade_status(broker_order_id, status=status, reason=reason, pnl=pnl)
+        return _db_update_paper_trade_status(
+            broker_order_id,
+            status=status,
+            reason=reason,
+            pnl=pnl,
+            broker_status=broker_status,
+            raw_safe_broker_response=raw_safe_broker_response,
+        )
     updates = ["status = ?"]
     values: list[Any] = [status]
     if reason is not None:
@@ -128,6 +146,12 @@ def update_paper_trade_status(
     if pnl is not None:
         updates.append("pnl = ?")
         values.append(float(pnl))
+    if broker_status is not None:
+        updates.append("broker_status = ?")
+        values.append(broker_status)
+    if raw_safe_broker_response is not None:
+        updates.append("raw_safe_broker_response = ?")
+        values.append(_json_or_none(raw_safe_broker_response))
     values.append(broker_order_id)
     with _connect() as connection:
         connection.execute(
@@ -148,10 +172,21 @@ def _use_sqlite() -> bool:
 
 
 def _init_db_store() -> None:
+    from sqlalchemy import inspect, text
+
     from Backend.core.database import Base, engine
     import Backend.domain.trading_store_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    columns = {column["name"] for column in inspect(engine).get_columns("paper_trades")}
+    additions = {
+        "broker_status": "ALTER TABLE paper_trades ADD COLUMN broker_status VARCHAR(80)",
+        "raw_safe_broker_response": "ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT",
+    }
+    with engine.begin() as connection:
+        for column, statement in additions.items():
+            if column not in columns:
+                connection.execute(text(statement))
 
 
 def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:
@@ -166,6 +201,8 @@ def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:
         "pnl": float(payload.get("pnl") or 0.0),
         "reason": payload.get("reason"),
         "broker_order_id": payload.get("broker_order_id"),
+        "broker_status": payload.get("broker_status"),
+        "raw_safe_broker_response": _json_or_none(payload.get("raw_safe_broker_response")),
         "score": float(payload.get("score") or 0.0),
         "regime": payload.get("regime"),
         "signal_time": payload.get("signal_time"),
@@ -186,6 +223,8 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "pnl": record.pnl,
         "reason": record.reason,
         "broker_order_id": record.broker_order_id,
+        "broker_status": record.broker_status,
+        "raw_safe_broker_response": _parse_json_or_none(record.raw_safe_broker_response),
         "score": record.score,
         "regime": record.regime,
         "signal_time": record.signal_time,
@@ -203,8 +242,7 @@ def _db_create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         db.add(record)
         db.commit()
         db.refresh(record)
-        row["id"] = record.id
-    return row
+        return _record_to_dict(record)
 
 
 def _db_list_paper_trades(limit: int = 100) -> list[dict[str, Any]]:
@@ -222,6 +260,8 @@ def _db_update_paper_trade_status(
     status: str,
     reason: str | None = None,
     pnl: float | None = None,
+    broker_status: str | None = None,
+    raw_safe_broker_response: Any | None = None,
 ) -> dict[str, Any] | None:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import PaperTradeRecord
@@ -240,9 +280,30 @@ def _db_update_paper_trade_status(
             row.reason = reason
         if pnl is not None:
             row.pnl = float(pnl)
+        if broker_status is not None:
+            row.broker_status = broker_status
+        if raw_safe_broker_response is not None:
+            row.raw_safe_broker_response = _json_or_none(raw_safe_broker_response)
         db.commit()
         db.refresh(row)
         return _record_to_dict(row)
+
+
+def _json_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True)
+
+
+def _parse_json_or_none(value: str | None) -> Any:
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
 
 
 def risk_status() -> dict[str, Any]:
