@@ -71,6 +71,21 @@ class PaperTradeRecord(Base):
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
 
 
+class OrderRecord(Base):
+    __tablename__ = "orders"
+
+    local_order_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    broker_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+
+
 class PositionRecord(Base):
     __tablename__ = "positions"
 

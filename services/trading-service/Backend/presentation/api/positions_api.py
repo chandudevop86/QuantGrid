@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -62,8 +62,8 @@ def get_exit_rules(_role: str = Depends(require_roles("admin", "developer", "tra
 @router.post("/{position_id}/exit")
 async def exit_single_position(
     position_id: int,
-    payload: ExitRequest,
     request: Request,
+    payload: ExitRequest | None = Body(default=None),
     actor: User = Depends(current_user),
     _role: str = Depends(require_roles("admin", "trader", "ops")),
     execution_mode: str = Depends(_execution_mode),
@@ -76,8 +76,8 @@ async def exit_single_position(
             actor=actor,
             request=request,
             execution_mode=execution_mode,
-            reason=payload.reason,
-            exit_price=payload.exit_price,
+            reason=(payload or ExitRequest()).reason,
+            exit_price=(payload or ExitRequest()).exit_price,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -87,8 +87,8 @@ async def exit_single_position(
 
 @router.post("/exit-all")
 async def exit_all_open_positions(
-    payload: ExitRequest,
     request: Request,
+    payload: ExitRequest | None = Body(default=None),
     actor: User = Depends(current_user),
     _role: str = Depends(require_roles("admin", "trader", "ops")),
     execution_mode: str = Depends(_execution_mode),
@@ -99,5 +99,5 @@ async def exit_all_open_positions(
         actor=actor,
         request=request,
         execution_mode=execution_mode,
-        reason=payload.reason,
+        reason=(payload or ExitRequest()).reason,
     )
