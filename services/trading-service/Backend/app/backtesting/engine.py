@@ -99,5 +99,8 @@ class BacktestEngine:
             metadata={
                 "signal_score": signal.metadata.get("score") or signal.metadata.get("total_score"),
                 "setup_type": signal.metadata.get("best_setup_type") or signal.metadata.get("setup_type"),
+                "quality_grade": signal.metadata.get("quality_grade")
+                or (signal.metadata.get("trade_qualification") or {}).get("quality_grade"),
+                "trade_qualification": signal.metadata.get("trade_qualification"),
             },
         )

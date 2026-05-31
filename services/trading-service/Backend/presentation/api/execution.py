@@ -22,6 +22,7 @@ from Backend.application.position_store import create_open_position
 from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
 from Backend.application.signal_quality import decide_signal
 from Backend.application.signal_validation import diagnose_signal_run, validate_signals
+from Backend.application.trade_qualification_engine import TradeQualificationEngine, TradeQualification
 from Backend.application.trading_service import TradingService
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.execution_constraints import (
@@ -160,6 +161,8 @@ def _paper_response(
     }
     if extra:
         response.update(extra)
+    if signal and "trade_qualification" in signal.metadata:
+        response.setdefault("trade_qualification", signal.metadata["trade_qualification"])
     return response
 
 
@@ -184,6 +187,9 @@ def _audit_execution_result(
             "reason": result.get("reason"),
             "status": "submitted" if submitted else "rejected",
             "risk_decision": result.get("risk_decision"),
+            "trade_qualification": result.get("trade_qualification"),
+            "quality_grade": result.get("quality_grade"),
+            "tqe_score": result.get("tqe_score"),
             "local_order_id": result.get("local_order_id"),
             "broker_order_id": result.get("broker_order_id"),
             "broker_status": result.get("broker_status"),
@@ -362,6 +368,46 @@ def _risk_response_fields(risk_decision: Any) -> dict[str, Any]:
     }
 
 
+def _tqe_response_fields(qualification: TradeQualification) -> dict[str, Any]:
+    payload = qualification.to_dict()
+    return {
+        "trade_qualification": payload,
+        "tqe_score": qualification.score,
+        "quality_grade": qualification.quality_grade,
+        "market_context": qualification.market_context,
+        "volume_status": qualification.volume_status,
+        "volatility_status": qualification.volatility_status,
+        "position_size": qualification.position_sizing.position_size,
+    }
+
+
+def _execution_qualification(
+    signal: StrategySignal,
+    *,
+    candles_1m: list[dict[str, Any]],
+    candles_15m: list[dict[str, Any]] | None,
+    execution_mode: str,
+) -> TradeQualification | None:
+    if len(candles_1m) < 20:
+        return None
+    qualification = TradeQualificationEngine().qualify(
+        signal,
+        candles=candles_1m,
+        capital=100_000,
+        risk_pct=1,
+        m15_candles=candles_15m,
+        enforce_execution_checks=False,
+        execution_mode=execution_mode,
+    )
+    signal.metadata["trade_qualification"] = qualification.to_dict()
+    signal.metadata["tqe_score"] = qualification.score
+    signal.metadata["quality_grade"] = qualification.quality_grade
+    signal.metadata["market_context"] = qualification.market_context
+    signal.metadata["volume_status"] = qualification.volume_status
+    signal.metadata["volatility_status"] = qualification.volatility_status
+    return qualification
+
+
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
     try:
         entry = float(signal.entry_price)
@@ -437,11 +483,35 @@ async def _submit_paper_signal(
             candles_1m = _strategy_candles(get_candles(signal.symbol, interval="1m", period="1d", limit=100))
         except Exception:
             candles_1m = []
+    candles_15m = latest_candles(signal.symbol, "15m", 100)
     if not candles_15m:
         try:
             candles_15m = _strategy_candles(get_candles(signal.symbol, interval="15m", period="1d", limit=100))
         except Exception:
             candles_15m = []
+    if not candles_15m:
+        try:
+            candles_15m = _strategy_candles(get_candles(signal.symbol, interval="15m", period="1d", limit=100))
+        except Exception:
+            candles_15m = []
+    qualification = _execution_qualification(
+        signal,
+        candles_1m=candles_1m,
+        candles_15m=candles_15m,
+        execution_mode=execution_mode,
+    )
+    if qualification is not None and not qualification.allowed:
+        observe_rejected_order(qualification.reason, execution_mode)
+        return _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"TQE_REJECTED: {qualification.reason}",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={"allowed": False, **_tqe_response_fields(qualification)},
+        )
     risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
     if not risk_decision.allowed:
         observe_rejected_order(risk_decision.reason, execution_mode)
@@ -617,6 +687,7 @@ async def _submit_paper_signal(
         strategy_diagnostics=strategy_diagnostics,
         extra={
             **_risk_response_fields(risk_decision),
+            **(_tqe_response_fields(qualification) if qualification is not None else {}),
             "source": "signal_based",
             "decision": decision.to_dict(),
             "order": jsonable_encoder(order),
@@ -641,6 +712,8 @@ async def _submit_paper_signal(
             "reason": "OK",
             "broker_order_id": broker_status.broker_order_id,
             "score": decision.score,
+            "tqe_score": qualification.score if qualification is not None else signal.metadata.get("tqe_score", 0),
+            "quality_grade": qualification.quality_grade if qualification is not None else signal.metadata.get("quality_grade"),
             "regime": decision.regime,
             "signal_time": signal.signal_time.isoformat(),
             "broker_status": broker_status.status,
@@ -929,6 +1002,26 @@ async def place_order(
         alert_execution_event(result)
         return result
 
+    qualification = _execution_qualification(
+        signal,
+        candles_1m=candles_1m,
+        candles_15m=candles_15m,
+        execution_mode=execution_mode,
+    )
+    if qualification is not None and not qualification.allowed:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"TQE_REJECTED: {qualification.reason}",
+            execution_mode=execution_mode,
+            extra={"allowed": False, **_tqe_response_fields(qualification)},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
     risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
     _audit_risk_decision(
         db,
@@ -1045,7 +1138,11 @@ async def place_order(
                 signal=signal,
                 reason=f"BROKER_FAILURE: {exc}",
                 execution_mode=execution_mode,
-                extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    **(_tqe_response_fields(qualification) if qualification is not None else {}),
+                    "broker_confirmed": False,
+                },
             )
             _audit_execution_result(db, request, actor, result)
             alert_execution_event(result)
@@ -1072,6 +1169,7 @@ async def place_order(
                 execution_mode=execution_mode,
                 extra={
                     **_risk_response_fields(risk_decision),
+                    **(_tqe_response_fields(qualification) if qualification is not None else {}),
                     "broker_order_id": broker_status.broker_order_id,
                     "broker_status": broker_status.status,
                     "broker_confirmed": False,
@@ -1103,6 +1201,7 @@ async def place_order(
             execution_mode=execution_mode,
             extra={
                 **_risk_response_fields(risk_decision),
+                **(_tqe_response_fields(qualification) if qualification is not None else {}),
                 "broker_order_id": broker_status.broker_order_id,
                 "local_order_id": lifecycle_order.get("local_order_id") if lifecycle_order else None,
                 "broker_status": broker_status.status,
@@ -1151,6 +1250,7 @@ async def place_order(
         engine=engine,
         execution_mode=execution_mode,
         candles_1m=candles_1m,
+        candles_15m=candles_15m,
         db=db,
         request=request,
         actor=actor,

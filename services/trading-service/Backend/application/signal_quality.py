@@ -54,7 +54,7 @@ def min_signal_score() -> float:
 
 def max_signal_age_minutes() -> float:
     try:
-        return float(os.getenv("SIGNAL_MAX_AGE_MINUTES", "5"))
+        return float(os.getenv("SIGNAL_MAX_AGE_MINUTES", "2"))
     except ValueError:
         return 5.0
 

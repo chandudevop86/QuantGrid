@@ -39,6 +39,14 @@ def serialize_signal(signal: StrategySignal) -> dict[str, Any]:
         "target_2",
         "entry_zone",
         "sweep_type",
+        "trade_qualification",
+        "tqe_score",
+        "quality_grade",
+        "market_context",
+        "volume_status",
+        "volatility_status",
+        "position_size",
+        "risk_amount",
     ):
         if key in signal.metadata:
             payload[key] = signal.metadata[key]

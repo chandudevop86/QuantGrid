@@ -132,6 +132,7 @@ export default function Strategies() {
           const freshness = signal?.validation_context;
           const isStale = freshness?.is_recent === false;
           const selectedSignal = signals[0] ?? null;
+          const tqe = selectedSignal?.trade_qualification ?? {};
           const score = selectedSignal ? signalConfidence(selectedSignal) : signalScore(signals);
           const rr = selectedSignal ? signalRiskRewardValue(selectedSignal) : signalRiskReward(signals);
           const direction = signalDirection(selectedSignal, rawSignals, Boolean(signal));
@@ -187,12 +188,65 @@ export default function Strategies() {
                   </span>
                   <span>
                     <small>Risk Reward</small>
-                    <strong>{rr ? rr.toFixed(2) : "-"}</strong>
+                    <strong>{numeric(tqe?.rr, rr) ? numeric(tqe?.rr, rr).toFixed(2) : "-"}</strong>
                   </span>
                   <span>
-                    <small>Confidence</small>
-                    <strong>{score ? score.toFixed(1) : "-"}</strong>
+                    <small>Quality Grade</small>
+                    <strong>{selectedSignal.quality_grade ?? tqe?.quality_grade ?? selectedSignal.signal_quality ?? "-"}</strong>
                   </span>
+                  {selectedSignal.tqe_score !== undefined || tqe?.score !== undefined ? (
+                    <span>
+                      <small>TQE Score</small>
+                      <strong>{selectedSignal.tqe_score ?? tqe?.score}/12</strong>
+                    </span>
+                  ) : (
+                    <span>
+                      <small>Confidence</small>
+                      <strong>{score ? score.toFixed(1) : "-"}</strong>
+                    </span>
+                  )}
+                  {(selectedSignal.market_context ?? tqe?.market_context) && (
+                    <span>
+                      <small>Market Context</small>
+                      <strong>{selectedSignal.market_context ?? tqe.market_context}</strong>
+                    </span>
+                  )}
+                  {(selectedSignal.volume_status ?? tqe?.volume_status) && (
+                    <span>
+                      <small>Volume Status</small>
+                      <strong>{selectedSignal.volume_status ?? tqe.volume_status}</strong>
+                    </span>
+                  )}
+                  {(selectedSignal.volatility_status ?? tqe?.volatility_status) && (
+                    <span>
+                      <small>Volatility</small>
+                      <strong>{selectedSignal.volatility_status ?? tqe.volatility_status}</strong>
+                    </span>
+                  )}
+                  {(selectedSignal.position_size ?? tqe?.position_sizing?.position_size) && (
+                    <span>
+                      <small>Position Size</small>
+                      <strong>{selectedSignal.position_size ?? tqe.position_sizing.position_size}</strong>
+                    </span>
+                  )}
+                  {(tqe?.position_sizing?.risk_pct || selectedSignal.risk_amount) && (
+                    <span>
+                      <small>Risk</small>
+                      <strong>{tqe?.position_sizing?.risk_pct ?? 1}%</strong>
+                    </span>
+                  )}
+                  {(tqe?.trend_aligned !== undefined) && (
+                    <span>
+                      <small>Trend</small>
+                      <strong>{tqe.trend_aligned ? "Aligned" : "Countertrend"}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.signal_quality && (
+                    <span>
+                      <small>SMC Quality</small>
+                      <strong>{selectedSignal.signal_quality}</strong>
+                    </span>
+                  )}
                   {selectedSignal.crt_range && (
                     <span>
                       <small>CRT Range</small>
@@ -209,12 +263,6 @@ export default function Strategies() {
                     <span>
                       <small>Trap Type</small>
                       <strong>{formatStrategyName(String(selectedSignal.trap_type))}</strong>
-                    </span>
-                  )}
-                  {selectedSignal.signal_quality && (
-                    <span>
-                      <small>Signal Quality</small>
-                      <strong>{selectedSignal.signal_quality}</strong>
                     </span>
                   )}
                   {selectedSignal.target_2 && (

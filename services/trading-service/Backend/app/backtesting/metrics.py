@@ -29,6 +29,7 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
             "expectancy": 0.0,
             "average_rr": 0.0,
             "best_setup_type": None,
+            "win_rate_by_grade": {"A+": 0.0, "A": 0.0, "B": 0.0, "Watchlist": 0.0},
             "losing_streak": 0,
             "winning_streak": 0,
         }
@@ -50,9 +51,19 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
     std = math.sqrt(variance)
     sharpe = (mean / std * math.sqrt(len(pnls))) if std > 0 else 0.0
     setup_pnl: dict[str, float] = {}
+    grade_stats: dict[str, dict[str, int]] = {
+        "A+": {"wins": 0, "total": 0},
+        "A": {"wins": 0, "total": 0},
+        "B": {"wins": 0, "total": 0},
+        "Watchlist": {"wins": 0, "total": 0},
+    }
     for trade in trades:
         setup_type = str(trade.metadata.get("setup_type") or "unknown")
         setup_pnl[setup_type] = setup_pnl.get(setup_type, 0.0) + float(trade.pnl)
+        grade = str(trade.metadata.get("quality_grade") or "Watchlist")
+        if grade in grade_stats:
+            grade_stats[grade]["total"] += 1
+            grade_stats[grade]["wins"] += 1 if float(trade.pnl) > 0 else 0
 
     return {
         "total_trades": len(trades),
@@ -64,6 +75,10 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
         "expectancy": round(mean, 2),
         "average_rr": round(sum(float(trade.rr) for trade in trades) / len(trades), 2),
         "best_setup_type": max(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
+        "win_rate_by_grade": {
+            grade: round(values["wins"] / values["total"] * 100, 2) if values["total"] else 0.0
+            for grade, values in grade_stats.items()
+        },
         "losing_streak": _streak([not item for item in wins]),
         "winning_streak": _streak(wins),
     }
