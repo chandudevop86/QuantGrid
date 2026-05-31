@@ -14,6 +14,7 @@ from Backend.core.config import validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
+from Backend.application.order_store import init_order_store
 from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.application.position_store import init_position_store
 from Backend.application.kill_switch import init_kill_switch_store
@@ -110,6 +111,7 @@ def create_app():
             seed_bootstrap_users(db)
         init_job_store()
         init_market_data_store()
+        init_order_store()
         init_paper_trade_store()
         init_position_store()
         init_kill_switch_store()
@@ -166,6 +168,9 @@ def create_app():
 
     from Backend.presentation.api.broker_api import router as broker_router
     app.include_router(broker_router, prefix="/broker")
+
+    from Backend.presentation.api.orders_api import router as orders_router
+    app.include_router(orders_router)
 
     from Backend.presentation.api.positions_api import router as positions_router
     app.include_router(positions_router)

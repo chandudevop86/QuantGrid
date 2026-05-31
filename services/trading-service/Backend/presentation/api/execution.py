@@ -10,6 +10,12 @@ from Backend.application.dto import serialize_signal
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
+from Backend.application.order_store import (
+    broker_status_to_order_status,
+    create_order,
+    should_create_position,
+    transition_order,
+)
 from Backend.application.paper_trade_store import create_paper_trade
 from Backend.application.position_store import create_open_position
 from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
@@ -177,12 +183,90 @@ def _audit_execution_result(
             "reason": result.get("reason"),
             "status": "submitted" if submitted else "rejected",
             "risk_decision": result.get("risk_decision"),
+            "local_order_id": result.get("local_order_id"),
             "broker_order_id": result.get("broker_order_id"),
             "broker_status": result.get("broker_status"),
             "broker_order": result.get("broker_order"),
             "raw_safe_broker_response": result.get("raw_safe_broker_response"),
         },
     )
+
+
+def _audit_order_transition(
+    db: Session | None,
+    request: Request | None,
+    actor: User | None,
+    order: dict[str, Any],
+    previous_status: str,
+    broker_response: dict[str, Any] | None = None,
+) -> None:
+    if db is None or request is None or actor is None:
+        return
+    write_audit_log(
+        db,
+        action="order_status_transition",
+        actor=actor,
+        target_type="order",
+        target_id=order["local_order_id"],
+        request=request,
+        metadata={
+            "status": order["status"],
+            "from_status": previous_status,
+            "to_status": order["status"],
+            "status_reason": order.get("status_reason"),
+            "broker_order_id": order.get("broker_order_id"),
+            "symbol": order.get("symbol"),
+            "side": order.get("side"),
+            "quantity": order.get("quantity"),
+            "broker_response": broker_response,
+        },
+    )
+
+
+def _create_lifecycle_order(
+    order: Any,
+    *,
+    db: Session | None,
+    request: Request | None,
+    actor: User | None,
+) -> dict[str, Any]:
+    local_order = create_order(
+        {
+            "symbol": order.symbol,
+            "side": order.side,
+            "quantity": order.quantity,
+            "entry_price": order.price,
+            "status": "requested",
+            "status_reason": "Order request accepted for risk review.",
+        }
+    )
+    _audit_order_transition(db, request, actor, local_order, "new")
+    return local_order
+
+
+def _transition_lifecycle_order(
+    local_order: dict[str, Any] | None,
+    status_value: str,
+    *,
+    db: Session | None,
+    request: Request | None,
+    actor: User | None,
+    reason: str | None = None,
+    broker_order_id: str | None = None,
+    entry_price: float | None = None,
+    broker_response: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if local_order is None:
+        return None
+    updated, previous = transition_order(
+        local_order["local_order_id"],
+        status_value,
+        status_reason=reason,
+        broker_order_id=broker_order_id,
+        entry_price=entry_price,
+    )
+    _audit_order_transition(db, request, actor, updated, previous, broker_response)
+    return updated
 
 
 def _reject_live_guardrail(
@@ -316,6 +400,9 @@ async def _submit_paper_signal(
     candles_15m: list[dict[str, Any]] | None = None,
     strategy_diagnostics: dict[str, Any] | None = None,
     broker_client: BrokerClient | None = None,
+    db: Session | None = None,
+    request: Request | None = None,
+    actor: User | None = None,
 ) -> dict[str, Any]:
     if execution_mode != "paper":
         observe_rejected_order("paper_mode_required", execution_mode)
@@ -422,11 +509,47 @@ async def _submit_paper_signal(
         constraints,
         requested_quantity(signal),
     )
+    lifecycle_order = _create_lifecycle_order(order, db=db, request=request, actor=actor)
+    lifecycle_order = _transition_lifecycle_order(
+        lifecycle_order,
+        "risk_approved",
+        db=db,
+        request=request,
+        actor=actor,
+        reason="Risk engine approved order.",
+    )
     broker_client = broker_client or broker_client_for_mode(execution_mode)
     try:
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            "broker_submitted",
+            db=db,
+            request=request,
+            actor=actor,
+            reason="Submitted to broker adapter.",
+        )
         broker_order = await broker_client.place_order(order)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            "broker_submitted",
+            db=db,
+            request=request,
+            actor=actor,
+            reason="Broker accepted submission.",
+            broker_order_id=broker_order.broker_order_id,
+            entry_price=broker_order.price,
+            broker_response=broker_order.to_dict(),
+        )
         broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
     except Exception as exc:
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            "failed",
+            db=db,
+            request=request,
+            actor=actor,
+            reason=f"BROKER_FAILURE: {exc}",
+        )
         observe_rejected_order("broker_failure", execution_mode)
         return _paper_response(
             status_value="rejected",
@@ -440,6 +563,18 @@ async def _submit_paper_signal(
         )
 
     if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+        mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            mapped_status if mapped_status in {"rejected", "failed", "cancelled"} else "rejected",
+            db=db,
+            request=request,
+            actor=actor,
+            reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+            broker_order_id=broker_status.broker_order_id,
+            entry_price=broker_status.price,
+            broker_response=broker_status.to_dict(),
+        )
         observe_rejected_order(f"broker_not_confirmed:{broker_status.status}", execution_mode)
         return _paper_response(
             status_value="rejected",
@@ -459,6 +594,18 @@ async def _submit_paper_signal(
             },
         )
 
+    order_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+    lifecycle_order = _transition_lifecycle_order(
+        lifecycle_order,
+        order_status,
+        db=db,
+        request=request,
+        actor=actor,
+        reason=f"Broker status confirmed: {broker_status.status}",
+        broker_order_id=broker_status.broker_order_id,
+        entry_price=broker_status.price or signal.entry_price,
+        broker_response=broker_status.to_dict(),
+    )
     result = _paper_response(
         status_value="paper_order_submitted",
         symbol=signal.symbol,
@@ -473,6 +620,7 @@ async def _submit_paper_signal(
             "decision": decision.to_dict(),
             "order": jsonable_encoder(order),
             "broker_order_id": broker_status.broker_order_id,
+            "local_order_id": lifecycle_order.get("local_order_id") if lifecycle_order else None,
             "broker_status": broker_status.status,
             "broker_confirmed": True,
             "broker_order": broker_status.to_dict(),
@@ -498,19 +646,20 @@ async def _submit_paper_signal(
             "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
         }
     )
-    create_open_position(
-        {
-            "broker_order_id": broker_status.broker_order_id,
-            "symbol": signal.symbol,
-            "side": signal.side,
-            "quantity": requested_quantity(signal),
-            "entry_price": signal.entry_price,
-            "stop_loss": signal.stop_loss,
-            "target": signal.target_price,
-            "current_price": broker_status.price or signal.entry_price,
-            "opened_at": signal.signal_time.isoformat(),
-        }
-    )
+    if should_create_position(order_status):
+        create_open_position(
+            {
+                "broker_order_id": broker_status.broker_order_id,
+                "symbol": signal.symbol,
+                "side": signal.side,
+                "quantity": requested_quantity(signal),
+                "entry_price": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "target": signal.target_price,
+                "current_price": broker_status.price or signal.entry_price,
+                "opened_at": signal.signal_time.isoformat(),
+            }
+        )
     observe_paper_order("paper_order_submitted", signal.strategy_name, signal.symbol)
     return result
 
@@ -650,6 +799,9 @@ async def auto_paper_order(
             candles_15m=trend_candles,
             strategy_diagnostics=strategy_diagnostics,
             broker_client=broker_client_for_mode(execution_mode),
+            db=db,
+            request=request,
+            actor=actor,
         )
         if result.get("risk_decision"):
             _audit_risk_decision(
@@ -810,11 +962,47 @@ async def place_order(
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
         order = engine.order_from_signal(signal)
+        lifecycle_order = _create_lifecycle_order(order, db=db, request=request, actor=actor)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            "risk_approved",
+            db=db,
+            request=request,
+            actor=actor,
+            reason="Risk engine and live guardrails approved order.",
+        )
         try:
             broker_client = broker_client_for_mode(execution_mode)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "broker_submitted",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="Submitted to broker adapter.",
+            )
             broker_order = await broker_client.place_order(order)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "broker_submitted",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="Broker accepted submission.",
+                broker_order_id=broker_order.broker_order_id,
+                entry_price=broker_order.price,
+                broker_response=broker_order.to_dict(),
+            )
             broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
         except Exception as exc:
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "failed",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"BROKER_FAILURE: {exc}",
+            )
             result = _paper_response(
                 status_value="rejected",
                 symbol=signal.symbol,
@@ -828,6 +1016,18 @@ async def place_order(
             alert_execution_event(result)
             return result
         if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+            mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                mapped_status if mapped_status in {"rejected", "failed", "cancelled"} else "rejected",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                broker_order_id=broker_status.broker_order_id,
+                entry_price=broker_status.price,
+                broker_response=broker_status.to_dict(),
+            )
             result = _paper_response(
                 status_value="rejected",
                 symbol=signal.symbol,
@@ -847,6 +1047,18 @@ async def place_order(
             _audit_execution_result(db, request, actor, result)
             alert_execution_event(result)
             return result
+        order_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            order_status,
+            db=db,
+            request=request,
+            actor=actor,
+            reason=f"Broker status confirmed: {broker_status.status}",
+            broker_order_id=broker_status.broker_order_id,
+            entry_price=broker_status.price or signal.entry_price,
+            broker_response=broker_status.to_dict(),
+        )
         result = _paper_response(
             status_value="live_order_submitted",
             symbol=signal.symbol,
@@ -857,6 +1069,7 @@ async def place_order(
             extra={
                 **_risk_response_fields(risk_decision),
                 "broker_order_id": broker_status.broker_order_id,
+                "local_order_id": lifecycle_order.get("local_order_id") if lifecycle_order else None,
                 "broker_status": broker_status.status,
                 "broker_confirmed": True,
                 "broker_order": broker_status.to_dict(),
@@ -880,24 +1093,33 @@ async def place_order(
                 "signal_time": signal.signal_time.isoformat(),
             }
         )
-        create_open_position(
-            {
-                "broker_order_id": broker_status.broker_order_id,
-                "symbol": signal.symbol,
-                "side": signal.side,
-                "quantity": requested_quantity(signal),
-                "entry_price": signal.entry_price,
-                "stop_loss": signal.stop_loss,
-                "target": signal.target_price,
-                "current_price": broker_status.price or signal.entry_price,
-                "opened_at": signal.signal_time.isoformat(),
-            }
-        )
+        if should_create_position(order_status):
+            create_open_position(
+                {
+                    "broker_order_id": broker_status.broker_order_id,
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "quantity": requested_quantity(signal),
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "target": signal.target_price,
+                    "current_price": broker_status.price or signal.entry_price,
+                    "opened_at": signal.signal_time.isoformat(),
+                }
+            )
         _audit_execution_result(db, request, actor, result)
         alert_execution_event(result)
         return result
 
-    result = await _submit_paper_signal(signal, engine=engine, execution_mode=execution_mode, candles_1m=candles_1m)
+    result = await _submit_paper_signal(
+        signal,
+        engine=engine,
+        execution_mode=execution_mode,
+        candles_1m=candles_1m,
+        db=db,
+        request=request,
+        actor=actor,
+    )
     _audit_execution_result(db, request, actor, result)
     alert_execution_event(result)
     return result

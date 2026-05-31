@@ -18,6 +18,7 @@ TRACKED_ACTIONS = {
     "signal_generated",
     "risk_decision",
     "execution_triggered",
+    "order_status_transition",
     "paper_order_submitted",
     "live_order_submitted",
     "execution_blocked",
@@ -37,6 +38,7 @@ ACTION_LABELS = {
     "signal_generated": "Signal generated",
     "risk_decision": "Risk decision",
     "execution_triggered": "Order requested",
+    "order_status_transition": "Order status transition",
     "paper_order_submitted": "Order placed",
     "live_order_submitted": "Order placed",
     "execution_blocked": "Order failed",
@@ -176,6 +178,8 @@ def _event_status(action: str, metadata: dict[str, Any]) -> str:
         return "closed"
     if action in {"execution_triggered"}:
         return "requested"
+    if action in {"order_status_transition"}:
+        return str(metadata.get("to_status") or metadata.get("status") or "updated")
     if action in {"signal_generated"}:
         validated = metadata.get("validated_signals")
         return "generated" if isinstance(validated, int) and validated > 0 else "no_signal"
