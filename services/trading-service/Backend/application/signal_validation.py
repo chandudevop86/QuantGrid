@@ -164,6 +164,10 @@ def _is_crt_tbs(signal: StrategySignal) -> bool:
     return str(signal.metadata.get("strategy_key") or "").lower() == "crt_tbs" or "crt tbs" in signal.strategy_name.lower()
 
 
+def _is_mtfa(signal: StrategySignal) -> bool:
+    return str(signal.metadata.get("strategy_key") or "").lower() == "mtfa" or signal.strategy_name.lower() == "mtfa"
+
+
 def _mean_reversion_high_quality(signal: StrategySignal) -> bool:
     if _score(signal) < 5.0:
         return False
@@ -228,6 +232,14 @@ def _quality_rank(signal: StrategySignal) -> tuple[float, float]:
 
 
 def _is_high_quality(signal: StrategySignal) -> bool:
+    if _is_mtfa(signal):
+        return (
+            _score(signal) >= 7.0
+            and _risk_reward(signal) >= 1.99
+            and bool(signal.metadata.get("mtfa_valid"))
+            and bool(signal.metadata.get("mtfa_15m_trigger"))
+        )
+
     if _is_crt_tbs(signal):
         return (
             _score(signal) >= 7.0

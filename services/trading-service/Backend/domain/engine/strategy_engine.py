@@ -11,6 +11,7 @@ from Backend.domain.strategies.btst import BTSTStrategy
 from Backend.domain.strategies.crt_tbs import CRTTBSStrategy
 from Backend.domain.strategies.mean_reversion import MeanReversionStrategy
 from Backend.domain.strategies.mtf import MTFStrategy
+from Backend.domain.strategies.mtfa import MTFAStrategy
 from Backend.domain.strategies.supply_demand import SupplyDemandStrategy
 
 
@@ -23,6 +24,7 @@ class StrategyEngine:
             self.register("mean_reversion", MeanReversionStrategy())
             self.register("supply_demand", SupplyDemandStrategy())
             self.register("mtf", MTFStrategy())
+            self.register("mtfa", MTFAStrategy())
             self.register("btst", BTSTStrategy())
             self.register("crt_tbs", CRTTBSStrategy())
 

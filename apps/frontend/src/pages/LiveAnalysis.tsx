@@ -12,6 +12,7 @@ const strategies = [
   "crt_tbs",
   "mean_reversion",
   "mtf",
+  "mtfa",
   "supply_demand",
 ];
 

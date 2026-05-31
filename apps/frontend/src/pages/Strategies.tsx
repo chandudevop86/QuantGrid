@@ -12,6 +12,7 @@ const strategies = [
   "crt_tbs",
   "mean_reversion",
   "mtf",
+  "mtfa",
   "supply_demand",
 ];
 
@@ -192,7 +193,7 @@ export default function Strategies() {
                   </span>
                   <span>
                     <small>Quality Grade</small>
-                    <strong>{selectedSignal.quality_grade ?? tqe?.quality_grade ?? selectedSignal.signal_quality ?? "-"}</strong>
+                    <strong>{selectedSignal.mtfa_grade ?? selectedSignal.quality_grade ?? tqe?.quality_grade ?? selectedSignal.signal_quality ?? "-"}</strong>
                   </span>
                   {selectedSignal.tqe_score !== undefined || tqe?.score !== undefined ? (
                     <span>
@@ -269,6 +270,42 @@ export default function Strategies() {
                     <span>
                       <small>Target 2</small>
                       <strong>{formatPrice(selectedSignal.target_2)}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_4h_trend && (
+                    <span>
+                      <small>4H Trend</small>
+                      <strong>{selectedSignal.mtfa_4h_trend}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_4h_zone && (
+                    <span>
+                      <small>4H Zone</small>
+                      <strong>{formatStrategyName(String(selectedSignal.mtfa_4h_zone.zone_type))}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_1h_pullback && (
+                    <span>
+                      <small>1H Pullback</small>
+                      <strong>{selectedSignal.mtfa_1h_pullback.reason}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_1h_confirmation && (
+                    <span>
+                      <small>1H Confirmation</small>
+                      <strong>{selectedSignal.mtfa_1h_confirmation.score ?? "-"}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_15m_trigger && (
+                    <span>
+                      <small>15M Trigger</small>
+                      <strong>{selectedSignal.mtfa_15m_trigger.trigger_type}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.mtfa_score !== undefined && (
+                    <span>
+                      <small>MTFA Score</small>
+                      <strong>{selectedSignal.mtfa_score}/12</strong>
                     </span>
                   )}
                 </div>

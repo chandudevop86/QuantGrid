@@ -71,5 +71,6 @@ class TradingService:
             "breakout",
             "supply_demand",
             "mtf",
+            "mtfa",
             "crt_tbs",
         }
