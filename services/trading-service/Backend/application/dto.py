@@ -23,7 +23,23 @@ def serialize_signal(signal: StrategySignal) -> dict[str, Any]:
     payload["historical_win_rate"] = signal.metadata.get("historical_win_rate", 0.0)
     payload["recent_accuracy"] = signal.metadata.get("recent_accuracy", 0.0)
     payload["timestamp"] = payload["signal_time"]
-    for key in ("amd_phase", "fvg_zone", "zone_type", "zone", "htf_bias", "trend", "reason"):
+    for key in (
+        "amd_phase",
+        "fvg_zone",
+        "zone_type",
+        "zone",
+        "htf_bias",
+        "trend",
+        "reason",
+        "crt_range",
+        "liquidity_sweep",
+        "trap_type",
+        "signal_quality",
+        "target_1",
+        "target_2",
+        "entry_zone",
+        "sweep_type",
+    ):
         if key in signal.metadata:
             payload[key] = signal.metadata[key]
     return payload

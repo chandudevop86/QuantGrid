@@ -8,6 +8,7 @@ from Backend.domain.strategies.amd import AMDStrategy
 from Backend.domain.strategies.base import BaseStrategy
 from Backend.domain.strategies.breakout import BreakoutStrategy
 from Backend.domain.strategies.btst import BTSTStrategy
+from Backend.domain.strategies.crt_tbs import CRTTBSStrategy
 from Backend.domain.strategies.mean_reversion import MeanReversionStrategy
 from Backend.domain.strategies.mtf import MTFStrategy
 from Backend.domain.strategies.supply_demand import SupplyDemandStrategy
@@ -23,6 +24,7 @@ class StrategyEngine:
             self.register("supply_demand", SupplyDemandStrategy())
             self.register("mtf", MTFStrategy())
             self.register("btst", BTSTStrategy())
+            self.register("crt_tbs", CRTTBSStrategy())
 
     def register(self, name: str, strategy: BaseStrategy) -> None:
         self._strategies[self._normalize(name)] = strategy

@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from Backend.application.candle_validation import validate_live_candle
-from Backend.application.job_events import publish_job_update
-from Backend.application.job_store import count_jobs, create_job, list_jobs, utc_now
-from Backend.application.live_analysis_worker import LiveAnalysisPayload, execute_job
+from Backend.application.job_queue import enqueue_job
+from Backend.application.job_store import count_jobs, list_jobs, utc_now
+from Backend.application.live_analysis_worker import LiveAnalysisPayload
 from Backend.application.market_data_store import latest_candles, market_data_summary
 from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
@@ -166,25 +166,19 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
 @router.post("/live-analysis/jobs")
 def create_live_analysis_job(
     payload: LiveAnalysisPayload,
-    background_tasks: BackgroundTasks,
     request: Request,
     _role: str = Depends(require_roles("admin", "trader", "analyst")),
     actor: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    now = utc_now()
-    job = {
-        "job_id": str(uuid4()),
-        "status": "queued",
+    metadata = {
         "symbol": payload.symbol.upper(),
         "strategy": payload.strategy,
         "interval": payload.interval,
         "period": payload.period,
-        "created_at": now,
-        "queued_at": now,
     }
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    created = create_job(job, payload_data)
+    created = enqueue_job("live-analysis", payload_data, metadata=metadata, job_id=str(uuid4()))
     write_audit_log(
         db,
         action="trading_job_created",
@@ -192,11 +186,9 @@ def create_live_analysis_job(
         target_type="job",
         target_id=created["job_id"],
         request=request,
-        metadata={"symbol": job["symbol"], "strategy": job["strategy"]},
+        metadata={"symbol": metadata["symbol"], "strategy": metadata["strategy"], "status": "queued"},
     )
-    publish_job_update(created)
     alert_job_created(created)
-    background_tasks.add_task(execute_job, created["job_id"])
     return created
 
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.dto import serialize_signal
+from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
@@ -40,7 +41,7 @@ from Backend.application.monitoring import observe_paper_order, observe_rejected
 from Backend.presentation.api.roles import require_roles, require_trade_execute
 
 router = APIRouter()
-AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "mean_reversion", "mtf", "supply_demand"]
+AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "crt_tbs", "mean_reversion", "mtf", "supply_demand"]
 
 
 # dependency injection (cleaner + testable)
@@ -833,6 +834,40 @@ async def auto_paper_order(
     )
     alert_execution_event(result)
     return result
+
+
+@router.post("/auto-paper/jobs")
+async def enqueue_auto_paper_order(
+    payload: AutoPaperExecutionRequest,
+    request: Request,
+    actor: User = Depends(require_trade_execute),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    if execution_mode != "paper":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auto-paper jobs are paper-only.")
+
+    payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    job = enqueue_job(
+        "auto-paper",
+        payload_data,
+        metadata={
+            "symbol": payload.symbol.upper(),
+            "strategy": ",".join(payload.strategies or AUTO_SCAN_STRATEGIES),
+            "interval": payload.interval,
+            "period": payload.period,
+        },
+    )
+    write_audit_log(
+        db,
+        action="trading_job_created",
+        actor=actor,
+        target_type="job",
+        target_id=job["job_id"],
+        request=request,
+        metadata={"job_type": "auto-paper", "symbol": payload.symbol.upper(), "status": "queued"},
+    )
+    return job
 
 
 @router.post("/order")

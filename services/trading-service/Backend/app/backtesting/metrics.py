@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from Backend.app.backtesting.models import BacktestTrade
 
@@ -16,7 +17,7 @@ def _streak(values: list[bool]) -> int:
     return best
 
 
-def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, float | int]:
+def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
     if not trades:
         return {
             "total_trades": 0,
@@ -27,6 +28,7 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, float | int]:
             "sharpe_ratio": 0.0,
             "expectancy": 0.0,
             "average_rr": 0.0,
+            "best_setup_type": None,
             "losing_streak": 0,
             "winning_streak": 0,
         }
@@ -47,6 +49,10 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, float | int]:
     variance = sum((pnl - mean) ** 2 for pnl in pnls) / len(pnls)
     std = math.sqrt(variance)
     sharpe = (mean / std * math.sqrt(len(pnls))) if std > 0 else 0.0
+    setup_pnl: dict[str, float] = {}
+    for trade in trades:
+        setup_type = str(trade.metadata.get("setup_type") or "unknown")
+        setup_pnl[setup_type] = setup_pnl.get(setup_type, 0.0) + float(trade.pnl)
 
     return {
         "total_trades": len(trades),
@@ -57,6 +63,7 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, float | int]:
         "sharpe_ratio": round(sharpe, 2),
         "expectancy": round(mean, 2),
         "average_rr": round(sum(float(trade.rr) for trade in trades) / len(trades), 2),
+        "best_setup_type": max(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
         "losing_streak": _streak([not item for item in wins]),
         "winning_streak": _streak(wins),
     }

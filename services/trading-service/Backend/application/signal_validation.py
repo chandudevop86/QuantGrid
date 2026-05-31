@@ -160,6 +160,10 @@ def _is_mean_reversion(signal: StrategySignal) -> bool:
     return "mean reversion" in strategy_name or setup == "enhanced_mean_reversion"
 
 
+def _is_crt_tbs(signal: StrategySignal) -> bool:
+    return str(signal.metadata.get("strategy_key") or "").lower() == "crt_tbs" or "crt tbs" in signal.strategy_name.lower()
+
+
 def _mean_reversion_high_quality(signal: StrategySignal) -> bool:
     if _score(signal) < 5.0:
         return False
@@ -224,6 +228,14 @@ def _quality_rank(signal: StrategySignal) -> tuple[float, float]:
 
 
 def _is_high_quality(signal: StrategySignal) -> bool:
+    if _is_crt_tbs(signal):
+        return (
+            _score(signal) >= 7.0
+            and _risk_reward(signal) >= 1.99
+            and bool(signal.metadata.get("liquidity_sweep"))
+            and str(signal.metadata.get("quality_tier") or "").upper() in {"MEDIUM QUALITY", "HIGH QUALITY"}
+        )
+
     if _is_mean_reversion(signal):
         return _mean_reversion_high_quality(signal)
 

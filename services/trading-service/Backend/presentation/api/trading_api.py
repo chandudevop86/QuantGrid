@@ -25,7 +25,11 @@ class StrategyRunRequest(BaseModel):
     rr_ratio: float = 2.0
     candles: list[dict[str, Any]]
     htf_candles: list[dict[str, Any]] | None = None
+    h1_candles: list[dict[str, Any]] | None = None
+    h4_candles: list[dict[str, Any]] | None = None
     mtf_candles: list[dict[str, Any]] | None = None
+    m15_candles: list[dict[str, Any]] | None = None
+    m5_candles: list[dict[str, Any]] | None = None
     daily_candles: list[dict[str, Any]] | None = None
     candle_source: str | None = None
     include_diagnostics: bool = False
@@ -45,7 +49,11 @@ def generate_signals(
         key: value
         for key, value in {
             "htf_candles": payload.htf_candles,
+            "h1_candles": payload.h1_candles,
+            "h4_candles": payload.h4_candles,
             "mtf_candles": payload.mtf_candles,
+            "m15_candles": payload.m15_candles,
+            "m5_candles": payload.m5_candles,
             "daily_candles": payload.daily_candles,
         }.items()
         if value is not None
@@ -96,6 +104,8 @@ def generate_signals(
         diagnostics.insert(0, "BTST strategy works best with daily_candles and only validates near end of day.")
     if strategy in {"amd", "supply_demand"} and "htf_candles" not in params:
         diagnostics.insert(0, "Higher-timeframe candles were not supplied, so HTF confluence may reject strict setups.")
+    if strategy == "crt_tbs" and not any(key in params for key in ("h1_candles", "h4_candles", "htf_candles")):
+        diagnostics.insert(0, "CRT TBS works best with H4/H1 bias candles plus M15/M5 entry candles.")
 
     response = {
         "signals": serialized,

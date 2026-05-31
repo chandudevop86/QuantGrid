@@ -17,7 +17,11 @@ export type SignalPayload = {
     volume?: number;
   }>;
   htf_candles?: SignalPayload["candles"];
+  h1_candles?: SignalPayload["candles"];
+  h4_candles?: SignalPayload["candles"];
   mtf_candles?: SignalPayload["candles"];
+  m15_candles?: SignalPayload["candles"];
+  m5_candles?: SignalPayload["candles"];
   daily_candles?: SignalPayload["candles"];
 };
 

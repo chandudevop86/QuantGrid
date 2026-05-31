@@ -19,6 +19,7 @@ class BacktestTrade:
     pnl: float
     rr: float
     outcome: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -28,7 +29,7 @@ class BacktestTrade:
 class BacktestResult:
     strategy: str
     symbol: str
-    metrics: dict[str, float | int]
+    metrics: dict[str, Any]
     trades: list[BacktestTrade] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:

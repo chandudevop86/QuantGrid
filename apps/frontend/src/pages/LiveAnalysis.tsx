@@ -9,6 +9,7 @@ const strategies = [
   "amd",
   "breakout",
   "btst",
+  "crt_tbs",
   "mean_reversion",
   "mtf",
   "supply_demand",

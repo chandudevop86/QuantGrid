@@ -9,6 +9,7 @@ const strategies = [
   "amd",
   "breakout",
   "btst",
+  "crt_tbs",
   "mean_reversion",
   "mtf",
   "supply_demand",
@@ -192,6 +193,36 @@ export default function Strategies() {
                     <small>Confidence</small>
                     <strong>{score ? score.toFixed(1) : "-"}</strong>
                   </span>
+                  {selectedSignal.crt_range && (
+                    <span>
+                      <small>CRT Range</small>
+                      <strong>{formatPrice(selectedSignal.crt_range.low)} - {formatPrice(selectedSignal.crt_range.high)}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.liquidity_sweep && (
+                    <span>
+                      <small>Liquidity Sweep</small>
+                      <strong>{selectedSignal.liquidity_sweep.type} @ {formatPrice(selectedSignal.liquidity_sweep.level)}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.trap_type && (
+                    <span>
+                      <small>Trap Type</small>
+                      <strong>{formatStrategyName(String(selectedSignal.trap_type))}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.signal_quality && (
+                    <span>
+                      <small>Signal Quality</small>
+                      <strong>{selectedSignal.signal_quality}</strong>
+                    </span>
+                  )}
+                  {selectedSignal.target_2 && (
+                    <span>
+                      <small>Target 2</small>
+                      <strong>{formatPrice(selectedSignal.target_2)}</strong>
+                    </span>
+                  )}
                 </div>
               )}
 

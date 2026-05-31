@@ -96,4 +96,8 @@ class BacktestEngine:
             pnl=round(pnl, 2),
             rr=round(reward / risk, 2) if risk > 0 else 0.0,
             outcome=outcome,
+            metadata={
+                "signal_score": signal.metadata.get("score") or signal.metadata.get("total_score"),
+                "setup_type": signal.metadata.get("best_setup_type") or signal.metadata.get("setup_type"),
+            },
         )

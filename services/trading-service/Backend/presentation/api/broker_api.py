@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
+from Backend.application.job_queue import enqueue_job
+from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import check_dhan_profile
@@ -181,6 +183,31 @@ async def reconcile_broker(
         )
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker reconciliation failed: {exc}") from exc
+
+
+@router.post("/reconcile/jobs")
+def enqueue_reconciliation_job(
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    job = enqueue_job(
+        "order-reconciliation",
+        {"execution_mode": execution_mode},
+        metadata={"execution_mode": execution_mode},
+    )
+    write_audit_log(
+        db,
+        action="trading_job_created",
+        actor=actor,
+        target_type="job",
+        target_id=job["job_id"],
+        request=request,
+        metadata={"job_type": "order-reconciliation", "execution_mode": execution_mode, "status": "queued"},
+    )
+    return job
 
 
 @router.get("/reconciliation/status")

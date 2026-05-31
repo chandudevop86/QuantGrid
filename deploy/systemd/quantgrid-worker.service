@@ -1,0 +1,19 @@
+[Unit]
+Description=QuantGrid background worker
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/root/QuantGrid/services/trading-service
+EnvironmentFile=/root/QuantGrid/services/trading-service/.env
+ExecStart=/root/venv/bin/python -m Backend.application.worker --poll-interval 1
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
