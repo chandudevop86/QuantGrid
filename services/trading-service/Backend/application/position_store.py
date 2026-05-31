@@ -41,6 +41,8 @@ def init_position_store() -> None:
                 stop_loss REAL,
                 target REAL,
                 current_price REAL,
+                exit_price REAL,
+                exit_reason TEXT,
                 open_pnl REAL NOT NULL DEFAULT 0,
                 closed_pnl REAL NOT NULL DEFAULT 0,
                 status TEXT NOT NULL,
@@ -50,6 +52,14 @@ def init_position_store() -> None:
             )
             """
         )
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(positions)").fetchall()
+        }
+        if "exit_price" not in columns:
+            connection.execute("ALTER TABLE positions ADD COLUMN exit_price REAL")
+        if "exit_reason" not in columns:
+            connection.execute("ALTER TABLE positions ADD COLUMN exit_reason TEXT")
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_positions_status_updated
@@ -77,6 +87,8 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
         "current_price": current,
+        "exit_price": None,
+        "exit_reason": None,
         "open_pnl": _open_pnl(side, quantity, entry, current),
         "closed_pnl": 0.0,
         "status": "open",
@@ -89,10 +101,10 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO positions
                 (broker_order_id, symbol, side, quantity, entry_price, stop_loss, target, current_price,
-                 open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
+                 exit_price, exit_reason, open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
             VALUES
                 (:broker_order_id, :symbol, :side, :quantity, :entry_price, :stop_loss, :target, :current_price,
-                 :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
+                 :exit_price, :exit_reason, :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
             """,
             row,
         )
@@ -130,6 +142,15 @@ def find_position_by_broker_order_id(broker_order_id: str) -> dict[str, Any] | N
             """,
             (broker_order_id,),
         ).fetchone()
+    return dict(row) if row else None
+
+
+def get_position(position_id: int) -> dict[str, Any] | None:
+    init_position_store()
+    if not _use_sqlite():
+        return _db_get_position(position_id)
+    with _connect() as connection:
+        row = connection.execute("SELECT * FROM positions WHERE id = ?", (position_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -199,11 +220,12 @@ def close_open_position(position_id: int, *, current_price: float | None = None,
         connection.execute(
             """
             UPDATE positions
-            SET status = 'closed', current_price = ?, open_pnl = 0, closed_pnl = ?,
+            SET status = 'closed', current_price = ?, exit_price = ?, exit_reason = ?,
+                open_pnl = 0, closed_pnl = ?,
                 closed_at = ?, updated_at = ?
             WHERE id = ?
             """,
-            (exit_price, closed_pnl, now, now, position_id),
+            (exit_price, exit_price, reason, closed_pnl, now, now, position_id),
         )
         updated = connection.execute("SELECT * FROM positions WHERE id = ?", (position_id,)).fetchone()
     return dict(updated) if updated else None
@@ -275,10 +297,21 @@ def _use_sqlite() -> bool:
 
 
 def _init_db_store() -> None:
+    from sqlalchemy import inspect, text
+
     from Backend.core.database import Base, engine
     import Backend.domain.trading_store_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    columns = {column["name"] for column in inspect(engine).get_columns("positions")}
+    additions = {
+        "exit_price": "ALTER TABLE positions ADD COLUMN exit_price FLOAT",
+        "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
+    }
+    with engine.begin() as connection:
+        for column, statement in additions.items():
+            if column not in columns:
+                connection.execute(text(statement))
 
 
 def _position_row(payload: dict[str, Any]) -> dict[str, Any]:
@@ -297,6 +330,8 @@ def _position_row(payload: dict[str, Any]) -> dict[str, Any]:
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
         "current_price": current,
+        "exit_price": None,
+        "exit_reason": None,
         "open_pnl": _open_pnl(side, quantity, entry, current),
         "closed_pnl": 0.0,
         "status": "open",
@@ -317,6 +352,8 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "stop_loss": record.stop_loss,
         "target": record.target,
         "current_price": record.current_price,
+        "exit_price": record.exit_price,
+        "exit_reason": record.exit_reason,
         "open_pnl": record.open_pnl,
         "closed_pnl": record.closed_pnl,
         "status": record.status,
@@ -357,6 +394,15 @@ def _db_find_position_by_broker_order_id(broker_order_id: str) -> dict[str, Any]
         return _record_to_dict(row) if row else None
 
 
+def _db_get_position(position_id: int) -> dict[str, Any] | None:
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import PositionRecord
+
+    with SessionLocal() as db:
+        row = db.query(PositionRecord).filter(PositionRecord.id == position_id).first()
+        return _record_to_dict(row) if row else None
+
+
 def _db_update_open_position(position_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import PositionRecord
@@ -388,6 +434,8 @@ def _db_close_open_position(position_id: int, *, current_price: float | None = N
         exit_price = float(current_price if current_price is not None else row.current_price or row.entry_price)
         row.status = "closed"
         row.current_price = exit_price
+        row.exit_price = exit_price
+        row.exit_reason = reason
         row.open_pnl = 0.0
         row.closed_pnl = _open_pnl(str(row.side), int(row.quantity), float(row.entry_price), exit_price)
         row.closed_at = utc_now()

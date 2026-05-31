@@ -22,6 +22,7 @@ TRACKED_ACTIONS = {
     "live_order_submitted",
     "execution_blocked",
     "broker_reconciliation_change",
+    "position_exit",
     "kill_switch_activated",
     "kill_switch_deactivated",
     "kill_switch_activation_denied",
@@ -40,6 +41,7 @@ ACTION_LABELS = {
     "live_order_submitted": "Order placed",
     "execution_blocked": "Order failed",
     "broker_reconciliation_change": "Broker reconciliation",
+    "position_exit": "Position exited",
     "kill_switch_activated": "Kill switch activated",
     "kill_switch_deactivated": "Kill switch deactivated",
     "kill_switch_activation_denied": "Kill switch activation denied",
@@ -170,6 +172,8 @@ def _event_status(action: str, metadata: dict[str, Any]) -> str:
         return "denied"
     if action in {"paper_order_submitted", "live_order_submitted"}:
         return "placed"
+    if action in {"position_exit"}:
+        return "closed"
     if action in {"execution_triggered"}:
         return "requested"
     if action in {"signal_generated"}:

@@ -1,12 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from Backend.application.position_store import list_closed_positions, list_open_positions, position_summary
-from Backend.presentation.api.roles import require_roles
+from Backend.application.trade_exit_engine import evaluate_exit_rule, exit_all_positions, exit_position, exit_rules
+from Backend.core.database import get_db
+from Backend.domain.security.models import User
+from Backend.presentation.api.roles import current_user, require_roles
 
 
 router = APIRouter(prefix="/positions", tags=["positions"])
+
+
+class ExitRequest(BaseModel):
+    reason: str = Field(default="manual_exit")
+    exit_price: float | None = Field(default=None, gt=0)
+
+
+def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-QuantGrid-Mode")) -> str:
+    mode = x_quantgrid_mode.strip().lower()
+    if mode not in {"paper", "live"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
+    return mode
 
 
 @router.get("/open")
@@ -22,3 +39,65 @@ def closed_positions(_role: str = Depends(require_roles("admin", "developer", "t
 @router.get("/summary")
 def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
     return position_summary()
+
+
+@router.get("/exit-rules")
+def get_exit_rules(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
+    evaluations = []
+    for position in list_open_positions():
+        decision = evaluate_exit_rule(position)
+        evaluations.append(
+            {
+                "position_id": position.get("id"),
+                "symbol": position.get("symbol"),
+                "should_exit": decision.should_exit,
+                "reason": decision.reason,
+                "price": decision.price,
+                "details": decision.details or {},
+            }
+        )
+    return {"rules": exit_rules(), "open_positions": evaluations}
+
+
+@router.post("/{position_id}/exit")
+async def exit_single_position(
+    position_id: int,
+    payload: ExitRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    try:
+        return await exit_position(
+            position_id,
+            db=db,
+            actor=actor,
+            request=request,
+            execution_mode=execution_mode,
+            reason=payload.reason,
+            exit_price=payload.exit_price,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Position exit failed: {exc}") from exc
+
+
+@router.post("/exit-all")
+async def exit_all_open_positions(
+    payload: ExitRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    return await exit_all_positions(
+        db=db,
+        actor=actor,
+        request=request,
+        execution_mode=execution_mode,
+        reason=payload.reason,
+    )

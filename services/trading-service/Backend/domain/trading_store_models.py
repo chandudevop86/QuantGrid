@@ -83,6 +83,8 @@ class PositionRecord(Base):
     stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     target: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
     open_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     closed_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
