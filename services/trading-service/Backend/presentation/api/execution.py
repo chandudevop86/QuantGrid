@@ -396,7 +396,7 @@ def _execution_qualification(
         capital=100_000,
         risk_pct=1,
         m15_candles=candles_15m,
-        enforce_execution_checks=False,
+        enforce_execution_checks=True,
         execution_mode=execution_mode,
     )
     signal.metadata["trade_qualification"] = qualification.to_dict()
