@@ -161,7 +161,8 @@ def _is_mean_reversion(signal: StrategySignal) -> bool:
 
 
 def _is_crt_tbs(signal: StrategySignal) -> bool:
-    return str(signal.metadata.get("strategy_key") or "").lower() == "crt_tbs" or "crt tbs" in signal.strategy_name.lower()
+    strategy_key = str(signal.metadata.get("strategy_key") or "").lower()
+    return strategy_key in {"crt_tbs", "cbt"} or "crt tbs" in signal.strategy_name.lower() or signal.strategy_name.lower() == "cbt"
 
 
 def _is_mtfa(signal: StrategySignal) -> bool:

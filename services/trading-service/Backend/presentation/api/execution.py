@@ -42,7 +42,7 @@ from Backend.application.monitoring import observe_paper_order, observe_rejected
 from Backend.presentation.api.roles import require_roles, require_trade_execute
 
 router = APIRouter()
-AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
+AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
 
 
 # dependency injection (cleaner + testable)

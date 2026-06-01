@@ -26,6 +26,7 @@ class StrategyEngine:
             self.register("mtf", MTFStrategy())
             self.register("mtfa", MTFAStrategy())
             self.register("btst", BTSTStrategy())
+            self.register("cbt", CRTTBSStrategy())
             self.register("crt_tbs", CRTTBSStrategy())
 
     def register(self, name: str, strategy: BaseStrategy) -> None:

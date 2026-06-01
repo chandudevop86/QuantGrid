@@ -104,8 +104,8 @@ def generate_signals(
         diagnostics.insert(0, "BTST strategy works best with daily_candles and only validates near end of day.")
     if strategy in {"amd", "supply_demand"} and "htf_candles" not in params:
         diagnostics.insert(0, "Higher-timeframe candles were not supplied, so HTF confluence may reject strict setups.")
-    if strategy == "crt_tbs" and not any(key in params for key in ("h1_candles", "h4_candles", "htf_candles")):
-        diagnostics.insert(0, "CRT TBS works best with H4/H1 bias candles plus M15/M5 entry candles.")
+    if strategy in {"cbt", "crt_tbs"} and not any(key in params for key in ("h1_candles", "h4_candles", "htf_candles")):
+        diagnostics.insert(0, "CBT/CRT TBS works best with H4/H1 bias candles plus M15/M5 entry candles.")
     if strategy == "mtfa" and not all(key in params for key in ("h4_candles", "h1_candles", "m15_candles")):
         diagnostics.insert(0, "MTFA works best with explicit H4 compass, H1 bridge, and M15 trigger candles.")
 

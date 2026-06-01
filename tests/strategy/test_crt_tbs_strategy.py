@@ -114,6 +114,7 @@ def test_strategy_engine_exposes_crt_tbs():
     engine = StrategyEngine()
 
     assert "crt_tbs" in engine.available()
+    assert "cbt" in engine.available()
 
 
 def test_crt_tbs_signal_validator_accepts_liquidity_quality_signal(monkeypatch):
