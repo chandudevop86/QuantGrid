@@ -76,18 +76,46 @@ def request_id(request: Request | None) -> str | None:
 
 
 def ensure_audit_schema(db: Session) -> None:
-    rows = db.execute(text("PRAGMA table_info(audit_logs)")).fetchall()
-    columns = {row[1] for row in rows}
-    additions = {
+    dialect = db.get_bind().dialect.name
+    columns = _audit_columns(db, dialect)
+    additions = _audit_column_additions(dialect)
+    for column, statement in additions.items():
+        if column not in columns:
+            db.execute(text(statement))
+    db.commit()
+
+
+def _audit_columns(db: Session, dialect: str) -> set[str]:
+    if dialect == "sqlite":
+        rows = db.execute(text("PRAGMA table_info(audit_logs)")).fetchall()
+        return {str(row[1]) for row in rows}
+    rows = db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'audit_logs'
+              AND table_schema = current_schema()
+            """
+        )
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _audit_column_additions(dialect: str) -> dict[str, str]:
+    if dialect == "postgresql":
+        return {
+            "actor_role": "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS actor_role VARCHAR(32)",
+            "status": "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS status VARCHAR(40)",
+            "request_id": "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS request_id VARCHAR(80)",
+            "reason": "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS reason VARCHAR(255)",
+        }
+    return {
         "actor_role": "ALTER TABLE audit_logs ADD COLUMN actor_role VARCHAR(32)",
         "status": "ALTER TABLE audit_logs ADD COLUMN status VARCHAR(40)",
         "request_id": "ALTER TABLE audit_logs ADD COLUMN request_id VARCHAR(80)",
         "reason": "ALTER TABLE audit_logs ADD COLUMN reason VARCHAR(255)",
     }
-    for column, statement in additions.items():
-        if column not in columns:
-            db.execute(text(statement))
-    db.commit()
 
 
 def write_audit_log(

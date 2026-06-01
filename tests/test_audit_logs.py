@@ -38,3 +38,12 @@ def test_audit_log_sanitizes_nested_secrets(app_client):
     stored = json.loads(row.metadata_json)
     assert stored["result"]["access_token"] == "[redacted]"
     assert stored["result"]["nested"][0]["password"] == "[redacted]"
+
+
+def test_audit_schema_uses_postgres_safe_migration_sql():
+    from Backend.domain.security.audit import _audit_column_additions
+
+    additions = _audit_column_additions("postgresql")
+
+    assert all("IF NOT EXISTS" in statement for statement in additions.values())
+    assert all("PRAGMA" not in statement for statement in additions.values())
