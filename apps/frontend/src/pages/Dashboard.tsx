@@ -44,6 +44,21 @@ function friendlyMarketMessage(market: any) {
   return "Current market conditions do not meet confirmation criteria.";
 }
 
+function brokerLoginValue(brokerStatus: any) {
+  if (!brokerStatus) return "Checking";
+  if (brokerStatus.provider === "dhan") {
+    if (brokerStatus.connected) return "Dhan OK";
+    if (brokerStatus.configured) return "Dhan Issue";
+    return "Dhan Missing";
+  }
+  return brokerStatus.configured ? String(brokerStatus.provider ?? "Broker").toUpperCase() : "Paper";
+}
+
+function brokerLoginTone(brokerStatus: any) {
+  if (brokerStatus?.connected) return "good";
+  return brokerStatus?.configured ? "warn" : "warn";
+}
+
 function useDashboardOperations(isAuthenticated: boolean) {
   const [operations, setOperations] = useState<any>(null);
   const [socketActive, setSocketActive] = useState(false);
@@ -337,9 +352,9 @@ export default function Dashboard() {
             />
             <MetricCard
               label="Broker Login"
-              value={brokerStatus?.provider === "dhan" && brokerStatus?.connected ? "Dhan OK" : "Paper"}
+              value={brokerLoginValue(brokerStatus)}
               helper={brokerStatus?.message ?? "Real-money orders disabled"}
-              tone={brokerStatus?.connected ? "good" : "warn"}
+              tone={brokerLoginTone(brokerStatus)}
             />
             <MetricCard
               label="Market Provider"
