@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 from Backend.domain.models.order import Order
 from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
+from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
 
 
 DHAN_BASE_URL = "https://api.dhan.co/v2"
@@ -43,6 +44,14 @@ class DhanBrokerClient:
             "triggerPrice": 0.0,
             "afterMarketOrder": False,
         }
+        try:
+            raw = await asyncio.to_thread(self._sdk_place_order, order, payload)
+            order_id = _extract_order_id(raw)
+            if not order_id:
+                raise BrokerAdapterError("order rejected: broker did not return order id")
+            return _result_from_raw(order_id, raw, fallback_order=order, message="DhanHQ SDK accepted order request.")
+        except DhanSdkUnavailable:
+            pass
         raw = await asyncio.to_thread(self._request, "POST", "/orders", payload)
         order_id = _extract_order_id(raw)
         if not order_id:
@@ -50,20 +59,55 @@ class DhanBrokerClient:
         return _result_from_raw(order_id, raw, fallback_order=order, message="Dhan accepted order request.")
 
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
+        try:
+            raw = await asyncio.to_thread(self._sdk_client().cancel_order, broker_order_id)
+            return _result_from_raw(broker_order_id, raw, message="DhanHQ SDK cancel request completed.")
+        except DhanSdkUnavailable:
+            pass
         raw = await asyncio.to_thread(self._request, "DELETE", f"/orders/{broker_order_id}")
         return _result_from_raw(broker_order_id, raw, message="Dhan cancel request completed.")
 
     async def get_order_status(self, broker_order_id: str) -> BrokerOrderResult:
+        try:
+            raw = await asyncio.to_thread(self._sdk_client().get_order_by_id, broker_order_id)
+            return _result_from_raw(broker_order_id, raw, message="DhanHQ SDK order status fetched.")
+        except DhanSdkUnavailable:
+            pass
         raw = await asyncio.to_thread(self._request, "GET", f"/orders/{broker_order_id}")
         return _result_from_raw(broker_order_id, raw, message="Dhan order status fetched.")
 
     async def get_positions(self) -> list[dict[str, Any]]:
+        try:
+            raw = await asyncio.to_thread(self._sdk_client().get_positions)
+            return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
+        except DhanSdkUnavailable:
+            pass
         raw = await asyncio.to_thread(self._request, "GET", "/positions")
         return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
 
     async def get_holdings(self) -> list[dict[str, Any]]:
+        try:
+            raw = await asyncio.to_thread(self._sdk_client().get_holdings)
+            return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
+        except DhanSdkUnavailable:
+            pass
         raw = await asyncio.to_thread(self._request, "GET", "/holdings")
         return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
+
+    def _sdk_client(self) -> Any:
+        return dhan_sdk_client()
+
+    def _sdk_place_order(self, order: Order, payload: dict[str, Any]) -> Any:
+        dhan = self._sdk_client()
+        return dhan.place_order(
+            security_id=str(payload["securityId"]),
+            exchange_segment=_sdk_constant(dhan, str(payload["exchangeSegment"])),
+            transaction_type=_sdk_constant(dhan, str(payload["transactionType"])),
+            quantity=int(payload["quantity"]),
+            order_type=_sdk_constant(dhan, str(payload["orderType"])),
+            product_type=_sdk_constant(dhan, str(payload["productType"])),
+            price=float(payload["price"]),
+        )
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -154,6 +198,21 @@ def _normalize_status(value: str) -> str:
     if status in {"rejected", "cancelled", "expired", "failed"}:
         return status
     return status or "pending"
+
+
+def _sdk_constant(dhan: Any, value: str) -> Any:
+    aliases = {
+        "INTRADAY": "INTRA",
+        "MARKET": "MARKET",
+        "LIMIT": "LIMIT",
+        "BUY": "BUY",
+        "SELL": "SELL",
+        "NSE_FNO": "NSE_FNO",
+        "NSE": "NSE",
+        "BSE": "BSE",
+    }
+    attr = aliases.get(value.upper(), value.upper())
+    return getattr(dhan, attr, value)
 
 
 def _map_http_error(exc: HTTPError) -> str:

@@ -11,3 +11,4 @@ psycopg[binary]
 prometheus_client
 pytest
 httpx
+dhanhq>=2.2.0,<3
