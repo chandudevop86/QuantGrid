@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 def test_yahoo_market_data_provider_selected(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
@@ -27,6 +30,21 @@ def test_broker_market_data_provider_placeholder(monkeypatch):
     from Backend.infrastructure.data.market_data_provider import FutureBrokerMarketDataProvider, get_market_data_provider
 
     assert isinstance(get_market_data_provider(), FutureBrokerMarketDataProvider)
+
+
+def test_nse_market_data_provider_placeholder(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("QUANTGRID_MARKET_DATA_PROVIDER", "nse")
+    reset_backend_modules()
+
+    from Backend.infrastructure.data.market_data_provider import FutureNseMarketDataProvider, get_market_data_provider
+
+    provider = get_market_data_provider()
+    assert isinstance(provider, FutureNseMarketDataProvider)
+    assert provider.live_suitable is True
 
 
 def test_live_config_rejects_yahoo_by_default(monkeypatch):
@@ -101,3 +119,49 @@ def test_market_provider_status_endpoint_reports_provider(monkeypatch):
     assert result["provider_name"] == "fake-nse"
     assert result["paper_suitable"] is True
     assert "latest_fetch_at" in result
+
+
+def test_live_candle_validation_rejects_non_ist_timezone(monkeypatch):
+    from Backend.application.candle_validation import validate_live_candle
+
+    now = datetime(2026, 6, 2, 9, 16, tzinfo=ZoneInfo("Asia/Kolkata"))
+    result = validate_live_candle(
+        [{"timestamp": "2026-06-02T09:15:00+05:30", "exchange_timezone": "UTC", "close": 100}],
+        mode="live",
+        source="broker",
+        now=now,
+    )
+
+    assert result.valid_for_execution is False
+    assert any("Asia/Kolkata" in item for item in result.diagnostics)
+
+
+def test_live_candle_validation_rejects_zero_price():
+    from Backend.application.candle_validation import validate_live_candle
+
+    now = datetime(2026, 6, 2, 9, 16, tzinfo=ZoneInfo("Asia/Kolkata"))
+    result = validate_live_candle(
+        [{"timestamp": "2026-06-02T09:15:00+05:30", "exchange_timezone": "Asia/Kolkata", "close": 0}],
+        mode="live",
+        source="broker",
+        now=now,
+    )
+
+    assert result.valid_for_execution is False
+    assert any("greater than zero" in item for item in result.diagnostics)
+
+
+def test_live_candle_validation_rejects_missing_candles():
+    from Backend.application.candle_validation import validate_live_candle
+
+    now = datetime(2026, 6, 2, 9, 20, tzinfo=ZoneInfo("Asia/Kolkata"))
+    result = validate_live_candle(
+        [{"timestamp": "2026-06-02T09:15:00+05:30", "exchange_timezone": "Asia/Kolkata", "close": 100}],
+        mode="live",
+        source="broker",
+        now=now,
+    )
+
+    assert result.valid_for_execution is False
+    assert result.missing_candles > 2
+    assert any("Missing candle count" in item for item in result.diagnostics)

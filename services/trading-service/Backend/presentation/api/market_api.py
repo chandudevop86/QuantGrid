@@ -84,6 +84,20 @@ def _ensure_live_provider_allowed(source: str) -> None:
         )
 
 
+def _validate_live_price_payload(payload: dict[str, Any]) -> None:
+    settings = get_settings()
+    if not settings.live_trading_enabled:
+        return
+    source = str(payload.get("source") or "")
+    _ensure_live_provider_allowed(source)
+    price = payload.get("price")
+    if price is None or float(price) <= 0:
+        raise RuntimeError("Live market data price is zero or missing.")
+    exchange_timezone = str(payload.get("exchange_timezone") or "")
+    if exchange_timezone != "Asia/Kolkata":
+        raise RuntimeError(f"Live market data timestamp timezone must be Asia/Kolkata; got {exchange_timezone or 'unknown'}.")
+
+
 def _sample_candles(symbol: str, limit: int = 20) -> list[dict[str, Any]]:
     start = datetime.now(timezone.utc) - timedelta(minutes=limit - 1)
     candles = []
@@ -229,6 +243,7 @@ def get_price(
         }
         if payload["price"] is None or float(payload["price"]) <= 0:
             raise RuntimeError("Market provider returned zero or missing price")
+        _validate_live_price_payload(payload)
         store_price_tick(payload)
         return payload
     except Exception as exc:
@@ -318,13 +333,16 @@ def get_candles(
         _ensure_live_provider_allowed(source)
         market_symbol = _market_symbol(symbol)
         provider_fetched_at = getattr(provider, "latest_fetch_at", None) or datetime.now(timezone.utc).isoformat()
+        settings = get_settings()
         validation = validate_live_candle(
             candles,
             interval=interval,
-            mode="paper",
+            mode="live" if settings.live_trading_enabled else "paper",
             source=source,
             provider_fetched_at=provider_fetched_at,
         )
+        if settings.live_trading_enabled and not validation.valid_for_execution:
+            raise RuntimeError(f"Live market data failed validation: {validation.market_status}")
 
         payload = {
             "symbol": symbol.upper(),

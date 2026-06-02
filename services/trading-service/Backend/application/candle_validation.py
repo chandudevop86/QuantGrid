@@ -322,6 +322,32 @@ def validate_live_candle(
             )
             observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
             return result
+        try:
+            latest_close = float(latest_candle.get("close"))
+        except (TypeError, ValueError):
+            latest_close = 0.0
+        if latest_close <= 0:
+            diagnostics.append("Live market data latest candle close must be greater than zero.")
+            result = CandleValidationResult(
+                valid=False,
+                valid_for_analysis=False,
+                valid_for_execution=False,
+                market_live=session.market_live,
+                market_status="DELAYED FEED",
+                ui_status=_status_icon("DELAYED FEED"),
+                delay_seconds=delay.delay_seconds,
+                provider_latency_seconds=delay.provider_latency_seconds,
+                stale_duration_seconds=delay.stale_duration_seconds,
+                missing_candles=delay.missing_candles,
+                latest_candle=latest.astimezone(UTC).isoformat(),
+                latest_candle_ist=latest.isoformat(),
+                server_time=current.astimezone(UTC).isoformat(),
+                server_time_ist=current.isoformat(),
+                diagnostics=diagnostics,
+                warnings=warnings,
+            )
+            observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
+            return result
 
     if delay.delay_seconds is not None:
         diagnostics.append(
@@ -363,6 +389,11 @@ def validate_live_candle(
     if delay.missing_candles > settings.max_missing_candles:
         warnings.append(f"Possible missing candles detected: {delay.missing_candles}.")
     valid = delay.delay_seconds is not None and delay.delay_seconds <= delayed_limit
+    if mode == "live" and delay.missing_candles > settings.max_missing_candles:
+        valid = False
+        diagnostics.append(
+            f"Missing candle count {delay.missing_candles} exceeds live limit {settings.max_missing_candles}."
+        )
     status = "LIVE MARKET" if valid and delay.delay_seconds <= settings.warning_after_seconds else "DELAYED FEED"
     if not valid:
         diagnostics.append(

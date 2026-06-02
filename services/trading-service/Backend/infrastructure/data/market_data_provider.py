@@ -216,10 +216,31 @@ class FutureBrokerMarketDataProvider(MarketDataProvider):
         }
 
 
+class FutureNseMarketDataProvider(FutureBrokerMarketDataProvider):
+    provider_name = "nse"
+
+    def fetch_chart(self, symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
+        raise NotImplementedError("NSE-grade market data provider is not configured yet.")
+
+    def get_latest_price(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError("NSE-grade latest price adapter is not configured yet.")
+
+    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        raise NotImplementedError("NSE-grade candle adapter is not configured yet.")
+
+    def get_market_status(self, symbol: str) -> dict[str, Any]:
+        return self.status_payload() | {
+            "symbol": symbol.upper(),
+            "warning": "NSE-grade market data adapter is selected but not configured.",
+        }
+
+
 def get_market_data_provider() -> MarketDataProvider:
     provider = get_settings().market_data_provider
     if provider == "yahoo":
         return YahooMarketDataProvider()
-    if provider == "broker":
+    if provider in {"broker", "dhan"}:
         return FutureBrokerMarketDataProvider()
+    if provider == "nse":
+        return FutureNseMarketDataProvider()
     raise RuntimeError(f"Unsupported market data provider: {provider}")

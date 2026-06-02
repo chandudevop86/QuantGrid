@@ -15,10 +15,18 @@ MIN_RISK_REWARD = float(os.getenv("SIGNAL_MIN_RISK_REWARD", "1.5"))
 MIN_SIGNAL_SCORE = float(os.getenv("SIGNAL_MIN_SCORE", "7.0"))
 MAX_CANDLE_AGE_SECONDS = validation_settings().reject_after_seconds
 LIVE_SOURCE = "yahoo-finance"
+DEMO_SOURCES = {"yahoo-finance", "sample-fallback", "stored-live-cache"}
+
+
+def _is_usable_market_source(source: str | None) -> bool:
+    value = str(source or "").lower()
+    return bool(value) and value not in {"sample-fallback", "stored-live-cache"}
 
 
 def data_source_tag(source: str | None) -> str:
-    return "live" if source == LIVE_SOURCE else "cached"
+    if source == LIVE_SOURCE:
+        return "demo"
+    return "live" if _is_usable_market_source(source) else "cached"
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -288,11 +296,11 @@ def validate_signals(
     source_tag = data_source_tag(candle_source)
     latest = _latest_candle(candles)
     candle_validation = validate_live_candle(candles, source=candle_source, mode="paper")
-    if candle_source != LIVE_SOURCE or latest is None or not candle_validation.valid_for_analysis:
+    if not _is_usable_market_source(candle_source) or latest is None or not candle_validation.valid_for_analysis:
         return [], source_tag
 
     price_response = get_price(symbol)
-    if price_response.get("source") != LIVE_SOURCE:
+    if not _is_usable_market_source(price_response.get("source")):
         return [], data_source_tag(price_response.get("source"))
 
     market_price = price_response.get("price")
@@ -352,8 +360,8 @@ def diagnose_signal_run(
 
     if latest is None:
         return ["No candle data available for diagnostics."]
-    if candle_source != LIVE_SOURCE:
-        diagnostics.append(f"Market data source is {source_tag}; validator requires live yahoo-finance candles.")
+    if not _is_usable_market_source(candle_source):
+        diagnostics.append(f"Market data source is {source_tag}; validator requires a usable market data provider.")
     diagnostics.extend(validation.diagnostics)
     diagnostics.extend(validation.warnings)
     if not validation.valid:
@@ -380,7 +388,7 @@ def diagnose_signal_run(
 
     price_response = get_price(symbol)
     market_price = price_response.get("price")
-    if price_response.get("source") != LIVE_SOURCE:
+    if not _is_usable_market_source(price_response.get("source")):
         diagnostics.append("Live market price is unavailable; signal cannot be market-aligned.")
     if not _finite_number(market_price):
         diagnostics.append("Market price is not a finite number.")

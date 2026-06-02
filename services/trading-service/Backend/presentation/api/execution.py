@@ -118,7 +118,7 @@ def _broker_session_valid(settings: Any) -> bool:
 
 def _market_aligned(signal: StrategySignal) -> bool:
     price_response = get_price(signal.symbol)
-    if price_response.get("source") != "yahoo-finance":
+    if price_response.get("source") in {"sample-fallback", "stored-live-cache"}:
         return False
     market_price = price_response.get("price")
     if market_price is None or float(market_price) <= 0:
