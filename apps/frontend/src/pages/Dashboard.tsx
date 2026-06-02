@@ -200,6 +200,14 @@ export default function Dashboard() {
   const backtest = operations?.backtest_context;
   const liveTrading = risk?.live_trading_enabled || risk?.execution_mode === "LIVE";
   const marketStatusLabel = getMarketStatusLabel(market);
+  const feedBadge =
+    marketProvider?.feed_status === "LIVE FEED"
+      ? "🟢 LIVE FEED"
+      : marketProvider?.feed_status === "DELAYED FEED"
+        ? "🟡 DELAYED FEED"
+        : marketProvider?.feed_status === "FEED DOWN"
+          ? "🔴 FEED DOWN"
+          : "⚫ DEMO/YAHOO MODE";
 
   const healthItems = useMemo(
     () => [
@@ -336,25 +344,25 @@ export default function Dashboard() {
             <MetricCard
               label="Market Provider"
               value={marketProvider?.provider_name ?? marketProvider?.provider ?? "Unknown"}
-              helper={`${marketProvider?.live_suitable ? "Live suitable" : "Paper/demo only"} - ${marketProvider?.fresh ? "Fresh" : "Stale"}`}
+              helper={`${feedBadge} - ${marketProvider?.cache_status ?? "cache unknown"}`}
               tone={marketProvider?.live_suitable && marketProvider?.fresh ? "good" : "warn"}
             />
             <MetricCard
               label="Provider Fetch"
               value={marketProvider?.fresh ? "Fresh" : "Stale"}
-              helper={marketProvider?.latest_fetch_at ? `Latest ${new Date(marketProvider.latest_fetch_at).toLocaleTimeString()}` : "No fetch yet"}
+              helper={marketProvider?.last_tick_time ? `Last tick ${new Date(marketProvider.last_tick_time).toLocaleTimeString()}` : "No tick yet"}
               tone={marketProvider?.fresh ? "good" : "warn"}
+            />
+            <MetricCard
+              label="Feed Delay"
+              value={`${marketProvider?.feed_delay_seconds ?? observability?.feed_delay_seconds ?? 0}s`}
+              helper={`Cache ${marketProvider?.cache_status ?? "unknown"}`}
+              tone={(marketProvider?.feed_delay_seconds ?? observability?.feed_delay_seconds ?? 999) > 10 ? "warn" : "good"}
             />
             <MetricCard
               label="Stored Live Candles"
               value={marketStore?.candles ?? 0}
               helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
-            />
-            <MetricCard
-              label="Feed Delay"
-              value={`${observability?.feed_delay_seconds ?? market?.feed_delay_seconds ?? 0}s`}
-              helper="Market data freshness"
-              tone={(observability?.feed_delay_seconds ?? 0) > 60 ? "warn" : "good"}
             />
           </div>
 

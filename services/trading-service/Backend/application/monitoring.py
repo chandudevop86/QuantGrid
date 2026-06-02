@@ -41,6 +41,31 @@ if Counter and Gauge and Histogram:
         "API request latency in seconds.",
         ("method", "path", "status_code"),
     )
+    market_data_ticks_total = Counter(
+        "market_data_ticks_total",
+        "Market data ticks received.",
+        ("provider", "symbol"),
+    )
+    market_data_provider_errors_total = Counter(
+        "market_data_provider_errors_total",
+        "Market data provider errors.",
+        ("provider", "operation"),
+    )
+    market_data_feed_delay_seconds = Gauge(
+        "market_data_feed_delay_seconds",
+        "Market data feed delay in seconds.",
+        ("provider", "symbol"),
+    )
+    market_data_cache_hits_total = Counter(
+        "market_data_cache_hits_total",
+        "Market data cache hits.",
+        ("provider", "kind"),
+    )
+    market_data_cache_misses_total = Counter(
+        "market_data_cache_misses_total",
+        "Market data cache misses.",
+        ("provider", "kind"),
+    )
 else:
     candle_validation_total = None
     candle_feed_delay_seconds = None
@@ -48,6 +73,11 @@ else:
     rejected_orders_total = None
     signal_generation_total = None
     api_request_latency_seconds = None
+    market_data_ticks_total = None
+    market_data_provider_errors_total = None
+    market_data_feed_delay_seconds = None
+    market_data_cache_hits_total = None
+    market_data_cache_misses_total = None
 
 
 def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
@@ -75,3 +105,24 @@ def observe_signal_generation(strategy: str | None, status: str) -> None:
 def observe_api_request(method: str, path: str, status_code: int, latency_seconds: float) -> None:
     if api_request_latency_seconds is not None:
         api_request_latency_seconds.labels(method=method, path=path, status_code=str(status_code)).observe(latency_seconds)
+
+
+def observe_market_data_tick(provider: str, symbol: str) -> None:
+    if market_data_ticks_total is not None:
+        market_data_ticks_total.labels(provider=provider, symbol=symbol.upper()).inc()
+
+
+def observe_market_data_error(provider: str, operation: str) -> None:
+    if market_data_provider_errors_total is not None:
+        market_data_provider_errors_total.labels(provider=provider, operation=operation).inc()
+
+
+def observe_market_data_delay(provider: str, symbol: str, delay_seconds: int | float | None) -> None:
+    if market_data_feed_delay_seconds is not None and delay_seconds is not None:
+        market_data_feed_delay_seconds.labels(provider=provider, symbol=symbol.upper()).set(float(delay_seconds))
+
+
+def observe_market_data_cache(provider: str, kind: str, hit: bool) -> None:
+    metric = market_data_cache_hits_total if hit else market_data_cache_misses_total
+    if metric is not None:
+        metric.labels(provider=provider, kind=kind).inc()

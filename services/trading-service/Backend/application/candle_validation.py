@@ -276,7 +276,8 @@ def validate_live_candle(
 
     if mode == "live":
         source_name = str(source or "").lower()
-        if source_name == "yahoo-finance" and os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE", "false").strip().lower() not in {"1", "true", "yes"}:
+        allow_yahoo_live = os.getenv("QUANTGRID_ALLOW_YAHOO_LIVE") or os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE")
+        if source_name in {"yahoo", "yahoo-finance", "demo"} and str(allow_yahoo_live or "false").strip().lower() not in {"1", "true", "yes"}:
             diagnostics.append("Yahoo data is paper/demo only and is not allowed for live execution.")
             result = CandleValidationResult(
                 valid=False,

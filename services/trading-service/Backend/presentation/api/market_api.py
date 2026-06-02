@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from Backend.application.candle_validation import validate_live_candle
+from Backend.application.market_data_service import get_market_data_service
 from Backend.application.market_data_store import (
     latest_candles,
     latest_price_tick,
@@ -77,7 +78,7 @@ def _provider_status_from_validation(provider: Any, validation: Any | None = Non
 
 def _ensure_live_provider_allowed(source: str) -> None:
     settings = get_settings()
-    if settings.live_trading_enabled and source == "yahoo-finance" and not settings.allow_yahoo_for_live:
+    if settings.live_trading_enabled and source in {"yahoo-finance", "yahoo", "demo"} and not settings.allow_yahoo_for_live:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Yahoo market data is paper/demo only. Configure QUANTGRID_MARKET_DATA_PROVIDER=broker for live trading.",
@@ -222,11 +223,20 @@ def get_price(
     symbol: str = "NIFTY",
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
+    return get_ltp(symbol, _role=_role)
+
+
+@router.get("/ltp/{symbol}")
+def get_ltp(
+    symbol: str,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
     try:
-        provider = get_market_data_provider()
-        payload = provider.get_latest_price(symbol)
-        _ensure_live_provider_allowed(str(payload.get("source")))
-        price = payload.get("price")
+        settings = get_settings()
+        service = get_market_data_service()
+        payload = service.get_ltp(symbol, mode="live" if settings.live_trading_enabled else "paper")
+        _ensure_live_provider_allowed(str(payload.get("provider")))
+        price = payload.get("ltp", payload.get("price"))
         meta_symbol = payload.get("market_symbol", _market_symbol(symbol))
         change_pct = None
         if "change_pct" in payload:
@@ -236,10 +246,11 @@ def get_price(
             **payload,
             "symbol": symbol.upper(),
             "market_symbol": meta_symbol,
+            "ltp": round(float(price), 2) if price is not None else None,
             "price": round(float(price), 2) if price is not None else None,
             "change_pct": change_pct,
             "timestamp": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
-            "provider_warning": payload.get("provider_warning") or provider.warning,
+            "provider_warning": payload.get("provider_warning"),
         }
         if payload["price"] is None or float(payload["price"]) <= 0:
             raise RuntimeError("Market provider returned zero or missing price")
@@ -247,6 +258,8 @@ def get_price(
         store_price_tick(payload)
         return payload
     except Exception as exc:
+        if get_settings().live_trading_enabled:
+            raise _market_data_unavailable(exc) from exc
         cached = latest_price_tick(symbol)
         if cached:
             cached["warning"] = "Live market data provider is unavailable; served latest stored live price."
@@ -255,8 +268,10 @@ def get_price(
             raise _market_data_unavailable(exc) from exc
         latest = _sample_candles(symbol, limit=1)[-1]
         return {
+            "provider": "sample",
             "symbol": symbol.upper(),
             "market_symbol": _market_symbol(symbol),
+            "ltp": latest["close"],
             "price": latest["close"],
             "change_pct": None,
             "timestamp": latest["timestamp"],
@@ -325,15 +340,20 @@ def get_candles(
     limit = max(1, min(limit, 500))
 
     try:
-        provider = get_market_data_provider()
-        candles = provider.get_candles(symbol, interval, limit)
-        if not candles:
-            raise RuntimeError("No complete candles returned")
-        source = provider.provider_name
-        _ensure_live_provider_allowed(source)
-        market_symbol = _market_symbol(symbol)
-        provider_fetched_at = getattr(provider, "latest_fetch_at", None) or datetime.now(timezone.utc).isoformat()
         settings = get_settings()
+        service = get_market_data_service()
+        service_payload = service.get_candles(
+            symbol,
+            interval,
+            period,
+            limit,
+            mode="live" if settings.live_trading_enabled else "paper",
+        )
+        candles = list(service_payload.get("candles", []))
+        source = service_payload.get("provider_name") or service_payload.get("provider")
+        _ensure_live_provider_allowed(str(source))
+        market_symbol = _market_symbol(symbol)
+        provider_fetched_at = service_payload.get("latest_fetch_at") or service_payload.get("fetched_at") or datetime.now(timezone.utc).isoformat()
         validation = validate_live_candle(
             candles,
             interval=interval,
@@ -351,8 +371,10 @@ def get_candles(
             "period": period,
             "source": source,
             "volume_status": _volume_status(market_symbol, candles),
-            "provider_warning": provider.warning,
+            "provider_warning": service_payload.get("provider_warning"),
             "fetched_at": provider_fetched_at,
+            "cache_status": service_payload.get("cache_status"),
+            "feed_delay_seconds": service_payload.get("feed_delay_seconds"),
             "candles": candles,
             "validation": validation.model_dump(),
         }
@@ -365,6 +387,8 @@ def get_candles(
         )
         return payload
     except Exception as exc:
+        if get_settings().live_trading_enabled:
+            raise _market_data_unavailable(exc) from exc
         cached = _stored_candle_response(symbol, interval, period, limit)
         if cached:
             return cached
@@ -440,35 +464,13 @@ def get_market_provider_status(
     limit: int = 100,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
-    provider = get_market_data_provider()
-    settings = get_settings()
-    validation = None
-    errors: list[str] = []
-    try:
-        candles = provider.get_candles(symbol, interval, max(1, min(int(limit), 500)))
-        validation = validate_live_candle(
-            candles,
-            interval=interval,
-            mode="live" if settings.live_trading_enabled else "paper",
-            source=provider.provider_name,
-            provider_fetched_at=getattr(provider, "latest_fetch_at", None),
-        )
-        if not candles:
-            errors.append("missing candles")
-        if provider.provider_name == "yahoo-finance" and settings.live_trading_enabled and not settings.allow_yahoo_for_live:
-            errors.append("Yahoo is not allowed for live trading")
-    except Exception as exc:
-        errors.append(str(exc))
-    payload = _provider_status_from_validation(provider, validation)
-    payload.update(
-        {
-            "configured_provider": settings.market_data_provider,
-            "live_mode": settings.live_trading_enabled,
-            "allow_yahoo_for_live": settings.allow_yahoo_for_live,
-            "errors": errors,
-            "live_suitable": bool(payload.get("live_suitable")) and not errors,
-            "fresh": bool(payload.get("fresh")) and not errors,
-            "stale": bool(errors) or bool(payload.get("stale")),
-        }
-    )
-    return payload
+    return get_market_data_service().health(symbol=symbol, interval=interval)
+
+
+@router.get("/feed/health")
+def get_market_feed_health(
+    symbol: str = "NIFTY",
+    interval: str = "1m",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    return get_market_data_service().health(symbol=symbol, interval=interval)
