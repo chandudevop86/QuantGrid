@@ -4,7 +4,7 @@ const fallbackBaseURL =
   typeof window === "undefined"
     ? "http://localhost:8000"
     : import.meta.env.DEV
-      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      ? `${window.location.origin}/api`
       : `${window.location.origin}/api`;
 
 const configuredBaseURL =
