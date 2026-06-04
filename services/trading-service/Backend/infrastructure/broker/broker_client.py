@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from Backend.core.config import get_settings
+from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.domain.models.order import Order
 
 
@@ -126,9 +127,15 @@ def broker_client_for_mode(mode: str) -> BrokerClient:
     settings = get_settings()
     if mode == "paper":
         return _PAPER_BROKER
+    if mode != "live":
+        raise RuntimeError("Invalid broker mode.")
+    if not settings.live_trading_enabled:
+        raise RuntimeError("Live broker is disabled. Set QUANTGRID_ENABLE_LIVE_TRADING=true to enable live broker integration.")
     if not settings.broker_live_enabled:
         raise RuntimeError("Live broker is disabled. Set BROKER_LIVE_ENABLED=true to enable live broker integration.")
-    if str(settings.broker_provider or "").lower() == "dhan":
+    if not settings.broker_configured:
+        raise RuntimeError("Live broker requires broker provider and credentials.")
+    if _dhan_configured(settings):
         from Backend.infrastructure.broker.dhan_order_adapter import DhanBrokerClient
 
         return DhanBrokerClient()
@@ -146,3 +153,12 @@ def _order_metadata(order: Order) -> dict[str, Any]:
         "target_price": order.target_price,
         "metadata": order.metadata,
     }
+
+
+def _dhan_configured(settings: Any) -> bool:
+    provider = str(getattr(settings, "broker_provider", "") or "").strip().lower()
+    credentials = dhan_credentials()
+    return bool(
+        provider == "dhan"
+        or (credentials.get("client_id") and credentials.get("access_token"))
+    )

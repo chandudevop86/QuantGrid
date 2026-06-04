@@ -39,6 +39,8 @@ def init_order_store() -> None:
         "target": "ALTER TABLE orders ADD COLUMN target FLOAT",
         "trailing_stop_loss": "ALTER TABLE orders ADD COLUMN trailing_stop_loss FLOAT",
         "trailing_stop_pct": "ALTER TABLE orders ADD COLUMN trailing_stop_pct FLOAT",
+        "execution_mode": "ALTER TABLE orders ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'paper' NOT NULL",
+        "broker_status": "ALTER TABLE orders ADD COLUMN broker_status VARCHAR(80)",
     }
     with engine.begin() as connection:
         for column, statement in additions.items():
@@ -63,8 +65,10 @@ def create_order(payload: dict[str, Any]) -> dict[str, Any]:
         "target": _float_or_none(payload.get("target") if "target" in payload else payload.get("target_price")),
         "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
         "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
+        "execution_mode": _validate_execution_mode(str(payload.get("execution_mode") or "paper")),
         "status": _validate_status(str(payload.get("status") or "requested")),
         "status_reason": payload.get("status_reason"),
+        "broker_status": payload.get("broker_status"),
         "created_at": str(payload.get("created_at") or now),
         "updated_at": str(payload.get("updated_at") or now),
     }
@@ -107,6 +111,7 @@ def transition_order(
     *,
     status_reason: str | None = None,
     broker_order_id: str | None = None,
+    broker_status: str | None = None,
     entry_price: float | None = None,
 ) -> tuple[dict[str, Any], str]:
     init_order_store()
@@ -124,6 +129,8 @@ def transition_order(
             row.status_reason = status_reason
         if broker_order_id is not None:
             row.broker_order_id = broker_order_id
+        if broker_status is not None:
+            row.broker_status = broker_status
         if entry_price is not None:
             row.entry_price = float(entry_price)
         row.updated_at = utc_now()
@@ -169,8 +176,10 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "target": record.target,
         "trailing_stop_loss": record.trailing_stop_loss,
         "trailing_stop_pct": record.trailing_stop_pct,
+        "execution_mode": record.execution_mode,
         "status": record.status,
         "status_reason": record.status_reason,
+        "broker_status": record.broker_status,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }
@@ -180,6 +189,13 @@ def _validate_status(status: str) -> str:
     normalized = status.strip().lower()
     if normalized not in ORDER_STATUSES:
         raise ValueError(f"unsupported order status: {status}")
+    return normalized
+
+
+def _validate_execution_mode(mode: str) -> str:
+    normalized = mode.strip().lower()
+    if normalized not in {"paper", "live"}:
+        raise ValueError(f"unsupported execution mode: {mode}")
     return normalized
 
 

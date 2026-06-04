@@ -78,6 +78,7 @@ async def cancel_order(
         next_status,
         status_reason=broker_result.message or f"Broker cancel status: {broker_result.status}",
         broker_order_id=broker_result.broker_order_id,
+        broker_status=broker_result.status,
         entry_price=broker_result.price,
     )
     _audit_transition(db, request, actor, updated, previous, broker_result.to_dict())

@@ -1,0 +1,9 @@
+{
+  "checked_orders": 1,
+  "checked_positions": 2,
+  "errors": [],
+  "fixed": 2,
+  "last_run_at": "2026-06-04T08:41:42.714534+00:00",
+  "mismatches": 2,
+  "needs_review": 0
+}

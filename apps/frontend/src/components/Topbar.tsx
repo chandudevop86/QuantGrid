@@ -34,6 +34,7 @@ export default function Topbar() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
+  const [brokerCircuit, setBrokerCircuit] = useState<any>(null);
   const insecureHttp = isInsecureRemoteHttp();
 
   useEffect(() => {
@@ -62,6 +63,7 @@ export default function Topbar() {
   useEffect(() => {
     if (!isAuthenticated) {
       setMarketStatus("CLOSED");
+      setBrokerCircuit(null);
       return;
     }
 
@@ -69,8 +71,12 @@ export default function Topbar() {
 
     const loadMarketStatus = async () => {
       try {
-        const response = await api.operationsStatus();
+        const [response, circuit] = await Promise.all([
+          api.operationsStatus(),
+          api.brokerCircuitBreakerStatus().catch(() => null),
+        ]);
         if (active) setMarketStatus(getMarketStatusLabel(response?.market_status));
+        if (active) setBrokerCircuit(circuit);
       } catch {
         if (active) setMarketStatus("CLOSED");
       }
@@ -138,6 +144,11 @@ export default function Topbar() {
       {insecureHttp && (
         <div className="topbar-https-warning" role="alert">
           Connection is not secure. Enable HTTPS before live trading.
+        </div>
+      )}
+      {brokerCircuit?.active && (
+        <div className="topbar-broker-circuit-warning" role="alert">
+          BROKER CIRCUIT BREAKER ACTIVE
         </div>
       )}
       <div className="topbar-actions">

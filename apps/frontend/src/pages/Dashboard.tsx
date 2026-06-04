@@ -382,13 +382,13 @@ export default function Dashboard() {
             <MetricCard
               label="Market Provider"
               value={marketProvider?.provider_name ?? marketProvider?.provider ?? "Unknown"}
-              helper={`${feedBadge} - ${marketProvider?.cache_status ?? "cache unknown"}`}
+              helper={`${marketProvider?.suitability ?? (marketProvider?.live_suitable ? "live" : "paper")} - ${feedBadge}`}
               tone={marketProvider?.live_suitable && marketProvider?.fresh ? "good" : "warn"}
             />
             <MetricCard
               label="Provider Fetch"
               value={marketProvider?.fresh ? "Fresh" : "Stale"}
-              helper={marketProvider?.last_tick_time ? `Last tick ${new Date(marketProvider.last_tick_time).toLocaleTimeString()}` : "No tick yet"}
+              helper={marketProvider?.latest_fetch_time || marketProvider?.latest_fetch_at || marketProvider?.last_tick_time ? `Latest ${new Date(marketProvider.latest_fetch_time ?? marketProvider.latest_fetch_at ?? marketProvider.last_tick_time).toLocaleTimeString()}` : "No fetch yet"}
               tone={marketProvider?.fresh ? "good" : "warn"}
             />
             <MetricCard

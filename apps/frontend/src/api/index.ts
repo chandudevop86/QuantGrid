@@ -43,6 +43,7 @@ export const api = {
       .then((res) => res.data)
       .catch(() => API.get("/health").then((res) => res.data)),
   brokerStatus: () => API.get("/broker/status").then((res) => res.data),
+  brokerCircuitBreakerStatus: () => API.get("/broker/circuit-breaker/status").then((res) => res.data),
   dhanLogin: (payload: { client_id: string; access_token: string; persist?: boolean }) =>
     API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),

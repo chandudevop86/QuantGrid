@@ -49,6 +49,38 @@ def test_market_data_service_selects_all_supported_providers(monkeypatch):
     assert select_market_data_provider("angel").provider_name == "angel"
 
 
+def test_market_data_provider_interface_aliases(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    reset_backend_modules()
+
+    from Backend.domain.market_data.provider import MarketDataProvider
+
+    class FakeProvider(MarketDataProvider):
+        provider_name = "fake"
+
+        def get_ltp(self, symbol: str):
+            return {"symbol": symbol.upper(), "price": 100}
+
+        def get_candles(self, symbol: str, interval: str, period: str, limit: int):
+            return []
+
+        def subscribe_ticks(self, symbols):
+            return None
+
+        def normalize_symbol(self, symbol: str):
+            return symbol.upper()
+
+        def health_check(self):
+            return {"provider": self.provider_name, "healthy": True}
+
+    provider = FakeProvider()
+    assert provider.get_latest_price("nifty")["price"] == 100
+    assert provider.get_market_status("nifty")["symbol"] == "NIFTY"
+
+
 def test_nse_market_data_provider_placeholder(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 
@@ -142,7 +174,39 @@ def test_market_provider_status_endpoint_reports_provider(monkeypatch):
 
     assert result["provider_name"] == "fake-nse"
     assert result["paper_suitable"] is True
+    assert result["suitability"] == "live"
+    assert result["freshness"] == "fresh"
+    assert result["latest_fetch_time"] == "2026-05-29T09:16:00+05:30"
     assert "latest_fetch_at" in result
+
+
+def test_market_provider_status_reports_paper_suitability(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    class FakeService:
+        def health(self, symbol: str = "NIFTY", interval: str = "1m"):
+            return {
+                "provider_name": "yahoo",
+                "provider": "yahoo",
+                "paper_suitable": True,
+                "live_suitable": False,
+                "latest_fetch_at": None,
+                "fresh": False,
+                "stale": True,
+            }
+
+    monkeypatch.setattr(market_api, "get_market_data_service", lambda: FakeService())
+    result = market_api.get_market_provider_status(_role="viewer")
+
+    assert result["suitability"] == "paper"
+    assert result["freshness"] == "stale"
 
 
 def test_provider_health_failure_reports_feed_down(monkeypatch):
@@ -323,3 +387,59 @@ def test_live_candle_validation_rejects_missing_candles():
     assert result.valid_for_execution is False
     assert result.missing_candles > 2
     assert any("Missing candle count" in item for item in result.diagnostics)
+
+
+def test_live_candle_validation_rejects_sample_fallback():
+    from Backend.application.candle_validation import validate_live_candle
+
+    now = datetime(2026, 6, 2, 9, 16, tzinfo=ZoneInfo("Asia/Kolkata"))
+    result = validate_live_candle(
+        [{"timestamp": "2026-06-02T09:15:00+05:30", "exchange_timezone": "Asia/Kolkata", "close": 100}],
+        mode="live",
+        source="sample-fallback",
+        now=now,
+    )
+
+    assert result.valid_for_execution is False
+    assert any("paper/demo only" in item for item in result.diagnostics)
+
+
+def test_live_market_data_service_rejects_demo_provider(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.application.market_data_service import MarketDataService
+    from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
+
+    class DemoProvider(MarketDataProvider):
+        provider_name = "demo-feed"
+        live_suitable = False
+        paper_suitable = True
+
+        def get_ltp(self, symbol: str):
+            return {"symbol": symbol.upper(), "price": 100}
+
+        def get_candles(self, symbol: str, interval: str, period: str, limit: int):
+            return []
+
+        def subscribe_ticks(self, symbols):
+            return None
+
+        def normalize_symbol(self, symbol: str):
+            return symbol.upper()
+
+        def health_check(self):
+            return self.status_payload() | {"healthy": True, "configured": True}
+
+    service = MarketDataService(DemoProvider())
+
+    try:
+        service.get_ltp("NIFTY", mode="live")
+    except MarketDataProviderError as exc:
+        assert "demo/paper only" in str(exc)
+    else:
+        raise AssertionError("live mode must reject demo providers")

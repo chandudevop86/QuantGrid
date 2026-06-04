@@ -39,19 +39,31 @@ def test_order_store_creates_and_transitions_order(monkeypatch):
     from Backend.application import order_store
 
     created = order_store.create_order(
-        {"symbol": "NIFTY", "side": "BUY", "quantity": 25, "entry_price": 100, "status": "requested"}
+        {
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "broker_status": "created",
+            "status": "requested",
+        }
     )
     assert created["local_order_id"].startswith("ORD-")
     assert created["status"] == "requested"
+    assert created["execution_mode"] == "live"
+    assert created["broker_status"] == "created"
 
     updated, previous = order_store.transition_order(
         created["local_order_id"],
         "risk_approved",
         status_reason="ok",
+        broker_status="risk_ok",
     )
 
     assert previous == "requested"
     assert updated["status"] == "risk_approved"
+    assert updated["broker_status"] == "risk_ok"
     assert order_store.get_order(created["local_order_id"])["status"] == "risk_approved"
     assert len(order_store.list_orders()) == 1
 
@@ -84,6 +96,31 @@ def test_order_cancel_api_transitions_and_audits(monkeypatch):
     assert result["status"] == "cancelled"
     assert audit.target_id == created["local_order_id"]
     assert audit.status == "cancelled"
+
+
+def test_order_read_apis_return_lifecycle_fields(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import order_store
+    from Backend.presentation.api import orders_api
+
+    created = order_store.create_order(
+        {
+            "symbol": "NIFTY",
+            "side": "SELL",
+            "quantity": 50,
+            "entry_price": 101,
+            "execution_mode": "paper",
+            "broker_status": "confirmed",
+            "status": "filled",
+        }
+    )
+
+    listed = orders_api.get_orders(_role="viewer")
+    detail = orders_api.get_order_by_id(created["local_order_id"], _role="viewer")
+
+    assert any(order["local_order_id"] == created["local_order_id"] for order in listed["orders"])
+    assert detail["execution_mode"] == "paper"
+    assert detail["broker_status"] == "confirmed"
 
 
 def test_execution_does_not_create_position_when_broker_not_confirmed(monkeypatch):
@@ -157,3 +194,5 @@ def test_execution_does_not_create_position_when_broker_not_confirmed(monkeypatc
     orders = order_store.list_orders()
     assert orders[0]["status"] == "rejected"
     assert orders[0]["broker_order_id"] == "BRK-REJECT"
+    assert orders[0]["broker_status"] == "rejected"
+    assert orders[0]["execution_mode"] == "paper"

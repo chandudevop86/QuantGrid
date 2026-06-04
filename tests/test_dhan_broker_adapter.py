@@ -49,8 +49,39 @@ def test_dhan_place_order_requires_broker_confirmed_order_id(monkeypatch):
 
     assert result.broker_order_id == "DHAN-1"
     assert result.status == "open"
-    assert result.confirmed is True
+    assert result.confirmed is False
     assert result.metadata["raw_safe"]["access-token"] == "[redacted]"
+
+
+def test_dhan_get_order_status_confirms_normalized_status(monkeypatch):
+    _configure(monkeypatch)
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    def fake_urlopen(request, timeout):
+        assert request.get_method() == "GET"
+        return _Response(
+            {
+                "data": {
+                    "orderId": "DHAN-1",
+                    "orderStatus": "TRADED",
+                    "tradingSymbol": "NIFTY",
+                    "transactionType": "BUY",
+                    "quantity": 25,
+                    "averageTradedPrice": 101.5,
+                    "access_token": "secret",
+                }
+            }
+        )
+
+    monkeypatch.setattr(dhan_order_adapter, "urlopen", fake_urlopen)
+
+    result = asyncio.run(dhan_order_adapter.DhanBrokerClient().get_order_status("DHAN-1"))
+
+    assert result.broker_order_id == "DHAN-1"
+    assert result.status == "filled"
+    assert result.confirmed is True
+    assert result.price == 101.5
+    assert result.metadata["raw_safe"]["data"]["access_token"] == "[redacted]"
 
 
 @pytest.mark.parametrize(
@@ -142,3 +173,26 @@ def test_dhan_positions_and_holdings_are_sanitized(monkeypatch):
 
     assert positions[0]["access_token"] == "[redacted]"
     assert holdings[0]["authorization"] == "[redacted]"
+
+
+def test_live_broker_resolver_requires_live_feature_flags(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setenv("BROKER_LIVE_ENABLED", "true")
+    monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
+    reset_backend_modules()
+    from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+
+    with pytest.raises(RuntimeError, match="QUANTGRID_ENABLE_LIVE_TRADING"):
+        broker_client_for_mode("live")
+
+
+def test_live_broker_resolver_selects_dhan_when_credentials_exist(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.delenv("QUANTGRID_BROKER_PROVIDER", raising=False)
+    monkeypatch.setenv("QUANTGRID_ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("BROKER_LIVE_ENABLED", "true")
+    reset_backend_modules()
+    from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+    from Backend.infrastructure.broker.dhan_order_adapter import DhanBrokerClient
+
+    assert isinstance(broker_client_for_mode("live"), DhanBrokerClient)

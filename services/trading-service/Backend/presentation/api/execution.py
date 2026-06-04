@@ -6,6 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from Backend.application.candle_validation import validate_live_candle
+from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
 from Backend.application.dto import serialize_signal
 from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
@@ -120,6 +121,9 @@ def _live_guardrail_failure(
         return "Live trading requires trading-grade market data; Yahoo is paper/demo only."
     if kill_switch_status()["active"]:
         return "Trading halted by kill switch."
+    circuit = broker_circuit_status()
+    if circuit.get("active"):
+        return f"Broker circuit breaker active: {circuit.get('reason') or 'broker unstable'}"
     market_validation = validate_live_candle(candles_1m, interval="1m", mode="live")
     if not market_validation.valid_for_execution:
         return f"Live trading requires fresh market data: {market_validation.market_status}."
@@ -276,6 +280,7 @@ def _audit_order_transition(
 def _create_lifecycle_order(
     order: Any,
     *,
+    execution_mode: str,
     db: Session | None,
     request: Request | None,
     actor: User | None,
@@ -290,6 +295,7 @@ def _create_lifecycle_order(
             "target": order.target_price,
             "trailing_stop_loss": order.trailing_stop_loss,
             "trailing_stop_pct": order.trailing_stop_pct,
+            "execution_mode": execution_mode,
             "status": "requested",
             "status_reason": "Order request accepted for risk review.",
         }
@@ -307,6 +313,7 @@ def _transition_lifecycle_order(
     actor: User | None,
     reason: str | None = None,
     broker_order_id: str | None = None,
+    broker_status: str | None = None,
     entry_price: float | None = None,
     broker_response: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
@@ -317,6 +324,7 @@ def _transition_lifecycle_order(
         status_value,
         status_reason=reason,
         broker_order_id=broker_order_id,
+        broker_status=broker_status,
         entry_price=entry_price,
     )
     _audit_order_transition(db, request, actor, updated, previous, broker_response)
@@ -637,7 +645,7 @@ async def _submit_paper_signal(
         constraints,
         requested_quantity(signal),
     )
-    lifecycle_order = _create_lifecycle_order(order, db=db, request=request, actor=actor)
+    lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
     lifecycle_order = _transition_lifecycle_order(
         lifecycle_order,
         "risk_approved",
@@ -665,6 +673,7 @@ async def _submit_paper_signal(
             actor=actor,
             reason="Broker accepted submission.",
             broker_order_id=broker_order.broker_order_id,
+            broker_status=broker_order.status,
             entry_price=broker_order.price,
             broker_response=broker_order.to_dict(),
         )
@@ -700,6 +709,7 @@ async def _submit_paper_signal(
             actor=actor,
             reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
             broker_order_id=broker_status.broker_order_id,
+            broker_status=broker_status.status,
             entry_price=broker_status.price,
             broker_response=broker_status.to_dict(),
         )
@@ -731,6 +741,7 @@ async def _submit_paper_signal(
         actor=actor,
         reason=f"Broker status confirmed: {broker_status.status}",
         broker_order_id=broker_status.broker_order_id,
+        broker_status=broker_status.status,
         entry_price=broker_status.price or signal.entry_price,
         broker_response=broker_status.to_dict(),
     )
@@ -1023,6 +1034,31 @@ async def place_order(
         metadata={"mode": execution_mode, "strategy": signal.strategy_name},
     )
 
+    if execution_mode == "live":
+        settings = get_settings()
+        if not getattr(settings, "live_trading_enabled", False):
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "live_trading_disabled"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading is disabled. Paper trading only.")
+        if not getattr(settings, "broker_configured", False):
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "broker_not_configured"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
+
     candles_1m = latest_candles(signal.symbol, "1m", 100)
     if not candles_1m:
         try:
@@ -1173,7 +1209,7 @@ async def place_order(
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
         order = engine.order_from_signal(signal)
-        lifecycle_order = _create_lifecycle_order(order, db=db, request=request, actor=actor)
+        lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "risk_approved",
@@ -1201,11 +1237,19 @@ async def place_order(
                 actor=actor,
                 reason="Broker accepted submission.",
                 broker_order_id=broker_order.broker_order_id,
+                broker_status=broker_order.status,
                 entry_price=broker_order.price,
                 broker_response=broker_order.to_dict(),
             )
             broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
         except Exception as exc:
+            record_broker_failure(
+                reason=str(exc),
+                db=db,
+                actor=actor,
+                request=request,
+                metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
+            )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "failed",
@@ -1231,6 +1275,19 @@ async def place_order(
             alert_execution_event(result)
             return result
         if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+            record_broker_failure(
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                db=db,
+                actor=actor,
+                request=request,
+                metadata={
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "phase": "broker_confirm",
+                    "broker_order_id": broker_status.broker_order_id,
+                    "broker_status": broker_status.status,
+                },
+            )
             mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
@@ -1240,6 +1297,7 @@ async def place_order(
                 actor=actor,
                 reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
                 broker_order_id=broker_status.broker_order_id,
+                broker_status=broker_status.status,
                 entry_price=broker_status.price,
                 broker_response=broker_status.to_dict(),
             )
@@ -1272,6 +1330,7 @@ async def place_order(
             actor=actor,
             reason=f"Broker status confirmed: {broker_status.status}",
             broker_order_id=broker_status.broker_order_id,
+            broker_status=broker_status.status,
             entry_price=broker_status.price or signal.entry_price,
             broker_response=broker_status.to_dict(),
         )

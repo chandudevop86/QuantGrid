@@ -86,8 +86,10 @@ class OrderRecord(Base):
     target: Mapped[float | None] = mapped_column(Float, nullable=True)
     trailing_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     trailing_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="paper")
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    broker_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
 

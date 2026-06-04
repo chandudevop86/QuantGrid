@@ -20,6 +20,9 @@ class MarketDataProvider(ABC):
     def get_ltp(self, symbol: str) -> dict[str, Any]:
         raise NotImplementedError
 
+    def get_latest_price(self, symbol: str) -> dict[str, Any]:
+        return self.get_ltp(symbol)
+
     @abstractmethod
     def get_candles(self, symbol: str, interval: str, period: str, limit: int) -> list[dict[str, Any]]:
         raise NotImplementedError
@@ -35,6 +38,9 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def health_check(self) -> dict[str, Any]:
         raise NotImplementedError
+
+    def get_market_status(self, symbol: str) -> dict[str, Any]:
+        return self.health_check() | {"symbol": symbol.upper()}
 
     def mark_fetch(self) -> str:
         self.latest_fetch_at = datetime.now(timezone.utc).isoformat()

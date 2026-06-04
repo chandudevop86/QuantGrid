@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
+from Backend.application.broker_circuit_breaker import broker_circuit_status, reset_broker_circuit
 from Backend.application.job_queue import enqueue_job
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -46,6 +47,7 @@ def _float_env(name: str, default: float) -> float:
 
 
 def _live_readiness(settings) -> dict[str, object]:
+    circuit = broker_circuit_status()
     app_managed_stops = _truthy(os.getenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS"))
     exit_monitor_enabled = _truthy(os.getenv("QUANTGRID_EXIT_MONITOR_ENABLED"))
     exit_monitor_mode = str(os.getenv("QUANTGRID_EXIT_MONITOR_MODE") or "paper").strip().lower()
@@ -59,6 +61,7 @@ def _live_readiness(settings) -> dict[str, object]:
         "exit_monitor_interval_seconds": exit_monitor_interval,
         "exit_monitor_live_ready": exit_monitor_live_ready,
         "stop_protection_ready": stop_protection_ready,
+        "broker_circuit_breaker_active": bool(circuit.get("active")),
         "live_ready": bool(
             settings.live_trading_enabled
             and settings.broker_live_enabled
@@ -66,6 +69,7 @@ def _live_readiness(settings) -> dict[str, object]:
             and settings.risk_configured
             and settings.audit_logging_enabled
             and stop_protection_ready
+            and not circuit.get("active")
         ),
     }
 
@@ -129,8 +133,9 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
     status["broker_live_enabled"] = settings.broker_live_enabled
     status["risk_configured"] = settings.risk_configured
     status["audit_logging_enabled"] = settings.audit_logging_enabled
+    status["circuit_breaker"] = broker_circuit_status()
     status["live_readiness"] = _live_readiness(settings)
-    status["real_money_orders_enabled"] = bool(settings.live_trading_enabled and settings.broker_live_enabled and settings.broker_configured)
+    status["real_money_orders_enabled"] = bool(settings.live_trading_enabled and settings.broker_live_enabled and settings.broker_configured and not status["circuit_breaker"].get("active"))
     return status
 
 
@@ -155,8 +160,9 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
     status["broker_live_enabled"] = get_settings().broker_live_enabled
     status["risk_configured"] = get_settings().risk_configured
     status["audit_logging_enabled"] = get_settings().audit_logging_enabled
+    status["circuit_breaker"] = broker_circuit_status()
     status["live_readiness"] = _live_readiness(get_settings())
-    status["real_money_orders_enabled"] = bool(get_settings().live_trading_enabled and get_settings().broker_live_enabled and get_settings().broker_configured)
+    status["real_money_orders_enabled"] = bool(get_settings().live_trading_enabled and get_settings().broker_live_enabled and get_settings().broker_configured and not status["circuit_breaker"].get("active"))
     return status
 
 
@@ -255,3 +261,28 @@ def enqueue_reconciliation_job(
 @router.get("/reconciliation/status")
 def get_reconciliation_status(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
     return reconciliation_status()
+
+
+@router.get("/circuit-breaker/status")
+def get_broker_circuit_breaker_status(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
+    return broker_circuit_status()
+
+
+@router.post("/circuit-breaker/reset")
+def reset_broker_circuit_breaker(
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+):
+    status_payload = reset_broker_circuit(actor=actor.username)
+    write_audit_log(
+        db,
+        action="broker_circuit_breaker_reset",
+        actor=actor,
+        target_type="broker",
+        target_id="live",
+        request=request,
+        metadata={"status": "reset", "reason": "Manual admin reset", "circuit_breaker": status_payload},
+    )
+    return status_payload

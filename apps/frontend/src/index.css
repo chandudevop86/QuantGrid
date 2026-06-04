@@ -327,7 +327,8 @@ select {
   color: #ffffff;
 }
 
-.topbar-live-warning {
+.topbar-live-warning,
+.topbar-broker-circuit-warning {
   min-height: 34px;
   padding: 8px 12px;
   border: 1px solid rgba(248, 113, 113, 0.62);
@@ -338,6 +339,11 @@ select {
   font-weight: 900;
   letter-spacing: 0;
   text-align: center;
+}
+
+.topbar-broker-circuit-warning {
+  background: rgba(153, 27, 27, 0.62);
+  color: #ffffff;
 }
 
 .topbar-https-warning {

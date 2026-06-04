@@ -80,10 +80,11 @@ def _provider_status_from_validation(provider: Any, validation: Any | None = Non
 
 def _ensure_live_provider_allowed(source: str) -> None:
     settings = get_settings()
-    if settings.live_trading_enabled and source in {"yahoo-finance", "yahoo", "demo"} and not settings.allow_yahoo_for_live:
+    normalized = str(source or "").strip().lower()
+    if settings.live_trading_enabled and normalized in {"yahoo-finance", "yahoo", "demo", "sample", "sample-fallback"} and not settings.allow_yahoo_for_live:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Yahoo market data is paper/demo only. Configure QUANTGRID_MARKET_DATA_PROVIDER=broker for live trading.",
+            detail="Yahoo/sample market data is paper/demo only. Configure QUANTGRID_MARKET_DATA_PROVIDER=broker for live trading.",
         )
 
 
@@ -545,7 +546,14 @@ def get_market_provider_status(
     limit: int = 100,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
-    return get_market_data_service().health(symbol=symbol, interval=interval)
+    payload = get_market_data_service().health(symbol=symbol, interval=interval)
+    suitability = "live" if payload.get("live_suitable") else "paper"
+    return {
+        **payload,
+        "suitability": suitability,
+        "latest_fetch_time": payload.get("latest_fetch_at"),
+        "freshness": "fresh" if payload.get("fresh") else "stale",
+    }
 
 
 @router.get("/feed/health")

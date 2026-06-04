@@ -156,8 +156,12 @@ class MarketDataService:
 
     def _assert_provider_allowed(self, mode: str) -> None:
         live_mode = mode == "live" or self.settings.live_trading_enabled
-        if live_mode and self.provider.provider_name == "yahoo" and not self.settings.allow_yahoo_for_live:
-            raise MarketDataProviderError("Yahoo market data is demo/paper only and cannot be used for live trading.")
+        if not live_mode:
+            return
+        if self.provider.provider_name == "yahoo" and self.settings.allow_yahoo_for_live:
+            return
+        if not self.provider.live_suitable:
+            raise MarketDataProviderError(f"{self.provider.provider_name} market data is demo/paper only and cannot be used for live trading.")
 
     def _normalize_ltp_payload(self, symbol: str, payload: dict[str, Any]) -> dict[str, Any]:
         ltp = payload.get("ltp", payload.get("price"))

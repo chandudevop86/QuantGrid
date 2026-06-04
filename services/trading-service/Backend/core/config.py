@@ -124,7 +124,6 @@ def get_settings() -> Settings:
     database_url = _database_url_from_env(environment)
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
     allow_yahoo_for_live = _truthy(os.getenv("QUANTGRID_ALLOW_YAHOO_LIVE") or os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE"))
-    broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
     broker_live_enabled = _truthy(os.getenv("BROKER_LIVE_ENABLED"))
     risk_engine_enabled = not _truthy(os.getenv("RISK_ENGINE_DISABLED")) and os.getenv("RISK_ENGINE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -140,6 +139,12 @@ def get_settings() -> Settings:
         or os.getenv("DHAN_CLIENT_ID")
         or os.getenv("ZERODHA_API_KEY")
     )
+    broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None
+    if not broker_provider and (
+        (os.getenv("QUANTGRID_BROKER_CLIENT_ID") or os.getenv("DHAN_CLIENT_ID"))
+        and (os.getenv("QUANTGRID_BROKER_ACCESS_TOKEN") or os.getenv("DHAN_ACCESS_TOKEN"))
+    ):
+        broker_provider = "dhan"
     broker_configured = bool(
         broker_provider
         and broker_token

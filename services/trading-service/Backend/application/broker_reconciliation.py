@@ -10,6 +10,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from Backend.application.paper_trade_store import DATA_DIR, list_paper_trades, update_paper_trade_status
+from Backend.application.order_store import broker_status_to_order_status, list_orders, transition_order
 from Backend.application.position_store import (
     close_open_position,
     create_open_position,
@@ -23,7 +24,7 @@ from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrde
 
 
 STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
-SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "confirmed", "open", "filled"}
+SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
 REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
 FILLED_STATUSES = {"filled", "traded", "complete", "completed", "confirmed"}
 OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
@@ -41,6 +42,7 @@ async def reconcile_broker_state(
         "checked_positions": 0,
         "mismatches": 0,
         "fixed": 0,
+        "needs_review": 0,
         "errors": [],
     }
     local_orders = _local_orders(db)
@@ -87,6 +89,12 @@ async def reconcile_broker_state(
                 broker_status=broker_order.status,
                 raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
             )
+            _transition_local_order_if_present(
+                local_order,
+                "rejected",
+                status_reason="Broker order was not found during reconciliation.",
+                broker_status=broker_order.status,
+            )
             if position and position.get("status") == "open":
                 close_open_position(int(position["id"]), reason="missing_broker_order")
             continue
@@ -108,9 +116,34 @@ async def reconcile_broker_state(
                 broker_status=broker_order.status,
                 raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
             )
+            _transition_local_order_if_present(
+                local_order,
+                broker_status_to_order_status(broker_order.status, confirmed=broker_order.confirmed),
+                status_reason=f"Broker status is {order_status}.",
+                broker_status=broker_order.status,
+                entry_price=broker_order.price,
+            )
             if position and position.get("status") == "open":
                 close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
             continue
+
+        if order_status in FILLED_STATUSES and local_order.get("local_order_id") and _normal_status(local_order.get("status")) != "filled":
+            _record_fix(
+                summary,
+                db,
+                actor,
+                request,
+                "broker_filled_local_order_not_updated",
+                broker_order_id,
+                {"local_order": local_order, "broker_status": broker_order.to_dict()},
+            )
+            _transition_local_order_if_present(
+                local_order,
+                "filled",
+                status_reason="Broker confirmed fill during reconciliation.",
+                broker_status=broker_order.status,
+                entry_price=broker_order.price,
+            )
 
         if order_status in FILLED_STATUSES and not position:
             _record_fix(
@@ -129,10 +162,27 @@ async def reconcile_broker_state(
             _fix_position_differences(summary, db, actor, request, position, broker_order, broker_position_index)
 
     open_positions = list_open_positions()
-    summary["checked_positions"] = len(open_positions)
+    summary["checked_positions"] = len(open_positions) + len(broker_positions)
     if not broker_positions_available:
         _write_status(summary)
         return summary
+
+    local_position_keys = {
+        _position_key(str(position.get("symbol") or ""), str(position.get("side") or ""))
+        for position in open_positions
+    }
+    for key, broker_position in broker_position_index.items():
+        if int(broker_position.get("quantity") or 0) <= 0 or key in local_position_keys:
+            continue
+        _record_review(
+            summary,
+            db,
+            actor,
+            request,
+            "broker_position_local_missing",
+            key,
+            {"broker_position": broker_position},
+        )
 
     for position in open_positions:
         broker_order_id = str(position.get("broker_order_id") or "")
@@ -169,6 +219,7 @@ def reconciliation_status() -> dict[str, Any]:
             "checked_positions": 0,
             "mismatches": 0,
             "fixed": 0,
+            "needs_review": 0,
             "errors": [],
         }
     try:
@@ -180,6 +231,7 @@ def reconciliation_status() -> dict[str, Any]:
             "checked_positions": 0,
             "mismatches": 0,
             "fixed": 0,
+            "needs_review": 0,
             "errors": ["reconciliation status file is unreadable"],
         }
 
@@ -191,9 +243,26 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
         for position in list_open_positions()
         if position.get("broker_order_id")
     }
+    for order in list_orders(500):
+        broker_order_id = order.get("broker_order_id")
+        if not broker_order_id:
+            continue
+        orders[str(broker_order_id)] = {
+            "source": "orders",
+            "local_order_id": order.get("local_order_id"),
+            "broker_order_id": str(broker_order_id),
+            "symbol": order.get("symbol"),
+            "side": order.get("side"),
+            "quantity": order.get("quantity"),
+            "price": order.get("entry_price"),
+            "status": order.get("status"),
+            "raw": order,
+        }
     for trade in list_paper_trades(500):
         broker_order_id = trade.get("broker_order_id")
         if not broker_order_id:
+            continue
+        if str(broker_order_id) in orders:
             continue
         orders[str(broker_order_id)] = {
             "source": "paper_trades",
@@ -245,6 +314,27 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
     return list(orders.values())
 
 
+def _transition_local_order_if_present(
+    local_order: dict[str, Any],
+    status: str,
+    *,
+    status_reason: str,
+    broker_status: str | None = None,
+    entry_price: float | None = None,
+) -> None:
+    local_order_id = local_order.get("local_order_id")
+    if not local_order_id:
+        return
+    transition_order(
+        str(local_order_id),
+        status,
+        status_reason=status_reason,
+        broker_order_id=local_order.get("broker_order_id"),
+        broker_status=broker_status,
+        entry_price=entry_price,
+    )
+
+
 def _fix_position_differences(
     summary: dict[str, Any],
     db: Session,
@@ -258,7 +348,8 @@ def _fix_position_differences(
     expected_quantity = int((broker_position or {}).get("quantity") or broker_order.quantity or 0)
     expected_price = float((broker_position or {}).get("price") or broker_order.price or position.get("entry_price") or 0.0)
     changes: dict[str, Any] = {}
-    if expected_quantity and int(position.get("quantity") or 0) != expected_quantity:
+    quantity_changed = bool(expected_quantity and int(position.get("quantity") or 0) != expected_quantity)
+    if quantity_changed:
         changes["quantity"] = expected_quantity
     if expected_price and abs(float(position.get("entry_price") or 0.0) - expected_price) > 0.01:
         changes["entry_price"] = expected_price
@@ -268,6 +359,17 @@ def _fix_position_differences(
     mismatch_type = "quantity_mismatch" if "quantity" in changes else "price_mismatch"
     if "quantity" in changes and "entry_price" in changes:
         mismatch_type = "quantity_price_mismatch"
+    if quantity_changed:
+        _record_review(
+            summary,
+            db,
+            actor,
+            request,
+            mismatch_type,
+            position.get("broker_order_id") or broker_order.broker_order_id,
+            {"local_position": position, "broker_order": broker_order.to_dict(), "broker_position": broker_position, "changes": changes},
+        )
+        return
     _record_fix(
         summary,
         db,
@@ -278,6 +380,33 @@ def _fix_position_differences(
         {"local_position": position, "broker_order": broker_order.to_dict(), "broker_position": broker_position, "changes": changes},
     )
     update_open_position(int(position["id"]), changes)
+
+
+def _record_review(
+    summary: dict[str, Any],
+    db: Session,
+    actor: User,
+    request: Request | None,
+    mismatch_type: str,
+    target_id: Any,
+    metadata: dict[str, Any],
+) -> None:
+    summary["mismatches"] += 1
+    summary["needs_review"] += 1
+    write_audit_log(
+        db,
+        action="broker_reconciliation_change",
+        actor=actor,
+        target_type="broker_order",
+        target_id=target_id,
+        request=request,
+        metadata={
+            "status": "needs_review",
+            "reason": mismatch_type,
+            "mismatch_type": mismatch_type,
+            **metadata,
+        },
+    )
 
 
 def _record_fix(

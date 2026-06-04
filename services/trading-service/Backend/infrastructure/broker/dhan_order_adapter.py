@@ -57,14 +57,26 @@ class DhanBrokerClient:
             order_id = _extract_order_id(raw)
             if not order_id:
                 raise BrokerAdapterError("order rejected: broker did not return order id")
-            return _result_from_raw(order_id, raw, fallback_order=order, message="DhanHQ SDK accepted order request.")
+            return _result_from_raw(
+                order_id,
+                raw,
+                fallback_order=order,
+                message="DhanHQ SDK accepted order request.",
+                confirmed=False,
+            )
         except DhanSdkUnavailable:
             pass
         raw = await asyncio.to_thread(self._request, "POST", "/orders", payload)
         order_id = _extract_order_id(raw)
         if not order_id:
             raise BrokerAdapterError("order rejected: broker did not return order id")
-        return _result_from_raw(order_id, raw, fallback_order=order, message="Dhan accepted order request.")
+        return _result_from_raw(
+            order_id,
+            raw,
+            fallback_order=order,
+            message="Dhan accepted order request.",
+            confirmed=False,
+        )
 
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
         try:
@@ -163,6 +175,7 @@ def _result_from_raw(
     *,
     fallback_order: Order | None = None,
     message: str = "",
+    confirmed: bool | None = None,
 ) -> BrokerOrderResult:
     data = _raw_order_payload(raw)
     raw_status = data.get("orderStatus") or data.get("status")
@@ -171,15 +184,21 @@ def _result_from_raw(
     status = _normalize_status(str(raw_status or "pending"))
     quantity = int(data.get("quantity") or data.get("filledQty") or (fallback_order.quantity if fallback_order else 0) or 0)
     price = data.get("price") or data.get("averageTradedPrice") or (fallback_order.price if fallback_order else None)
+    normalized_status = status
+    confirmed_status = (
+        status in {"pending", "transit", "open", "traded", "filled", "confirmed"}
+        if confirmed is None
+        else bool(confirmed)
+    )
     return BrokerOrderResult(
         broker_order_id=broker_order_id,
-        status=status,
+        status=normalized_status,
         symbol=str(data.get("tradingSymbol") or data.get("securityId") or (fallback_order.symbol if fallback_order else "")),
         side=str(data.get("transactionType") or (fallback_order.side if fallback_order else "")).upper(),
         quantity=quantity,
         price=float(price) if price not in {None, ""} else None,
         message=message,
-        confirmed=status in {"pending", "transit", "open", "traded", "filled", "confirmed"},
+        confirmed=confirmed_status,
         metadata={"raw_safe": _safe_raw(raw)},
     )
 
