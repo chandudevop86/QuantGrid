@@ -84,6 +84,34 @@ def test_dhan_get_order_status_confirms_normalized_status(monkeypatch):
     assert result.metadata["raw_safe"]["data"]["access_token"] == "[redacted]"
 
 
+def test_dhan_cancel_order_returns_sanitized_cancel_status(monkeypatch):
+    _configure(monkeypatch)
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    def fake_urlopen(request, timeout):
+        assert request.get_method() == "DELETE"
+        assert request.full_url.endswith("/orders/DHAN-CANCEL-1")
+        return _Response(
+            {
+                "orderId": "DHAN-CANCEL-1",
+                "orderStatus": "CANCELLED",
+                "tradingSymbol": "NIFTY",
+                "transactionType": "BUY",
+                "quantity": 25,
+                "accessToken": "secret",
+            }
+        )
+
+    monkeypatch.setattr(dhan_order_adapter, "urlopen", fake_urlopen)
+
+    result = asyncio.run(dhan_order_adapter.DhanBrokerClient().cancel_order("DHAN-CANCEL-1"))
+
+    assert result.broker_order_id == "DHAN-CANCEL-1"
+    assert result.status == "cancelled"
+    assert result.confirmed is False
+    assert result.metadata["raw_safe"]["accessToken"] == "[redacted]"
+
+
 @pytest.mark.parametrize(
     ("env_value", "expected"),
     [

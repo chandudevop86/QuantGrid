@@ -298,9 +298,10 @@ def _map_http_error(exc: HTTPError) -> str:
 
 
 def _safe_raw(value: Any) -> Any:
-    secret_keys = {"access-token", "access_token", "token", "authorization", "clientSecret", "apiSecret"}
+    secret_keys = {"access-token", "access_token", "accesstoken", "token", "authorization", "clientsecret", "apisecret"}
+    normalized_secret_keys = {item.lower() for item in secret_keys}
     if isinstance(value, dict):
-        return {key: ("[redacted]" if str(key).lower() in {item.lower() for item in secret_keys} else _safe_raw(item)) for key, item in value.items()}
+        return {key: ("[redacted]" if str(key).lower() in normalized_secret_keys else _safe_raw(item)) for key, item in value.items()}
     if isinstance(value, list):
         return [_safe_raw(item) for item in value]
     return value

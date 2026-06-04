@@ -173,6 +173,48 @@ def test_monitor_open_positions_exits_when_rule_triggers(monkeypatch):
     assert result["positions"][0]["exit_reason"] == "target"
 
 
+@pytest.mark.parametrize(
+    ("price", "reason", "expected_pnl"),
+    [
+        (94, "stop_loss", -6),
+        (111, "target", 11),
+    ],
+)
+def test_monitor_open_positions_closes_on_stop_loss_and_target(monkeypatch, price, reason, expected_pnl):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import position_store, trade_exit_engine
+    from Backend.core.database import SessionLocal, init_database
+
+    init_database()
+    opened = position_store.create_open_position(
+        {
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 1,
+            "entry_price": 100,
+            "stop_loss": 95,
+            "target": 110,
+        }
+    )
+    monkeypatch.setattr(trade_exit_engine, "latest_candles", lambda *_args, **_kwargs: [{"close": price}])
+    monkeypatch.setattr(position_store, "latest_candles", lambda *_args, **_kwargs: [{"close": price}])
+
+    with SessionLocal() as db:
+        result = asyncio.run(
+            trade_exit_engine.monitor_open_positions(
+                db=db,
+                actor=_actor(db),
+                execution_mode="paper",
+            )
+        )
+
+    closed = position_store.get_position(opened["id"])
+    assert result["exited"] == 1
+    assert closed["status"] == "closed"
+    assert closed["exit_reason"] == reason
+    assert closed["closed_pnl"] == expected_pnl
+
+
 def test_position_exit_apis(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import position_store

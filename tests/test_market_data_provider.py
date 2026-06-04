@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 
@@ -443,3 +444,72 @@ def test_live_market_data_service_rejects_demo_provider(monkeypatch):
         assert "demo/paper only" in str(exc)
     else:
         raise AssertionError("live mode must reject demo providers")
+
+
+def test_live_market_data_service_accepts_fresh_live_provider(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.application import market_data_service
+    from Backend.application.market_data_service import MarketDataService
+    from Backend.domain.market_data.provider import MarketDataProvider
+
+    class FreshLiveProvider(MarketDataProvider):
+        provider_name = "broker"
+        live_suitable = True
+        paper_suitable = True
+
+        def get_ltp(self, symbol: str):
+            return {
+                "symbol": symbol.upper(),
+                "price": 100,
+                "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                "exchange_timezone": "Asia/Kolkata",
+            }
+
+        def get_candles(self, symbol: str, interval: str, period: str, limit: int):
+            return [
+                {
+                    "timestamp": datetime.now(ZoneInfo("Asia/Kolkata")).isoformat(),
+                    "exchange_timezone": "Asia/Kolkata",
+                    "open": 99,
+                    "high": 101,
+                    "low": 98,
+                    "close": 100,
+                    "volume": 100,
+                }
+            ]
+
+        def subscribe_ticks(self, symbols):
+            return None
+
+        def normalize_symbol(self, symbol: str):
+            return symbol.upper()
+
+        def health_check(self):
+            return self.status_payload() | {"healthy": True, "configured": True}
+
+    monkeypatch.setattr(
+        market_data_service,
+        "validate_live_candle",
+        lambda *args, **kwargs: SimpleNamespace(
+            valid=True,
+            valid_for_analysis=True,
+            valid_for_execution=True,
+            market_status="LIVE MARKET",
+            delay_seconds=0,
+            model_dump=lambda: {"valid_for_execution": True},
+        ),
+    )
+    service = MarketDataService(FreshLiveProvider())
+
+    ltp = service.get_ltp("NIFTY", mode="live")
+    candles = service.get_candles("NIFTY", "1m", mode="live")
+
+    assert ltp["price"] == 100
+    assert candles["source"] == "live"
+    assert candles["fresh"] is True

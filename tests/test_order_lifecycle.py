@@ -68,6 +68,44 @@ def test_order_store_creates_and_transitions_order(monkeypatch):
     assert len(order_store.list_orders()) == 1
 
 
+def test_order_store_transitions_broker_submitted_and_rejected(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import order_store
+
+    created = order_store.create_order(
+        {
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "status": "requested",
+        }
+    )
+
+    submitted, previous = order_store.transition_order(
+        created["local_order_id"],
+        "broker_submitted",
+        broker_order_id="BRK-1",
+        broker_status="open",
+        status_reason="broker accepted request",
+    )
+    rejected, previous_rejected = order_store.transition_order(
+        created["local_order_id"],
+        "rejected",
+        broker_order_id="BRK-1",
+        broker_status="rejected",
+        status_reason="broker rejected order",
+    )
+
+    assert previous == "requested"
+    assert submitted["status"] == "broker_submitted"
+    assert submitted["broker_order_id"] == "BRK-1"
+    assert previous_rejected == "broker_submitted"
+    assert rejected["status"] == "rejected"
+    assert rejected["broker_status"] == "rejected"
+
+
 def test_order_cancel_api_transitions_and_audits(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import order_store
@@ -196,3 +234,86 @@ def test_execution_does_not_create_position_when_broker_not_confirmed(monkeypatc
     assert orders[0]["broker_order_id"] == "BRK-REJECT"
     assert orders[0]["broker_status"] == "rejected"
     assert orders[0]["execution_mode"] == "paper"
+
+
+def test_execution_creates_position_after_broker_confirmation_and_audits(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.engine.execution_engine import ExecutionEngine
+    from Backend.domain.security.models import AuditLog
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+    from Backend.presentation.api import execution as execution_api
+
+    init_database()
+    monkeypatch.setattr(execution_api, "_market_aligned", lambda signal: True)
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *args, **kwargs: SimpleNamespace(allowed=True, reason="OK", details={}, to_dict=lambda: {"allowed": True, "reason": "OK", "details": {}}),
+    )
+    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True))
+    monkeypatch.setattr(
+        execution_api,
+        "decide_signal",
+        lambda *args, **kwargs: SimpleNamespace(score=20, regime="test", to_dict=lambda: {"score": 20}),
+    )
+    monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda *_args, **_kwargs: SimpleNamespace(allowed=True, reason="OK"))
+    monkeypatch.setattr(
+        execution_api,
+        "validate_execution_constraints",
+        lambda *_args, **_kwargs: SimpleNamespace(accepted=True, reason="OK", lot_size=1, quantity=1, required_margin=100),
+    )
+    monkeypatch.setattr(execution_api, "apply_order_constraints", lambda order, *_args, **_kwargs: order)
+    monkeypatch.setattr(execution_api, "requested_quantity", lambda *_args, **_kwargs: 1)
+
+    class ConfirmingBroker:
+        async def place_order(self, order):
+            return BrokerOrderResult(
+                broker_order_id="BRK-FILLED",
+                status="open",
+                symbol=order.symbol,
+                side=order.side,
+                quantity=order.quantity,
+                confirmed=True,
+            )
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="filled",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=1,
+                price=101,
+                confirmed=True,
+            )
+
+    with SessionLocal() as db:
+        request = SimpleNamespace(headers={}, client=None, state=SimpleNamespace())
+        result = asyncio.run(
+            execution_api._submit_paper_signal(
+                _signal(),
+                engine=ExecutionEngine(),
+                execution_mode="paper",
+                candles_1m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
+                candles_15m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
+                broker_client=ConfirmingBroker(),
+                db=db,
+                request=request,
+                actor=_actor(db),
+            )
+        )
+        audited_statuses = {
+            row.status
+            for row in db.query(AuditLog)
+            .filter(AuditLog.action == "order_status_transition")
+            .all()
+        }
+
+    order = order_store.list_orders()[0]
+    assert result["broker_confirmed"] is True
+    assert order["status"] == "filled"
+    assert order["broker_order_id"] == "BRK-FILLED"
+    assert {"requested", "risk_approved", "broker_submitted", "filled"}.issubset(audited_statuses)
+    assert position_store.position_summary()["open_positions"] == 1

@@ -219,6 +219,57 @@ def test_reconciliation_marks_broker_only_position_for_review(monkeypatch):
     assert "broker_position_local_missing" in audit.metadata_json
 
 
+def test_reconciliation_closes_local_open_when_broker_closed(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import broker_reconciliation, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import AuditLog, User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    opened = position_store.create_open_position(
+        {
+            "broker_order_id": "CLOSED-1",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 1,
+            "entry_price": 100,
+        }
+    )
+
+    class FakeBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="cancelled",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=1,
+                price=99,
+                confirmed=True,
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="ops", password_hash="hash", role="ops")
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        audit = db.query(AuditLog).filter(AuditLog.action == "broker_reconciliation_change").first()
+
+    closed = position_store.get_position(opened["id"])
+    assert summary["mismatches"] == 1
+    assert summary["fixed"] == 1
+    assert summary["needs_review"] == 0
+    assert closed["status"] == "closed"
+    assert closed["exit_reason"] == "broker_cancelled"
+    assert audit is not None
+    assert "local_submitted_broker_rejected" in audit.metadata_json
+
+
 def test_reconciliation_updates_lifecycle_order_when_broker_filled(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import broker_reconciliation, order_store, position_store

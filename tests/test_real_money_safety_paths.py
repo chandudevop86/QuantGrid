@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import TEST_ADMIN_PASSWORD, TEST_SECRET, admin_headers, reset_backend_modules
+from test_sqlalchemy_trading_stores import configure_sqlalchemy_store
 
 
 def _signal(**overrides):
@@ -204,7 +205,12 @@ def test_live_guardrail_rejects_broker_disabled_or_credentials_missing(settings,
     monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
 
-    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    request = SimpleNamespace(
+        headers={"x-forwarded-proto": "https"},
+        url=SimpleNamespace(scheme="https"),
+        client=None,
+        state=SimpleNamespace(),
+    )
     actor = SimpleNamespace(role="trader")
     base = {
         "broker_live_enabled": True,
@@ -227,7 +233,12 @@ def test_live_guardrail_rejects_market_data_stale():
     monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _stale_candle_result())
 
-    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    request = SimpleNamespace(
+        headers={"x-forwarded-proto": "https"},
+        url=SimpleNamespace(scheme="https"),
+        client=None,
+        state=SimpleNamespace(),
+    )
     actor = SimpleNamespace(role="trader")
     settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
@@ -253,6 +264,50 @@ def test_live_guardrail_rejects_viewer_role():
         assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=settings, candles_1m=_fresh_candle(), risk_decision=risk) == "Live trading requires trader or admin role."
     finally:
         monkeypatch.undo()
+
+
+def test_live_guardrail_rejection_writes_audit_log(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import AuditLog, User
+    from Backend.presentation.api import execution as execution_api
+
+    init_database()
+    request = SimpleNamespace(
+        headers={"x-forwarded-proto": "https"},
+        url=SimpleNamespace(scheme="https"),
+        client=None,
+        state=SimpleNamespace(),
+    )
+    risk = SimpleNamespace(
+        allowed=True,
+        reason="OK",
+        details={"daily_pnl": 0, "max_daily_loss": 1000},
+        to_dict=lambda: {"allowed": True, "reason": "OK", "details": {"daily_pnl": 0, "max_daily_loss": 1000}},
+    )
+
+    with SessionLocal() as db:
+        actor = User(username="trader-audit", password_hash="hash", role="trader")
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+        actor_id = actor.id
+
+        result = execution_api._reject_live_guardrail(
+            db=db,
+            request=request,
+            actor=actor,
+            signal=_signal(),
+            reason="Live trading requires HTTPS.",
+            execution_mode="live",
+            risk_decision=risk,
+        )
+        audit = db.query(AuditLog).filter(AuditLog.action == "execution_blocked").one()
+
+    assert result["status"] == "rejected"
+    assert audit.actor_user_id == actor_id
+    assert audit.target_id == "NIFTY"
+    assert "Live trading requires HTTPS." in audit.metadata_json
 
 
 def test_live_guardrail_allows_when_all_checks_pass(monkeypatch):

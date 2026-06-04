@@ -74,6 +74,26 @@ def test_live_guardrail_rejects_active_broker_circuit(monkeypatch):
     assert reason and reason.startswith("Broker circuit breaker active")
 
 
+def test_active_broker_circuit_allows_paper_broker_orders(tmp_path, monkeypatch):
+    from Backend.application import broker_circuit_breaker
+    from Backend.domain.models.order import Order
+    from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+
+    monkeypatch.setattr(broker_circuit_breaker, "STATUS_FILE", tmp_path / "broker_circuit.json")
+    monkeypatch.setenv("BROKER_FAILURE_THRESHOLD", "1")
+    monkeypatch.setattr(broker_circuit_breaker, "send_alert", lambda *_args, **_kwargs: None)
+
+    assert broker_circuit_breaker.record_broker_failure(reason="broker down")["active"] is True
+    paper = broker_client_for_mode("paper")
+
+    import asyncio
+
+    result = asyncio.run(paper.place_order(Order(symbol="NIFTY", side="BUY", quantity=1, price=100)))
+
+    assert result.confirmed is True
+    assert result.broker_order_id.startswith("PAPER-")
+
+
 def test_broker_circuit_breaker_apis_and_admin_reset(app_client, tmp_path, monkeypatch):
     import Backend.application.broker_circuit_breaker as breaker
 
