@@ -163,6 +163,74 @@ def test_provider_health_failure_reports_feed_down(monkeypatch):
     assert health["errors"]
 
 
+def test_option_chain_prefers_dhan_provider(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    def fake_dhan_payload(path, body):
+        if path == "optionchain/expirylist":
+            return {"data": ["2026-06-25"]}
+        return {
+            "data": {
+                "oc": {
+                    "23400.000000": {
+                        "ce": {"last_price": 101.5, "oi": 1000, "volume": 50},
+                        "pe": {"last_price": 88.25, "oi": 900, "volume": 45},
+                    }
+                }
+            }
+        }
+
+    monkeypatch.setattr(market_api, "get_price", lambda symbol, _role=None: {"price": 23400})
+    monkeypatch.setattr(market_api, "_dhan_option_payload", fake_dhan_payload)
+    monkeypatch.setattr(market_api, "_yahoo_option_rows", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Yahoo should not be used")))
+
+    result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
+
+    assert result["source"] == "dhan-option-chain"
+    assert result["warning"] is None
+    atm_row = next(row for row in result["rows"] if row["strike"] == 23400)
+    assert atm_row["ce"]["ltp"] == 101.5
+    assert atm_row["pe"]["oi"] == 900
+
+
+def test_option_chain_reports_dhan_token_rejected(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setattr(market_api, "get_price", lambda symbol, _role=None: {"price": 23400})
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Dhan rejected the saved access token. Open Dhan Login and save a fresh token.")),
+    )
+    monkeypatch.setattr(
+        market_api,
+        "_yahoo_option_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("HTTP Error 401: Unauthorized")),
+    )
+
+    result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
+
+    assert result["source"] == "derived-from-underlying"
+    assert "save a fresh token" in result["warning"]
+    assert "HTTP Error 401" not in result["warning"]
+
+
 def test_market_data_service_memory_cache_fresh_and_stale(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 

@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -24,6 +25,7 @@ from Backend.infrastructure.data.market_data_provider import (
     market_symbol,
 )
 from Backend.core.config import get_settings
+from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.presentation.api.roles import require_roles
 
 router = APIRouter(tags=["market"])
@@ -207,6 +209,74 @@ def _yahoo_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, 
     return rows, expiry
 
 
+def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    credentials = dhan_credentials()
+    access_token = credentials["access_token"]
+    client_id = credentials["client_id"]
+    if not access_token or not client_id:
+        raise RuntimeError("Dhan client ID or access token is not configured. Open Dhan Login and save valid credentials.")
+
+    request = Request(
+        f"https://api.dhan.co/v2/{path}",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "access-token": access_token,
+            "client-id": client_id,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "QuantGrid/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=8) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise RuntimeError("Dhan rejected the saved access token. Open Dhan Login and save a fresh token.") from exc
+        raise
+
+
+def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
+    security_id = int(os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}", "13"))
+    exchange_segment = os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "IDX_I")
+    base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
+
+    expiry_payload = _dhan_option_payload("optionchain/expirylist", base_body)
+    expiry_values = expiry_payload.get("data") or expiry_payload.get("expiry") or expiry_payload.get("expiryList") or []
+    expiry = next((str(item) for item in expiry_values if item), None)
+    if not expiry:
+        raise RuntimeError("Dhan did not return an option-chain expiry.")
+
+    chain_payload = _dhan_option_payload("optionchain", base_body | {"Expiry": expiry})
+    option_chain = chain_payload.get("data", {}).get("oc") or chain_payload.get("oc") or {}
+
+    rows = []
+    for strike in strikes:
+        strike_payload = option_chain.get(str(strike)) or option_chain.get(f"{float(strike):.6f}") or {}
+        call = strike_payload.get("ce") or strike_payload.get("CE") or {}
+        put = strike_payload.get("pe") or strike_payload.get("PE") or {}
+        rows.append({
+            "strike": strike,
+            "ce": {
+                "ltp": call.get("last_price") or call.get("ltp"),
+                "change": call.get("change") or call.get("net_change"),
+                "volume": call.get("volume"),
+                "oi": call.get("oi") or call.get("open_interest"),
+                "iv": call.get("implied_volatility") or call.get("iv"),
+            },
+            "pe": {
+                "ltp": put.get("last_price") or put.get("ltp"),
+                "change": put.get("change") or put.get("net_change"),
+                "volume": put.get("volume"),
+                "oi": put.get("oi") or put.get("open_interest"),
+                "iv": put.get("implied_volatility") or put.get("iv"),
+            },
+        })
+    return rows, expiry
+
+
 def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
     return [
         {
@@ -301,15 +371,26 @@ def get_option_chain(
     warning = "Live option-chain provider unavailable; showing ATM strike ladder from current NIFTY price."
 
     try:
-        rows, expiry = _yahoo_option_rows(symbol, strikes)
+        rows, expiry = _dhan_option_rows(symbol, strikes)
         if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
-            source = "yahoo-finance-options"
-            warning = YAHOO_TRADING_GRADE_WARNING
+            source = "dhan-option-chain"
+            warning = None
         else:
             rows = _derived_option_rows(strikes)
-    except Exception as exc:
-        rows = _derived_option_rows(strikes)
-        warning = f"Live option-chain provider unavailable: {exc}. Showing ATM strike ladder from current NIFTY price."
+            warning = "Dhan option-chain returned no matching strikes; showing ATM strike ladder from current NIFTY price."
+    except Exception as dhan_exc:
+        try:
+            rows, expiry = _yahoo_option_rows(symbol, strikes)
+        except Exception:
+            rows = _derived_option_rows(strikes)
+            warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
+        else:
+            if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
+                source = "yahoo-finance-options"
+                warning = f"Dhan option-chain unavailable: {dhan_exc}. Showing Yahoo option-chain data."
+            else:
+                rows = _derived_option_rows(strikes)
+                warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
 
     return {
         "symbol": symbol.upper(),
