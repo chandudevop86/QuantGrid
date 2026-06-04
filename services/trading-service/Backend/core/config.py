@@ -8,6 +8,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 ENV_FILE_LOADED = False
+LOCAL_ENVIRONMENTS = {"local", "dev", "development", "test"}
+CONTAINER_ONLY_DATABASE_HOSTS = {"postgres"}
 
 @dataclass(frozen=True)
 class Settings:
@@ -45,6 +47,25 @@ def _truthy(value: str | None) -> bool:
 def _default_sqlite_url() -> str:
     data_dir = Path(__file__).resolve().parents[1] / "data"
     return f"sqlite:///{data_dir / 'quantgrid.sqlite3'}"
+
+
+def _database_url_from_env(environment: str) -> str:
+    database_url = os.getenv("DATABASE_URL") or ""
+    if environment in LOCAL_ENVIRONMENTS and _uses_container_only_database_host(database_url):
+        return _default_sqlite_url()
+    return database_url or _default_sqlite_url()
+
+
+def _uses_container_only_database_host(database_url: str) -> bool:
+    if "://" not in database_url:
+        return False
+    try:
+        from urllib.parse import urlsplit
+
+        hostname = urlsplit(database_url).hostname
+    except ValueError:
+        return False
+    return (hostname or "").strip().lower() in CONTAINER_ONLY_DATABASE_HOSTS
 
 
 def _default_env_file() -> Path:
@@ -100,7 +121,7 @@ def get_settings() -> Settings:
     if len(auth_secret) < 32:
         raise RuntimeError("QUANTGRID_AUTH_SECRET must be at least 32 characters.")
 
-    database_url = os.getenv("DATABASE_URL") or _default_sqlite_url()
+    database_url = _database_url_from_env(environment)
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
     allow_yahoo_for_live = _truthy(os.getenv("QUANTGRID_ALLOW_YAHOO_LIVE") or os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE"))
     broker_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower() or None

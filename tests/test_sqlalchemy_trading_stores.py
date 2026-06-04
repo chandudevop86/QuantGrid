@@ -132,3 +132,29 @@ def test_production_rejects_missing_or_sqlite_database(monkeypatch):
         assert "SQLite is not allowed" in str(exc)
     else:
         raise AssertionError("production must reject SQLite")
+
+
+def test_local_ignores_container_only_postgres_host(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://quant:secret@postgres:5432/quantgrid")
+    reset_backend_modules()
+    config = importlib.import_module("Backend.core.config")
+
+    settings = config.get_settings()
+
+    assert settings.database_url.startswith("sqlite:///")
+
+
+def test_production_keeps_container_postgres_url(monkeypatch):
+    database_url = "postgresql+psycopg://quant:secret@postgres:5432/quantgrid"
+    monkeypatch.setenv("QUANTGRID_ENV", "production")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("QUANTGRID_MARKET_DATA_PROVIDER", "dhan")
+    reset_backend_modules()
+    config = importlib.import_module("Backend.core.config")
+
+    settings = config.validate_security_config()
+
+    assert settings.database_url == database_url
