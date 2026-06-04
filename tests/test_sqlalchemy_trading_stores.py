@@ -4,6 +4,8 @@ import importlib
 import sys
 from pathlib import Path
 
+from sqlalchemy.exc import OperationalError
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
@@ -158,3 +160,29 @@ def test_production_keeps_container_postgres_url(monkeypatch):
     settings = config.validate_security_config()
 
     assert settings.database_url == database_url
+
+
+def test_init_database_retries_postgres_service_name_on_localhost(monkeypatch):
+    database_url = "postgresql+psycopg://quant:secret@postgres:5432/quantgrid"
+    monkeypatch.setenv("QUANTGRID_ENV", "production")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setenv("QUANTGRID_MARKET_DATA_PROVIDER", "dhan")
+    reset_backend_modules()
+    database = importlib.import_module("Backend.core.database")
+
+    calls = []
+    rebuilt_urls = []
+
+    def fake_create_all(bind):
+        calls.append(bind)
+        if len(calls) == 1:
+            raise OperationalError(None, None, Exception("failed to resolve host 'postgres'"))
+
+    monkeypatch.setattr(database.Base.metadata, "create_all", fake_create_all)
+    monkeypatch.setattr(database, "_rebuild_engine", rebuilt_urls.append)
+
+    database.init_database()
+
+    assert rebuilt_urls == ["postgresql+psycopg://quant:secret@127.0.0.1:5432/quantgrid"]
+    assert len(calls) == 2
