@@ -3,7 +3,7 @@ import axios from "axios";
 const fallbackBaseURL =
   typeof window === "undefined"
     ? "http://localhost:8000"
-    : window.location.port === "5173"
+    : import.meta.env.DEV
       ? `${window.location.protocol}//${window.location.hostname}:8000`
       : `${window.location.origin}/api`;
 
@@ -16,9 +16,8 @@ function normalizeBaseURL(baseURL: string) {
   try {
     const target = new URL(baseURL, window.location.origin);
     const isSameHostBackendPort = target.hostname === window.location.hostname && target.port === "8000";
-    const isDeployedFrontend = window.location.port !== "5173";
 
-    if (isDeployedFrontend && isSameHostBackendPort) {
+    if (!import.meta.env.DEV && isSameHostBackendPort) {
       return `${window.location.origin}/api`;
     }
   } catch {

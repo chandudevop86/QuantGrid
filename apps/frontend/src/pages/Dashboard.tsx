@@ -13,8 +13,12 @@ function isActiveJob(job: any) {
   return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
 }
 
-function statusTone(ok: boolean) {
-  return ok ? "health-ok" : "health-fail";
+type HealthTone = "ok" | "warn" | "fail";
+
+function statusTone(tone: HealthTone) {
+  if (tone === "ok") return "health-ok";
+  if (tone === "warn") return "health-warn";
+  return "health-fail";
 }
 
 function formatMoney(value: unknown) {
@@ -224,17 +228,36 @@ export default function Dashboard() {
           ? "🔴 FEED DOWN"
           : "⚫ DEMO/YAHOO MODE";
 
-  const healthItems = useMemo(
-    () => [
-      { label: "API", ok: health?.api?.healthy === true },
-      { label: "DB", ok: health?.db?.healthy === true },
-      { label: "Redis", ok: health?.redis?.connected === true },
-      { label: "WebSocket", ok: socketActive || health?.websocket?.active === true },
-      { label: "Broker", ok: health?.broker?.connected === true || brokerStatus?.connected === true },
-    ],
-    [brokerStatus, health, socketActive],
-  );
-  const allHealthy = healthItems.every((item) => item.ok);
+  const healthItems = useMemo(() => {
+    const redisConfigured = health?.redis?.message !== "REDIS_URL is not configured.";
+    const brokerConfigured = health?.broker?.provider !== "paper" || brokerStatus?.configured === true;
+    const brokerConnected = health?.broker?.connected === true || brokerStatus?.connected === true;
+    const websocketConnected = socketActive || health?.websocket?.active === true;
+
+    return [
+      { label: "API", tone: health?.api?.healthy === true ? "ok" : "fail", status: health?.api?.healthy === true ? "OK" : "FAIL" },
+      { label: "DB", tone: health?.db?.healthy === true ? "ok" : "fail", status: health?.db?.healthy === true ? "OK" : "FAIL" },
+      {
+        label: "Redis",
+        tone: health?.redis?.connected === true ? "ok" : redisConfigured ? "fail" : "warn",
+        status: health?.redis?.connected === true ? "OK" : redisConfigured ? "FAIL" : "OFF",
+      },
+      {
+        label: "WebSocket",
+        tone: websocketConnected ? "ok" : "warn",
+        status: websocketConnected ? "OK" : "POLL",
+      },
+      {
+        label: "Broker",
+        tone: brokerConnected || !brokerConfigured ? "ok" : "warn",
+        status: brokerConnected ? "OK" : brokerConfigured ? "CHECK" : "PAPER",
+      },
+    ] as Array<{ label: string; tone: HealthTone; status: string }>;
+  }, [brokerStatus, health, socketActive]);
+  const failingHealthItems = healthItems.filter((item) => item.tone === "fail");
+  const warningHealthItems = healthItems.filter((item) => item.tone === "warn");
+  const healthSummary =
+    failingHealthItems.length > 0 ? "Needs attention" : warningHealthItems.length > 0 ? "Review" : "Healthy";
 
   const diagnostics = operations?.diagnostics ?? {
     trader_message: friendlyMarketMessage(market),
@@ -303,13 +326,13 @@ export default function Dashboard() {
             <div className="status-panel">
               <div className="status-panel-header">
                 <span>System Health</span>
-                <strong>{allHealthy ? "Healthy" : "Needs attention"}</strong>
+                <strong>{healthSummary}</strong>
               </div>
               <div className="health-dot-grid">
                 {healthItems.map((item) => (
-                  <span key={item.label} className={statusTone(item.ok)}>
+                  <span key={item.label} className={statusTone(item.tone)}>
                     <strong>{item.label}</strong>
-                    <small>{item.ok ? "OK" : "FAIL"}</small>
+                    <small>{item.status}</small>
                   </span>
                 ))}
               </div>
