@@ -116,3 +116,51 @@ def test_worker_processes_notification_job(monkeypatch):
     assert processed is not None
     assert processed["status"] == "completed"
     assert sent == [("Worker alert", "Done")]
+
+
+def test_worker_processes_exit_monitor_job(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import job_queue, worker
+
+    calls: list[str] = []
+
+    async def fake_monitor_open_positions(**kwargs):
+        calls.append(kwargs["execution_mode"])
+        return {"checked": 1, "exited": 1, "positions": [], "errors": []}
+
+    monkeypatch.setattr(job_queue, "publish_job_update", lambda _job: None)
+    monkeypatch.setattr(job_queue, "alert_job_finished", lambda _job: None)
+    monkeypatch.setattr(worker, "broker_client_for_mode", lambda mode: {"mode": mode})
+    monkeypatch.setattr(worker, "monitor_open_positions", fake_monitor_open_positions)
+
+    job_queue.enqueue_job(
+        "exit-monitor",
+        {"execution_mode": "paper"},
+        job_id="exit-monitor-job-1",
+    )
+    processed = worker.process_next_job()
+
+    assert processed is not None
+    assert processed["status"] == "completed"
+    assert processed["result"]["checked"] == 1
+    assert calls == ["paper"]
+
+
+def test_exit_monitor_worker_settings(monkeypatch):
+    from Backend.application import worker
+
+    monkeypatch.delenv("QUANTGRID_EXIT_MONITOR_ENABLED", raising=False)
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "0.2")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", "bad-mode")
+
+    assert worker._exit_monitor_enabled() is False
+    assert worker._exit_monitor_interval() == 1.0
+    assert worker._exit_monitor_mode() == "paper"
+
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_ENABLED", "true")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "7")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", "live")
+
+    assert worker._exit_monitor_enabled() is True
+    assert worker._exit_monitor_interval() == 7.0
+    assert worker._exit_monitor_mode() == "live"

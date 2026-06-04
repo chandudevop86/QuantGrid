@@ -31,6 +31,7 @@ def _configure(monkeypatch):
     monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "dhan")
     monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client-1")
     monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-1")
+    monkeypatch.setenv("DHAN_SECURITY_ID_NIFTY", "26000")
     reset_backend_modules()
 
 
@@ -50,6 +51,40 @@ def test_dhan_place_order_requires_broker_confirmed_order_id(monkeypatch):
     assert result.status == "open"
     assert result.confirmed is True
     assert result.metadata["raw_safe"]["access-token"] == "[redacted]"
+
+
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        ("", "must be configured"),
+        ("NIFTY", "must be numeric"),
+        ("13", "index spot securityId is not tradable"),
+    ],
+)
+def test_dhan_place_order_rejects_unsafe_security_id(monkeypatch, env_value, expected):
+    _configure(monkeypatch)
+    monkeypatch.setenv("DHAN_SECURITY_ID_NIFTY", env_value)
+    from Backend.domain.models.order import Order
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    with pytest.raises(dhan_order_adapter.BrokerAdapterError, match=expected):
+        asyncio.run(dhan_order_adapter.DhanBrokerClient().place_order(Order(symbol="NIFTY", side="BUY", quantity=75, price=100)))
+
+
+@pytest.mark.parametrize(
+    ("side", "quantity", "expected"),
+    [
+        ("HOLD", 75, "side must be BUY or SELL"),
+        ("BUY", 0, "quantity must be greater than zero"),
+    ],
+)
+def test_dhan_place_order_rejects_unsafe_order_shape(monkeypatch, side, quantity, expected):
+    _configure(monkeypatch)
+    from Backend.domain.models.order import Order
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    with pytest.raises(dhan_order_adapter.BrokerAdapterError, match=expected):
+        asyncio.run(dhan_order_adapter.DhanBrokerClient().place_order(Order(symbol="NIFTY", side=side, quantity=quantity, price=100)))
 
 
 def test_dhan_place_order_rejects_missing_order_id(monkeypatch):

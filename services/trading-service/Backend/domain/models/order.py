@@ -14,5 +14,7 @@ class Order:
     price: float | None = None
     stop_loss: float | None = None
     target_price: float | None = None
+    trailing_stop_loss: float | None = None
+    trailing_stop_pct: float | None = None
     created_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

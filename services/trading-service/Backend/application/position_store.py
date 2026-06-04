@@ -40,6 +40,8 @@ def init_position_store() -> None:
                 entry_price REAL NOT NULL,
                 stop_loss REAL,
                 target REAL,
+                trailing_stop_loss REAL,
+                trailing_stop_pct REAL,
                 current_price REAL,
                 exit_price REAL,
                 exit_reason TEXT,
@@ -60,6 +62,10 @@ def init_position_store() -> None:
             connection.execute("ALTER TABLE positions ADD COLUMN exit_price REAL")
         if "exit_reason" not in columns:
             connection.execute("ALTER TABLE positions ADD COLUMN exit_reason TEXT")
+        if "trailing_stop_loss" not in columns:
+            connection.execute("ALTER TABLE positions ADD COLUMN trailing_stop_loss REAL")
+        if "trailing_stop_pct" not in columns:
+            connection.execute("ALTER TABLE positions ADD COLUMN trailing_stop_pct REAL")
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_positions_status_updated
@@ -86,6 +92,8 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
         "entry_price": entry,
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
+        "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
+        "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
         "current_price": current,
         "exit_price": None,
         "exit_reason": None,
@@ -100,10 +108,10 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO positions
-                (broker_order_id, symbol, side, quantity, entry_price, stop_loss, target, current_price,
+                (broker_order_id, symbol, side, quantity, entry_price, stop_loss, target, trailing_stop_loss, trailing_stop_pct, current_price,
                  exit_price, exit_reason, open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
             VALUES
-                (:broker_order_id, :symbol, :side, :quantity, :entry_price, :stop_loss, :target, :current_price,
+                (:broker_order_id, :symbol, :side, :quantity, :entry_price, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :current_price,
                  :exit_price, :exit_reason, :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
             """,
             row,
@@ -166,6 +174,8 @@ def update_open_position(position_id: int, payload: dict[str, Any]) -> dict[str,
         "entry_price",
         "stop_loss",
         "target",
+        "trailing_stop_loss",
+        "trailing_stop_pct",
         "current_price",
     }
     updates: list[str] = []
@@ -290,6 +300,12 @@ def _open_pnl(side: str, quantity: int, entry: float, current: float) -> float:
     return round((float(current) - float(entry)) * multiplier * int(quantity), 2)
 
 
+def _float_or_none(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
+
+
 def _use_sqlite() -> bool:
     from Backend.application.store_backend import use_legacy_sqlite_store
 
@@ -307,6 +323,8 @@ def _init_db_store() -> None:
     additions = {
         "exit_price": "ALTER TABLE positions ADD COLUMN exit_price FLOAT",
         "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
+        "trailing_stop_loss": "ALTER TABLE positions ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE positions ADD COLUMN trailing_stop_pct FLOAT",
     }
     with engine.begin() as connection:
         for column, statement in additions.items():
@@ -329,6 +347,8 @@ def _position_row(payload: dict[str, Any]) -> dict[str, Any]:
         "entry_price": entry,
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
+        "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
+        "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
         "current_price": current,
         "exit_price": None,
         "exit_reason": None,
@@ -351,6 +371,8 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "entry_price": record.entry_price,
         "stop_loss": record.stop_loss,
         "target": record.target,
+        "trailing_stop_loss": record.trailing_stop_loss,
+        "trailing_stop_pct": record.trailing_stop_pct,
         "current_price": record.current_price,
         "exit_price": record.exit_price,
         "exit_reason": record.exit_reason,
@@ -407,7 +429,7 @@ def _db_update_open_position(position_id: int, payload: dict[str, Any]) -> dict[
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import PositionRecord
 
-    allowed = {"broker_order_id", "symbol", "side", "quantity", "entry_price", "stop_loss", "target", "current_price"}
+    allowed = {"broker_order_id", "symbol", "side", "quantity", "entry_price", "stop_loss", "target", "trailing_stop_loss", "trailing_stop_pct", "current_price"}
     with SessionLocal() as db:
         row = db.query(PositionRecord).filter(PositionRecord.id == position_id, PositionRecord.status == "open").first()
         if row is None:

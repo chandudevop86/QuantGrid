@@ -70,6 +70,37 @@ def _allow_insecure_live() -> bool:
     return str(os.getenv("LIVE_ALLOW_INSECURE", "")).strip().lower() in {"1", "true", "yes"}
 
 
+def _app_managed_stops_allowed() -> bool:
+    return str(os.getenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "")).strip().lower() in {"1", "true", "yes"}
+
+
+def _exit_monitor_live_ready() -> bool:
+    enabled = str(os.getenv("QUANTGRID_EXIT_MONITOR_ENABLED", "")).strip().lower() in {"1", "true", "yes"}
+    mode = str(os.getenv("QUANTGRID_EXIT_MONITOR_MODE", "")).strip().lower()
+    try:
+        interval = float(os.getenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "0"))
+    except ValueError:
+        interval = 0.0
+    return enabled and mode == "live" and 1 <= interval <= 10
+
+
+def _live_stop_protection_failure(signal: StrategySignal | None) -> str | None:
+    if signal is None:
+        return None
+    if signal.stop_loss is None or float(signal.stop_loss) <= 0:
+        return "Live trading requires a stop loss."
+    if signal.target_price is None or float(signal.target_price) <= 0:
+        return "Live trading requires a target."
+    if _app_managed_stops_allowed() and _exit_monitor_live_ready():
+        return None
+    if _app_managed_stops_allowed():
+        return "Live app-managed stops require QUANTGRID_EXIT_MONITOR_ENABLED=true, QUANTGRID_EXIT_MONITOR_MODE=live, and interval <= 10 seconds."
+    return (
+        "Live trading requires broker-native stop protection. "
+        "Current SL/TSL exits are app-managed; set QUANTGRID_ALLOW_APP_MANAGED_STOPS=true only when the exit monitor is running."
+    )
+
+
 def _live_guardrail_failure(
     *,
     request: Request,
@@ -77,6 +108,7 @@ def _live_guardrail_failure(
     settings: Any,
     candles_1m: list[dict[str, Any]],
     risk_decision: Any,
+    signal: StrategySignal | None = None,
 ) -> str | None:
     if not _request_is_https(request) and not _allow_insecure_live():
         return "Live trading requires HTTPS."
@@ -106,6 +138,9 @@ def _live_guardrail_failure(
         return "Live trading blocked: max daily loss breached."
     if not settings.audit_logging_enabled:
         return "Live trading requires audit logging enabled."
+    stop_protection_failure = _live_stop_protection_failure(signal)
+    if stop_protection_failure:
+        return stop_protection_failure
     return None
 
 
@@ -155,6 +190,8 @@ def _paper_response(
         "entry": float(signal.entry_price) if signal else None,
         "stop": float(signal.stop_loss) if signal else None,
         "target": float(signal.target_price) if signal else None,
+        "trailing_stop_loss": float(signal.trailing_stop_loss) if signal and signal.trailing_stop_loss is not None else None,
+        "trailing_stop_pct": float(signal.trailing_stop_pct) if signal and signal.trailing_stop_pct is not None else None,
         "reason": reason,
         "execution_mode": execution_mode,
         "strategy_diagnostics": strategy_diagnostics or {},
@@ -193,6 +230,8 @@ def _audit_execution_result(
             "local_order_id": result.get("local_order_id"),
             "broker_order_id": result.get("broker_order_id"),
             "broker_status": result.get("broker_status"),
+            "trailing_stop_loss": result.get("trailing_stop_loss"),
+            "trailing_stop_pct": result.get("trailing_stop_pct"),
             "broker_order": result.get("broker_order"),
             "raw_safe_broker_response": result.get("raw_safe_broker_response"),
         },
@@ -225,6 +264,10 @@ def _audit_order_transition(
             "symbol": order.get("symbol"),
             "side": order.get("side"),
             "quantity": order.get("quantity"),
+            "stop_loss": order.get("stop_loss"),
+            "target": order.get("target"),
+            "trailing_stop_loss": order.get("trailing_stop_loss"),
+            "trailing_stop_pct": order.get("trailing_stop_pct"),
             "broker_response": broker_response,
         },
     )
@@ -243,6 +286,10 @@ def _create_lifecycle_order(
             "side": order.side,
             "quantity": order.quantity,
             "entry_price": order.price,
+            "stop_loss": order.stop_loss,
+            "target": order.target_price,
+            "trailing_stop_loss": order.trailing_stop_loss,
+            "trailing_stop_pct": order.trailing_stop_pct,
             "status": "requested",
             "status_reason": "Order request accepted for risk review.",
         }
@@ -424,6 +471,16 @@ def _trade_shape_reason(signal: StrategySignal) -> str | None:
         return "BUY signal requires stop < entry < target."
     if side == "SELL" and not target < entry < stop:
         return "SELL signal requires target < entry < stop."
+    if signal.trailing_stop_pct is not None and float(signal.trailing_stop_pct) <= 0:
+        return "Trailing stop percent must be greater than 0."
+    if signal.trailing_stop_loss is not None:
+        trailing_stop = float(signal.trailing_stop_loss)
+        if trailing_stop <= 0:
+            return "Trailing stop price must be positive."
+        if side == "BUY" and trailing_stop >= entry:
+            return "BUY signal requires trailing stop price below entry."
+        if side == "SELL" and trailing_stop <= entry:
+            return "SELL signal requires trailing stop price above entry."
     risk = abs(entry - stop)
     reward = abs(target - entry)
     if risk <= 0 or reward <= 0:
@@ -707,6 +764,8 @@ async def _submit_paper_signal(
             "entry": signal.entry_price,
             "stop_loss": signal.stop_loss,
             "target": signal.target_price,
+            "trailing_stop_loss": signal.trailing_stop_loss,
+            "trailing_stop_pct": signal.trailing_stop_pct,
             "status": "paper_order_submitted",
             "pnl": 0.0,
             "reason": "OK",
@@ -730,6 +789,8 @@ async def _submit_paper_signal(
                 "entry_price": signal.entry_price,
                 "stop_loss": signal.stop_loss,
                 "target": signal.target_price,
+                "trailing_stop_loss": signal.trailing_stop_loss,
+                "trailing_stop_pct": signal.trailing_stop_pct,
                 "current_price": broker_status.price or signal.entry_price,
                 "opened_at": signal.signal_time.isoformat(),
             }
@@ -968,6 +1029,27 @@ async def place_order(
             candles_1m = _strategy_candles(get_candles(signal.symbol, interval="1m", period="1d", limit=100))
         except Exception:
             candles_1m = []
+    candles_15m = latest_candles(signal.symbol, "15m", 100)
+    if not candles_15m:
+        try:
+            candles_15m = _strategy_candles(get_candles(signal.symbol, interval="15m", period="1d", limit=100))
+        except Exception:
+            candles_15m = []
+
+    shape_reason = _trade_shape_reason(signal)
+    if shape_reason:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=shape_reason,
+            execution_mode=execution_mode,
+            extra={"allowed": False},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
 
     if execution_mode == "live" and not _request_is_https(request) and not _allow_insecure_live():
         result = _paper_response(
@@ -1054,6 +1136,7 @@ async def place_order(
             settings=settings,
             candles_1m=candles_1m,
             risk_decision=risk_decision,
+            signal=signal,
         )
         if guardrail_reason:
             result = _reject_live_guardrail(
@@ -1218,6 +1301,8 @@ async def place_order(
                 "entry": signal.entry_price,
                 "stop_loss": signal.stop_loss,
                 "target": signal.target_price,
+                "trailing_stop_loss": signal.trailing_stop_loss,
+                "trailing_stop_pct": signal.trailing_stop_pct,
                 "status": "live_order_submitted",
                 "pnl": 0.0,
                 "reason": "OK",
@@ -1237,6 +1322,8 @@ async def place_order(
                     "entry_price": signal.entry_price,
                     "stop_loss": signal.stop_loss,
                     "target": signal.target_price,
+                    "trailing_stop_loss": signal.trailing_stop_loss,
+                    "trailing_stop_pct": signal.trailing_stop_pct,
                     "current_price": broker_status.price or signal.entry_price,
                     "opened_at": signal.signal_time.isoformat(),
                 }

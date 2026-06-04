@@ -14,6 +14,8 @@ class StrategySignal:
     stop_loss: float
     target_price: float
     signal_time: datetime
+    trailing_stop_loss: float | None = None
+    trailing_stop_pct: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property

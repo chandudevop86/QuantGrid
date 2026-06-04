@@ -15,10 +15,14 @@ class ExecutionEngine:
             price=signal.entry_price, 
             stop_loss=signal.stop_loss,
             target_price=signal.target_price, 
+            trailing_stop_loss=signal.trailing_stop_loss,
+            trailing_stop_pct=signal.trailing_stop_pct,
             created_at=datetime.utcnow(),
             metadata={
                 "strategy_name": signal.strategy_name,
                 "source": "signal_based",
+                "trailing_stop_loss": signal.trailing_stop_loss,
+                "trailing_stop_pct": signal.trailing_stop_pct,
             }
        )
 from fastapi import APIRouter

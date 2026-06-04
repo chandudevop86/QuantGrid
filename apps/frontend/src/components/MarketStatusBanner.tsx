@@ -81,6 +81,7 @@ export default function MarketStatusBanner() {
         <strong>NSE STATUS UNKNOWN</strong>
         <span>IST {formatIstTime(now)}</span>
         <span>Market status API unavailable</span>
+        <span>Dashboard data may be stale</span>
       </div>
     );
   }
@@ -89,6 +90,7 @@ export default function MarketStatusBanner() {
     <div className={`market-banner ${marketOpen ? "market-banner-open" : "market-banner-closed"}${warning ? " market-banner-warning" : ""}`} role="status">
       <strong>NSE {marketOpen ? "OPEN" : "CLOSED"}</strong>
       <span>IST {formatIstTime(now)}</span>
+      <span>Market API {error ? "degraded" : "connected"}</span>
       <span>Latest candle {formatCandleTime(latestCandle)}</span>
       <span>Age {formatAge(age)}</span>
       {!marketOpen && <span>NSE CLOSED - Last candle from previous session</span>}

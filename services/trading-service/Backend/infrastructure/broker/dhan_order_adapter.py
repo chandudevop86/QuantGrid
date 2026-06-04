@@ -14,6 +14,12 @@ from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan
 
 
 DHAN_BASE_URL = "https://api.dhan.co/v2"
+INDEX_SYMBOLS = {"NIFTY", "NIFTY50", "NIFTY_50", "BANKNIFTY", "NIFTYBANK", "FINNIFTY", "MIDCPNIFTY"}
+INDEX_SPOT_SECURITY_IDS = {"13"}
+ALLOWED_EXCHANGE_SEGMENTS = {"NSE_EQ", "NSE_FNO", "BSE_EQ", "BSE_FNO", "MCX_COMM"}
+ALLOWED_PRODUCT_TYPES = {"INTRADAY", "CNC", "MARGIN", "MTF", "CO", "BO"}
+ALLOWED_ORDER_TYPES = {"MARKET", "LIMIT", "STOP_LOSS", "STOP_LOSS_MARKET"}
+ALLOWED_VALIDITIES = {"DAY", "IOC"}
 
 
 class BrokerAdapterError(RuntimeError):
@@ -30,6 +36,7 @@ class DhanBrokerClient:
             raise BrokerAdapterError("broker not configured")
 
     async def place_order(self, order: Order) -> BrokerOrderResult:
+        security_id = str(order.metadata.get("security_id") or os.getenv(f"DHAN_SECURITY_ID_{order.symbol.upper()}", "")).strip()
         payload = {
             "dhanClientId": self.client_id,
             "correlationId": str(order.metadata.get("correlation_id") or ""),
@@ -38,12 +45,13 @@ class DhanBrokerClient:
             "productType": str(order.metadata.get("product_type") or os.getenv("DHAN_PRODUCT_TYPE", "INTRADAY")),
             "orderType": str(order.metadata.get("order_type") or order.order_type or os.getenv("DHAN_ORDER_TYPE", "MARKET")),
             "validity": str(order.metadata.get("validity") or os.getenv("DHAN_VALIDITY", "DAY")),
-            "securityId": str(order.metadata.get("security_id") or os.getenv(f"DHAN_SECURITY_ID_{order.symbol.upper()}", order.symbol)),
+            "securityId": security_id,
             "quantity": int(order.quantity),
             "price": float(order.price or 0.0),
             "triggerPrice": 0.0,
             "afterMarketOrder": False,
         }
+        _validate_order_payload(order, payload)
         try:
             raw = await asyncio.to_thread(self._sdk_place_order, order, payload)
             order_id = _extract_order_id(raw)
@@ -198,6 +206,43 @@ def _normalize_status(value: str) -> str:
     if status in {"rejected", "cancelled", "expired", "failed"}:
         return status
     return status or "pending"
+
+
+def _validate_order_payload(order: Order, payload: dict[str, Any]) -> None:
+    symbol = str(order.symbol or "").upper().strip()
+    side = str(payload.get("transactionType") or "").upper()
+    security_id = str(payload.get("securityId") or "").strip()
+    exchange_segment = str(payload.get("exchangeSegment") or "").upper()
+    product_type = str(payload.get("productType") or "").upper()
+    order_type = str(payload.get("orderType") or "").upper()
+    validity = str(payload.get("validity") or "").upper()
+    quantity = int(payload.get("quantity") or 0)
+    price = float(payload.get("price") or 0.0)
+
+    if not symbol:
+        raise BrokerAdapterError("unsafe order: symbol is required")
+    if side not in {"BUY", "SELL"}:
+        raise BrokerAdapterError("unsafe order: side must be BUY or SELL")
+    if quantity <= 0:
+        raise BrokerAdapterError("unsafe order: quantity must be greater than zero")
+    if not security_id:
+        raise BrokerAdapterError(f"unsafe order: DHAN_SECURITY_ID_{symbol} must be configured")
+    if not security_id.isdigit():
+        raise BrokerAdapterError("unsafe order: Dhan securityId must be numeric")
+    if security_id.upper() == symbol:
+        raise BrokerAdapterError("unsafe order: Dhan securityId cannot fall back to the symbol name")
+    if symbol in INDEX_SYMBOLS and security_id in INDEX_SPOT_SECURITY_IDS:
+        raise BrokerAdapterError("unsafe order: index spot securityId is not tradable; configure a futures/options securityId")
+    if exchange_segment not in ALLOWED_EXCHANGE_SEGMENTS:
+        raise BrokerAdapterError(f"unsafe order: unsupported Dhan exchange segment {exchange_segment or '-'}")
+    if product_type not in ALLOWED_PRODUCT_TYPES:
+        raise BrokerAdapterError(f"unsafe order: unsupported Dhan product type {product_type or '-'}")
+    if order_type not in ALLOWED_ORDER_TYPES:
+        raise BrokerAdapterError(f"unsafe order: unsupported Dhan order type {order_type or '-'}")
+    if validity not in ALLOWED_VALIDITIES:
+        raise BrokerAdapterError(f"unsafe order: unsupported Dhan validity {validity or '-'}")
+    if order_type == "LIMIT" and price <= 0:
+        raise BrokerAdapterError("unsafe order: limit orders require a positive price")
 
 
 def _sdk_constant(dhan: Any, value: str) -> Any:

@@ -13,6 +13,7 @@ export default function ExecutionForm() {
   const entry = signal?.entry_price ?? signal?.entry ?? "Signal";
   const stop = signal?.stop_loss ?? signal?.stop ?? "Signal";
   const target = signal?.target_price ?? signal?.target ?? "Signal";
+  const trailingStop = signal?.trailing_stop_loss ?? signal?.trailing_stop_pct;
   const market = operations?.market_status;
   const risk = operations?.risk_summary;
   const isLive = tradingMode === "live";
@@ -24,6 +25,7 @@ export default function ExecutionForm() {
     entry_price: 22500,
     stop_loss: 22450,
     target_price: 22600,
+    trailing_stop_pct: 0.5,
     signal_time: new Date().toISOString(),
     metadata: {
       quantity: 1,
@@ -164,6 +166,10 @@ export default function ExecutionForm() {
         <span>
           <strong>{target}</strong>
           Target
+        </span>
+        <span>
+          <strong>{trailingStop ? `${trailingStop}${signal?.trailing_stop_pct ? "%" : ""}` : "Off"}</strong>
+          TSL
         </span>
       </div>
 

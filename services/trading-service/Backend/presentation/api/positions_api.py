@@ -4,8 +4,9 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, st
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from Backend.application.job_queue import enqueue_job
 from Backend.application.position_store import list_closed_positions, list_open_positions, position_summary
-from Backend.application.trade_exit_engine import evaluate_exit_rule, exit_all_positions, exit_position, exit_rules
+from Backend.application.trade_exit_engine import evaluate_exit_rule, exit_all_positions, exit_position, exit_rules, monitor_open_positions
 from Backend.core.database import get_db
 from Backend.domain.security.models import User
 from Backend.presentation.api.roles import current_user, require_roles
@@ -57,6 +58,37 @@ def get_exit_rules(_role: str = Depends(require_roles("admin", "developer", "tra
             }
         )
     return {"rules": exit_rules(), "open_positions": evaluations}
+
+
+@router.post("/exit-monitor")
+async def run_exit_monitor_now(
+    request: Request,
+    actor: User = Depends(current_user),
+    _role: str = Depends(require_roles("admin", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    try:
+        return await monitor_open_positions(
+            db=db,
+            actor=actor,
+            request=request,
+            execution_mode=execution_mode,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Exit monitor failed: {exc}") from exc
+
+
+@router.post("/exit-monitor/jobs")
+def enqueue_exit_monitor_job(
+    _role: str = Depends(require_roles("admin", "trader", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    return enqueue_job(
+        "exit-monitor",
+        {"execution_mode": execution_mode},
+        metadata={"job_type": "exit-monitor", "execution_mode": execution_mode, "status": "queued"},
+    )
 
 
 @router.post("/{position_id}/exit")

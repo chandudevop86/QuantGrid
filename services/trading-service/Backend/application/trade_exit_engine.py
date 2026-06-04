@@ -247,7 +247,10 @@ def _trailing_stop(position: dict[str, Any], price: float) -> float | None:
             return float(explicit)
         except (TypeError, ValueError):
             return None
-    pct = _trailing_percent()
+    try:
+        pct = float(position.get("trailing_stop_pct")) if position.get("trailing_stop_pct") not in {None, ""} else _trailing_percent()
+    except (TypeError, ValueError):
+        pct = 0.0
     if not _trailing_enabled() or pct <= 0:
         return None
     side = str(position.get("side") or "").upper()

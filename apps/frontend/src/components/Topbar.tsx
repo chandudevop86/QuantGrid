@@ -130,8 +130,8 @@ export default function Topbar() {
   };
 
   return (
-    <header className="topbar">
-      <div>
+    <header className={`topbar ${isAuthenticated ? "topbar-authenticated" : "topbar-guest"}`}>
+      <div className="topbar-title">
         <strong>Trading Dashboard</strong>
         <span>Service health and execution overview</span>
       </div>

@@ -268,6 +268,90 @@ def test_live_guardrail_allows_when_all_checks_pass(monkeypatch):
     assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=settings, candles_1m=_fresh_candle(), risk_decision=risk) is None
 
 
+def test_live_guardrail_rejects_app_managed_stops_by_default(monkeypatch):
+    from Backend.presentation.api import execution as execution_api
+
+    monkeypatch.delenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", raising=False)
+    monkeypatch.setattr(execution_api, "_broker_session_valid", lambda settings: True)
+    monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    actor = SimpleNamespace(role="trader")
+    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
+
+    reason = execution_api._live_guardrail_failure(
+        request=request,
+        actor=actor,
+        settings=settings,
+        candles_1m=_fresh_candle(),
+        risk_decision=risk,
+        signal=_signal(),
+    )
+
+    assert reason and reason.startswith("Live trading requires broker-native stop protection")
+
+
+def test_live_guardrail_allows_app_managed_stops_when_explicitly_enabled(monkeypatch):
+    from Backend.presentation.api import execution as execution_api
+
+    monkeypatch.setenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "true")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_ENABLED", "true")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", "live")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "5")
+    monkeypatch.setattr(execution_api, "_broker_session_valid", lambda settings: True)
+    monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    actor = SimpleNamespace(role="trader")
+    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
+
+    assert execution_api._live_guardrail_failure(
+        request=request,
+        actor=actor,
+        settings=settings,
+        candles_1m=_fresh_candle(),
+        risk_decision=risk,
+        signal=_signal(),
+    ) is None
+
+
+@pytest.mark.parametrize(
+    ("enabled", "mode", "interval"),
+    [
+        ("false", "live", "5"),
+        ("true", "paper", "5"),
+        ("true", "live", "30"),
+    ],
+)
+def test_live_guardrail_rejects_app_managed_stops_without_live_monitor(monkeypatch, enabled, mode, interval):
+    from Backend.presentation.api import execution as execution_api
+
+    monkeypatch.setenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "true")
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_ENABLED", enabled)
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", mode)
+    monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", interval)
+    monkeypatch.setattr(execution_api, "_broker_session_valid", lambda settings: True)
+    monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    actor = SimpleNamespace(role="trader")
+    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
+
+    reason = execution_api._live_guardrail_failure(
+        request=request,
+        actor=actor,
+        settings=settings,
+        candles_1m=_fresh_candle(),
+        risk_decision=risk,
+        signal=_signal(),
+    )
+
+    assert reason == "Live app-managed stops require QUANTGRID_EXIT_MONITOR_ENABLED=true, QUANTGRID_EXIT_MONITOR_MODE=live, and interval <= 10 seconds."
+
+
 class FakeKite:
     VARIETY_REGULAR = "regular"
 

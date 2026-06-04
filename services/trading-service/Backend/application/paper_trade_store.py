@@ -39,6 +39,8 @@ def init_paper_trade_store() -> None:
                 entry REAL NOT NULL,
                 stop_loss REAL NOT NULL,
                 target REAL NOT NULL,
+                trailing_stop_loss REAL,
+                trailing_stop_pct REAL,
                 status TEXT NOT NULL,
                 pnl REAL NOT NULL DEFAULT 0,
                 reason TEXT,
@@ -68,6 +70,10 @@ def init_paper_trade_store() -> None:
             connection.execute("ALTER TABLE paper_trades ADD COLUMN broker_status TEXT")
         if "raw_safe_broker_response" not in columns:
             connection.execute("ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT")
+        if "trailing_stop_loss" not in columns:
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN trailing_stop_loss REAL")
+        if "trailing_stop_pct" not in columns:
+            connection.execute("ALTER TABLE paper_trades ADD COLUMN trailing_stop_pct REAL")
 
 
 def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
@@ -82,6 +88,8 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         "entry": float(payload.get("entry") or payload.get("entry_price") or 0.0),
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
+        "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
+        "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
         "status": str(payload.get("status") or "paper_simulated"),
         "pnl": float(payload.get("pnl") or 0.0),
         "reason": payload.get("reason"),
@@ -97,9 +105,9 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO paper_trades
-                (strategy, symbol, side, entry, stop_loss, target, status, pnl, reason, broker_order_id, broker_status, raw_safe_broker_response, score, regime, signal_time, created_at)
+                (strategy, symbol, side, entry, stop_loss, target, trailing_stop_loss, trailing_stop_pct, status, pnl, reason, broker_order_id, broker_status, raw_safe_broker_response, score, regime, signal_time, created_at)
             VALUES
-                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :status, :pnl, :reason, :broker_order_id, :broker_status, :raw_safe_broker_response, :score, :regime, :signal_time, :created_at)
+                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :status, :pnl, :reason, :broker_order_id, :broker_status, :raw_safe_broker_response, :score, :regime, :signal_time, :created_at)
             """,
             row,
         )
@@ -182,6 +190,8 @@ def _init_db_store() -> None:
     additions = {
         "broker_status": "ALTER TABLE paper_trades ADD COLUMN broker_status VARCHAR(80)",
         "raw_safe_broker_response": "ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT",
+        "trailing_stop_loss": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_pct FLOAT",
     }
     with engine.begin() as connection:
         for column, statement in additions.items():
@@ -197,6 +207,8 @@ def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:
         "entry": float(payload.get("entry") or payload.get("entry_price") or 0.0),
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
+        "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
+        "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
         "status": str(payload.get("status") or "paper_simulated"),
         "pnl": float(payload.get("pnl") or 0.0),
         "reason": payload.get("reason"),
@@ -219,6 +231,8 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "entry": record.entry,
         "stop_loss": record.stop_loss,
         "target": record.target,
+        "trailing_stop_loss": record.trailing_stop_loss,
+        "trailing_stop_pct": record.trailing_stop_pct,
         "status": record.status,
         "pnl": record.pnl,
         "reason": record.reason,
@@ -304,6 +318,12 @@ def _parse_json_or_none(value: str | None) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return value
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value in {None, ""}:
+        return None
+    return float(value)
 
 
 def risk_status() -> dict[str, Any]:

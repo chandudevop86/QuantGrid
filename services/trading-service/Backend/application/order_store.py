@@ -27,10 +27,23 @@ def utc_now() -> str:
 
 
 def init_order_store() -> None:
+    from sqlalchemy import inspect, text
+
     from Backend.core.database import Base, engine
     import Backend.domain.trading_store_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    columns = {column["name"] for column in inspect(engine).get_columns("orders")}
+    additions = {
+        "stop_loss": "ALTER TABLE orders ADD COLUMN stop_loss FLOAT",
+        "target": "ALTER TABLE orders ADD COLUMN target FLOAT",
+        "trailing_stop_loss": "ALTER TABLE orders ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE orders ADD COLUMN trailing_stop_pct FLOAT",
+    }
+    with engine.begin() as connection:
+        for column, statement in additions.items():
+            if column not in columns:
+                connection.execute(text(statement))
 
 
 def create_order(payload: dict[str, Any]) -> dict[str, Any]:
@@ -46,6 +59,10 @@ def create_order(payload: dict[str, Any]) -> dict[str, Any]:
         "side": str(payload.get("side") or "").upper(),
         "quantity": int(payload.get("quantity") or 0),
         "entry_price": _float_or_none(payload.get("entry_price") if "entry_price" in payload else payload.get("price")),
+        "stop_loss": _float_or_none(payload.get("stop_loss")),
+        "target": _float_or_none(payload.get("target") if "target" in payload else payload.get("target_price")),
+        "trailing_stop_loss": _float_or_none(payload.get("trailing_stop_loss")),
+        "trailing_stop_pct": _float_or_none(payload.get("trailing_stop_pct")),
         "status": _validate_status(str(payload.get("status") or "requested")),
         "status_reason": payload.get("status_reason"),
         "created_at": str(payload.get("created_at") or now),
@@ -148,6 +165,10 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "side": record.side,
         "quantity": record.quantity,
         "entry_price": record.entry_price,
+        "stop_loss": record.stop_loss,
+        "target": record.target,
+        "trailing_stop_loss": record.trailing_stop_loss,
+        "trailing_stop_pct": record.trailing_stop_pct,
         "status": record.status,
         "status_reason": record.status_reason,
         "created_at": record.created_at,

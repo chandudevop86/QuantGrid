@@ -34,6 +34,42 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
     return mode
 
 
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _live_readiness(settings) -> dict[str, object]:
+    app_managed_stops = _truthy(os.getenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS"))
+    exit_monitor_enabled = _truthy(os.getenv("QUANTGRID_EXIT_MONITOR_ENABLED"))
+    exit_monitor_mode = str(os.getenv("QUANTGRID_EXIT_MONITOR_MODE") or "paper").strip().lower()
+    exit_monitor_interval = _float_env("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", 0.0)
+    exit_monitor_live_ready = bool(exit_monitor_enabled and exit_monitor_mode == "live" and 1 <= exit_monitor_interval <= 10)
+    stop_protection_ready = bool((not app_managed_stops) or exit_monitor_live_ready)
+    return {
+        "app_managed_stops_allowed": app_managed_stops,
+        "exit_monitor_enabled": exit_monitor_enabled,
+        "exit_monitor_mode": exit_monitor_mode,
+        "exit_monitor_interval_seconds": exit_monitor_interval,
+        "exit_monitor_live_ready": exit_monitor_live_ready,
+        "stop_protection_ready": stop_protection_ready,
+        "live_ready": bool(
+            settings.live_trading_enabled
+            and settings.broker_live_enabled
+            and settings.broker_configured
+            and settings.risk_configured
+            and settings.audit_logging_enabled
+            and stop_protection_ready
+        ),
+    }
+
+
 def _env_file_path() -> Path:
     return Path(__file__).resolve().parents[3] / ".env"
 
@@ -91,6 +127,9 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
 
     status["live_trading_enabled"] = settings.live_trading_enabled
     status["broker_live_enabled"] = settings.broker_live_enabled
+    status["risk_configured"] = settings.risk_configured
+    status["audit_logging_enabled"] = settings.audit_logging_enabled
+    status["live_readiness"] = _live_readiness(settings)
     status["real_money_orders_enabled"] = bool(settings.live_trading_enabled and settings.broker_live_enabled and settings.broker_configured)
     return status
 
@@ -114,6 +153,9 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
     status["saved"] = bool(payload.persist)
     status["live_trading_enabled"] = get_settings().live_trading_enabled
     status["broker_live_enabled"] = get_settings().broker_live_enabled
+    status["risk_configured"] = get_settings().risk_configured
+    status["audit_logging_enabled"] = get_settings().audit_logging_enabled
+    status["live_readiness"] = _live_readiness(get_settings())
     status["real_money_orders_enabled"] = bool(get_settings().live_trading_enabled and get_settings().broker_live_enabled and get_settings().broker_configured)
     return status
 
