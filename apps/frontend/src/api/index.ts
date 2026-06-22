@@ -67,6 +67,8 @@ export const api = {
     API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
   optionChainEngine: (symbol = "NIFTY") =>
     API.get(`/modules/option-chain/${symbol}`).then((res) => res.data),
+  historicalOptionChain: (symbol = "NIFTY") =>
+    API.get(`/modules/option-chain/${symbol}/historical`).then((res) => res.data),
   runBacktestingModule: (payload: unknown = {}) =>
     API.post("/modules/backtesting", payload).then((res) => res.data),
   riskEngine: () => API.get("/modules/risk-engine").then((res) => res.data),

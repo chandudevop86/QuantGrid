@@ -140,6 +140,41 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
     }
 
 
+def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
+    periods = max(1, min(int(periods), 48))
+    base_price = _latest_underlying_price(symbol)
+    now = datetime.now(timezone.utc)
+    snapshots: list[dict[str, Any]] = []
+
+    for index in range(periods):
+        age = periods - index - 1
+        synthetic_price = base_price + ((index % 5) - 2) * 18 - age * 1.75
+        atm = _round_to_step(synthetic_price, step)
+        call_oi = 950000 + index * 7200 + max(synthetic_price - atm, 0) * 120
+        put_oi = 940000 + (periods - index) * 6500 + max(atm - synthetic_price, 0) * 120
+        pcr = put_oi / call_oi if call_oi else 0.0
+        snapshots.append(
+            {
+                "timestamp": (now - timedelta(minutes=5 * age)).isoformat(),
+                "underlying_price": round(synthetic_price, 2),
+                "atm_strike": atm,
+                "pcr": round(pcr, 3),
+                "max_pain": atm + (step if pcr > 1.05 else -step if pcr < 0.95 else 0),
+                "call_oi": int(call_oi),
+                "put_oi": int(put_oi),
+            }
+        )
+
+    return {
+        "module": "historical_option_chain",
+        "symbol": symbol.upper(),
+        "source": "synthetic-historical-chain",
+        "interval": "5m",
+        "snapshots": snapshots,
+        "updated_at": now.isoformat(),
+    }
+
+
 def _sample_candles(symbol: str) -> list[dict[str, Any]]:
     candles = latest_candles(symbol, "5m", 160)
     if candles:

@@ -86,8 +86,39 @@ function demoOptionChain(symbol = "NIFTY") {
   });
 }
 
+function demoHistoricalChain(symbol = "NIFTY") {
+  const now = Date.now();
+  const snapshots = Array.from({ length: 12 }, (_, index) => {
+    const age = 11 - index;
+    const underlying = 22500 + ((index % 5) - 2) * 18 - age * 1.75;
+    const atm = Math.round(underlying / 50) * 50;
+    const callOi = 950000 + index * 7200 + Math.max(underlying - atm, 0) * 120;
+    const putOi = 940000 + (12 - index) * 6500 + Math.max(atm - underlying, 0) * 120;
+    const pcr = callOi > 0 ? putOi / callOi : 0;
+
+    return {
+      timestamp: new Date(now - age * 5 * 60 * 1000).toISOString(),
+      underlying_price: Number(underlying.toFixed(2)),
+      atm_strike: atm,
+      pcr: Number(pcr.toFixed(3)),
+      max_pain: atm + (pcr > 1.05 ? 50 : pcr < 0.95 ? -50 : 0),
+      call_oi: Math.round(callOi),
+      put_oi: Math.round(putOi),
+    };
+  });
+
+  return {
+    module: "historical_option_chain",
+    symbol,
+    source: "offline-synthetic-history",
+    interval: "5m",
+    snapshots,
+  };
+}
+
 export default function OptionChain() {
   const [chain, setChain] = useState<any>(null);
+  const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,21 +132,28 @@ export default function OptionChain() {
     }
     setError(null);
 
-    return api
+    const chainRequest = api
       .optionChainEngine("NIFTY")
       .catch((err: any) => {
         if (err?.response?.status === 404) {
           return api.optionChain("NIFTY").then(enrichOptionChain);
         }
         throw err;
-      })
-      .then((data) => {
+      });
+    const historyRequest = api
+      .historicalOptionChain("NIFTY")
+      .catch(() => demoHistoricalChain("NIFTY"));
+
+    return Promise.all([chainRequest, historyRequest])
+      .then(([data, historicalData]) => {
         setChain(enrichOptionChain(data));
+        setHistory(historicalData);
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {
         if (err?.message === "Network Error" || !err?.response) {
           setChain(demoOptionChain("NIFTY"));
+          setHistory(demoHistoricalChain("NIFTY"));
           setError(null);
           setLastRefreshed(new Date());
           return;
@@ -190,6 +228,46 @@ export default function OptionChain() {
           <span className="metric-label">Max Pain</span>
           <strong className="metric-value">{chain?.max_pain ?? "-"}</strong>
           <span className="metric-helper">{chain?.greek_model ?? "Greeks"}</span>
+        </div>
+      </div>
+
+      <div className="dashboard-section">
+        <div className="section-header">
+          <h2>Historical Chain</h2>
+          <span>{history?.source ?? "Synthetic history"}</span>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Underlying</th>
+                <th>ATM</th>
+                <th>PCR</th>
+                <th>Max Pain</th>
+                <th>Call OI</th>
+                <th>Put OI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(history?.snapshots ?? []).slice().reverse().map((row: any) => (
+                <tr key={row.timestamp}>
+                  <td>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString() : "-"}</td>
+                  <td>{formatNumber(row.underlying_price)}</td>
+                  <td>{row.atm_strike ?? "-"}</td>
+                  <td>{formatNumber(row.pcr)}</td>
+                  <td>{row.max_pain ?? "-"}</td>
+                  <td>{formatNumber(row.call_oi)}</td>
+                  <td>{formatNumber(row.put_oi)}</td>
+                </tr>
+              ))}
+              {(!history?.snapshots || history.snapshots.length === 0) && (
+                <tr>
+                  <td colSpan={7}>Historical chain data is not available yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

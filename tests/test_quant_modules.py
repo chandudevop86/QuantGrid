@@ -38,3 +38,16 @@ def test_backtesting_module_accepts_payload(app_client):
     assert payload["module"] == "backtesting"
     assert payload["payload"]["candles"] == len(candles)
     assert "recent_outcomes" in payload
+
+
+def test_historical_option_chain_module_returns_snapshots(app_client):
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/modules/option-chain/NIFTY/historical", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["module"] == "historical_option_chain"
+    assert payload["source"] == "synthetic-historical-chain"
+    assert len(payload["snapshots"]) == 12
+    assert {"timestamp", "underlying_price", "atm_strike", "pcr", "max_pain"} <= set(payload["snapshots"][0])

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from Backend.application.quant_modules import (
     backtesting_module,
+    historical_option_chain,
     module_dashboard,
     option_chain_engine,
     risk_engine_summary,
@@ -36,6 +37,16 @@ def option_chain_module(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     return option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+
+
+@router.get("/option-chain/{symbol}/historical")
+def historical_option_chain_module(
+    symbol: str,
+    periods: int = 12,
+    step: int = 50,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    return historical_option_chain(symbol, periods=periods, step=step)
 
 
 @router.post("/backtesting")
