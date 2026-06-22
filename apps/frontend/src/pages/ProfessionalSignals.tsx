@@ -6,6 +6,25 @@ import { localizeTimestamps } from "../utils/time";
 
 const backtestStrategy = "amd";
 
+function numeric(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function formatMoney(value: unknown) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(numeric(value));
+}
+
+function formatPercent(value: unknown) {
+  const parsed = numeric(value);
+  const percent = parsed > 0 && parsed <= 1 ? parsed * 100 : parsed;
+  return `${percent.toFixed(1).replace(/\.0$/, "")}%`;
+}
+
 function StatusPill({ label }: { label: string }) {
   const normalized = label.toUpperCase();
   const className = normalized === "ACTIVE"
@@ -25,6 +44,7 @@ export default function ProfessionalSignals() {
   const [trades, setTrades] = useState<any[]>([]);
   const [risk, setRisk] = useState<any>(null);
   const [backtest, setBacktest] = useState<any>(null);
+  const [journal, setJournal] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const developerMode = useUiMode() === "developer";
@@ -33,14 +53,15 @@ export default function ProfessionalSignals() {
     setLoading(true);
     Promise.all([
       api.latestSignals(),
-      api.paperTrades(),
-      api.riskStatus(),
-      api.backtestStrategy(backtestStrategy),
+      api.tradeJournal(),
+      api.riskEngine(),
+      api.runBacktestingModule({ symbol: "NIFTY", strategy_name: backtestStrategy, min_score: 0 }),
     ])
-      .then(([signalData, tradeData, riskData, backtestData]) => {
+      .then(([signalData, journalData, riskData, backtestData]) => {
         setSignals(signalData);
-        setTrades(Array.isArray(tradeData?.trades) ? tradeData.trades : []);
-        setRisk(riskData);
+        setJournal(journalData);
+        setTrades(Array.isArray(journalData?.recent_trades) ? journalData.recent_trades : []);
+        setRisk(riskData?.summary ?? riskData);
         setBacktest(backtestData);
       })
       .catch((err: any) => setError(err?.message ?? "Failed to load professional signal dashboard."))
@@ -76,7 +97,7 @@ export default function ProfessionalSignals() {
               <span className="metric-helper">Older than latest candle / 2m limit</span>
             </div>
             <div className="metric-card">
-              <span className="metric-label">Risk Status</span>
+                <span className="metric-label">Risk Status</span>
               <strong className="metric-value">{risk?.trades_today ?? 0}/{risk?.max_trades_per_day ?? "-"}</strong>
               <span className="metric-helper">Daily PnL {risk?.daily_pnl ?? 0}</span>
             </div>
@@ -141,12 +162,12 @@ export default function ProfessionalSignals() {
               </div>
               <div className="signal-summary">
                 <span>
-                  <strong>{hasBacktestTrades(backtest) ? `${backtest?.metrics?.win_rate ?? 0}%` : "No trades yet"}</strong>
+                  <strong>{hasBacktestTrades(backtest) ? formatPercent(backtest?.metrics?.win_rate) : "No trades yet"}</strong>
                   Win rate
                   <small>Run backtest to calculate performance.</small>
                 </span>
                 <span>
-                  <strong>{hasBacktestTrades(backtest) ? backtest?.metrics?.sharpe_ratio ?? 0 : "Backtest not run"}</strong>
+                  <strong>{hasBacktestTrades(backtest) ? numeric(backtest?.metrics?.sharpe_ratio).toFixed(2) : "Backtest not run"}</strong>
                   Sharpe
                   <small>Run backtest to calculate performance.</small>
                 </span>
@@ -156,10 +177,33 @@ export default function ProfessionalSignals() {
                   <small>Run backtest to calculate performance.</small>
                 </span>
               </div>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Point</th>
+                      <th>Equity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(backtest?.equity_curve ?? []).slice(-5).map((point: any) => (
+                      <tr key={`equity-${point.index}`}>
+                        <td>{point.index}</td>
+                        <td>{formatMoney(point.equity)}</td>
+                      </tr>
+                    ))}
+                    {(!backtest?.equity_curve || backtest.equity_curve.length === 0) && (
+                      <tr>
+                        <td colSpan={2}>No equity curve available yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
               {developerMode && (
                 <details className="technical-details" open>
                   <summary>Backtest API Payload</summary>
-                  <pre>{JSON.stringify(localizeTimestamps(backtest?.metrics ?? {}), null, 2)}</pre>
+                  <pre>{JSON.stringify(localizeTimestamps(backtest ?? {}), null, 2)}</pre>
                 </details>
               )}
             </div>
@@ -167,7 +211,7 @@ export default function ProfessionalSignals() {
               <div className="form-panel-header">
                 <div>
                   <h2>Paper Trades</h2>
-                  <p>{trades.length} journal rows</p>
+                  <p>{journal?.total_trades ?? trades.length} journal rows | {formatPercent(journal?.win_rate)} win rate | {formatMoney(journal?.pnl)} PnL</p>
                 </div>
               </div>
               <div className="table-wrap">
@@ -177,19 +221,23 @@ export default function ProfessionalSignals() {
                       <th>Symbol</th>
                       <th>Side</th>
                       <th>Status</th>
+                      <th>PnL</th>
+                      <th>Created</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {trades.slice(0, 5).map((trade: any, index) => (
+                    {trades.slice(0, 8).map((trade: any, index) => (
                       <tr key={trade.id ?? index}>
                         <td>{trade.symbol ?? "-"}</td>
                         <td>{trade.side ?? "-"}</td>
                         <td>{trade.status ?? "-"}</td>
+                        <td>{formatMoney(trade.pnl)}</td>
+                        <td>{trade.created_at ? new Date(trade.created_at).toLocaleString() : "-"}</td>
                       </tr>
                     ))}
                     {trades.length === 0 && (
                       <tr>
-                        <td colSpan={3}>No paper trades recorded yet.</td>
+                        <td colSpan={5}>No paper trades recorded yet.</td>
                       </tr>
                     )}
                   </tbody>
