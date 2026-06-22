@@ -45,6 +45,47 @@ function enrichOptionChain(data: any) {
   };
 }
 
+function demoOptionChain(symbol = "NIFTY") {
+  const underlying = 22500;
+  const step = 50;
+  const atm = 22500;
+  const rows = Array.from({ length: 11 }, (_, index) => {
+    const strike = atm + (index - 5) * step;
+    const distance = Math.abs(strike - underlying);
+    const timeValue = Math.max(12, 95 * Math.exp(-distance / (step * 4)));
+    const ceOi = Math.round(90000 + Math.max(index - 5, 0) * 17500 + distance * 80);
+    const peOi = Math.round(90000 + Math.max(5 - index, 0) * 17500 + distance * 80);
+    const deltaShift = Math.max(-1, Math.min(1, (atm - strike) / (step * 4)));
+
+    return {
+      strike,
+      ce: {
+        ltp: Number((Math.max(underlying - strike, 0) + timeValue).toFixed(2)),
+        oi: ceOi,
+        volume: Math.round(ceOi * 0.18),
+        greeks: { delta: Number((0.5 + deltaShift / 2).toFixed(2)) },
+      },
+      pe: {
+        ltp: Number((Math.max(strike - underlying, 0) + timeValue).toFixed(2)),
+        oi: peOi,
+        volume: Math.round(peOi * 0.18),
+        greeks: { delta: Number((-0.5 + deltaShift / 2).toFixed(2)) },
+      },
+    };
+  });
+
+  return enrichOptionChain({
+    symbol,
+    underlying_price: underlying,
+    atm_strike: atm,
+    step,
+    expiry: "Demo",
+    source: "offline-demo-chain",
+    warning: "Backend is offline; showing demo option-chain data.",
+    rows,
+  });
+}
+
 export default function OptionChain() {
   const [chain, setChain] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -73,10 +114,13 @@ export default function OptionChain() {
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {
-        const message = err?.message === "Network Error"
-          ? "Cannot reach the market API. Check that the backend is running on port 8000."
-          : err?.response?.data?.detail ?? err?.message ?? "Failed to load option chain.";
-        setError(message);
+        if (err?.message === "Network Error" || !err?.response) {
+          setChain(demoOptionChain("NIFTY"));
+          setError(null);
+          setLastRefreshed(new Date());
+          return;
+        }
+        setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load option chain.");
       })
       .finally(() => {
         setLoading(false);
