@@ -47,13 +47,7 @@ def live_nse_option_chain_module(
     step: int = 50,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    try:
-        return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
-    except Exception as exc:
-        fallback = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
-        fallback["source"] = "synthetic-demo-chain"
-        fallback["warning"] = f"Live NSE chain unavailable: {exc}. Showing synthetic option-chain data."
-        return fallback
+    return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
 
 
 @router.get("/option-chain/{symbol}/historical")

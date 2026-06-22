@@ -132,15 +132,7 @@ export default function OptionChain() {
     }
     setError(null);
 
-    const chainRequest = api
-      .liveNseOptionChain("NIFTY")
-      .catch(() => api.optionChainEngine("NIFTY"))
-      .catch((err: any) => {
-        if (err?.response?.status === 404) {
-          return api.optionChain("NIFTY").then(enrichOptionChain);
-        }
-        throw err;
-      });
+    const chainRequest = api.liveNseOptionChain("NIFTY");
     const historyRequest = api
       .historicalOptionChain("NIFTY")
       .catch(() => demoHistoricalChain("NIFTY"));
@@ -152,14 +144,13 @@ export default function OptionChain() {
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {
-        if (err?.message === "Network Error" || !err?.response) {
-          setChain(demoOptionChain("NIFTY"));
-          setHistory(demoHistoricalChain("NIFTY"));
-          setError(null);
-          setLastRefreshed(new Date());
-          return;
-        }
-        setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load option chain.");
+        setChain(null);
+        setHistory(null);
+        setError(
+          err?.message === "Network Error" || !err?.response
+            ? "Live NSE option chain is unavailable. Check that the backend is running and can reach nseindia.com."
+            : err?.response?.data?.detail ?? err?.message ?? "Failed to load live NSE option chain."
+        );
       })
       .finally(() => {
         setLoading(false);
@@ -184,7 +175,7 @@ export default function OptionChain() {
       <div className="page-heading dashboard-heading">
         <div>
           <h1>Option Chain</h1>
-          <p>Live NSE chain when available, with synthetic fallback around the current ATM strike.</p>
+          <p>Live NSE option-chain data, real OI, real PCR, and chain-derived signals.</p>
         </div>
         <button
           type="button"
@@ -203,7 +194,7 @@ export default function OptionChain() {
         <div className="metric-card">
           <span className="metric-label">Underlying</span>
           <strong className="metric-value">{chain?.symbol ?? "NIFTY"}</strong>
-          <span className="metric-helper">{chain?.source ?? "Market API"}</span>
+          <span className="metric-helper">{chain?.source ?? "Live NSE Chain"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Current Price</span>
@@ -218,7 +209,7 @@ export default function OptionChain() {
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
           <strong className="metric-value">{chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">{chain?.source === "live-nse-chain" ? "Live NSE chain" : "Synthetic/demo chain"}</span>
+          <span className="metric-helper">Live NSE chain</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>
@@ -229,6 +220,11 @@ export default function OptionChain() {
           <span className="metric-label">Max Pain</span>
           <strong className="metric-value">{chain?.max_pain ?? "-"}</strong>
           <span className="metric-helper">{chain?.greek_model ?? "Greeks"}</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">Real Signal</span>
+          <strong className="metric-value">{chain?.signals?.bias ?? "-"}</strong>
+          <span className="metric-helper">{chain?.signals?.reason ?? "PCR / OI / max pain"}</span>
         </div>
       </div>
 

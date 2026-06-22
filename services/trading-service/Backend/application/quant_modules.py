@@ -175,6 +175,23 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
             rate=0.06,
         )
 
+    max_pain = _max_pain(rows)
+    pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0
+    signal_bias = "NEUTRAL"
+    signal_reason = "PCR and max pain are balanced around ATM."
+    if pcr >= 1.15 and max_pain and max_pain >= atm:
+        signal_bias = "BULLISH"
+        signal_reason = "Put OI is dominant and max pain is at or above ATM."
+    elif pcr <= 0.85 and max_pain and max_pain <= atm:
+        signal_bias = "BEARISH"
+        signal_reason = "Call OI is dominant and max pain is at or below ATM."
+    elif pcr >= 1.15:
+        signal_bias = "PUT_SUPPORT"
+        signal_reason = "Put-call ratio shows stronger put-side open interest."
+    elif pcr <= 0.85:
+        signal_bias = "CALL_RESISTANCE"
+        signal_reason = "Put-call ratio shows stronger call-side open interest."
+
     return {
         "module": "live_nse_option_chain",
         "symbol": nse_symbol,
@@ -183,9 +200,18 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         "expiry": expiry,
         "step": step,
         "source": "live-nse-chain",
-        "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
-        "max_pain": _max_pain(rows),
+        "pcr": pcr,
+        "max_pain": max_pain,
         "greek_model": "black_scholes_from_nse_iv",
+        "signals": {
+            "bias": signal_bias,
+            "reason": signal_reason,
+            "total_call_oi": int(total_call_oi),
+            "total_put_oi": int(total_put_oi),
+            "pcr": pcr,
+            "atm_strike": atm,
+            "max_pain": max_pain,
+        },
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
     }

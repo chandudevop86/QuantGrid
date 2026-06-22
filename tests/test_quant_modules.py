@@ -53,16 +53,32 @@ def test_historical_option_chain_module_returns_snapshots(app_client):
     assert {"timestamp", "underlying_price", "atm_strike", "pcr", "max_pain"} <= set(payload["snapshots"][0])
 
 
-def test_live_nse_option_chain_falls_back_when_nse_unavailable(app_client, monkeypatch):
+def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatch):
     import Backend.presentation.api.modules_api as modules_api
 
-    monkeypatch.setattr(modules_api, "live_nse_option_chain", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("blocked")))
+    monkeypatch.setattr(
+        modules_api,
+        "live_nse_option_chain",
+        lambda *args, **kwargs: {
+            "module": "live_nse_option_chain",
+            "symbol": "NIFTY",
+            "source": "live-nse-chain",
+            "underlying_price": 22500,
+            "atm_strike": 22500,
+            "expiry": "27-Jun-2026",
+            "pcr": 1.12,
+            "max_pain": 22500,
+            "signals": {"bias": "BULLISH", "total_call_oi": 1000, "total_put_oi": 1120},
+            "rows": [{"strike": 22500, "ce": {"oi": 1000}, "pe": {"oi": 1120}}],
+        },
+    )
     headers = admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["source"] == "synthetic-demo-chain"
-    assert "Live NSE chain unavailable" in payload["warning"]
-    assert payload["rows"]
+    assert payload["source"] == "live-nse-chain"
+    assert payload["pcr"] == 1.12
+    assert payload["signals"]["bias"] == "BULLISH"
+    assert payload["rows"][0]["ce"]["oi"] == 1000
