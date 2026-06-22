@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from math import erf, exp, log, sqrt
 from statistics import mean
 from typing import Any
+from urllib.parse import quote
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.market_data_store import latest_candles, latest_price_tick
@@ -58,6 +61,134 @@ def _latest_underlying_price(symbol: str, fallback: float = 22500.0) -> float:
     if candles:
         return float(candles[-1].get("close") or fallback)
     return fallback
+
+
+def _max_pain(rows: list[dict[str, Any]]) -> int | None:
+    if not rows:
+        return None
+    return min(
+        rows,
+        key=lambda candidate: sum(
+            max(float(row["strike"]) - float(candidate["strike"]), 0.0) * float(row["ce"].get("oi") or 0)
+            + max(float(candidate["strike"]) - float(row["strike"]), 0.0) * float(row["pe"].get("oi") or 0)
+            for row in rows
+        ),
+    )["strike"]
+
+
+def _nse_index_symbol(symbol: str) -> str:
+    normalized = symbol.upper().strip()
+    aliases = {
+        "NIFTY": "NIFTY",
+        "NIFTY50": "NIFTY",
+        "BANKNIFTY": "BANKNIFTY",
+        "FINNIFTY": "FINNIFTY",
+        "MIDCPNIFTY": "MIDCPNIFTY",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _nse_number(value: Any) -> float | int | None:
+    if value in {None, ""}:
+        return None
+    number = float(value)
+    return int(number) if number.is_integer() else round(number, 4)
+
+
+def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, step: int = 50) -> dict[str, Any]:
+    nse_symbol = _nse_index_symbol(symbol)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
+    }
+    opener = build_opener(HTTPCookieProcessor())
+    opener.open(Request("https://www.nseindia.com", headers=headers), timeout=8).read()
+    response = opener.open(
+        Request(f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}", headers=headers),
+        timeout=8,
+    )
+    payload = json.loads(response.read().decode("utf-8"))
+    records = payload.get("records") or {}
+    raw_rows = records.get("data") or []
+    expiry = next((item for item in records.get("expiryDates") or [] if item), None)
+    underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+    atm = _round_to_step(underlying, step)
+    lower = atm - strikes_each_side * step
+    upper = atm + strikes_each_side * step
+    rows: list[dict[str, Any]] = []
+
+    for item in raw_rows:
+        if expiry and item.get("expiryDate") != expiry:
+            continue
+        strike = int(round(float(item.get("strikePrice") or 0)))
+        if strike < lower or strike > upper:
+            continue
+        ce = item.get("CE") or {}
+        pe = item.get("PE") or {}
+        rows.append(
+            {
+                "strike": strike,
+                "ce": {
+                    "ltp": _nse_number(ce.get("lastPrice")),
+                    "change": _nse_number(ce.get("change")),
+                    "volume": _nse_number(ce.get("totalTradedVolume")),
+                    "oi": _nse_number(ce.get("openInterest")),
+                    "iv": _nse_number(ce.get("impliedVolatility")),
+                    "greeks": None,
+                },
+                "pe": {
+                    "ltp": _nse_number(pe.get("lastPrice")),
+                    "change": _nse_number(pe.get("change")),
+                    "volume": _nse_number(pe.get("totalTradedVolume")),
+                    "oi": _nse_number(pe.get("openInterest")),
+                    "iv": _nse_number(pe.get("impliedVolatility")),
+                    "greeks": None,
+                },
+            }
+        )
+
+    rows = sorted(rows, key=lambda row: row["strike"])
+    if not rows:
+        raise RuntimeError("NSE returned no option-chain rows for the selected strike range.")
+
+    total_call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
+    total_put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
+    for row in rows:
+        strike = float(row["strike"])
+        iv = float(row["ce"].get("iv") or row["pe"].get("iv") or 18.0) / 100
+        row["ce"]["greeks"] = _black_scholes_greeks(
+            option_type="call",
+            spot=underlying,
+            strike=strike,
+            time_to_expiry=7 / 365,
+            volatility=max(iv, 0.01),
+            rate=0.06,
+        )
+        row["pe"]["greeks"] = _black_scholes_greeks(
+            option_type="put",
+            spot=underlying,
+            strike=strike,
+            time_to_expiry=7 / 365,
+            volatility=max(iv, 0.01),
+            rate=0.06,
+        )
+
+    return {
+        "module": "live_nse_option_chain",
+        "symbol": nse_symbol,
+        "underlying_price": round(underlying, 2),
+        "atm_strike": atm,
+        "expiry": expiry,
+        "step": step,
+        "source": "live-nse-chain",
+        "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
+        "max_pain": _max_pain(rows),
+        "greek_model": "black_scholes_from_nse_iv",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "rows": rows,
+    }
 
 
 def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
@@ -115,15 +246,6 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
 
     total_call_oi = sum(float(row["ce"]["oi"] or 0) for row in rows)
     total_put_oi = sum(float(row["pe"]["oi"] or 0) for row in rows)
-    max_pain = min(
-        rows,
-        key=lambda candidate: sum(
-            max(float(row["strike"]) - float(candidate["strike"]), 0.0) * float(row["ce"]["oi"] or 0)
-            + max(float(candidate["strike"]) - float(row["strike"]), 0.0) * float(row["pe"]["oi"] or 0)
-            for row in rows
-        ),
-    )["strike"]
-
     return {
         "module": "option_chain_engine",
         "symbol": symbol.upper(),
@@ -133,7 +255,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
         "step": step,
         "source": "synthetic-demo-chain",
         "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
-        "max_pain": max_pain,
+        "max_pain": _max_pain(rows),
         "greek_model": "black_scholes_demo",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,

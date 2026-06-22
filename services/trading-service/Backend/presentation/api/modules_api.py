@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from Backend.application.quant_modules import (
     backtesting_module,
     historical_option_chain,
+    live_nse_option_chain,
     module_dashboard,
     option_chain_engine,
     risk_engine_summary,
@@ -37,6 +38,22 @@ def option_chain_module(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     return option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+
+
+@router.get("/option-chain/{symbol}/live-nse")
+def live_nse_option_chain_module(
+    symbol: str,
+    strikes_each_side: int = 8,
+    step: int = 50,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    try:
+        return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
+    except Exception as exc:
+        fallback = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+        fallback["source"] = "synthetic-demo-chain"
+        fallback["warning"] = f"Live NSE chain unavailable: {exc}. Showing synthetic option-chain data."
+        return fallback
 
 
 @router.get("/option-chain/{symbol}/historical")

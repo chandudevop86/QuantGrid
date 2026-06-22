@@ -133,7 +133,8 @@ export default function OptionChain() {
     setError(null);
 
     const chainRequest = api
-      .optionChainEngine("NIFTY")
+      .liveNseOptionChain("NIFTY")
+      .catch(() => api.optionChainEngine("NIFTY"))
       .catch((err: any) => {
         if (err?.response?.status === 404) {
           return api.optionChain("NIFTY").then(enrichOptionChain);
@@ -183,7 +184,7 @@ export default function OptionChain() {
       <div className="page-heading dashboard-heading">
         <div>
           <h1>Option Chain</h1>
-          <p>NIFTY option chain around the current ATM strike.</p>
+          <p>Live NSE chain when available, with synthetic fallback around the current ATM strike.</p>
         </div>
         <button
           type="button"
@@ -217,7 +218,7 @@ export default function OptionChain() {
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
           <strong className="metric-value">{chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">Synthetic/demo chain</span>
+          <span className="metric-helper">{chain?.source === "live-nse-chain" ? "Live NSE chain" : "Synthetic/demo chain"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>
@@ -273,7 +274,7 @@ export default function OptionChain() {
 
       <div className="dashboard-section">
         <div className="section-header">
-          <h2>NIFTY Option Chain</h2>
+          <h2>{chain?.source === "live-nse-chain" ? "Live NSE Chain" : "NIFTY Option Chain"}</h2>
           <span>{loading ? "Loading" : refreshing ? "Refreshing" : "Ready"}</span>
         </div>
         <div className="table-wrap option-chain-wrap">

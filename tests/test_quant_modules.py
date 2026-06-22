@@ -51,3 +51,18 @@ def test_historical_option_chain_module_returns_snapshots(app_client):
     assert payload["source"] == "synthetic-historical-chain"
     assert len(payload["snapshots"]) == 12
     assert {"timestamp", "underlying_price", "atm_strike", "pcr", "max_pain"} <= set(payload["snapshots"][0])
+
+
+def test_live_nse_option_chain_falls_back_when_nse_unavailable(app_client, monkeypatch):
+    import Backend.presentation.api.modules_api as modules_api
+
+    monkeypatch.setattr(modules_api, "live_nse_option_chain", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("blocked")))
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"] == "synthetic-demo-chain"
+    assert "Live NSE chain unavailable" in payload["warning"]
+    assert payload["rows"]
