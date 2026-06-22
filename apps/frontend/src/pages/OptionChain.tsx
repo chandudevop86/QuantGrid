@@ -8,6 +8,43 @@ function formatNumber(value: unknown) {
   return Number.isFinite(numeric) ? numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "-";
 }
 
+function enrichOptionChain(data: any) {
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  const totalCallOi = rows.reduce((sum: number, row: any) => sum + Number(row?.ce?.oi ?? 0), 0);
+  const totalPutOi = rows.reduce((sum: number, row: any) => sum + Number(row?.pe?.oi ?? 0), 0);
+  const maxPain = rows.length
+    ? rows.reduce((best: any, candidate: any) => {
+      const candidateStrike = Number(candidate?.strike ?? 0);
+      const pain = rows.reduce((sum: number, row: any) => {
+        const strike = Number(row?.strike ?? 0);
+        return sum
+          + Math.max(strike - candidateStrike, 0) * Number(row?.ce?.oi ?? 0)
+          + Math.max(candidateStrike - strike, 0) * Number(row?.pe?.oi ?? 0);
+      }, 0);
+      return pain < best.pain ? { strike: candidateStrike, pain } : best;
+    }, { strike: Number(rows[0]?.strike ?? 0), pain: Number.POSITIVE_INFINITY }).strike
+    : data?.max_pain;
+  const atm = Number(data?.atm_strike ?? 0);
+  const step = Number(data?.step ?? 50) || 50;
+
+  return {
+    ...data,
+    pcr: data?.pcr ?? (totalCallOi > 0 ? Number((totalPutOi / totalCallOi).toFixed(3)) : undefined),
+    max_pain: data?.max_pain ?? maxPain,
+    greek_model: data?.greek_model ?? "derived delta",
+    source: data?.source ?? "market-option-chain",
+    rows: rows.map((row: any) => {
+      const strike = Number(row?.strike ?? 0);
+      const distance = atm && strike ? Math.max(-1, Math.min(1, (atm - strike) / (step * 4))) : 0;
+      return {
+        ...row,
+        ce: { ...row.ce, greeks: row.ce?.greeks ?? { delta: Number((0.5 + distance / 2).toFixed(2)) } },
+        pe: { ...row.pe, greeks: row.pe?.greeks ?? { delta: Number((-0.5 + distance / 2).toFixed(2)) } },
+      };
+    }),
+  };
+}
+
 export default function OptionChain() {
   const [chain, setChain] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -25,8 +62,14 @@ export default function OptionChain() {
 
     return api
       .optionChainEngine("NIFTY")
+      .catch((err: any) => {
+        if (err?.response?.status === 404) {
+          return api.optionChain("NIFTY").then(enrichOptionChain);
+        }
+        throw err;
+      })
       .then((data) => {
-        setChain(data);
+        setChain(enrichOptionChain(data));
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {

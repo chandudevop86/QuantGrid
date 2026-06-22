@@ -3,8 +3,10 @@ import axios from "axios";
 const fallbackBaseURL =
   typeof window === "undefined"
     ? "http://localhost:8000"
-    : import.meta.env.DEV
-      ? `${window.location.origin}/api`
+    : import.meta.env.DEV && !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
+      ? `${window.location.protocol}//${window.location.hostname}:8000`
+      : import.meta.env.DEV
+        ? `${window.location.origin}/api`
       : `${window.location.origin}/api`;
 
 const configuredBaseURL =

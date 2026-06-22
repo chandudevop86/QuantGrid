@@ -141,11 +141,6 @@ export default function Topbar() {
         <strong>Trading Dashboard</strong>
         <span>Service health and execution overview</span>
       </div>
-      {insecureHttp && (
-        <div className="topbar-https-warning" role="alert">
-          Connection is not secure. Enable HTTPS before live trading.
-        </div>
-      )}
       {brokerCircuit?.active && (
         <div className="topbar-broker-circuit-warning" role="alert">
           BROKER CIRCUIT BREAKER ACTIVE
