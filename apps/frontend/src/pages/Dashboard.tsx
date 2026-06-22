@@ -158,6 +158,7 @@ export default function Dashboard() {
   const [marketProvider, setMarketProvider] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [positionSummary, setPositionSummary] = useState<any>(null);
+  const [modules, setModules] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
@@ -185,6 +186,7 @@ export default function Dashboard() {
       setMarketProvider(null);
       setBrokerStatus(null);
       setPositionSummary(null);
+      setModules(null);
       setLoading(false);
       return;
     }
@@ -196,13 +198,15 @@ export default function Dashboard() {
       api.marketProviderStatus("NIFTY", "1m").catch(() => null),
       api.brokerStatus(),
       api.positionSummary().catch(() => null),
+      api.modulesDashboard().catch(() => null),
     ])
-      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData]) => {
+      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setMarketProvider(marketProviderData);
         setBrokerStatus(brokerData);
         setPositionSummary(positionData);
+        setModules(modulesData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -264,6 +268,10 @@ export default function Dashboard() {
     validation_summary: market?.valid_for_execution ? "Confirmation checks available." : "Confirmation criteria are not met.",
     technical_details: market?.warnings ?? [],
   };
+  const optionModule = modules?.option_chain;
+  const backtestModule = modules?.backtesting;
+  const riskModule = modules?.risk_engine;
+  const journalModule = modules?.trade_journal;
 
   return (
     <section className="dashboard-page">
@@ -402,6 +410,66 @@ export default function Dashboard() {
               value={marketStore?.candles ?? 0}
               helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
             />
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>QuantGrid Modules</h2>
+              <span>{modules ? "Live" : "Loading"}</span>
+            </div>
+            <div className="module-grid">
+              <div className="module-panel">
+                <div className="module-panel-header">
+                  <span>Option Chain Engine</span>
+                  <strong>{optionModule?.symbol ?? "NIFTY"}</strong>
+                </div>
+                <div className="status-panel-body">
+                  <span>ATM strike: {optionModule?.atm_strike ?? "-"}</span>
+                  <span>PCR: {optionModule?.pcr ?? "-"}</span>
+                  <span>Max pain: {optionModule?.max_pain ?? "-"}</span>
+                  <span>Greeks: {optionModule?.greek_model ?? "Black-Scholes demo"}</span>
+                </div>
+              </div>
+
+              <div className="module-panel">
+                <div className="module-panel-header">
+                  <span>Backtesting</span>
+                  <strong>{backtestModule?.metrics?.total_trades ?? 0} trades</strong>
+                </div>
+                <div className="status-panel-body">
+                  <span>PnL: {formatMoney(backtestModule?.metrics?.pnl)}</span>
+                  <span>Win rate: {Math.round(Number(backtestModule?.metrics?.win_rate ?? 0) * 100)}%</span>
+                  <span>Max drawdown: {Math.round(Number(backtestModule?.metrics?.max_drawdown ?? 0) * 100)}%</span>
+                  <span>Equity points: {backtestModule?.equity_curve?.length ?? 0}</span>
+                </div>
+              </div>
+
+              <div className="module-panel">
+                <div className="module-panel-header">
+                  <span>Risk Engine</span>
+                  <strong>{riskModule?.state ?? risk?.active_risk_state ?? "normal"}</strong>
+                </div>
+                <div className="status-panel-body">
+                  <span>Daily loss: {riskModule?.checks?.daily_loss ? "OK" : "Blocked"}</span>
+                  <span>Trades/day: {riskModule?.checks?.trades_per_day ? "OK" : "Blocked"}</span>
+                  <span>Open positions: {riskModule?.checks?.open_positions ? "OK" : "Blocked"}</span>
+                  <span>Kill switch: {riskModule?.checks?.kill_switch ? "Ready" : "Active"}</span>
+                </div>
+              </div>
+
+              <div className="module-panel">
+                <div className="module-panel-header">
+                  <span>Trade Journal</span>
+                  <strong>{journalModule?.closed_trades ?? 0} closed</strong>
+                </div>
+                <div className="status-panel-body">
+                  <span>PnL: {formatMoney(journalModule?.pnl)}</span>
+                  <span>Win rate: {Math.round(Number(journalModule?.win_rate ?? 0) * 100)}%</span>
+                  <span>Avg win: {formatMoney(journalModule?.avg_win)}</span>
+                  <span>Avg loss: {formatMoney(journalModule?.avg_loss)}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="dashboard-section">

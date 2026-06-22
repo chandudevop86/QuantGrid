@@ -7,11 +7,11 @@ from Backend.domain.models.signal import StrategySignal
 
 
 class ExecutionEngine:
-    def order_from_signal(self, signal: StrategySignal) -> Order:
+    def order_from_signal(self, signal: StrategySignal, *, quantity: int | None = None) -> Order:
         return Order(
             symbol=signal.symbol, 
             side=signal.side, 
-            quantity=int(signal.metadata.get("quantity", 1)), 
+            quantity=int(quantity if quantity is not None else signal.metadata.get("quantity", 1)), 
             price=signal.entry_price, 
             stop_loss=signal.stop_loss,
             target_price=signal.target_price, 

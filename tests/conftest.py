@@ -30,6 +30,8 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'quantgrid.sqlite3'}")
     monkeypatch.setenv("MARKET_DATA_DB_FILE", str(tmp_path / "market.sqlite3"))
     monkeypatch.setenv("JOB_STORE_DB_FILE", str(tmp_path / "jobs.sqlite3"))
+    monkeypatch.setenv("PAPER_TRADE_DB_FILE", str(tmp_path / "paper_trades.sqlite3"))
+    monkeypatch.setenv("POSITION_STORE_DB_FILE", str(tmp_path / "positions.sqlite3"))
     monkeypatch.setenv("QUANTGRID_USERS", f"admin:{TEST_ADMIN_PASSWORD}:admin")
     monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
     reset_backend_modules()

@@ -591,6 +591,20 @@ async def _submit_paper_signal(
             extra=_risk_response_fields(risk_decision),
         )
     candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
+    market_status = str(getattr(candle_validation, "market_status", "LIVE MARKET"))
+    if not candle_validation.valid_for_execution or market_status.upper() != "LIVE MARKET":
+        reason = f"MARKET_NOT_LIVE_FOR_EXECUTION: {market_status}"
+        observe_rejected_order(reason, execution_mode)
+        return _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=reason,
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={**_risk_response_fields(risk_decision), "allowed": False, "validation": candle_validation.model_dump()},
+        )
     decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
     gate = evaluate_risk_gate(decision)
     if not gate.allowed:
@@ -937,6 +951,21 @@ async def auto_paper_order(
 
         selected = validated_signals[0]
         strategy_diagnostics[strategy]["selected_signal"] = serialize_signal(selected)
+        scan_market_status = str(getattr(candle_validation, "market_status", "LIVE MARKET"))
+        if not candle_validation.valid_for_execution or scan_market_status.upper() != "LIVE MARKET":
+            result = _paper_response(
+                status_value="rejected",
+                symbol=symbol,
+                strategy=selected.strategy_name,
+                signal=selected,
+                reason=f"MARKET_NOT_LIVE_FOR_EXECUTION: {scan_market_status}",
+                execution_mode=execution_mode,
+                strategy_diagnostics=strategy_diagnostics,
+                extra={"validation": candle_validation.model_dump()},
+            )
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
         result = await _submit_paper_signal(
             selected,
             engine=engine,

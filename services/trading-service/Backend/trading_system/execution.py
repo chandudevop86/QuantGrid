@@ -57,8 +57,9 @@ class ExecutionEngine:
 
     async def execute_signal(self, signal: StrategySignal, *, market_price: float | None = None) -> ExecutionResult:
         started_at = datetime.utcnow()
-        valid, reason = self.risk_manager.validate_signal(signal, now=started_at)
-        if not valid:
+        risk_decision = self.risk_manager.validate_order(signal, now=started_at)
+        if not risk_decision.accepted:
+            reason = risk_decision.reason
             self.logger.info("signal_rejected", {"symbol": signal.symbol, "reason": reason, "event": "signal_rejected"})
             return ExecutionResult(False, "rejected", reason)
 
@@ -77,7 +78,7 @@ class ExecutionEngine:
             )
             return ExecutionResult(False, "rejected", reason, requested_price=requested_price, execution_price=slipped_price)
 
-        order = self.order_factory.order_from_signal(signal)
+        order = self.order_factory.order_from_signal(signal, quantity=risk_decision.quantity)
         broker_order = await self.broker.place_order(order.symbol, order.side, int(order.quantity), slipped_price)
         latency_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
 
@@ -104,7 +105,15 @@ class ExecutionEngine:
             requested_price=requested_price,
             execution_price=broker_order.filled_price or slipped_price,
             latency_ms=latency_ms,
-            metadata={"slippage_bps": slippage_bps},
+            metadata={
+                "slippage_bps": slippage_bps,
+                "risk_decision": {
+                    "quantity": risk_decision.quantity,
+                    "risk_amount": risk_decision.risk_amount,
+                    "risk_per_unit": risk_decision.risk_per_unit,
+                    "risk_pct": risk_decision.risk_pct,
+                },
+            },
         )
 
     async def consume(self, queue: asyncio.Queue[ExecutionRequest], *, stop_after: int | None = None) -> list[ExecutionResult]:

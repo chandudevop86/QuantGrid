@@ -186,6 +186,9 @@ def create_app():
     from Backend.presentation.api.notifications_api import router as notifications_router
     app.include_router(notifications_router)
 
+    from Backend.presentation.api.modules_api import router as modules_router
+    app.include_router(modules_router)
+
     return app
 
 

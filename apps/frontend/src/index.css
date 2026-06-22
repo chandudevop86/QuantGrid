@@ -1648,6 +1648,42 @@ select {
   color: #94a3b8;
 }
 
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.module-panel {
+  display: grid;
+  gap: 12px;
+  min-height: 190px;
+  padding: 16px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0f172a;
+}
+
+.module-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.module-panel-header span {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.module-panel-header strong {
+  color: #e2e8f0;
+  font-size: 14px;
+  text-align: right;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     display: block;
@@ -1676,6 +1712,7 @@ select {
   }
 
   .status-panel-grid,
+  .module-grid,
   .strategy-context,
   .execution-safety-grid,
   .risk-summary-grid,

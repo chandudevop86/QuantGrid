@@ -24,7 +24,7 @@ export default function OptionChain() {
     setError(null);
 
     return api
-      .optionChain("NIFTY")
+      .optionChainEngine("NIFTY")
       .then((data) => {
         setChain(data);
         setLastRefreshed(new Date());
@@ -92,7 +92,17 @@ export default function OptionChain() {
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
           <strong className="metric-value">{chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">Nearest available chain</span>
+          <span className="metric-helper">Synthetic/demo chain</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">PCR</span>
+          <strong className="metric-value">{formatNumber(chain?.pcr)}</strong>
+          <span className="metric-helper">Put/call open interest</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">Max Pain</span>
+          <strong className="metric-value">{chain?.max_pain ?? "-"}</strong>
+          <span className="metric-helper">{chain?.greek_model ?? "Greeks"}</span>
         </div>
       </div>
 
@@ -108,7 +118,9 @@ export default function OptionChain() {
                 <th>CE LTP</th>
                 <th>CE OI</th>
                 <th>CE Vol</th>
+                <th>CE Delta</th>
                 <th>Strike</th>
+                <th>PE Delta</th>
                 <th>PE Vol</th>
                 <th>PE OI</th>
                 <th>PE LTP</th>
@@ -120,7 +132,9 @@ export default function OptionChain() {
                   <td>{formatNumber(row.ce?.ltp)}</td>
                   <td>{formatNumber(row.ce?.oi)}</td>
                   <td>{formatNumber(row.ce?.volume)}</td>
+                  <td>{formatNumber(row.ce?.greeks?.delta)}</td>
                   <td><strong>{row.strike}</strong></td>
+                  <td>{formatNumber(row.pe?.greeks?.delta)}</td>
                   <td>{formatNumber(row.pe?.volume)}</td>
                   <td>{formatNumber(row.pe?.oi)}</td>
                   <td>{formatNumber(row.pe?.ltp)}</td>
@@ -128,7 +142,7 @@ export default function OptionChain() {
               ))}
               {(!chain?.rows || chain.rows.length === 0) && (
                 <tr>
-                  <td colSpan={7}>Option chain data is not available yet.</td>
+                  <td colSpan={9}>Option chain data is not available yet.</td>
                 </tr>
               )}
             </tbody>

@@ -336,7 +336,13 @@ def risk_status() -> dict[str, Any]:
     today = datetime.now(timezone.utc).date().isoformat()
     trades = list_paper_trades(500)
     today_trades = [trade for trade in trades if str(trade.get("created_at", "")).startswith(today)]
-    daily_pnl = round(float(positions["todays_pnl"]), 2)
+    closed_statuses = {"closed", "exited", "completed"}
+    closed_trade_pnl = sum(
+        float(trade.get("pnl") or 0.0)
+        for trade in today_trades
+        if str(trade.get("status") or "").lower() in closed_statuses
+    )
+    daily_pnl = round(float(positions["todays_pnl"]) + closed_trade_pnl, 2)
     consecutive_losses = 0
     for trade in trades:
         if float(trade.get("pnl") or 0.0) < 0:

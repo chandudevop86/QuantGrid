@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,7 +10,7 @@ from Backend.application.market_data_store import latest_candles
 from Backend.application.paper_trade_store import DATA_DIR
 
 
-DB_FILE = DATA_DIR / "positions.sqlite3"
+DB_FILE = Path(os.getenv("POSITION_STORE_DB_FILE", DATA_DIR / "positions.sqlite3"))
 
 
 def utc_now() -> str:
