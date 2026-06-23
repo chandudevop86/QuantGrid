@@ -115,6 +115,19 @@ def normalize_timestamp(value: Any, *, assume_timezone: ZoneInfo | timezone = NS
     return timestamp.astimezone(NSE_TIMEZONE)
 
 
+def _has_nse_timezone(value: Any) -> bool:
+    """Return whether a timestamp explicitly carries the NSE UTC offset."""
+    if isinstance(value, (int, float)) or value is None:
+        return False
+    try:
+        timestamp = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    if timestamp.tzinfo is None:
+        return False
+    return timestamp.utcoffset() == timestamp.astimezone(NSE_TIMEZONE).utcoffset()
+
+
 def _holiday_set(settings: CandleValidationSettings | None = None) -> set[date]:
     settings = settings or validation_settings()
     holidays: set[date] = set()
@@ -301,7 +314,12 @@ def validate_live_candle(
             return result
         latest_candle = candles[-1]
         exchange_timezone = latest_candle.get("exchange_timezone")
-        if str(exchange_timezone or "") != "Asia/Kolkata":
+        timezone_valid = (
+            str(exchange_timezone) == "Asia/Kolkata"
+            if exchange_timezone is not None
+            else _has_nse_timezone(latest_raw)
+        )
+        if not timezone_valid:
             diagnostics.append(f"Live market data timestamp timezone must be Asia/Kolkata; got {exchange_timezone}.")
             result = CandleValidationResult(
                 valid=False,

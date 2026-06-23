@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+import os
 from pathlib import Path
 from typing import Any
 
 from Backend.application.paper_trade_store import DATA_DIR, utc_now
 
 
-DB_FILE = Path(DATA_DIR) / "risk_state.sqlite3"
+DB_FILE = Path(os.getenv("KILL_SWITCH_DB_FILE", DATA_DIR / "risk_state.sqlite3"))
 
 
 def _connect() -> sqlite3.Connection:

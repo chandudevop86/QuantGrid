@@ -130,7 +130,7 @@ def test_crt_tbs_signal_validator_accepts_liquidity_quality_signal(monkeypatch):
         candle_source="yahoo-finance",
     )
 
-    assert source == "live"
+    assert source == "demo"
     assert valid == [signal]
 
 

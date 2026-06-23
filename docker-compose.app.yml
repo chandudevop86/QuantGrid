@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-quantgrid-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-quantgrid}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - app_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
     image: redis:7
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -46,7 +46,7 @@ services:
       JOB_STORE_DB_FILE: /app/data/dashboard_jobs.sqlite3
       MARKET_DATA_DB_FILE: /app/data/market_data.sqlite3
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - app_backend_data:/app/data
     depends_on:
@@ -74,7 +74,7 @@ services:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
       VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8000/ws}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -82,7 +82,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "node -e \"require('http').get('http://127.0.0.1:5173', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\"",
+          "wget -q --spider http://127.0.0.1/",
         ]
       interval: 10s
       timeout: 5s

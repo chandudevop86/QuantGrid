@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:20-slim AS build
 
 WORKDIR /app/apps/frontend
 
@@ -7,6 +7,13 @@ RUN npm ci
 
 COPY apps/frontend ./
 
-EXPOSE 5173
+RUN npm run build
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+FROM nginx:1.27-alpine
+
+COPY docker/frontend-nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/apps/frontend/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

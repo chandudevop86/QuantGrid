@@ -30,5 +30,10 @@ function normalizeSocketUrl(socketUrl: string | undefined) {
 }
 
 export function createSocket() {
-  return new WebSocket(normalizeSocketUrl(import.meta.env.VITE_WS_URL) ?? defaultSocketUrl());
+  const socketUrl = normalizeSocketUrl(import.meta.env.VITE_WS_URL) ?? defaultSocketUrl();
+  const target = new URL(socketUrl, typeof window === "undefined" ? undefined : window.location.origin);
+  const token = typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_token");
+  return token
+    ? new WebSocket(target.toString(), ["quantgrid", token])
+    : new WebSocket(target.toString());
 }

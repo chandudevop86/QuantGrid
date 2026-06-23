@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from Backend.application import paper_trade_store
+from Backend.application import kill_switch, paper_trade_store
 from Backend.application.risk_gate import evaluate_risk_gate
 from Backend.application.signal_quality import SignalDecision
 
@@ -11,6 +11,7 @@ def test_paper_trade_creation_and_risk_gate_daily_loss(monkeypatch):
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     monkeypatch.setattr(paper_trade_store, "_connect", lambda: connection)
+    monkeypatch.setattr(kill_switch, "_connect", lambda: connection)
     monkeypatch.setenv("QUANTGRID_MAX_DAILY_LOSS", "100")
 
     trade = paper_trade_store.create_paper_trade({

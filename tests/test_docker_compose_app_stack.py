@@ -16,6 +16,18 @@ def test_app_compose_includes_full_local_stack_with_healthchecks():
     assert "postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid" in compose
     assert "redis://redis:6379/0" in compose
     assert "http://127.0.0.1:8000/health" in compose
+    assert '"127.0.0.1:5432:5432"' in compose
+    assert '"127.0.0.1:6379:6379"' in compose
+    assert '"127.0.0.1:5173:80"' in compose
+
+
+def test_frontend_container_uses_compiled_nginx_build():
+    dockerfile = (ROOT / "docker" / "frontend.Dockerfile").read_text(encoding="utf-8")
+
+    assert "RUN npm run build" in dockerfile
+    assert "FROM nginx:" in dockerfile
+    assert 'CMD ["nginx", "-g", "daemon off;"]' in dockerfile
+    assert "npm\", \"run\", \"dev" not in dockerfile
 
 
 def test_app_stack_documents_safe_env_defaults():

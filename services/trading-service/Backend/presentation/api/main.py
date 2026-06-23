@@ -20,7 +20,8 @@ from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.application.position_store import init_position_store
 from Backend.application.kill_switch import init_kill_switch_store
 from Backend.logging_config import configure_logging
-from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users
+from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users, verify_token
+from Backend.domain.security.models import User
 from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 
@@ -134,7 +135,29 @@ def create_app():
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
-        await manager.connect(websocket)
+        origin = websocket.headers.get("origin")
+        if origin and origin not in _allowed_origins():
+            await websocket.close(code=4403, reason="Origin not allowed")
+            return
+
+        subprotocols = [item.strip() for item in websocket.headers.get("sec-websocket-protocol", "").split(",")]
+        if len(subprotocols) != 2 or subprotocols[0] != "quantgrid" or not subprotocols[1]:
+            await websocket.close(code=4401, reason="Authentication required")
+            return
+        token = subprotocols[1]
+        try:
+            claims = verify_token(token)
+            with SessionLocal() as db:
+                user = db.get(User, int(claims["uid"]))
+                if user is None or user.role != claims.get("role"):
+                    await websocket.close(code=4401, reason="Invalid user")
+                    return
+        except Exception:
+            await websocket.close(code=4401, reason="Invalid token")
+            return
+
+        if not await manager.connect(websocket, subprotocol="quantgrid"):
+            return
 
         try:
             while True:

@@ -102,7 +102,11 @@ def ensure_env_loaded() -> None:
     global ENV_FILE_LOADED
     if ENV_FILE_LOADED:
         return
-    load_env_file()
+    environment = os.getenv("QUANTGRID_ENV", "local").strip().lower()
+    # Production must not silently inherit credentials from a developer .env.
+    # Operators can still opt into a protected file explicitly.
+    if environment not in {"prod", "production"} or os.getenv("QUANTGRID_ENV_FILE"):
+        load_env_file()
     ENV_FILE_LOADED = True
 
 

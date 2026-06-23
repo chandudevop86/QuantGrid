@@ -32,6 +32,7 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("JOB_STORE_DB_FILE", str(tmp_path / "jobs.sqlite3"))
     monkeypatch.setenv("PAPER_TRADE_DB_FILE", str(tmp_path / "paper_trades.sqlite3"))
     monkeypatch.setenv("POSITION_STORE_DB_FILE", str(tmp_path / "positions.sqlite3"))
+    monkeypatch.setenv("KILL_SWITCH_DB_FILE", str(tmp_path / "risk_state.sqlite3"))
     monkeypatch.setenv("QUANTGRID_USERS", f"admin:{TEST_ADMIN_PASSWORD}:admin")
     monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
     reset_backend_modules()
