@@ -82,3 +82,24 @@ def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatc
     assert payload["pcr"] == 1.12
     assert payload["signals"]["bias"] == "BULLISH"
     assert payload["rows"][0]["ce"]["oi"] == 1000
+
+
+def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, monkeypatch):
+    import Backend.presentation.api.modules_api as modules_api
+
+    monkeypatch.setattr(
+        modules_api,
+        "live_nse_option_chain",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("NSE blocked request")),
+    )
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["module"] == "live_nse_option_chain"
+    assert payload["source"] == "synthetic-demo-chain"
+    assert payload["underlying_price"] > 0
+    assert payload["pcr"] is not None
+    assert "NSE blocked request" in payload["warning"]

@@ -47,7 +47,25 @@ def live_nse_option_chain_module(
     step: int = 50,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
+    try:
+        return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
+    except Exception as exc:
+        payload = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+        return {
+            **payload,
+            "module": "live_nse_option_chain",
+            "source": "synthetic-demo-chain",
+            "warning": f"Live NSE option-chain unavailable: {exc}. Showing synthetic fallback.",
+            "signals": {
+                "bias": "NEUTRAL",
+                "reason": "Live NSE option-chain is unavailable; synthetic fallback is for display only.",
+                "total_call_oi": int(sum(float(row["ce"].get("oi") or 0) for row in payload["rows"])),
+                "total_put_oi": int(sum(float(row["pe"].get("oi") or 0) for row in payload["rows"])),
+                "pcr": payload.get("pcr"),
+                "atm_strike": payload.get("atm_strike"),
+                "max_pain": payload.get("max_pain"),
+            },
+        }
 
 
 @router.get("/option-chain/{symbol}/historical")
