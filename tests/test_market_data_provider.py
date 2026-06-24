@@ -296,6 +296,31 @@ def test_option_chain_reports_dhan_token_rejected(monkeypatch):
     assert "HTTP Error 401" not in result["warning"]
 
 
+def test_option_chain_falls_back_when_price_provider_is_unavailable(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setattr(
+        market_api,
+        "get_price",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("price feed down")),
+    )
+
+    result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
+
+    assert result["source"] == "synthetic-demo-chain"
+    assert result["underlying_price"] > 0
+    assert result["pcr"] is not None
+    assert result["max_pain"] is not None
+    assert "price feed down" in result["warning"]
+
+
 def test_market_data_service_memory_cache_fresh_and_stale(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 

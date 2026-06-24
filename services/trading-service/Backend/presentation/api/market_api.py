@@ -27,6 +27,7 @@ from Backend.infrastructure.data.market_data_provider import (
 from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.presentation.api.roles import require_roles
+from Backend.application.quant_modules import option_chain_engine
 
 router = APIRouter(tags=["market"])
 
@@ -289,6 +290,32 @@ def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
     ]
 
 
+def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, warning: str) -> dict[str, Any]:
+    payload = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+    return {
+        "symbol": payload["symbol"],
+        "underlying_price": payload["underlying_price"],
+        "atm_strike": payload["atm_strike"],
+        "step": payload["step"],
+        "expiry": payload["expiry"],
+        "source": payload["source"],
+        "warning": warning,
+        "updated_at": payload["updated_at"],
+        "rows": payload["rows"],
+        "pcr": payload.get("pcr"),
+        "max_pain": payload.get("max_pain"),
+        "signals": {
+            "bias": "NEUTRAL",
+            "reason": warning,
+            "total_call_oi": int(sum(float(row["ce"].get("oi") or 0) for row in payload["rows"])),
+            "total_put_oi": int(sum(float(row["pe"].get("oi") or 0) for row in payload["rows"])),
+            "pcr": payload.get("pcr"),
+            "atm_strike": payload["atm_strike"],
+            "max_pain": payload.get("max_pain"),
+        },
+    }
+
+
 @router.get("/price")
 def get_price(
     symbol: str = "NIFTY",
@@ -358,13 +385,30 @@ def get_option_chain(
     step: int = 50,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    price_payload = get_price(symbol, _role=_role)
-    price = float(price_payload.get("price") or 0.0)
-    if price <= 0:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Current market price is unavailable.")
-
     strikes_each_side = max(1, min(int(strikes_each_side), 10))
     step = max(1, int(step))
+    try:
+        price_payload = get_price(symbol, _role=_role)
+        price = float(price_payload.get("price") or 0.0)
+    except Exception as exc:
+        if get_settings().live_trading_enabled:
+            raise _market_data_unavailable(exc) from exc
+        return _fallback_option_chain(
+            symbol,
+            strikes_each_side=strikes_each_side,
+            step=step,
+            warning=f"Live market price unavailable: {exc}. Showing synthetic option-chain fallback.",
+        )
+    if price <= 0:
+        if get_settings().live_trading_enabled:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Current market price is unavailable.")
+        return _fallback_option_chain(
+            symbol,
+            strikes_each_side=strikes_each_side,
+            step=step,
+            warning="Current market price is unavailable. Showing synthetic option-chain fallback.",
+        )
+
     atm = _nearest_strike(price, step)
     strikes = [atm + (offset * step) for offset in range(-strikes_each_side, strikes_each_side + 1)]
     source = "derived-from-underlying"
