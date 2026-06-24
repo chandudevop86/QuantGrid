@@ -17,12 +17,15 @@ def serialize_signal(signal: StrategySignal) -> dict[str, Any]:
     reward = abs(float(signal.target_price) - float(signal.entry_price))
     rr_ratio = reward / risk
     payload["rr_ratio"] = round(rr_ratio, 2)
+    payload["risk_reward"] = payload["rr_ratio"]
     payload["confidence_score"] = min(100.0, round(score * 10, 1))
+    payload["confidence"] = payload["confidence_score"]
     payload["quality_tier"] = _signal_tier(score, rr_ratio)
     payload["strategy_strength"] = payload["quality_tier"]
     payload["historical_win_rate"] = signal.metadata.get("historical_win_rate", 0.0)
     payload["recent_accuracy"] = signal.metadata.get("recent_accuracy", 0.0)
     payload["timestamp"] = payload["signal_time"]
+    payload["signal"] = signal.side.upper()
     for key in (
         "amd_phase",
         "fvg_zone",

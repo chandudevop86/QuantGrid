@@ -75,6 +75,7 @@ export const api = {
     API.post("/modules/backtesting", payload).then((res) => res.data),
   riskEngine: () => API.get("/modules/risk-engine").then((res) => res.data),
   tradeJournal: () => API.get("/modules/trade-journal").then((res) => res.data),
+  tradeJournalRows: () => API.get("/api/trade-journal").then((res) => res.data),
   modulesDashboard: () => API.get("/modules/dashboard").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),

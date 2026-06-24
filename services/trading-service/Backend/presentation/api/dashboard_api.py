@@ -16,6 +16,7 @@ from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
 from Backend.core.config import get_settings
 from Backend.core.database import SessionLocal, get_db
+from Backend.domain.engine.strategy_engine import StrategyEngine
 from Backend.domain.security.audit import list_audit_events, write_audit_log
 from Backend.domain.security.models import User
 from Backend.presentation.api.auth import current_user
@@ -71,6 +72,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
     risk = risk_status()
     daily_loss_remaining = max(0.0, float(risk["max_daily_loss"]) + float(risk["daily_pnl"]))
     redis = _redis_status()
+    strategies = StrategyEngine().available()
 
     db = None
     try:
@@ -125,6 +127,15 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
                 "healthy": count_jobs("running") >= 0,
                 "active_jobs": count_jobs("running"),
             },
+            "market_data": {
+                "healthy": market_store["candles"] > 0,
+                "candles": market_store["candles"],
+                "latest_timestamp": market_store["latest_candle_at"],
+            },
+            "strategy_engine": {
+                "healthy": {"breakout", "mean_reversion", "supply_demand", "mtf", "btst", "cbt", "crt_tbs", "mtfa"}.issubset(set(strategies)),
+                "registered": strategies,
+            },
         },
         "risk_summary": {
             **risk,
@@ -138,6 +149,10 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "websocket_connections": len(manager.active_connections),
             "api_latency_status": "tracked_by_prometheus",
             "signal_generation_metrics": "signal_generation_total",
+            "strategy_execution_metrics": "strategy_executions_total",
+            "signal_count_metrics": "strategy_signals_total",
+            "failed_strategy_execution_metrics": "failed_strategy_executions_total",
+            "option_chain_failure_metrics": "option_chain_fetch_failures_total",
             "rejected_order_metrics": "rejected_orders_total",
             "feed_delay_seconds": validation.delay_seconds,
             "redis_healthy": redis["connected"],

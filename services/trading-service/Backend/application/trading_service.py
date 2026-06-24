@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
+from Backend.application.monitoring import observe_strategy_execution
+from Backend.application.trade_qualification_engine import TradeQualificationEngine
 from Backend.domain.engine.trading_engine import TradingEngine
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
-from Backend.application.trade_qualification_engine import TradeQualificationEngine
 
 
 class TradingService:
     def __init__(self, trading_engine: TradingEngine | None = None, tqe: TradeQualificationEngine | None = None) -> None:
         self.trading_engine = trading_engine or TradingEngine()
         self.tqe = tqe or TradeQualificationEngine()
+        self.logger = logging.getLogger("quantgrid.strategy")
 
     def run_strategy(
         self,
@@ -26,7 +29,16 @@ class TradingService:
         params: dict[str, Any] | None = None,
     ) -> list[StrategySignal]:
         context = StrategyContext(symbol=symbol, capital=capital, risk_pct=risk_pct, rr_ratio=rr_ratio, params=params or {})
-        signals = self.trading_engine.scan(strategy_name, data, context)
+        try:
+            signals = self.trading_engine.scan(strategy_name, data, context)
+        except Exception as exc:
+            observe_strategy_execution(strategy_name, "failed", error_type=exc.__class__.__name__)
+            self.logger.exception(
+                "strategy_execution_failed",
+                extra={"strategy": strategy_name, "symbol": symbol, "error_type": exc.__class__.__name__},
+            )
+            raise
+        observe_strategy_execution(strategy_name, "success", signal_count=len(signals))
         if self._uses_tqe(strategy_name):
             return [
                 self.tqe.annotate_signal(

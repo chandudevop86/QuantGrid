@@ -14,6 +14,7 @@ import Operations from "./pages/Operations";
 import ProfessionalSignals from "./pages/ProfessionalSignals";
 import Strategies from "./pages/Strategies";
 import Trade from "./pages/Trade";
+import TradeJournal from "./pages/TradeJournal";
 import RequireRole from "./components/RequireRole";
 
 function protect(path: string, page: React.ReactNode) {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/operations" element={protect("/operations", <Operations />)} />
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
+          <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />
           <Route path="/trade" element={protect("/trade", <Trade />)} />
           <Route path="/admin/users" element={protect("/admin/users", <AdminUsers />)} />
           <Route path="/admin/notifications" element={protect("/admin/notifications", <AdminNotifications />)} />

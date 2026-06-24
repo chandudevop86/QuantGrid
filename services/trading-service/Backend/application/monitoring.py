@@ -36,6 +36,26 @@ if Counter and Gauge and Histogram:
         "Signal generation attempts.",
         ("strategy", "status"),
     )
+    strategy_executions_total = Counter(
+        "strategy_executions_total",
+        "Strategy execution attempts.",
+        ("strategy", "status"),
+    )
+    strategy_signals_total = Counter(
+        "strategy_signals_total",
+        "Signals emitted by strategy executions.",
+        ("strategy",),
+    )
+    failed_strategy_executions_total = Counter(
+        "failed_strategy_executions_total",
+        "Failed strategy executions.",
+        ("strategy", "error_type"),
+    )
+    option_chain_fetch_failures_total = Counter(
+        "option_chain_fetch_failures_total",
+        "Option-chain provider fetch failures.",
+        ("provider", "reason"),
+    )
     api_request_latency_seconds = Histogram(
         "api_request_latency_seconds",
         "API request latency in seconds.",
@@ -78,6 +98,10 @@ else:
     market_data_feed_delay_seconds = None
     market_data_cache_hits_total = None
     market_data_cache_misses_total = None
+    strategy_executions_total = None
+    strategy_signals_total = None
+    failed_strategy_executions_total = None
+    option_chain_fetch_failures_total = None
 
 
 def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
@@ -100,6 +124,21 @@ def observe_rejected_order(reason: str | None, mode: str | None) -> None:
 def observe_signal_generation(strategy: str | None, status: str) -> None:
     if signal_generation_total is not None:
         signal_generation_total.labels(strategy=strategy or "unknown", status=status).inc()
+
+
+def observe_strategy_execution(strategy: str | None, status: str, signal_count: int = 0, error_type: str | None = None) -> None:
+    strategy_name = strategy or "unknown"
+    if strategy_executions_total is not None:
+        strategy_executions_total.labels(strategy=strategy_name, status=status).inc()
+    if strategy_signals_total is not None and signal_count > 0:
+        strategy_signals_total.labels(strategy=strategy_name).inc(signal_count)
+    if failed_strategy_executions_total is not None and status == "failed":
+        failed_strategy_executions_total.labels(strategy=strategy_name, error_type=error_type or "unknown").inc()
+
+
+def observe_option_chain_failure(provider: str, reason: str | None = None) -> None:
+    if option_chain_fetch_failures_total is not None:
+        option_chain_fetch_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
 
 
 def observe_api_request(method: str, path: str, status_code: int, latency_seconds: float) -> None:

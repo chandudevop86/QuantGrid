@@ -169,6 +169,7 @@ export default function OptionChain() {
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 15s";
+  const usingSynthetic = Boolean(chain?.source && String(chain.source).includes("synthetic"));
 
   return (
     <section className="dashboard-page">
@@ -188,6 +189,7 @@ export default function OptionChain() {
       </div>
 
       {error && <div className="alert alert-error" role="alert">{error}</div>}
+      {usingSynthetic && !error && <div className="alert alert-warning" role="status">Using Synthetic Option Chain Data</div>}
       {chain?.warning && !error && <div className="alert alert-warning" role="status">{chain.warning}</div>}
 
       <div className="metric-grid">
@@ -198,12 +200,12 @@ export default function OptionChain() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Current Price</span>
-          <strong className="metric-value">{formatNumber(chain?.underlying_price)}</strong>
+          <strong className="metric-value">{formatNumber(chain?.spot ?? chain?.underlying_price)}</strong>
           <span className="metric-helper">{refreshLabel}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">ATM Strike</span>
-          <strong className="metric-value">{chain?.atm_strike ?? "-"}</strong>
+          <strong className="metric-value">{chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
           <span className="metric-helper">Step {chain?.step ?? 50}</span>
         </div>
         <div className="metric-card">
@@ -220,6 +222,16 @@ export default function OptionChain() {
           <span className="metric-label">Max Pain</span>
           <strong className="metric-value">{chain?.max_pain ?? "-"}</strong>
           <span className="metric-helper">{chain?.greek_model ?? "Greeks"}</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">Support</span>
+          <strong className="metric-value">{chain?.support ?? "-"}</strong>
+          <span className="metric-helper">Highest put OI below ATM</span>
+        </div>
+        <div className="metric-card">
+          <span className="metric-label">Resistance</span>
+          <strong className="metric-value">{chain?.resistance ?? "-"}</strong>
+          <span className="metric-helper">Highest call OI above ATM</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Real Signal</span>

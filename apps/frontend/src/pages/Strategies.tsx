@@ -90,7 +90,8 @@ function hasHistoricalTrades(backtest: any) {
 }
 
 function performanceValue(backtest: any, value: unknown, formatter: (value: number) => string) {
-  return hasHistoricalTrades(backtest) ? formatter(numeric(value, 0)) : "No trades yet";
+  if (!backtest) return "Loading";
+  return hasHistoricalTrades(backtest) ? formatter(numeric(value, 0)) : "Collecting history";
 }
 
 export default function Strategies() {
@@ -156,7 +157,7 @@ export default function Strategies() {
               <div className="form-panel-header">
                 <div>
                   <h2>{formatStrategyName(strategy)}</h2>
-                  <p>{updatedAt ? `Updated ${updatedAt}` : "Waiting for first refresh."}</p>
+                  <p>{updatedAt ? `Updated ${updatedAt}` : "Scanning latest candles"}</p>
                 </div>
                 <span className={`status-pill${hasSignalError ? " error" : isStale ? " stale" : ""}`}>
                   {statusLabel}
@@ -333,17 +334,17 @@ export default function Strategies() {
                 <span>
                   <strong>{performanceValue(backtest, backtestMetrics?.win_rate, (value) => `${value.toFixed(1)}%`)}</strong>
                   Historical win rate
-                  <small>{hasHistoricalTrades(backtest) ? "Backtest complete" : "Run backtest to calculate performance."}</small>
+                  <small>{hasHistoricalTrades(backtest) ? "Backtest complete" : "Auto backtest warming up."}</small>
                 </span>
                 <span>
-                  <strong>{hasHistoricalTrades(backtest) ? numeric(backtestMetrics?.sharpe_ratio, 0).toFixed(2) : "Backtest not run"}</strong>
+                  <strong>{!backtest ? "Loading" : hasHistoricalTrades(backtest) ? numeric(backtestMetrics?.sharpe_ratio, 0).toFixed(2) : "Calibrating"}</strong>
                   Sharpe
-                  <small>Run backtest to calculate performance.</small>
+                  <small>{hasHistoricalTrades(backtest) ? "Risk-adjusted historical return." : "Auto backtest warming up."}</small>
                 </span>
                 <span>
                   <strong>{performanceValue(backtest, backtestMetrics?.recent_accuracy ?? backtestMetrics?.win_rate, (value) => `${value.toFixed(1)}%`)}</strong>
                   Recent accuracy
-                  <small>{hasHistoricalTrades(backtest) ? "Backtest complete" : "Run backtest to calculate performance."}</small>
+                  <small>{hasHistoricalTrades(backtest) ? "Based on recent replay trades." : "Auto backtest warming up."}</small>
                 </span>
               </div>
 

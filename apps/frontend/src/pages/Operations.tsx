@@ -67,6 +67,26 @@ export default function Operations() {
             <span className="metric-helper">Prometheus counter</span>
           </div>
           <div className="metric-card">
+            <span className="metric-label">Strategy Executions</span>
+            <strong className="metric-value">{observability?.strategy_execution_metrics}</strong>
+            <span className="metric-helper">Prometheus counter</span>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Signal Count</span>
+            <strong className="metric-value">{observability?.signal_count_metrics}</strong>
+            <span className="metric-helper">Prometheus counter</span>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Failed Executions</span>
+            <strong className="metric-value">{observability?.failed_strategy_execution_metrics}</strong>
+            <span className="metric-helper">Strategy error counter</span>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Option Chain Failures</span>
+            <strong className="metric-value">{observability?.option_chain_failure_metrics}</strong>
+            <span className="metric-helper">Provider fallback counter</span>
+          </div>
+          <div className="metric-card">
             <span className="metric-label">Rejected Orders</span>
             <strong className="metric-value">{observability?.rejected_order_metrics}</strong>
             <span className="metric-helper">Safety gate counter</span>
@@ -85,6 +105,16 @@ export default function Operations() {
             <span className="metric-label">Database</span>
             <strong className="metric-value">{health?.db?.healthy ? "Healthy" : "Degraded"}</strong>
             <span className="metric-helper">{health?.db?.message}</span>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Market Data</span>
+            <strong className="metric-value">{health?.market_data?.healthy ? "Healthy" : "Warming"}</strong>
+            <span className="metric-helper">{health?.market_data?.candles ?? 0} stored candles</span>
+          </div>
+          <div className="metric-card">
+            <span className="metric-label">Strategy Engine</span>
+            <strong className="metric-value">{health?.strategy_engine?.healthy ? "Healthy" : "Review"}</strong>
+            <span className="metric-helper">{health?.strategy_engine?.registered?.length ?? 0} registered strategies</span>
           </div>
         </div>
 

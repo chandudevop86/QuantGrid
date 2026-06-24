@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -28,8 +29,10 @@ from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
+from Backend.application.monitoring import observe_option_chain_failure
 
 router = APIRouter(tags=["market"])
+logger = logging.getLogger("quantgrid.option_chain")
 
 def _allow_sample_market_data() -> bool:
     return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
@@ -295,7 +298,10 @@ def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, wa
     return {
         "symbol": payload["symbol"],
         "underlying_price": payload["underlying_price"],
+        "spot": payload["underlying_price"],
         "atm_strike": payload["atm_strike"],
+        "ATM": payload["atm_strike"],
+        "atm": payload["atm_strike"],
         "step": payload["step"],
         "expiry": payload["expiry"],
         "source": payload["source"],
@@ -303,7 +309,10 @@ def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, wa
         "updated_at": payload["updated_at"],
         "rows": payload["rows"],
         "pcr": payload.get("pcr"),
+        "PCR": payload.get("pcr"),
         "max_pain": payload.get("max_pain"),
+        "support": payload.get("support"),
+        "resistance": payload.get("resistance"),
         "signals": {
             "bias": "NEUTRAL",
             "reason": warning,
@@ -391,8 +400,15 @@ def get_option_chain(
         price_payload = get_price(symbol, _role=_role)
         price = float(price_payload.get("price") or 0.0)
     except Exception as exc:
+        logger.exception("option_chain_price_fetch_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        observe_option_chain_failure("market-price", exc.__class__.__name__)
         if get_settings().live_trading_enabled:
-            raise _market_data_unavailable(exc) from exc
+            return _fallback_option_chain(
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+                warning=f"Live market price unavailable: {exc}. Showing synthetic option-chain fallback.",
+            )
         return _fallback_option_chain(
             symbol,
             strikes_each_side=strikes_each_side,
@@ -424,9 +440,13 @@ def get_option_chain(
             rows = _derived_option_rows(strikes)
             warning = "Dhan option-chain returned no matching strikes; showing ATM strike ladder from current NIFTY price."
     except Exception as dhan_exc:
+        logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "dhan", "error_type": dhan_exc.__class__.__name__})
+        observe_option_chain_failure("dhan", dhan_exc.__class__.__name__)
         try:
             rows, expiry = _yahoo_option_rows(symbol, strikes)
-        except Exception:
+        except Exception as yahoo_exc:
+            logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "yahoo", "error_type": yahoo_exc.__class__.__name__})
+            observe_option_chain_failure("yahoo", yahoo_exc.__class__.__name__)
             rows = _derived_option_rows(strikes)
             warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
         else:
@@ -437,16 +457,31 @@ def get_option_chain(
                 rows = _derived_option_rows(strikes)
                 warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
 
+    call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
+    put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
+    pcr = round(put_oi / call_oi, 3) if call_oi else 0.0
+    support_rows = [row for row in rows if row["strike"] < atm]
+    resistance_rows = [row for row in rows if row["strike"] > atm]
+    support = max(support_rows, key=lambda row: float(row["pe"].get("oi") or 0))["strike"] if support_rows else atm
+    resistance = max(resistance_rows, key=lambda row: float(row["ce"].get("oi") or 0))["strike"] if resistance_rows else atm
     return {
         "symbol": symbol.upper(),
         "underlying_price": round(price, 2),
+        "spot": round(price, 2),
         "atm_strike": atm,
+        "ATM": atm,
+        "atm": atm,
         "step": step,
         "expiry": expiry,
         "source": source,
         "warning": warning,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
+        "pcr": pcr,
+        "PCR": pcr,
+        "max_pain": atm,
+        "support": support,
+        "resistance": resistance,
     }
 
 

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any
 
 from Backend.application.dto import serialize_signal
+from Backend.application.monitoring import observe_signal_generation
 from Backend.application.signal_validation import candle_freshness, diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
 from Backend.core.database import get_db
@@ -74,6 +75,7 @@ def generate_signals(
         candle_source=candle_source,
     )
     serialized = [serialize_signal(s) for s in validated_signals]
+    observe_signal_generation(payload.strategy_name, "generated" if serialized else "no_signal")
     if not payload.include_diagnostics:
         write_audit_log(
             db,

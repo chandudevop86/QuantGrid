@@ -134,7 +134,46 @@ def create_app():
     @app.get("/health")
     @app.get("/api/health")
     def health():
-        return {"status": "ok"}
+        from sqlalchemy import text
+
+        from Backend.application.market_data_store import market_data_summary
+        from Backend.domain.engine.strategy_engine import StrategyEngine
+
+        db_status = {"healthy": True, "message": "Database query ok."}
+        try:
+            with SessionLocal() as db:
+                db.execute(text("SELECT 1"))
+        except Exception as exc:
+            db_status = {"healthy": False, "message": str(exc)}
+
+        redis_url = os.getenv("REDIS_URL")
+        redis_status = {"healthy": False, "message": "REDIS_URL is not configured."}
+        if redis_url:
+            try:
+                import redis
+
+                client = redis.Redis.from_url(redis_url, socket_connect_timeout=0.3, socket_timeout=0.3)
+                client.ping()
+                redis_status = {"healthy": True, "message": "Redis ping ok."}
+            except Exception as exc:
+                redis_status = {"healthy": False, "message": str(exc)}
+
+        strategies = StrategyEngine().available()
+        market_store = market_data_summary("NIFTY", "1m")
+        services = {
+            "db": db_status,
+            "redis": redis_status,
+            "market_data": {
+                "healthy": int(market_store.get("candles") or 0) > 0,
+                "candles": market_store.get("candles"),
+                "latest_timestamp": market_store.get("latest_candle_at"),
+            },
+            "strategy_engine": {
+                "healthy": {"breakout", "mean_reversion", "supply_demand", "mtf", "btst", "cbt", "crt_tbs", "mtfa"}.issubset(set(strategies)),
+                "registered": strategies,
+            },
+        }
+        return {"status": "ok" if all(item.get("healthy", False) for item in services.values()) else "degraded", "services": services}
 
     @app.get("/metrics")
     def metrics():

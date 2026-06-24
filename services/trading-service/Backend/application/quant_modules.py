@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from math import erf, exp, log, sqrt
 from statistics import mean
@@ -11,9 +12,13 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.market_data_store import latest_candles, latest_price_tick
+from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.paper_trade_store import list_paper_trades, risk_status
 from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.risk import GlobalRiskManager
+
+
+logger = logging.getLogger("quantgrid.option_chain")
 
 
 def _norm_cdf(value: float) -> float:
@@ -113,6 +118,8 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         )
         payload = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        logger.exception("live_nse_option_chain_fetch_failed", extra={"symbol": nse_symbol, "error_type": exc.__class__.__name__})
+        observe_option_chain_failure("nse", exc.__class__.__name__)
         fallback = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
         return _live_nse_fallback_payload(fallback, exc)
     records = payload.get("records") or {}
@@ -156,7 +163,10 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
 
     rows = sorted(rows, key=lambda row: row["strike"])
     if not rows:
-        raise RuntimeError("NSE returned no option-chain rows for the selected strike range.")
+        exc = RuntimeError("NSE returned no option-chain rows for the selected strike range.")
+        logger.error("live_nse_option_chain_empty", extra={"symbol": nse_symbol, "error_type": exc.__class__.__name__})
+        observe_option_chain_failure("nse", exc.__class__.__name__)
+        return _live_nse_fallback_payload(option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step), exc)
 
     total_call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
     total_put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
@@ -197,7 +207,7 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         signal_bias = "CALL_RESISTANCE"
         signal_reason = "Put-call ratio shows stronger call-side open interest."
 
-    return {
+    return _option_chain_compat_payload({
         "module": "live_nse_option_chain",
         "symbol": nse_symbol,
         "underlying_price": round(underlying, 2),
@@ -219,11 +229,11 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         },
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
-    }
+    })
 
 
 def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
-    return {
+    return _option_chain_compat_payload({
         **payload,
         "module": "live_nse_option_chain",
         "source": "synthetic-demo-chain",
@@ -239,6 +249,28 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
             "atm_strike": payload.get("atm_strike"),
             "max_pain": payload.get("max_pain"),
         },
+    })
+
+
+def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    rows = list(payload.get("rows") or [])
+    atm = payload.get("atm_strike")
+    support = None
+    resistance = None
+    below = [row for row in rows if atm is not None and float(row.get("strike") or 0) < float(atm)]
+    above = [row for row in rows if atm is not None and float(row.get("strike") or 0) > float(atm)]
+    if below:
+        support = max(below, key=lambda row: float(row.get("pe", {}).get("oi") or 0)).get("strike")
+    if above:
+        resistance = max(above, key=lambda row: float(row.get("ce", {}).get("oi") or 0)).get("strike")
+    return {
+        **payload,
+        "spot": payload.get("underlying_price"),
+        "ATM": atm,
+        "atm": atm,
+        "PCR": payload.get("pcr"),
+        "support": support if support is not None else payload.get("max_pain"),
+        "resistance": resistance if resistance is not None else payload.get("max_pain"),
     }
 
 
@@ -297,7 +329,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
 
     total_call_oi = sum(float(row["ce"]["oi"] or 0) for row in rows)
     total_put_oi = sum(float(row["pe"]["oi"] or 0) for row in rows)
-    return {
+    return _option_chain_compat_payload({
         "module": "option_chain_engine",
         "symbol": symbol.upper(),
         "underlying_price": round(spot, 2),
@@ -310,7 +342,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
         "greek_model": "black_scholes_demo",
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
-    }
+    })
 
 
 def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
