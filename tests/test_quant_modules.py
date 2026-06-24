@@ -102,7 +102,9 @@ def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, mo
     assert payload["source"] == "synthetic-demo-chain"
     assert payload["underlying_price"] > 0
     assert payload["pcr"] is not None
-    assert "NSE blocked request" in payload["warning"]
+    assert payload["fallback_reason"] == "RuntimeError"
+    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable; using synthetic fallback data."
+    assert "NSE blocked request" in payload["fallback_detail"]
 
 
 def test_live_nse_option_chain_function_falls_back_on_http_403(monkeypatch):
@@ -122,4 +124,5 @@ def test_live_nse_option_chain_function_falls_back_on_http_403(monkeypatch):
     assert payload["module"] == "live_nse_option_chain"
     assert payload["source"] == "synthetic-demo-chain"
     assert payload["fallback_reason"] == "HTTPError"
-    assert "HTTP Error 403" in payload["warning"]
+    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable; using synthetic fallback data."
+    assert "HTTP Error 403" in payload["fallback_detail"]

@@ -228,7 +228,8 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
         "module": "live_nse_option_chain",
         "source": "synthetic-demo-chain",
         "fallback_reason": exc.__class__.__name__,
-        "warning": f"Live NSE option-chain unavailable: {exc}. Showing synthetic fallback.",
+        "provider_warning": "Live NSE option-chain provider unavailable; using synthetic fallback data.",
+        "fallback_detail": str(exc),
         "signals": {
             "bias": "NEUTRAL",
             "reason": "Live NSE option-chain is unavailable; synthetic fallback is for display only.",
