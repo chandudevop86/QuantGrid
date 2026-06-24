@@ -48,6 +48,13 @@ def _allowed_origins() -> list[str]:
     ]
 
 
+def _allow_anonymous_websocket() -> bool:
+    explicit = os.getenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET")
+    if explicit is not None:
+        return explicit.strip().lower() in {"1", "true", "yes"}
+    return os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"local", "development", "dev", "test"}
+
+
 def create_app():
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
     app = FastAPI(title="QuantGrid API")
@@ -142,6 +149,20 @@ def create_app():
 
         subprotocols = [item.strip() for item in websocket.headers.get("sec-websocket-protocol", "").split(",")]
         if len(subprotocols) != 2 or subprotocols[0] != "quantgrid" or not subprotocols[1]:
+            if _allow_anonymous_websocket():
+                if not await manager.connect(websocket):
+                    return
+                try:
+                    while True:
+                        try:
+                            await asyncio.wait_for(websocket.receive_text(), timeout=5)
+                        except asyncio.TimeoutError:
+                            from Backend.presentation.api.dashboard_api import operations
+
+                            await websocket.send_json({"type": "dashboard_status", "payload": operations()})
+                except WebSocketDisconnect:
+                    manager.disconnect(websocket)
+                return
             await websocket.close(code=4401, reason="Authentication required")
             return
         token = subprotocols[1]

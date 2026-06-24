@@ -22,11 +22,25 @@ def test_valid_login_returns_token_and_dashboard_loads(app_client):
     assert dashboard.json()["status"] == "ready"
 
 
-def test_websocket_requires_authentication(app_client):
+def test_websocket_requires_authentication_in_production(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", "false")
     with pytest.raises(WebSocketDisconnect) as exc_info:
         with app_client.websocket_connect("/ws") as websocket:
             websocket.receive_json()
     assert exc_info.value.code == 4401
+
+
+def test_websocket_allows_local_dev_without_token(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.delenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", raising=False)
+
+    with app_client.websocket_connect("/ws") as websocket:
+        websocket.send_text("status")
+        for _ in range(20):
+            message = websocket.receive_json()
+            if message.get("type") == "dashboard_status":
+                break
+    assert message["type"] == "dashboard_status"
 
 
 def test_authenticated_websocket_returns_dashboard_status(app_client):

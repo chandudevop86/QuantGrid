@@ -103,3 +103,23 @@ def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, mo
     assert payload["underlying_price"] > 0
     assert payload["pcr"] is not None
     assert "NSE blocked request" in payload["warning"]
+
+
+def test_live_nse_option_chain_function_falls_back_on_http_403(monkeypatch):
+    from urllib.error import HTTPError
+
+    import Backend.application.quant_modules as quant_modules
+
+    class BlockedOpener:
+        def open(self, *args, **kwargs):
+            raise HTTPError("https://www.nseindia.com", 403, "Forbidden", None, None)
+
+    monkeypatch.setattr(quant_modules, "build_opener", lambda *args, **kwargs: BlockedOpener())
+    monkeypatch.setattr(quant_modules, "latest_price_tick", lambda symbol: {"price": 22500})
+
+    payload = quant_modules.live_nse_option_chain("NIFTY")
+
+    assert payload["module"] == "live_nse_option_chain"
+    assert payload["source"] == "synthetic-demo-chain"
+    assert payload["fallback_reason"] == "HTTPError"
+    assert "HTTP Error 403" in payload["warning"]

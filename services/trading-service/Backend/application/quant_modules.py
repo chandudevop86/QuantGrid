@@ -6,6 +6,7 @@ from math import erf, exp, log, sqrt
 from statistics import mean
 from typing import Any
 from urllib.parse import quote
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from Backend.application.kill_switch import kill_switch_status
@@ -104,12 +105,16 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
     }
     opener = build_opener(HTTPCookieProcessor())
-    opener.open(Request("https://www.nseindia.com", headers=headers), timeout=8).read()
-    response = opener.open(
-        Request(f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}", headers=headers),
-        timeout=8,
-    )
-    payload = json.loads(response.read().decode("utf-8"))
+    try:
+        opener.open(Request("https://www.nseindia.com", headers=headers), timeout=8).read()
+        response = opener.open(
+            Request(f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}", headers=headers),
+            timeout=8,
+        )
+        payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        fallback = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+        return _live_nse_fallback_payload(fallback, exc)
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
     expiry = next((item for item in records.get("expiryDates") or [] if item), None)
@@ -214,6 +219,25 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         },
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
+    }
+
+
+def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
+    return {
+        **payload,
+        "module": "live_nse_option_chain",
+        "source": "synthetic-demo-chain",
+        "fallback_reason": exc.__class__.__name__,
+        "warning": f"Live NSE option-chain unavailable: {exc}. Showing synthetic fallback.",
+        "signals": {
+            "bias": "NEUTRAL",
+            "reason": "Live NSE option-chain is unavailable; synthetic fallback is for display only.",
+            "total_call_oi": int(sum(float(row["ce"].get("oi") or 0) for row in payload["rows"])),
+            "total_put_oi": int(sum(float(row["pe"].get("oi") or 0) for row in payload["rows"])),
+            "pcr": payload.get("pcr"),
+            "atm_strike": payload.get("atm_strike"),
+            "max_pain": payload.get("max_pain"),
+        },
     }
 
 
