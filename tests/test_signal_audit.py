@@ -101,3 +101,49 @@ def test_audit_tracks_paper_trade_created_lifecycle():
 
     assert row["paper_trade_created_count"] == 2
     assert row["lifecycle"]["PAPER_TRADE_CREATED"] == 2
+
+
+def test_system_audit_summarizes_data_logic_and_trade_block(monkeypatch):
+    import Backend.presentation.api.professional_api as professional_api
+
+    monkeypatch.setattr(
+        professional_api,
+        "get_price",
+        lambda symbol: {"symbol": symbol, "price": 22500, "source": "broker"},
+    )
+    monkeypatch.setattr(
+        professional_api,
+        "_build_signal_audit",
+        lambda symbol: {
+            "symbol": symbol,
+            "data": {
+                "candle_count": 100,
+                "candle_age_seconds": 15,
+                "valid_for_analysis": True,
+                "valid_for_execution": True,
+                "using_fallback_data": False,
+                "market_status": "LIVE MARKET",
+            },
+            "strategies": [
+                {"strategy": "Breakout", "raw_signal_count": 1, "validated_signal_count": 0, "rejection_reason": "LOW_CONFIDENCE"}
+            ],
+            "lifecycle_totals": {
+                "RAW_SIGNAL": 1,
+                "VALIDATED_SIGNAL": 0,
+                "ACCEPTED_SIGNAL": 0,
+                "REJECTED_SIGNAL": 1,
+                "PAPER_TRADE_CREATED": 0,
+            },
+        },
+    )
+
+    payload = professional_api.system_audit(symbol="NIFTY")
+
+    assert payload["data_status"] == "OK"
+    assert payload["data_ok"] is True
+    assert payload["logic_ok"] is True
+    assert payload["raw_signals"] == 1
+    assert payload["validated_signals"] == 0
+    assert payload["rejected_signals"] == 1
+    assert payload["trades_created"] == 0
+    assert "LOW_CONFIDENCE" in payload["trade_not_created_because"]

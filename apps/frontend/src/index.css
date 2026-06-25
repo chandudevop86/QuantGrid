@@ -776,6 +776,42 @@ select {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.system-audit-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.system-audit-strip span {
+  display: grid;
+  gap: 6px;
+  min-height: 110px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+}
+
+.system-audit-strip small {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.system-audit-strip strong {
+  color: #f8fafc;
+  font-size: 18px;
+}
+
+.system-audit-strip em {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-style: normal;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .metric-card {
   display: grid;
   align-content: start;
@@ -1759,7 +1795,8 @@ select {
   }
 
   .system-health-badges,
-  .system-health-widget-compact .system-health-badges {
+  .system-health-widget-compact .system-health-badges,
+  .system-audit-strip {
     grid-template-columns: 1fr;
   }
 
