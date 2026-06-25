@@ -20,3 +20,8 @@ def test_health_reports_websocket_broadcast_mode(app_client):
     websocket = response.json()["services"]["websocket"]
     assert websocket["healthy"] is True
     assert websocket["broadcast_mode"] in {"fallback", "redis"}
+
+
+def test_websocket_accepts_in_process_fallback_connection(app_client):
+    with app_client.websocket_connect("/ws") as websocket:
+        websocket.send_text("ping")

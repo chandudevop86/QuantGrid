@@ -51,9 +51,14 @@ function friendlyMarketMessage(market: any) {
 function brokerLoginValue(brokerStatus: any) {
   if (!brokerStatus) return "Checking";
   if (brokerStatus.provider === "dhan") {
-    if (brokerStatus.connected) return "Dhan OK";
-    if (brokerStatus.configured) return "Dhan Issue";
-    return "Dhan Missing";
+    if (brokerStatus.connected && brokerStatus.paper_only) return "Paper mode only";
+    if (brokerStatus.connected) return "Connected";
+    if (brokerStatus.error === "missing_client_id") return "Client ID missing";
+    if (brokerStatus.error === "token_missing") return "Token missing";
+    if (brokerStatus.error === "token_expired") return "Token expired";
+    if (brokerStatus.error === "invalid_token") return "Invalid token";
+    if (brokerStatus.error === "api_timeout") return "API timeout";
+    return "Dhan offline";
   }
   return brokerStatus.configured ? String(brokerStatus.provider ?? "Broker").toUpperCase() : "Paper";
 }
@@ -66,12 +71,14 @@ function brokerLoginTone(brokerStatus: any) {
 function useDashboardOperations(isAuthenticated: boolean) {
   const [operations, setOperations] = useState<any>(null);
   const [socketActive, setSocketActive] = useState(false);
+  const [socketStatus, setSocketStatus] = useState<"online" | "offline" | "polling">("offline");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setOperations(null);
       setSocketActive(false);
+      setSocketStatus("offline");
       setError(null);
       return;
     }
@@ -80,6 +87,8 @@ function useDashboardOperations(isAuthenticated: boolean) {
     let socket: WebSocket | null = null;
     let fallbackId: number | null = null;
     let reconnectId: number | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
 
     const load = async () => {
       try {
@@ -101,16 +110,20 @@ function useDashboardOperations(isAuthenticated: boolean) {
 
     const startFallback = () => {
       if (fallbackId !== null) return;
+      setSocketStatus("polling");
       void load();
       fallbackId = window.setInterval(load, 15000);
     };
 
     const connect = () => {
+      if (!active) return;
       socket = createSocket();
 
       socket.onopen = () => {
         if (!active) return;
+        reconnectAttempts = 0;
         setSocketActive(true);
+        setSocketStatus("online");
         stopFallback();
         void load();
       };
@@ -127,13 +140,21 @@ function useDashboardOperations(isAuthenticated: boolean) {
         }
       };
 
-      socket.onerror = () => socket?.close();
+      socket.onerror = () => {
+        socket?.close();
+      };
 
       socket.onclose = () => {
         if (!active) return;
         setSocketActive(false);
-        startFallback();
-        reconnectId = window.setTimeout(connect, 5000);
+        reconnectAttempts += 1;
+        if (reconnectAttempts > maxReconnectAttempts) {
+          startFallback();
+          return;
+        }
+        setSocketStatus("offline");
+        const delay = Math.min(30000, 1000 * 2 ** (reconnectAttempts - 1));
+        reconnectId = window.setTimeout(connect, delay);
       };
     };
 
@@ -148,7 +169,7 @@ function useDashboardOperations(isAuthenticated: boolean) {
     };
   }, [isAuthenticated]);
 
-  return { operations, socketActive, error };
+  return { operations, socketActive, socketStatus, error };
 }
 
 export default function Dashboard() {
@@ -163,7 +184,7 @@ export default function Dashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const { jobs, error: jobsError, socketConnected: jobsSocketConnected } = useLiveJobs();
-  const { operations, socketActive, error: operationsError } = useDashboardOperations(isAuthenticated);
+  const { operations, socketActive, socketStatus, error: operationsError } = useDashboardOperations(isAuthenticated);
 
   useEffect(() => {
     const syncAuth = () => setIsAuthenticated(hasAuthToken());
@@ -361,7 +382,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <SystemHealthWidget operations={operations} websocketConnected={socketActive} />
+          <SystemHealthWidget operations={operations} websocketConnected={socketActive} websocketStatus={socketStatus} />
 
           <div className="metric-grid">
             <MetricCard
@@ -372,8 +393,8 @@ export default function Dashboard() {
             />
             <MetricCard
               label="Realtime Channel"
-              value={socketActive ? "WebSocket" : "Fallback"}
-              helper={jobsSocketConnected ? "Job stream active" : "Polling only after socket failure"}
+              value={socketStatus === "online" ? "WebSocket Online" : socketStatus === "polling" ? "Polling fallback" : "WebSocket Offline"}
+              helper={jobsSocketConnected ? "Job stream active" : socketStatus === "polling" ? "Polling after socket failure" : "Reconnect backoff active"}
               tone={socketActive ? "good" : "warn"}
             />
             <MetricCard
@@ -571,7 +592,7 @@ export default function Dashboard() {
             <div className="dashboard-section">
               <div className="section-header">
                 <h2>Operational Dashboard</h2>
-                <span>{socketActive ? "WebSocket active" : "Polling fallback"}</span>
+                <span>{socketStatus === "online" ? "WebSocket Online" : socketStatus === "polling" ? "Polling fallback" : "WebSocket Offline"}</span>
               </div>
               <div className="metric-grid observability-grid">
                 <MetricCard label="WebSocket Connections" value={observability?.websocket_connections ?? 0} helper="Connected dashboard clients" />

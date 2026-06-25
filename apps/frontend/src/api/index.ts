@@ -75,7 +75,10 @@ export const api = {
     API.post("/modules/backtesting", payload).then((res) => res.data),
   riskEngine: () => API.get("/modules/risk-engine").then((res) => res.data),
   tradeJournal: () => API.get("/modules/trade-journal").then((res) => res.data),
-  tradeJournalRows: () => API.get("/api/trade-journal").then((res) => res.data),
+  tradeJournalRows: (params: Record<string, string> = {}) => API.get("/api/trades/journal", { params }).then((res) => res.data),
+  tradeJournalEntry: (id: number) => API.get(`/api/trades/journal/${id}`).then((res) => res.data),
+  createTradeJournalEntry: (payload: unknown) => API.post("/api/trades/journal", payload).then((res) => res.data),
+  updateTradeJournalEntry: (id: number, payload: unknown) => API.patch(`/api/trades/journal/${id}`, payload).then((res) => res.data),
   modulesDashboard: () => API.get("/modules/dashboard").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),

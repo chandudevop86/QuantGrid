@@ -3,12 +3,19 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from Backend.app.backtesting.engine import BacktestEngine
 from Backend.app.backtesting.report import render_report
 from Backend.application.dto import serialize_signal
-from Backend.application.paper_trade_store import create_trade_journal_entry, list_paper_trades, list_trade_journal, risk_status
+from Backend.application.paper_trade_store import (
+    create_trade_journal_entry,
+    get_trade_journal_entry,
+    list_paper_trades,
+    list_trade_journal,
+    risk_status,
+    update_trade_journal_entry,
+)
 from Backend.application.monitoring import observe_rejected_signal
 from Backend.application.signal_quality import split_signals
 from Backend.application.trading_service import TradingService
@@ -25,12 +32,35 @@ class TradeJournalEntryRequest(BaseModel):
     strategy: str
     signal: str
     symbol: str = "NIFTY"
-    entry: float
+    status: str = "recorded"
+    entry: float | None = None
+    entry_price: float | None = None
     stop_loss: float
     target: float
     exit_price: float | None = None
     pnl: float = 0.0
+    quantity: int | None = None
+    reason: str | None = None
     exit_reason: str | None = None
+    source: str = "manual"
+
+
+class TradeJournalPatchRequest(BaseModel):
+    strategy: str | None = None
+    signal: str | None = None
+    symbol: str | None = None
+    status: str | None = None
+    entry: float | None = None
+    entry_price: float | None = None
+    stop_loss: float | None = None
+    target: float | None = None
+    exit_price: float | None = None
+    pnl: float | None = None
+    quantity: int | None = None
+    reason: str | None = None
+    exit_reason: str | None = None
+    source: str | None = None
+    closed_at: str | None = None
 
 
 def _clean_candles(response: dict) -> list[dict]:
@@ -138,9 +168,13 @@ def paper_trades(
 @router.get("/api/trades/journal")
 def trade_journal(
     limit: int = Query(default=100, ge=1, le=500),
+    strategy: str | None = None,
+    status: str | None = None,
+    date: str | None = None,
+    symbol: str | None = None,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
-    rows = list_trade_journal(limit)
+    rows = list_trade_journal(limit, strategy=strategy, status=status, date=date, symbol=symbol)
     closed = [row for row in rows if row.get("exit_price") is not None or row.get("exit_reason")]
     wins = [row for row in closed if float(row.get("pnl") or 0.0) > 0]
     return {
@@ -154,13 +188,42 @@ def trade_journal(
     }
 
 
+@router.get("/api/trades/journal/{entry_id}")
+def trade_journal_entry(
+    entry_id: int,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    row = get_trade_journal_entry(entry_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade journal entry not found.")
+    return row
+
+
 @router.post("/api/trade-journal")
+@router.post("/api/trades/journal")
 def create_trade_journal(
     payload: TradeJournalEntryRequest,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
 ):
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    if payload_data.get("entry") is None and payload_data.get("entry_price") is not None:
+        payload_data["entry"] = payload_data["entry_price"]
+    if payload_data.get("entry") is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="entry_price is required.")
     return create_trade_journal_entry(payload_data)
+
+
+@router.patch("/api/trades/journal/{entry_id}")
+def patch_trade_journal(
+    entry_id: int,
+    payload: TradeJournalPatchRequest,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+):
+    payload_data = payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else payload.dict(exclude_none=True)
+    try:
+        return update_trade_journal_entry(entry_id, payload_data)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade journal entry not found.") from exc
 
 
 @router.get("/api/risk/status")
@@ -223,11 +286,43 @@ def latest_signals(
             candles_1m=one_minute,
             candles_15m=fifteen_minute,
         )
-        active.extend(serialize_signal(signal) for signal in active_signals)
+        for signal_obj in active_signals:
+            serialized_signal = serialize_signal(signal_obj)
+            active.append(serialized_signal)
+            create_trade_journal_entry(
+                {
+                    "strategy": serialized_signal.get("strategy_name"),
+                    "signal": serialized_signal.get("signal"),
+                    "symbol": serialized_signal.get("symbol"),
+                    "status": "accepted_signal",
+                    "entry": serialized_signal.get("entry_price") or serialized_signal.get("entry"),
+                    "stop_loss": serialized_signal.get("stop_loss"),
+                    "target": serialized_signal.get("target_price") or serialized_signal.get("target"),
+                    "quantity": serialized_signal.get("quantity"),
+                    "reason": serialized_signal.get("reason"),
+                    "source": "signal_scan",
+                    "created_at": serialized_signal.get("timestamp"),
+                }
+            )
         for entry in rejected_signals:
             serialized = {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
             rejected.append(serialized)
             observe_rejected_signal(serialized["signal"].get("strategy_name"), serialized["decision"].get("reason"))
+            create_trade_journal_entry(
+                {
+                    "strategy": serialized["signal"].get("strategy_name"),
+                    "signal": serialized["signal"].get("signal"),
+                    "symbol": serialized["signal"].get("symbol"),
+                    "status": "rejected_signal",
+                    "entry": serialized["signal"].get("entry_price") or serialized["signal"].get("entry"),
+                    "stop_loss": serialized["signal"].get("stop_loss"),
+                    "target": serialized["signal"].get("target_price") or serialized["signal"].get("target"),
+                    "quantity": serialized["signal"].get("quantity"),
+                    "reason": serialized["decision"].get("reason"),
+                    "source": "signal_scan",
+                    "created_at": serialized["signal"].get("timestamp"),
+                }
+            )
         stale.extend(
             {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
             for entry in stale_signals

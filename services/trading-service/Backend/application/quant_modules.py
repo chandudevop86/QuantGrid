@@ -236,7 +236,7 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
     return _option_chain_compat_payload({
         **payload,
         "module": "live_nse_option_chain",
-        "source": "synthetic-demo-chain",
+        "source": "synthetic",
         "synthetic": True,
         "fallback_reason": exc.__class__.__name__,
         "provider_warning": "Live NSE option-chain provider unavailable; using synthetic fallback data.",
@@ -264,16 +264,29 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
         support = max(below, key=lambda row: float(row.get("pe", {}).get("oi") or 0)).get("strike")
     if above:
         resistance = max(above, key=lambda row: float(row.get("ce", {}).get("oi") or 0)).get("strike")
-    signal_payload = payload.get("signals") or {}
-    signal = signal_payload.get("bias") or payload.get("signal") or "NEUTRAL"
+    pcr = float(payload.get("pcr") or 0.0)
+    max_pain = payload.get("max_pain")
+    spot = float(payload.get("underlying_price") or payload.get("spot") or 0.0)
+    if pcr >= 1.15 and max_pain and spot >= float(max_pain):
+        signal = "BUY_CE"
+    elif pcr <= 0.85 and max_pain and spot <= float(max_pain):
+        signal = "BUY_PE"
+    else:
+        signal = "NO_TRADE"
+    raw_source = str(payload.get("source") or "")
+    source = "live" if raw_source in {"live", "live-nse-chain"} else "synthetic"
     return {
         **payload,
-        "spot": payload.get("underlying_price"),
+        "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
+        "spot": spot,
         "ATM": atm,
         "atm": atm,
-        "PCR": payload.get("pcr"),
+        "PCR": pcr,
+        "pcr": pcr,
         "support": support if support is not None else payload.get("max_pain"),
         "resistance": resistance if resistance is not None else payload.get("max_pain"),
+        "source": source,
+        "legacy_source": raw_source,
         "signal": signal,
     }
 
@@ -340,7 +353,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
         "atm_strike": atm,
         "expiry": expiry_date,
         "step": step,
-        "source": "synthetic-demo-chain",
+        "source": "synthetic",
         "synthetic": True,
         "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
         "max_pain": _max_pain(rows),

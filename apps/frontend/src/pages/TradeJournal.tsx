@@ -16,11 +16,13 @@ function formatDate(value: unknown) {
 export default function TradeJournal() {
   const [payload, setPayload] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState({ strategy: "", status: "", date: "", symbol: "" });
 
   useEffect(() => {
     let isMounted = true;
     const load = () => {
-      api.tradeJournalRows()
+      const params = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
+      api.tradeJournalRows(params)
         .then((data) => {
           if (!isMounted) return;
           setPayload(data);
@@ -36,7 +38,7 @@ export default function TradeJournal() {
       isMounted = false;
       window.clearInterval(id);
     };
-  }, []);
+  }, [filters]);
 
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
   const summary = payload?.summary ?? {};
@@ -78,6 +80,31 @@ export default function TradeJournal() {
 
           <div className="dashboard-section">
             <div className="section-header">
+              <h2>Filters</h2>
+              <span>Trace signal to P&L</span>
+            </div>
+            <div className="field-grid">
+              <label>
+                <span>Strategy</span>
+                <input value={filters.strategy} onChange={(event) => setFilters({ ...filters, strategy: event.target.value })} placeholder="breakout" />
+              </label>
+              <label>
+                <span>Status</span>
+                <input value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} placeholder="accepted_signal" />
+              </label>
+              <label>
+                <span>Date</span>
+                <input value={filters.date} onChange={(event) => setFilters({ ...filters, date: event.target.value })} type="date" />
+              </label>
+              <label>
+                <span>Symbol</span>
+                <input value={filters.symbol} onChange={(event) => setFilters({ ...filters, symbol: event.target.value.toUpperCase() })} placeholder="NIFTY" />
+              </label>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
               <h2>Journal Entries</h2>
               <span>{rows.length} rows</span>
             </div>
@@ -87,32 +114,42 @@ export default function TradeJournal() {
                   <tr>
                     <th>Time</th>
                     <th>Strategy</th>
+                    <th>Symbol</th>
                     <th>Signal</th>
+                    <th>Status</th>
                     <th>Entry</th>
                     <th>Stop</th>
                     <th>Target</th>
+                    <th>Qty</th>
                     <th>Exit</th>
                     <th>PnL</th>
+                    <th>Reason</th>
                     <th>Exit Reason</th>
+                    <th>Source</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row: any) => (
                     <tr key={`${row.id}-${row.created_at}`}>
-                      <td>{formatDate(row.created_at)}</td>
+                      <td>{formatDate(row.timestamp ?? row.created_at)}</td>
                       <td>{row.strategy ?? "-"}</td>
+                      <td>{row.symbol ?? "-"}</td>
                       <td>{row.signal ?? "-"}</td>
-                      <td>{row.entry ?? "-"}</td>
+                      <td>{row.status ?? "-"}</td>
+                      <td>{row.entry_price ?? row.entry ?? "-"}</td>
                       <td>{row.stop_loss ?? "-"}</td>
                       <td>{row.target ?? "-"}</td>
+                      <td>{row.quantity ?? "-"}</td>
                       <td>{row.exit_price ?? "-"}</td>
                       <td>{formatMoney(row.pnl)}</td>
+                      <td>{row.reason ?? "-"}</td>
                       <td>{row.exit_reason ?? "-"}</td>
+                      <td>{row.source ?? "-"}</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (
                     <tr>
-                      <td colSpan={9}>No trade journal entries recorded yet.</td>
+                      <td colSpan={13}>No trade journal entries recorded yet.</td>
                     </tr>
                   )}
                 </tbody>

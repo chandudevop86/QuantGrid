@@ -67,12 +67,16 @@ def init_paper_trade_store() -> None:
                 strategy TEXT NOT NULL,
                 signal TEXT NOT NULL,
                 symbol TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'recorded',
                 entry REAL NOT NULL,
                 stop_loss REAL NOT NULL,
                 target REAL NOT NULL,
                 exit_price REAL,
                 pnl REAL NOT NULL DEFAULT 0,
+                quantity INTEGER,
+                reason TEXT,
                 exit_reason TEXT,
+                source TEXT NOT NULL DEFAULT 'manual',
                 created_at TEXT NOT NULL,
                 closed_at TEXT
             )
@@ -98,6 +102,19 @@ def init_paper_trade_store() -> None:
             connection.execute("ALTER TABLE paper_trades ADD COLUMN trailing_stop_loss REAL")
         if "trailing_stop_pct" not in columns:
             connection.execute("ALTER TABLE paper_trades ADD COLUMN trailing_stop_pct REAL")
+        journal_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(trade_journal)").fetchall()
+        }
+        journal_additions = {
+            "status": "ALTER TABLE trade_journal ADD COLUMN status TEXT NOT NULL DEFAULT 'recorded'",
+            "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
+            "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
+            "source": "ALTER TABLE trade_journal ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+        }
+        for column, statement in journal_additions.items():
+            if column not in journal_columns:
+                connection.execute(statement)
 
 
 def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
@@ -136,6 +153,7 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
             row,
         )
         row["id"] = cursor.lastrowid
+    _record_trade_journal_from_paper_trade(row)
     return row
 
 
@@ -203,12 +221,16 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
         "strategy": str(payload.get("strategy") or payload.get("strategy_name") or "unknown"),
         "signal": str(payload.get("signal") or payload.get("side") or "UNKNOWN").upper(),
         "symbol": str(payload.get("symbol") or "NIFTY").upper(),
+        "status": str(payload.get("status") or "recorded").lower(),
         "entry": float(payload.get("entry") or payload.get("entry_price") or 0.0),
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
         "exit_price": _float_or_none(payload.get("exit_price")),
         "pnl": float(payload.get("pnl") or 0.0),
+        "quantity": int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None,
+        "reason": payload.get("reason"),
         "exit_reason": payload.get("exit_reason") or payload.get("reason"),
+        "source": str(payload.get("source") or "manual"),
         "created_at": str(payload.get("created_at") or utc_now()),
         "closed_at": payload.get("closed_at"),
     }
@@ -218,9 +240,9 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO trade_journal
-                (strategy, signal, symbol, entry, stop_loss, target, exit_price, pnl, exit_reason, created_at, closed_at)
+                (strategy, signal, symbol, status, entry, stop_loss, target, exit_price, pnl, quantity, reason, exit_reason, source, created_at, closed_at)
             VALUES
-                (:strategy, :signal, :symbol, :entry, :stop_loss, :target, :exit_price, :pnl, :exit_reason, :created_at, :closed_at)
+                (:strategy, :signal, :symbol, :status, :entry, :stop_loss, :target, :exit_price, :pnl, :quantity, :reason, :exit_reason, :source, :created_at, :closed_at)
             """,
             row,
         )
@@ -228,35 +250,109 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def list_trade_journal(limit: int = 100) -> list[dict[str, Any]]:
+def list_trade_journal(
+    limit: int = 100,
+    *,
+    strategy: str | None = None,
+    status: str | None = None,
+    symbol: str | None = None,
+    date: str | None = None,
+) -> list[dict[str, Any]]:
     init_paper_trade_store()
     if not _use_sqlite():
-        return _db_list_trade_journal(limit)
+        return _db_list_trade_journal(limit, strategy=strategy, status=status, symbol=symbol, date=date)
     with _connect() as connection:
+        filters = []
+        values: list[Any] = []
+        if strategy:
+            filters.append("LOWER(strategy) = LOWER(?)")
+            values.append(strategy)
+        if status:
+            filters.append("LOWER(status) = LOWER(?)")
+            values.append(status)
+        if symbol:
+            filters.append("UPPER(symbol) = UPPER(?)")
+            values.append(symbol)
+        if date:
+            filters.append("substr(created_at, 1, 10) = ?")
+            values.append(date[:10])
+        where = f"WHERE {' AND '.join(filters)}" if filters else ""
+        values.append(max(1, min(int(limit), 500)))
         rows = connection.execute(
-            "SELECT * FROM trade_journal ORDER BY created_at DESC, id DESC LIMIT ?",
-            (max(1, min(int(limit), 500)),),
+            f"SELECT * FROM trade_journal {where} ORDER BY created_at DESC, id DESC LIMIT ?",
+            values,
         ).fetchall()
     journal = [dict(row) for row in rows]
     if journal:
-        return journal
+        return [_journal_with_timestamp(row) for row in journal]
+    if strategy or status or symbol or date:
+        return []
     return [
+        _journal_with_timestamp(
         {
             "id": trade.get("id"),
             "strategy": trade.get("strategy"),
             "signal": trade.get("side"),
             "symbol": trade.get("symbol"),
+            "status": trade.get("status"),
             "entry": trade.get("entry"),
+            "entry_price": trade.get("entry"),
             "stop_loss": trade.get("stop_loss"),
             "target": trade.get("target"),
             "exit_price": trade.get("exit_price"),
             "pnl": trade.get("pnl"),
+            "quantity": trade.get("quantity"),
+            "reason": trade.get("reason"),
             "exit_reason": trade.get("reason"),
+            "source": "paper_trade",
             "created_at": trade.get("created_at"),
             "closed_at": trade.get("closed_at"),
         }
+        )
         for trade in list_paper_trades(limit)
     ]
+
+
+def get_trade_journal_entry(entry_id: int) -> dict[str, Any] | None:
+    init_paper_trade_store()
+    if not _use_sqlite():
+        return _db_get_trade_journal_entry(entry_id)
+    with _connect() as connection:
+        row = connection.execute("SELECT * FROM trade_journal WHERE id = ?", (int(entry_id),)).fetchone()
+    return _journal_with_timestamp(dict(row)) if row else None
+
+
+def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[str, Any]:
+    init_paper_trade_store()
+    allowed = {"strategy", "signal", "symbol", "status", "entry", "entry_price", "stop_loss", "target", "exit_price", "pnl", "quantity", "reason", "exit_reason", "source", "closed_at"}
+    filtered = {key: value for key, value in updates.items() if key in allowed and value is not None}
+    if "entry_price" in filtered and "entry" not in filtered:
+        filtered["entry"] = filtered.pop("entry_price")
+    if not filtered:
+        existing = get_trade_journal_entry(entry_id)
+        if existing is None:
+            raise KeyError(entry_id)
+        return existing
+    if not _use_sqlite():
+        return _db_update_trade_journal_entry(entry_id, filtered)
+    assignments = []
+    values: list[Any] = []
+    for key, value in filtered.items():
+        assignments.append(f"{key} = ?")
+        if key in {"entry", "stop_loss", "target", "exit_price", "pnl"} and value is not None:
+            value = float(value)
+        if key == "quantity" and value is not None:
+            value = int(value)
+        values.append(value)
+    values.append(int(entry_id))
+    with _connect() as connection:
+        cursor = connection.execute(f"UPDATE trade_journal SET {', '.join(assignments)} WHERE id = ?", values)
+        if cursor.rowcount == 0:
+            raise KeyError(entry_id)
+    updated = get_trade_journal_entry(entry_id)
+    if updated is None:
+        raise KeyError(entry_id)
+    return updated
 
 
 def _use_sqlite() -> bool:
@@ -282,6 +378,16 @@ def _init_db_store() -> None:
     with engine.begin() as connection:
         for column, statement in additions.items():
             if column not in columns:
+                connection.execute(text(statement))
+        journal_columns = {column["name"] for column in inspect(engine).get_columns("trade_journal")}
+        journal_additions = {
+            "status": "ALTER TABLE trade_journal ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'recorded'",
+            "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
+            "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
+            "source": "ALTER TABLE trade_journal ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'manual'",
+        }
+        for column, statement in journal_additions.items():
+            if column not in journal_columns:
                 connection.execute(text(statement))
     import Backend.domain.trading_store_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
@@ -344,7 +450,32 @@ def _db_create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         db.add(record)
         db.commit()
         db.refresh(record)
-        return _record_to_dict(record)
+        row = _record_to_dict(record)
+        _record_trade_journal_from_paper_trade(row)
+        return row
+
+
+def _record_trade_journal_from_paper_trade(trade: dict[str, Any]) -> None:
+    try:
+        create_trade_journal_entry(
+            {
+                "strategy": trade.get("strategy"),
+                "signal": trade.get("side"),
+                "symbol": trade.get("symbol"),
+                "status": trade.get("status") or "paper_trade",
+                "entry": trade.get("entry"),
+                "stop_loss": trade.get("stop_loss"),
+                "target": trade.get("target"),
+                "pnl": trade.get("pnl") or 0.0,
+                "quantity": trade.get("quantity"),
+                "reason": trade.get("reason"),
+                "source": "paper_trade",
+                "created_at": trade.get("created_at"),
+            }
+        )
+    except Exception:
+        # Journal writes must not break execution paths.
+        return
 
 
 def _db_list_paper_trades(limit: int = 100) -> list[dict[str, Any]]:
@@ -392,20 +523,25 @@ def _db_update_paper_trade_status(
 
 
 def _trade_journal_record_to_dict(record: Any) -> dict[str, Any]:
-    return {
+    return _journal_with_timestamp({
         "id": record.id,
         "strategy": record.strategy,
         "signal": record.signal,
         "symbol": record.symbol,
+        "status": record.status,
         "entry": record.entry,
+        "entry_price": record.entry,
         "stop_loss": record.stop_loss,
         "target": record.target,
         "exit_price": record.exit_price,
         "pnl": record.pnl,
+        "quantity": record.quantity,
+        "reason": record.reason,
         "exit_reason": record.exit_reason,
+        "source": record.source,
         "created_at": record.created_at,
         "closed_at": record.closed_at,
-    }
+    })
 
 
 def _db_create_trade_journal_entry(row: dict[str, Any]) -> dict[str, Any]:
@@ -420,13 +556,63 @@ def _db_create_trade_journal_entry(row: dict[str, Any]) -> dict[str, Any]:
         return _trade_journal_record_to_dict(record)
 
 
-def _db_list_trade_journal(limit: int = 100) -> list[dict[str, Any]]:
+def _db_list_trade_journal(
+    limit: int = 100,
+    *,
+    strategy: str | None = None,
+    status: str | None = None,
+    symbol: str | None = None,
+    date: str | None = None,
+) -> list[dict[str, Any]]:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import TradeJournalRecord
 
     with SessionLocal() as db:
-        rows = db.query(TradeJournalRecord).order_by(TradeJournalRecord.created_at.desc(), TradeJournalRecord.id.desc()).limit(max(1, min(int(limit), 500))).all()
+        query = db.query(TradeJournalRecord)
+        if strategy:
+            query = query.filter(TradeJournalRecord.strategy == strategy)
+        if status:
+            query = query.filter(TradeJournalRecord.status == status)
+        if symbol:
+            query = query.filter(TradeJournalRecord.symbol == symbol.upper())
+        if date:
+            query = query.filter(TradeJournalRecord.created_at.like(f"{date[:10]}%"))
+        rows = query.order_by(TradeJournalRecord.created_at.desc(), TradeJournalRecord.id.desc()).limit(max(1, min(int(limit), 500))).all()
         return [_trade_journal_record_to_dict(row) for row in rows]
+
+
+def _db_get_trade_journal_entry(entry_id: int) -> dict[str, Any] | None:
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import TradeJournalRecord
+
+    with SessionLocal() as db:
+        row = db.get(TradeJournalRecord, int(entry_id))
+        return _trade_journal_record_to_dict(row) if row else None
+
+
+def _db_update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[str, Any]:
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import TradeJournalRecord
+
+    with SessionLocal() as db:
+        row = db.get(TradeJournalRecord, int(entry_id))
+        if row is None:
+            raise KeyError(entry_id)
+        for key, value in updates.items():
+            setattr(row, key, value)
+        db.commit()
+        db.refresh(row)
+        return _trade_journal_record_to_dict(row)
+
+
+def _journal_with_timestamp(row: dict[str, Any]) -> dict[str, Any]:
+    created_at = row.get("created_at")
+    entry = row.get("entry")
+    return {
+        **row,
+        "timestamp": row.get("timestamp") or created_at,
+        "entry_price": row.get("entry_price", entry),
+    }
 
 
 def _json_or_none(value: Any) -> str | None:

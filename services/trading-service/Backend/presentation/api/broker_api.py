@@ -135,7 +135,13 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
     status["audit_logging_enabled"] = settings.audit_logging_enabled
     status["circuit_breaker"] = broker_circuit_status()
     status["live_readiness"] = _live_readiness(settings)
-    status["real_money_orders_enabled"] = bool(settings.live_trading_enabled and settings.broker_live_enabled and settings.broker_configured and not status["circuit_breaker"].get("active"))
+    status["real_money_orders_enabled"] = bool(
+        settings.live_trading_enabled
+        and settings.broker_live_enabled
+        and settings.broker_configured
+        and status.get("connected")
+        and not status["circuit_breaker"].get("active")
+    )
     return status
 
 
@@ -162,7 +168,13 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
     status["audit_logging_enabled"] = get_settings().audit_logging_enabled
     status["circuit_breaker"] = broker_circuit_status()
     status["live_readiness"] = _live_readiness(get_settings())
-    status["real_money_orders_enabled"] = bool(get_settings().live_trading_enabled and get_settings().broker_live_enabled and get_settings().broker_configured and not status["circuit_breaker"].get("active"))
+    status["real_money_orders_enabled"] = bool(
+        get_settings().live_trading_enabled
+        and get_settings().broker_live_enabled
+        and get_settings().broker_configured
+        and status.get("connected")
+        and not status["circuit_breaker"].get("active")
+    )
     return status
 
 

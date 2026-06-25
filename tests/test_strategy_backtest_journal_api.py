@@ -47,6 +47,10 @@ def test_trade_journal_api_creates_and_lists_entries(app_client):
             "entry": 22500,
             "stop_loss": 22450,
             "target": 22600,
+            "quantity": 50,
+            "status": "accepted_signal",
+            "reason": "setup valid",
+            "source": "test",
             "exit_price": 22600,
             "pnl": 100,
             "exit_reason": "target",
@@ -60,6 +64,46 @@ def test_trade_journal_api_creates_and_lists_entries(app_client):
     assert payload["summary"]["total_trades"] == 1
     assert payload["rows"][0]["strategy"] == "breakout"
     assert payload["rows"][0]["exit_reason"] == "target"
+    assert payload["rows"][0]["entry_price"] == 22500
+    assert payload["rows"][0]["quantity"] == 50
+
+
+def test_trade_journal_crud_and_filters(app_client):
+    headers = admin_headers(app_client)
+
+    created = app_client.post(
+        "/api/trades/journal",
+        headers=headers,
+        json={
+            "strategy": "mtf",
+            "signal": "SELL",
+            "symbol": "BANKNIFTY",
+            "status": "rejected_signal",
+            "entry_price": 50000,
+            "stop_loss": 50100,
+            "target": 49800,
+            "quantity": 15,
+            "reason": "risk rejected",
+            "source": "signal_scan",
+        },
+    )
+    assert created.status_code == 200, created.text
+    entry_id = created.json()["id"]
+
+    fetched = app_client.get(f"/api/trades/journal/{entry_id}", headers=headers)
+    patched = app_client.patch(
+        f"/api/trades/journal/{entry_id}",
+        headers=headers,
+        json={"status": "closed", "exit_price": 49800, "pnl": 200, "exit_reason": "target"},
+    )
+    filtered = app_client.get("/api/trades/journal", headers=headers, params={"strategy": "mtf", "status": "closed", "symbol": "BANKNIFTY"})
+
+    assert fetched.status_code == 200
+    assert patched.status_code == 200
+    assert patched.json()["status"] == "closed"
+    assert patched.json()["exit_reason"] == "target"
+    assert filtered.status_code == 200
+    assert filtered.json()["summary"]["total_trades"] == 1
 
 
 def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monkeypatch):
@@ -76,9 +120,21 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["source"] == "synthetic-demo-chain"
-    assert {"spot", "expiry", "ATM", "atm", "pcr", "max_pain", "support", "resistance", "signal"} <= set(payload)
+    assert payload["source"] == "synthetic"
+    assert {"underlying", "spot", "expiry", "ATM", "atm", "pcr", "max_pain", "support", "resistance", "signal"} <= set(payload)
     assert payload["synthetic"] is True
+
+
+def test_synthetic_option_chain_response_contract(app_client):
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/modules/option-chain/NIFTY", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["underlying"] == "NIFTY"
+    assert payload["source"] == "synthetic"
+    assert payload["signal"] in {"BUY_CE", "BUY_PE", "NO_TRADE"}
 
 
 def test_signals_alias_reuses_latest_handler(app_client):

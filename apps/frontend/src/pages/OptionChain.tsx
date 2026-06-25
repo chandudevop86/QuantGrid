@@ -80,7 +80,7 @@ function demoOptionChain(symbol = "NIFTY") {
     atm_strike: atm,
     step,
     expiry: "Demo",
-    source: "offline-demo-chain",
+    source: "synthetic",
     warning: "Backend is offline; showing demo option-chain data.",
     rows,
   });
@@ -117,8 +117,8 @@ function demoHistoricalChain(symbol = "NIFTY") {
 }
 
 export default function OptionChain() {
-  const [chain, setChain] = useState<any>(null);
-  const [history, setHistory] = useState<any>(null);
+  const [chain, setChain] = useState<any>(() => demoOptionChain("NIFTY"));
+  const [history, setHistory] = useState<any>(() => demoHistoricalChain("NIFTY"));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +170,7 @@ export default function OptionChain() {
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 15s";
-  const usingSynthetic = Boolean(chain?.source && String(chain.source).includes("synthetic"));
+  const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
 
   return (
     <section className="dashboard-page">
@@ -196,8 +196,8 @@ export default function OptionChain() {
       <div className="metric-grid">
         <div className="metric-card">
           <span className="metric-label">Underlying</span>
-          <strong className="metric-value">{chain?.symbol ?? "NIFTY"}</strong>
-          <span className="metric-helper">{chain?.source ?? "Live NSE Chain"}</span>
+          <strong className="metric-value">{chain?.underlying ?? chain?.symbol ?? "NIFTY"}</strong>
+          <span className="metric-helper">Source: {chain?.source ?? "synthetic"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Current Price</span>
@@ -211,8 +211,8 @@ export default function OptionChain() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
-          <strong className="metric-value">{chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">Live NSE chain</span>
+          <strong className="metric-value">{chain?.expiry ?? "Demo"}</strong>
+          <span className="metric-helper">{chain?.source === "live" ? "Live NSE chain" : "Synthetic fallback"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>
@@ -236,7 +236,7 @@ export default function OptionChain() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Real Signal</span>
-          <strong className="metric-value">{chain?.signals?.bias ?? "-"}</strong>
+          <strong className="metric-value">{chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
           <span className="metric-helper">{chain?.signals?.reason ?? "PCR / OI / max pain"}</span>
         </div>
       </div>

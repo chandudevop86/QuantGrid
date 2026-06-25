@@ -11,6 +11,17 @@ export default function DhanLogin() {
   const [error, setError] = useState<string | null>(null);
   const developerMode = useUiMode() === "developer";
 
+  const statusLabel = (() => {
+    if (status?.connected && status?.paper_only) return "Paper mode only";
+    if (status?.connected) return "Connected";
+    if (status?.error === "missing_client_id") return "Client ID missing";
+    if (status?.error === "token_missing") return "Token missing";
+    if (status?.error === "token_expired") return "Token expired";
+    if (status?.error === "invalid_token") return "Invalid token";
+    if (status?.error === "api_timeout") return "API timeout";
+    return "Check";
+  })();
+
   const loadStatus = async () => {
     try {
       const data = await api.brokerStatus();
@@ -58,7 +69,7 @@ export default function DhanLogin() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Connection</span>
-          <strong className="metric-value">{status?.connected ? "Connected" : "Offline"}</strong>
+          <strong className="metric-value">{statusLabel}</strong>
           <span className="metric-helper">{status?.client_id ? `Client ${status.client_id}` : "Awaiting login"}</span>
         </div>
         <div className="metric-card">
@@ -75,7 +86,7 @@ export default function DhanLogin() {
             <p>{status?.message ?? "Enter your Dhan client ID and access token."}</p>
           </div>
           <span className={`status-pill${status?.connected ? "" : " stale"}`}>
-            {status?.connected ? "Connected" : "Check"}
+            {statusLabel}
           </span>
         </div>
 
@@ -115,7 +126,7 @@ export default function DhanLogin() {
         </button>
 
         {error && <div className="alert alert-error">{error}</div>}
-        {status?.message && !error && <div className="alert alert-success">{status.message}</div>}
+        {status?.message && !error && <div className={status?.connected ? "alert alert-success" : "alert alert-warning"}>{status.message}</div>}
 
         {developerMode && (
           <details className="technical-details" open>

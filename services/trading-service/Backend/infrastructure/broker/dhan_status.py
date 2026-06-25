@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import base64
+import time
+from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -25,17 +28,66 @@ def dhan_credentials() -> dict[str, str | None]:
     }
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _base_status(*, connected: bool, authenticated: bool, error: str | None, message: str, client_id: str | None = None) -> dict[str, Any]:
+    return {
+        "provider": "dhan",
+        "configured": authenticated,
+        "connected": connected,
+        "authenticated": authenticated,
+        "paper_only": True,
+        "paper_mode": True,
+        "last_checked": _now_iso(),
+        "error": error,
+        "message": message,
+        "client_id": _masked(client_id),
+    }
+
+
+def _jwt_expired(token: str) -> bool:
+    try:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return False
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+        exp = int(decoded.get("exp") or 0)
+        return bool(exp and exp <= int(time.time()))
+    except Exception:
+        return False
+
+
 def check_dhan_profile(timeout: float = 8.0) -> dict[str, Any]:
     credentials = dhan_credentials()
+    client_id = credentials["client_id"]
     access_token = credentials["access_token"]
+    if not client_id:
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error="missing_client_id",
+            message="Dhan client ID is not configured.",
+            client_id=None,
+        )
     if not access_token:
-        return {
-            "provider": "dhan",
-            "configured": False,
-            "connected": False,
-            "paper_mode": True,
-            "message": "Dhan access token is not configured.",
-        }
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error="token_missing",
+            message="Dhan access token is not configured.",
+            client_id=client_id,
+        )
+    if _jwt_expired(access_token):
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error="token_expired",
+            message="Dhan access token is expired. Generate a fresh session token.",
+            client_id=client_id,
+        )
 
     request = Request(
         DHAN_PROFILE_URL,
@@ -50,30 +102,37 @@ def check_dhan_profile(timeout: float = 8.0) -> dict[str, Any]:
         with urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        return {
-            "provider": "dhan",
-            "configured": True,
-            "connected": False,
-            "paper_mode": True,
-            "client_id": _masked(credentials["client_id"]),
-            "message": f"Dhan rejected the configured token with HTTP {exc.code}.",
-        }
-    except (OSError, URLError, TimeoutError, ValueError) as exc:
-        return {
-            "provider": "dhan",
-            "configured": True,
-            "connected": False,
-            "paper_mode": True,
-            "client_id": _masked(credentials["client_id"]),
-            "message": f"Could not reach Dhan profile API: {exc}",
-        }
+        error = "invalid_token" if exc.code in {401, 403} else f"http_{exc.code}"
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error=error,
+            message=f"Dhan rejected the configured token with HTTP {exc.code}.",
+            client_id=client_id,
+        )
+    except TimeoutError as exc:
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error="api_timeout",
+            message=f"Dhan profile API timed out: {exc}",
+            client_id=client_id,
+        )
+    except (OSError, URLError, ValueError) as exc:
+        return _base_status(
+            connected=False,
+            authenticated=False,
+            error="api_unavailable",
+            message=f"Could not reach Dhan profile API: {exc}",
+            client_id=client_id,
+        )
 
-    return {
-        "provider": "dhan",
-        "configured": True,
-        "connected": True,
-        "paper_mode": True,
-        "client_id": _masked(str(payload.get("dhanClientId") or credentials["client_id"] or "")),
-        "account_name": payload.get("clientName"),
-        "message": "Dhan credentials are valid. Execution remains paper-only.",
-    }
+    status = _base_status(
+        connected=True,
+        authenticated=True,
+        error=None,
+        message="Dhan credentials are valid. Execution remains paper-only unless live trading is explicitly enabled.",
+        client_id=str(payload.get("dhanClientId") or client_id or ""),
+    )
+    status["account_name"] = payload.get("clientName")
+    return status

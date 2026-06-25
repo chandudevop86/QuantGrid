@@ -3,12 +3,16 @@ CREATE TABLE IF NOT EXISTS trade_journal (
     strategy TEXT NOT NULL,
     signal TEXT NOT NULL,
     symbol TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'recorded',
     entry REAL NOT NULL,
     stop_loss REAL NOT NULL,
     target REAL NOT NULL,
     exit_price REAL,
     pnl REAL NOT NULL DEFAULT 0,
+    quantity INTEGER,
+    reason TEXT,
     exit_reason TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
     created_at TEXT NOT NULL,
     closed_at TEXT
 );

@@ -13,6 +13,7 @@ type HealthBadgeProps = {
 type SystemHealthWidgetProps = {
   operations?: any;
   websocketConnected?: boolean;
+  websocketStatus?: "online" | "offline" | "polling";
   compact?: boolean;
 };
 
@@ -38,7 +39,7 @@ function HealthBadge({ label, status, tone, helper }: HealthBadgeProps) {
   );
 }
 
-export default function SystemHealthWidget({ operations, websocketConnected, compact = false }: SystemHealthWidgetProps) {
+export default function SystemHealthWidget({ operations, websocketConnected, websocketStatus, compact = false }: SystemHealthWidgetProps) {
   const [apiHealth, setApiHealth] = useState<any>(null);
   const [localOperations, setLocalOperations] = useState<any>(operations ?? null);
   const [apiReachable, setApiReachable] = useState(false);
@@ -80,6 +81,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, com
   const marketOpen = market?.session_state === "open";
   const staleMarketData = marketOpen && typeof latestCandleAge === "number" && latestCandleAge > 600;
   const websocketOnline = websocketConnected === true || health?.websocket?.active === true;
+  const realtimeStatus = websocketOnline ? "Online" : websocketStatus === "polling" ? "Polling fallback" : "Offline";
   const redisConfigured = health?.redis?.message !== "REDIS_URL is not configured.";
 
   const badges = useMemo(
@@ -92,9 +94,9 @@ export default function SystemHealthWidget({ operations, websocketConnected, com
       },
       {
         label: "WebSocket",
-        status: websocketOnline ? "Connected" : "Offline",
+        status: realtimeStatus,
         tone: websocketOnline ? "green" : "yellow",
-        helper: websocketOnline ? `${health?.websocket?.connections ?? 0} client(s)` : "Fallback polling active",
+        helper: websocketOnline ? `${health?.websocket?.connections ?? 0} client(s)` : realtimeStatus === "Polling fallback" ? "Polling after socket failure" : "Reconnect backoff active",
       },
       {
         label: "Market Data",
@@ -115,7 +117,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, com
         helper: health?.redis?.message,
       },
     ] as HealthBadgeProps[],
-    [apiHealth, apiReachable, health, latestCandleAge, localOperations, redisConfigured, staleMarketData, websocketOnline],
+    [apiHealth, apiReachable, health, latestCandleAge, localOperations, realtimeStatus, redisConfigured, staleMarketData, websocketOnline],
   );
 
   const attention = badges.some((badge) => badge.tone === "red") ? "Needs attention" : badges.some((badge) => badge.tone === "yellow") ? "Review" : "Healthy";
@@ -125,7 +127,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, com
       <div className="system-health-header">
         <div>
           <h2>System Health</h2>
-          <p>{websocketOnline ? "Realtime channel connected." : "WebSocket is offline. Fallback polling is active."}</p>
+          <p>{websocketOnline ? "Realtime channel connected." : realtimeStatus === "Polling fallback" ? "WebSocket is offline. Fallback polling is active." : "WebSocket reconnect backoff is active."}</p>
         </div>
         <strong className={`system-health-summary system-health-summary-${attention === "Healthy" ? "green" : attention === "Review" ? "yellow" : "red"}`}>
           {attention}

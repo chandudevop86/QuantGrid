@@ -180,6 +180,7 @@ def create_app():
     async def websocket_endpoint(websocket: WebSocket):
         origin = websocket.headers.get("origin")
         if origin and origin not in _allowed_origins():
+            logger.warning("websocket_rejected_origin", extra={"origin": origin})
             await websocket.close(code=4403, reason="Origin not allowed")
             return
 
@@ -199,6 +200,7 @@ def create_app():
                 except WebSocketDisconnect:
                     manager.disconnect(websocket)
                 return
+            logger.warning("websocket_rejected_missing_auth")
             await websocket.close(code=4401, reason="Authentication required")
             return
         token = subprotocols[1]
@@ -207,9 +209,11 @@ def create_app():
             with SessionLocal() as db:
                 user = db.get(User, int(claims["uid"]))
                 if user is None or user.role != claims.get("role"):
+                    logger.warning("websocket_rejected_invalid_user")
                     await websocket.close(code=4401, reason="Invalid user")
                     return
         except Exception:
+            logger.warning("websocket_rejected_invalid_token")
             await websocket.close(code=4401, reason="Invalid token")
             return
 

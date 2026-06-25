@@ -5,7 +5,8 @@ function defaultSocketUrl() {
 
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   if (import.meta.env.DEV) {
-    return `${protocol}://${window.location.host}/ws`;
+    const backendHost = import.meta.env.VITE_WS_BACKEND_HOST ?? `${window.location.hostname}:8000`;
+    return `${protocol}://${backendHost}/ws`;
   }
 
   return `${protocol}://${window.location.host}/ws`;
