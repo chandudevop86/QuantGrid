@@ -16,10 +16,13 @@ from Backend.application.paper_trade_store import (
     risk_status,
     update_trade_journal_entry,
 )
+from Backend.application.candle_validation import validate_live_candle
 from Backend.application.monitoring import observe_rejected_signal
+from Backend.application.signal_audit import AUDIT_STRATEGIES, StrategyAuditInput, audit_strategy
 from Backend.application.signal_quality import split_signals
+from Backend.application.signal_validation import validate_signals
 from Backend.application.trading_service import TradingService
-from Backend.presentation.api.market_api import get_candles
+from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.presentation.api.roles import require_roles
 from pydantic import BaseModel
 
@@ -335,3 +338,212 @@ def latest_signals(
         "stale_signals": stale,
         "latest_candle_time": one_minute[-1]["timestamp"] if one_minute else None,
     }
+
+
+@router.get("/api/signals/audit")
+def signals_audit(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    return _build_signal_audit(symbol)
+
+
+@router.get("/api/system/audit")
+def system_audit(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    issues: list[str] = []
+    price_payload: dict | None = None
+    price_source = "unavailable"
+    try:
+        price_payload = get_price(symbol)
+        price_source = str(price_payload.get("source") or price_payload.get("provider") or "unknown")
+    except Exception as exc:
+        logger.exception("system_audit_price_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        issues.append(f"Market price unavailable: {exc}")
+
+    signal_audit = _build_signal_audit(symbol)
+    data = signal_audit.get("data", {})
+    lifecycle = signal_audit["lifecycle_totals"]
+    using_fallback = _is_fallback_source(price_source) or bool(data.get("using_fallback_data"))
+    candle_count = int(data.get("candle_count") or 0)
+    candle_age = data.get("candle_age_seconds")
+    data_ok = bool(price_payload and float(price_payload.get("price") or price_payload.get("ltp") or 0) > 0)
+    data_ok = data_ok and candle_count >= 20 and not using_fallback and bool(data.get("valid_for_analysis"))
+    logic_ok = bool(signal_audit["strategies"]) and any(int(row.get("raw_signal_count") or 0) >= 0 for row in signal_audit["strategies"])
+    if not price_payload:
+        issues.append("Market price check failed.")
+    if candle_count < 20:
+        issues.append(f"Only {candle_count} candles available; strategies need enough historical context.")
+    if using_fallback:
+        issues.append("Fallback/sample/cached market data is in use.")
+    if not data.get("valid_for_analysis"):
+        issues.append("Candles are not valid for analysis.")
+    if int(lifecycle["RAW_SIGNAL"]) == 0:
+        issues.append("Strategies ran but generated no raw signals.")
+    if int(lifecycle["VALIDATED_SIGNAL"]) == 0:
+        issues.append("No validated signals passed the confirmation gates.")
+    if int(lifecycle["PAPER_TRADE_CREATED"]) == 0:
+        issues.append(_trade_block_reason(signal_audit["strategies"], data))
+
+    return {
+        "data_status": "OK" if data_ok else "ISSUES",
+        "data_ok": data_ok,
+        "logic_ok": logic_ok,
+        "market_price": price_payload,
+        "candle_count": candle_count,
+        "candle_age_seconds": candle_age,
+        "using_fallback_data": using_fallback,
+        "strategies_working": {
+            "checked": len(signal_audit["strategies"]),
+            "with_raw_signals": sum(1 for row in signal_audit["strategies"] if int(row.get("raw_signal_count") or 0) > 0),
+            "with_validated_signals": sum(1 for row in signal_audit["strategies"] if int(row.get("validated_signal_count") or 0) > 0),
+            "all_strategy_rows_returned": len(signal_audit["strategies"]) == len(AUDIT_STRATEGIES),
+        },
+        "raw_signals": lifecycle["RAW_SIGNAL"],
+        "validated_signals": lifecycle["VALIDATED_SIGNAL"],
+        "rejected_signals": lifecycle["REJECTED_SIGNAL"],
+        "trades_created": lifecycle["PAPER_TRADE_CREATED"],
+        "trade_not_created_because": _trade_block_reason(signal_audit["strategies"], data),
+        "issues": issues,
+        "signal_audit": signal_audit,
+    }
+
+
+def _build_signal_audit(symbol: str = "NIFTY") -> dict:
+    try:
+        candles_response = get_candles(symbol, interval="1m", period="1d", limit=150)
+        confirmation_response = get_candles(symbol, interval="5m", period="1d", limit=150)
+        trend_response = get_candles(symbol, interval="15m", period="1d", limit=150)
+        one_minute = _clean_candles(candles_response)
+        five_minute = _clean_candles(confirmation_response)
+        fifteen_minute = _clean_candles(trend_response)
+    except Exception as exc:
+        logger.exception("signal_audit_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        candles_response, confirmation_response, trend_response = {}, {}, {}
+        one_minute, five_minute, fifteen_minute = [], [], []
+
+    service = TradingService()
+    paper_trades = list_paper_trades(500)
+    candle_source = candles_response.get("source")
+    candle_validation = validate_live_candle(
+        one_minute,
+        interval="1m",
+        mode="paper",
+        source=candle_source,
+        provider_fetched_at=candles_response.get("fetched_at"),
+    ) if one_minute else None
+    rows = []
+    totals = {
+        "RAW_SIGNAL": 0,
+        "VALIDATED_SIGNAL": 0,
+        "ACCEPTED_SIGNAL": 0,
+        "REJECTED_SIGNAL": 0,
+        "PAPER_TRADE_CREATED": 0,
+    }
+    for key, label in AUDIT_STRATEGIES:
+        raw_signals = []
+        validated_signals = []
+        try:
+            raw_signals = service.run_strategy(
+                strategy_name=key,
+                data=one_minute,
+                symbol=symbol.upper(),
+                capital=100_000,
+                risk_pct=1,
+                rr_ratio=2,
+                params={
+                    "mtf_candles": five_minute,
+                    "htf_candles": fifteen_minute,
+                    "m15_candles": fifteen_minute,
+                    "m5_candles": five_minute,
+                    "h1_candles": fifteen_minute,
+                    "h4_candles": fifteen_minute,
+                    "daily_candles": fifteen_minute,
+                },
+            ) if one_minute else []
+            validated_signals, _data_source = validate_signals(
+                raw_signals,
+                symbol=symbol,
+                candles=one_minute,
+                candle_source=candle_source,
+            ) if one_minute else ([], "cached")
+        except Exception as exc:
+            logger.exception("signal_audit_strategy_failed", extra={"strategy": key, "error_type": exc.__class__.__name__})
+        paper_count = sum(
+            1
+            for trade in paper_trades
+            if str(trade.get("strategy") or "").strip().lower() in {key, label.lower(), label.replace(" ", "_").lower()}
+        )
+        row = audit_strategy(
+            StrategyAuditInput(
+                key=key,
+                label=label,
+                raw_signals=raw_signals,
+                validated_signals=validated_signals,
+                candles=one_minute,
+                trend_candles=fifteen_minute,
+                candle_source=candle_source,
+                candle_validation=candle_validation,
+                execution_mode="paper",
+                paper_trade_created_count=paper_count,
+            )
+        )
+        rows.append(row)
+        for lifecycle_key, value in row["lifecycle"].items():
+            totals[lifecycle_key] += int(value or 0)
+
+    return {
+        "symbol": symbol.upper(),
+        "latest_candle_time": one_minute[-1]["timestamp"] if one_minute else None,
+        "data": {
+            "candle_source": candle_source,
+            "confirmation_source": confirmation_response.get("source"),
+            "trend_source": trend_response.get("source"),
+            "candle_count": len(one_minute),
+            "candle_age_seconds": getattr(candle_validation, "delay_seconds", None),
+            "valid_for_analysis": bool(getattr(candle_validation, "valid_for_analysis", False)),
+            "valid_for_execution": bool(getattr(candle_validation, "valid_for_execution", False)),
+            "market_status": getattr(candle_validation, "market_status", None),
+            "using_fallback_data": any(
+                _is_fallback_source(source)
+                for source in (candle_source, confirmation_response.get("source"), trend_response.get("source"))
+            ),
+        },
+        "strategies": rows,
+        "lifecycle_totals": totals,
+        "rejection_reasons": [
+            "NEUTRAL",
+            "LOW_CONFIDENCE",
+            "MISSING_RISK_REWARD",
+            "STALE_CANDLE",
+            "MARKET_CLOSED",
+            "RISK_REJECTED",
+            "MAX_TRADES_REACHED",
+            "MISSING_STOP_LOSS",
+            "MISSING_TARGET",
+        ],
+    }
+
+
+def _is_fallback_source(source: str | None) -> bool:
+    return str(source or "").strip().lower() in {"sample", "sample-fallback", "stored-live-cache", "cached", "demo"}
+
+
+def _trade_block_reason(strategies: list[dict], data: dict) -> str:
+    if not data.get("valid_for_execution"):
+        status = data.get("market_status") or "market data not executable"
+        return f"Market data is not executable: {status}."
+    if not strategies:
+        return "No strategy audit rows were returned."
+    if sum(int(row.get("raw_signal_count") or 0) for row in strategies) == 0:
+        return "No strategy generated a raw signal."
+    if sum(int(row.get("validated_signal_count") or 0) for row in strategies) == 0:
+        reasons = [row.get("rejection_reason") for row in strategies if row.get("rejection_reason")]
+        reason = next((item for item in reasons if item != "NEUTRAL"), None) or "signals did not pass validation"
+        return f"No validated signal passed: {reason}."
+    blocking = next((row for row in strategies if row.get("rejection_reason") and row.get("rejection_reason") != "NEUTRAL"), None)
+    if blocking:
+        return f"{blocking.get('strategy')} blocked by {blocking.get('rejection_reason')}."
+    return "Validated signal is ready, but no paper order has been submitted yet."

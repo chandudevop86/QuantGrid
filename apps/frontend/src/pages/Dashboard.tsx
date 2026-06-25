@@ -180,6 +180,7 @@ export default function Dashboard() {
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [positionSummary, setPositionSummary] = useState<any>(null);
   const [modules, setModules] = useState<any>(null);
+  const [systemAudit, setSystemAudit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
@@ -208,6 +209,7 @@ export default function Dashboard() {
       setBrokerStatus(null);
       setPositionSummary(null);
       setModules(null);
+      setSystemAudit(null);
       setLoading(false);
       return;
     }
@@ -220,14 +222,16 @@ export default function Dashboard() {
       api.brokerStatus(),
       api.positionSummary().catch(() => null),
       api.modulesDashboard().catch(() => null),
+      api.systemAudit().catch(() => null),
     ])
-      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData]) => {
+      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData, systemAuditData]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setMarketProvider(marketProviderData);
         setBrokerStatus(brokerData);
         setPositionSummary(positionData);
         setModules(modulesData);
+        setSystemAudit(systemAuditData);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -383,6 +387,36 @@ export default function Dashboard() {
           </div>
 
           <SystemHealthWidget operations={operations} websocketConnected={socketActive} websocketStatus={socketStatus} />
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>System Audit</h2>
+              <span>{systemAudit?.data_status ?? "Checking"}</span>
+            </div>
+            <div className="system-audit-strip">
+              <span className={systemAudit?.data_ok ? "health-ok" : "health-fail"}>
+                <small>Data OK</small>
+                <strong>{systemAudit?.data_ok ? "YES" : "NO"}</strong>
+                <em>{systemAudit?.candle_count ?? 0} candles | age {systemAudit?.candle_age_seconds ?? "-"}s</em>
+              </span>
+              <span className={systemAudit?.logic_ok ? "health-ok" : "health-warn"}>
+                <small>Logic OK</small>
+                <strong>{systemAudit?.logic_ok ? "YES" : "REVIEW"}</strong>
+                <em>{systemAudit?.raw_signals ?? 0} raw | {systemAudit?.validated_signals ?? 0} validated</em>
+              </span>
+              <span className={(systemAudit?.trades_created ?? 0) > 0 ? "health-ok" : "health-warn"}>
+                <small>Trade Not Created Because...</small>
+                <strong>{(systemAudit?.trades_created ?? 0) > 0 ? "TRADE CREATED" : "BLOCKED"}</strong>
+                <em>{systemAudit?.trade_not_created_because ?? "Audit not loaded yet."}</em>
+              </span>
+            </div>
+            {uiMode === "developer" && systemAudit && (
+              <details className="technical-details">
+                <summary>System Audit Payload</summary>
+                <pre>{JSON.stringify(systemAudit, null, 2)}</pre>
+              </details>
+            )}
+          </div>
 
           <div className="metric-grid">
             <MetricCard

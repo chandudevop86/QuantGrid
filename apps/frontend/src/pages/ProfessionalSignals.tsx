@@ -45,6 +45,7 @@ export default function ProfessionalSignals() {
   const [risk, setRisk] = useState<any>(null);
   const [backtest, setBacktest] = useState<any>(null);
   const [journal, setJournal] = useState<any>(null);
+  const [audit, setAudit] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const developerMode = useUiMode() === "developer";
@@ -57,18 +58,21 @@ export default function ProfessionalSignals() {
       api.tradeJournal(),
       api.riskEngine(),
       api.runBacktestingModule({ symbol: "NIFTY", strategy_name: backtestStrategy, min_score: 0 }),
+      api.signalsAudit(),
     ])
-      .then(([signalResult, journalResult, riskResult, backtestResult]) => {
+      .then(([signalResult, journalResult, riskResult, backtestResult, auditResult]) => {
         if (cancelled) return;
         const signalData = signalResult.status === "fulfilled" ? signalResult.value : { active_signals: [], rejected_signals: [], stale_signals: [], message: "Signals unavailable." };
         const journalData = journalResult.status === "fulfilled" ? journalResult.value : { recent_trades: [], total_trades: 0, win_rate: 0, pnl: 0 };
         const riskData = riskResult.status === "fulfilled" ? riskResult.value : { summary: { trades_today: 0, daily_pnl: 0 } };
         const backtestData = backtestResult.status === "fulfilled" ? backtestResult.value : { metrics: { total_trades: 0, win_rate: 0, pnl: 0, sharpe_ratio: 0 }, equity_curve: [] };
+        const auditData = auditResult.status === "fulfilled" ? auditResult.value : { strategies: [], lifecycle_totals: {} };
         setSignals(signalData);
         setJournal(journalData);
         setTrades(Array.isArray(journalData?.recent_trades) ? journalData.recent_trades : []);
         setRisk(riskData?.summary ?? riskData);
         setBacktest(backtestData);
+        setAudit(auditData);
         setError(null);
       })
       .finally(() => {
@@ -112,6 +116,62 @@ export default function ProfessionalSignals() {
               <strong className="metric-value">{risk?.trades_today ?? 0}/{risk?.max_trades_per_day ?? "-"}</strong>
               <span className="metric-helper">Daily PnL {risk?.daily_pnl ?? 0}</span>
             </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Signal Audit</h2>
+              <span>{audit?.latest_candle_time ?? signals?.latest_candle_time ?? "-"}</span>
+            </div>
+            <div className="signal-audit-summary">
+              {["RAW_SIGNAL", "VALIDATED_SIGNAL", "ACCEPTED_SIGNAL", "REJECTED_SIGNAL", "PAPER_TRADE_CREATED"].map((key) => (
+                <span key={key}>
+                  <small>{key.replace(/_/g, " ")}</small>
+                  <strong>{audit?.lifecycle_totals?.[key] ?? 0}</strong>
+                </span>
+              ))}
+            </div>
+            <div className="table-wrap">
+              <table className="table signal-audit-table">
+                <thead>
+                  <tr>
+                    <th>Strategy</th>
+                    <th>Raw</th>
+                    <th>Validated</th>
+                    <th>Rejected</th>
+                    <th>Latest</th>
+                    <th>Confidence</th>
+                    <th>RR</th>
+                    <th>No Trade Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(audit?.strategies ?? []).map((row: any) => (
+                    <tr key={row.strategy_key ?? row.strategy}>
+                      <td>{row.strategy}</td>
+                      <td>{row.raw_signal_count ?? 0}</td>
+                      <td>{row.validated_signal_count ?? 0}</td>
+                      <td>{row.rejected_signal_count ?? 0}</td>
+                      <td>{row.latest_signal ?? "NEUTRAL"}</td>
+                      <td>{row.confidence == null ? "-" : `${row.confidence}%`}</td>
+                      <td>{row.risk_reward ?? "-"}</td>
+                      <td>{row.rejection_reason ?? row.execution_decision ?? "READY_FOR_PAPER_TRADE"}</td>
+                    </tr>
+                  ))}
+                  {(!audit?.strategies || audit.strategies.length === 0) && (
+                    <tr>
+                      <td colSpan={8}>Signal audit is unavailable.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {developerMode && (
+              <details className="technical-details">
+                <summary>Signal Audit API Payload</summary>
+                <pre>{JSON.stringify(localizeTimestamps(audit ?? {}), null, 2)}</pre>
+              </details>
+            )}
           </div>
 
           <div className="dashboard-section">
