@@ -26,6 +26,7 @@ def serialize_signal(signal: StrategySignal) -> dict[str, Any]:
     payload["recent_accuracy"] = signal.metadata.get("recent_accuracy", 0.0)
     payload["timestamp"] = payload["signal_time"]
     payload["signal"] = signal.side.upper()
+    payload["reason"] = signal.metadata.get("reason") or signal.metadata.get("signal_reason") or f"{signal.strategy_name} generated {signal.side.upper()} setup."
     for key in (
         "amd_phase",
         "fvg_zone",

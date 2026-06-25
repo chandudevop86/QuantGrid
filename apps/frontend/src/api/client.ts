@@ -29,6 +29,7 @@ function normalizeBaseURL(baseURL: string) {
 
 const API = axios.create({
   baseURL: normalizeBaseURL(configuredBaseURL).replace(/\/+$/, ""),
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 12000),
   headers: {
     "Content-Type": "application/json",
   },

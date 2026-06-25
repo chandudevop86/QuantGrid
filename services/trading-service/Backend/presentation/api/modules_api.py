@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -19,6 +20,7 @@ from Backend.presentation.api.roles import require_roles
 
 
 router = APIRouter(prefix="/modules", tags=["modules"])
+logger = logging.getLogger("quantgrid.modules")
 
 
 class BacktestModuleRequest(BaseModel):
@@ -38,7 +40,12 @@ def option_chain_module(
     step: int = 50,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    return option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+    try:
+        return option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+    except Exception as exc:
+        logger.exception("option_chain_module_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        payload = option_chain_engine("NIFTY", strikes_each_side=strikes_each_side, step=step)
+        return _live_nse_fallback_payload(payload, exc)
 
 
 @router.get("/option-chain/{symbol}/live-nse")
@@ -51,6 +58,7 @@ def live_nse_option_chain_module(
     try:
         return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
     except Exception as exc:
+        logger.exception("live_nse_option_chain_module_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         payload = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
         return _live_nse_fallback_payload(payload, exc)
 

@@ -9,6 +9,7 @@ from Backend.app.backtesting.engine import BacktestEngine
 from Backend.app.backtesting.report import render_report
 from Backend.application.dto import serialize_signal
 from Backend.application.paper_trade_store import create_trade_journal_entry, list_paper_trades, list_trade_journal, risk_status
+from Backend.application.monitoring import observe_rejected_signal
 from Backend.application.signal_quality import split_signals
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.market_api import get_candles
@@ -169,15 +170,32 @@ def get_risk_status(_role: str = Depends(require_roles("admin", "developer", "tr
     return status
 
 
+def _empty_signals(symbol: str, *, reason: str | None = None) -> dict:
+    return {
+        "symbol": symbol.upper(),
+        "active_signals": [],
+        "rejected_signals": [],
+        "stale_signals": [],
+        "latest_candle_time": None,
+        "status": "empty",
+        "message": reason or "No signals available yet.",
+    }
+
+
+@router.get("/api/signals")
 @router.get("/api/signals/latest")
 def latest_signals(
     symbol: str = "NIFTY",
     strategy: str | None = None,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    one_minute = _clean_candles(get_candles(symbol, interval="1m", period="1d", limit=100))
-    five_minute = _clean_candles(get_candles(symbol, interval="5m", period="1d", limit=100))
-    fifteen_minute = _clean_candles(get_candles(symbol, interval="15m", period="1d", limit=100))
+    try:
+        one_minute = _clean_candles(get_candles(symbol, interval="1m", period="1d", limit=100))
+        five_minute = _clean_candles(get_candles(symbol, interval="5m", period="1d", limit=100))
+        fifteen_minute = _clean_candles(get_candles(symbol, interval="15m", period="1d", limit=100))
+    except Exception as exc:
+        logger.exception("latest_signals_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        return _empty_signals(symbol, reason="Market candles are unavailable; no signals generated.")
     service = TradingService()
     strategies = [strategy] if strategy else service.trading_engine.strategy_engine.available()
 
@@ -185,25 +203,31 @@ def latest_signals(
     rejected = []
     stale = []
     for item in strategies:
-        raw = service.run_strategy(
-            strategy_name=item,
-            data=one_minute,
-            symbol=symbol.upper(),
-            capital=100_000,
-            risk_pct=1,
-            rr_ratio=2,
-            params={"mtf_candles": five_minute, "htf_candles": fifteen_minute},
-        )
+        try:
+            raw = service.run_strategy(
+                strategy_name=item,
+                data=one_minute,
+                symbol=symbol.upper(),
+                capital=100_000,
+                risk_pct=1,
+                rr_ratio=2,
+                params={"mtf_candles": five_minute, "htf_candles": fifteen_minute},
+            )
+        except Exception as exc:
+            logger.exception("latest_signals_strategy_failed", extra={"strategy": item, "error_type": exc.__class__.__name__})
+            rejected.append({"signal": {"strategy_name": item, "signal": "ERROR"}, "decision": {"reason": str(exc), "score": 0}})
+            observe_rejected_signal(item, exc.__class__.__name__)
+            continue
         active_signals, rejected_signals, stale_signals = split_signals(
             raw,
             candles_1m=one_minute,
             candles_15m=fifteen_minute,
         )
         active.extend(serialize_signal(signal) for signal in active_signals)
-        rejected.extend(
-            {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
-            for entry in rejected_signals
-        )
+        for entry in rejected_signals:
+            serialized = {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
+            rejected.append(serialized)
+            observe_rejected_signal(serialized["signal"].get("strategy_name"), serialized["decision"].get("reason"))
         stale.extend(
             {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
             for entry in stale_signals

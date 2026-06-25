@@ -77,4 +77,15 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
     assert response.status_code == 200
     payload = response.json()
     assert payload["source"] == "synthetic-demo-chain"
-    assert {"spot", "expiry", "ATM", "pcr", "max_pain", "support", "resistance"} <= set(payload)
+    assert {"spot", "expiry", "ATM", "atm", "pcr", "max_pain", "support", "resistance", "signal"} <= set(payload)
+    assert payload["synthetic"] is True
+
+
+def test_signals_alias_reuses_latest_handler(app_client):
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/api/signals", headers=headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert {"active_signals", "rejected_signals", "stale_signals", "symbol"} <= set(payload)

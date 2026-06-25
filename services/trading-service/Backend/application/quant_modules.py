@@ -237,6 +237,7 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
         **payload,
         "module": "live_nse_option_chain",
         "source": "synthetic-demo-chain",
+        "synthetic": True,
         "fallback_reason": exc.__class__.__name__,
         "provider_warning": "Live NSE option-chain provider unavailable; using synthetic fallback data.",
         "fallback_detail": str(exc),
@@ -263,6 +264,8 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
         support = max(below, key=lambda row: float(row.get("pe", {}).get("oi") or 0)).get("strike")
     if above:
         resistance = max(above, key=lambda row: float(row.get("ce", {}).get("oi") or 0)).get("strike")
+    signal_payload = payload.get("signals") or {}
+    signal = signal_payload.get("bias") or payload.get("signal") or "NEUTRAL"
     return {
         **payload,
         "spot": payload.get("underlying_price"),
@@ -271,6 +274,7 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "PCR": payload.get("pcr"),
         "support": support if support is not None else payload.get("max_pain"),
         "resistance": resistance if resistance is not None else payload.get("max_pain"),
+        "signal": signal,
     }
 
 
@@ -337,6 +341,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
         "expiry": expiry_date,
         "step": step,
         "source": "synthetic-demo-chain",
+        "synthetic": True,
         "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
         "max_pain": _max_pain(rows),
         "greek_model": "black_scholes_demo",

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -14,6 +13,8 @@ from Backend.application.live_analysis_worker import LiveAnalysisPayload
 from Backend.application.market_data_store import latest_candles, market_data_summary
 from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
+from Backend.application.redis_service import redis_service
+from Backend.application.monitoring import observe_market_data_age
 from Backend.core.config import get_settings
 from Backend.core.database import SessionLocal, get_db
 from Backend.domain.engine.strategy_engine import StrategyEngine
@@ -49,18 +50,14 @@ def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "
 
 
 def _redis_status() -> dict:
-    redis_url = os.getenv("REDIS_URL")
-    if not redis_url:
-        return {"connected": False, "message": "REDIS_URL is not configured."}
-
-    try:
-        import redis
-
-        client = redis.Redis.from_url(redis_url, socket_connect_timeout=0.3, socket_timeout=0.3)
-        client.ping()
-        return {"connected": True, "message": "Redis ping ok."}
-    except Exception as exc:  # pragma: no cover - environment dependent
-        return {"connected": False, "message": str(exc)}
+    status = redis_service.status()
+    return {
+        "connected": bool(status["healthy"]),
+        "healthy": bool(status["healthy"]),
+        "mode": status["mode"],
+        "message": status["message"],
+        "url_configured": status["url_configured"],
+    }
 
 
 @router.get("/operations")
@@ -68,6 +65,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
     settings = get_settings()
     candles = latest_candles("NIFTY", "1m", 100)
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
+    observe_market_data_age("NIFTY", "1m", validation.delay_seconds)
     market_store = market_data_summary("NIFTY", "1m")
     risk = risk_status()
     daily_loss_remaining = max(0.0, float(risk["max_daily_loss"]) + float(risk["daily_pnl"]))

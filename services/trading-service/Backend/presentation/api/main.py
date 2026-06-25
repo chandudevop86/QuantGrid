@@ -10,6 +10,7 @@ from starlette.responses import RedirectResponse
 from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.monitoring import observe_api_request
+from Backend.application.redis_service import redis_service
 from Backend.core.config import validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
@@ -119,6 +120,7 @@ def create_app():
     @app.on_event("startup")
     def startup():
         validate_security_config()
+        redis_service.configure()
         init_auth_store()
         with SessionLocal() as db:
             seed_bootstrap_users(db)
@@ -146,17 +148,7 @@ def create_app():
         except Exception as exc:
             db_status = {"healthy": False, "message": str(exc)}
 
-        redis_url = os.getenv("REDIS_URL")
-        redis_status = {"healthy": False, "message": "REDIS_URL is not configured."}
-        if redis_url:
-            try:
-                import redis
-
-                client = redis.Redis.from_url(redis_url, socket_connect_timeout=0.3, socket_timeout=0.3)
-                client.ping()
-                redis_status = {"healthy": True, "message": "Redis ping ok."}
-            except Exception as exc:
-                redis_status = {"healthy": False, "message": str(exc)}
+        redis_status = redis_service.status()
 
         strategies = StrategyEngine().available()
         market_store = market_data_summary("NIFTY", "1m")
@@ -171,6 +163,11 @@ def create_app():
             "strategy_engine": {
                 "healthy": {"breakout", "mean_reversion", "supply_demand", "mtf", "btst", "cbt", "crt_tbs", "mtfa"}.issubset(set(strategies)),
                 "registered": strategies,
+            },
+            "websocket": {
+                "healthy": True,
+                "connections": len(manager.active_connections),
+                "broadcast_mode": redis_status.get("mode", "fallback"),
             },
         }
         return {"status": "ok" if all(item.get("healthy", False) for item in services.values()) else "degraded", "services": services}

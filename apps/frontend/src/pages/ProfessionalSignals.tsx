@@ -50,22 +50,33 @@ export default function ProfessionalSignals() {
   const developerMode = useUiMode() === "developer";
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       api.latestSignals(),
       api.tradeJournal(),
       api.riskEngine(),
       api.runBacktestingModule({ symbol: "NIFTY", strategy_name: backtestStrategy, min_score: 0 }),
     ])
-      .then(([signalData, journalData, riskData, backtestData]) => {
+      .then(([signalResult, journalResult, riskResult, backtestResult]) => {
+        if (cancelled) return;
+        const signalData = signalResult.status === "fulfilled" ? signalResult.value : { active_signals: [], rejected_signals: [], stale_signals: [], message: "Signals unavailable." };
+        const journalData = journalResult.status === "fulfilled" ? journalResult.value : { recent_trades: [], total_trades: 0, win_rate: 0, pnl: 0 };
+        const riskData = riskResult.status === "fulfilled" ? riskResult.value : { summary: { trades_today: 0, daily_pnl: 0 } };
+        const backtestData = backtestResult.status === "fulfilled" ? backtestResult.value : { metrics: { total_trades: 0, win_rate: 0, pnl: 0, sharpe_ratio: 0 }, equity_curve: [] };
         setSignals(signalData);
         setJournal(journalData);
         setTrades(Array.isArray(journalData?.recent_trades) ? journalData.recent_trades : []);
         setRisk(riskData?.summary ?? riskData);
         setBacktest(backtestData);
+        setError(null);
       })
-      .catch((err: any) => setError(err?.message ?? "Failed to load professional signal dashboard."))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -147,6 +158,15 @@ export default function ProfessionalSignals() {
                       <td>{item.decision?.signal_age_minutes}m old</td>
                     </tr>
                   ))}
+                  {[
+                    ...(signals?.active_signals ?? []),
+                    ...(signals?.rejected_signals ?? []),
+                    ...(signals?.stale_signals ?? []),
+                  ].length === 0 && (
+                    <tr>
+                      <td colSpan={5}>{signals?.message ?? "No signals available yet."}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

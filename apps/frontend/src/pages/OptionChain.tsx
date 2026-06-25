@@ -144,11 +144,12 @@ export default function OptionChain() {
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {
-        setChain(null);
-        setHistory(null);
+        setChain(demoOptionChain("NIFTY"));
+        setHistory(demoHistoricalChain("NIFTY"));
+        setLastRefreshed(new Date());
         setError(
           err?.message === "Network Error" || !err?.response
-            ? "Live NSE option chain is unavailable. Check that the backend is running and can reach nseindia.com."
+            ? "Using Synthetic Option Chain Data"
             : err?.response?.data?.detail ?? err?.message ?? "Failed to load live NSE option chain."
         );
       })
@@ -188,8 +189,8 @@ export default function OptionChain() {
         </button>
       </div>
 
-      {error && <div className="alert alert-error" role="alert">{error}</div>}
-      {usingSynthetic && !error && <div className="alert alert-warning" role="status">Using Synthetic Option Chain Data</div>}
+      {error && <div className="alert alert-warning" role="status">{error}</div>}
+      {usingSynthetic && error !== "Using Synthetic Option Chain Data" && <div className="alert alert-warning" role="status">Using Synthetic Option Chain Data</div>}
       {chain?.warning && !error && <div className="alert alert-warning" role="status">{chain.warning}</div>}
 
       <div className="metric-grid">

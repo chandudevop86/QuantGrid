@@ -31,6 +31,11 @@ if Counter and Gauge and Histogram:
         "Rejected order attempts.",
         ("reason", "mode"),
     )
+    rejected_signals_total = Counter(
+        "rejected_signals_total",
+        "Rejected signal decisions.",
+        ("strategy", "reason"),
+    )
     signal_generation_total = Counter(
         "signal_generation_total",
         "Signal generation attempts.",
@@ -55,6 +60,21 @@ if Counter and Gauge and Histogram:
         "option_chain_fetch_failures_total",
         "Option-chain provider fetch failures.",
         ("provider", "reason"),
+    )
+    option_chain_failures_total = Counter(
+        "option_chain_failures_total",
+        "Option-chain failures.",
+        ("provider", "reason"),
+    )
+    websocket_disconnect_total = Counter(
+        "websocket_disconnect_total",
+        "WebSocket disconnects.",
+        ("reason",),
+    )
+    market_data_age_seconds = Gauge(
+        "market_data_age_seconds",
+        "Latest market data age in seconds.",
+        ("symbol", "interval"),
     )
     api_request_latency_seconds = Histogram(
         "api_request_latency_seconds",
@@ -102,6 +122,10 @@ else:
     strategy_signals_total = None
     failed_strategy_executions_total = None
     option_chain_fetch_failures_total = None
+    option_chain_failures_total = None
+    rejected_signals_total = None
+    websocket_disconnect_total = None
+    market_data_age_seconds = None
 
 
 def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
@@ -119,6 +143,11 @@ def observe_paper_order(status: str, strategy: str | None, symbol: str | None) -
 def observe_rejected_order(reason: str | None, mode: str | None) -> None:
     if rejected_orders_total is not None:
         rejected_orders_total.labels(reason=reason or "unknown", mode=mode or "unknown").inc()
+
+
+def observe_rejected_signal(strategy: str | None, reason: str | None = None) -> None:
+    if rejected_signals_total is not None:
+        rejected_signals_total.labels(strategy=strategy or "unknown", reason=reason or "unknown").inc()
 
 
 def observe_signal_generation(strategy: str | None, status: str) -> None:
@@ -139,6 +168,18 @@ def observe_strategy_execution(strategy: str | None, status: str, signal_count: 
 def observe_option_chain_failure(provider: str, reason: str | None = None) -> None:
     if option_chain_fetch_failures_total is not None:
         option_chain_fetch_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
+    if option_chain_failures_total is not None:
+        option_chain_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
+
+
+def observe_websocket_disconnect(reason: str | None = None) -> None:
+    if websocket_disconnect_total is not None:
+        websocket_disconnect_total.labels(reason=reason or "unknown").inc()
+
+
+def observe_market_data_age(symbol: str, interval: str, age_seconds: int | float | None) -> None:
+    if market_data_age_seconds is not None and age_seconds is not None:
+        market_data_age_seconds.labels(symbol=symbol.upper(), interval=interval).set(float(age_seconds))
 
 
 def observe_api_request(method: str, path: str, status_code: int, latency_seconds: float) -> None:

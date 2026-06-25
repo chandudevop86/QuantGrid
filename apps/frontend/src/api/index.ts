@@ -89,7 +89,7 @@ export const api = {
     API.post("/dashboard/live-analysis/jobs", payload).then((res) => res.data),
   getJobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
   jobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
-  latestSignals: () => API.get("/api/signals/latest").then((res) => res.data),
+  latestSignals: () => API.get("/api/signals").then((res) => res.data),
   paperTrades: () => API.get("/api/trades/paper").then((res) => res.data),
   riskStatus: () => API.get("/api/risk/status").then((res) => res.data),
   positionSummary: () => API.get("/positions/summary").then((res) => res.data),
