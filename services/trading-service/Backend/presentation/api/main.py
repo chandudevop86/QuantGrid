@@ -36,18 +36,23 @@ def _allowed_origins() -> list[str]:
     if os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"prod", "production"}:
         raise RuntimeError("CORS_ALLOWED_ORIGINS must be explicitly configured in production.")
 
+    vite_ports = range(5173, 5180)
     return [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://chandudevopai.shop:5173",
-        "http://chandudevopai.shop:5174",
-        "https://chandudevopai.shop:5173",
-        "https://chandudevopai.shop:5174",
+        *(f"http://localhost:{port}" for port in vite_ports),
+        *(f"http://127.0.0.1:{port}" for port in vite_ports),
+        *(f"http://chandudevopai.shop:{port}" for port in vite_ports),
+        *(f"https://chandudevopai.shop:{port}" for port in vite_ports),
         "http://chandudevopai.shop",
         "https://chandudevopai.shop",
     ]
+
+
+def _allowed_origin_regex() -> str | None:
+    if os.getenv("CORS_ALLOWED_ORIGINS"):
+        return None
+    if os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"prod", "production"}:
+        return None
+    return r"^http://((localhost|127\.0\.0\.1)|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+):(517[3-9])$"
 
 
 def _allow_anonymous_websocket() -> bool:
@@ -65,6 +70,7 @@ def create_app():
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_allowed_origins(),
+        allow_origin_regex=_allowed_origin_regex(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

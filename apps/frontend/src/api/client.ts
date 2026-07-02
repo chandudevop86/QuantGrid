@@ -16,6 +16,12 @@ function normalizeBaseURL(baseURL: string) {
   try {
     const target = new URL(baseURL, window.location.origin);
     const isSameHostBackendPort = target.hostname === window.location.hostname && target.port === "8000";
+    const browserIsRemote = !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    const targetIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
+
+    if (browserIsRemote && targetIsLoopback) {
+      return `${window.location.protocol}//${window.location.hostname}:${target.port || "8000"}${target.pathname === "/" ? "" : target.pathname}`;
+    }
 
     if (!import.meta.env.DEV && isSameHostBackendPort) {
       return `${window.location.origin}/api`;
