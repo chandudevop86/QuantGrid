@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Any
 
 from Backend.application.dto import serialize_signal
+from Backend.application.fno_narrative_service import run_fno_narrative
 from Backend.application.monitoring import observe_signal_generation
 from Backend.application.signal_validation import candle_freshness, diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
@@ -140,3 +141,11 @@ def generate_signals(
 def list_strategies():
     service = TradingService()
     return service.trading_engine.strategy_engine.available()
+
+
+@router.get("/narrative/fno")
+def fno_market_narrative(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    return run_fno_narrative(symbol)

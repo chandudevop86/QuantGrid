@@ -118,6 +118,42 @@ def test_worker_processes_notification_job(monkeypatch):
     assert sent == [("Worker alert", "Done")]
 
 
+def test_worker_processes_fno_narrative_job(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import job_queue, worker
+
+    class Signal:
+        def model_dump(self):
+            return {"signal": "NO_TRADE", "confidence": 60}
+
+    monkeypatch.setattr(job_queue, "publish_job_update", lambda _job: None)
+    monkeypatch.setattr(job_queue, "alert_job_finished", lambda _job: None)
+    monkeypatch.setattr(worker, "run_fno_narrative", lambda symbol: Signal())
+
+    job_queue.enqueue_job("fno-narrative", {"symbol": "BANKNIFTY"}, job_id="fno-narrative-job-1")
+    processed = worker.process_next_job()
+
+    assert processed is not None
+    assert processed["status"] == "completed"
+    assert processed["result"]["signal"] == "NO_TRADE"
+
+
+def test_worker_processes_investment_research_job(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import job_queue, worker
+
+    monkeypatch.setattr(job_queue, "publish_job_update", lambda _job: None)
+    monkeypatch.setattr(job_queue, "alert_job_finished", lambda _job: None)
+    monkeypatch.setattr(worker, "latest_investment_dashboard", lambda: {"summary": "ok", "cards": {}})
+
+    job_queue.enqueue_job("investment-research", {"scope": "dashboard"}, job_id="investment-research-job-1")
+    processed = worker.process_next_job()
+
+    assert processed is not None
+    assert processed["status"] == "completed"
+    assert processed["result"]["dashboard"]["summary"] == "ok"
+
+
 def test_worker_processes_exit_monitor_job(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import job_queue, worker
@@ -150,17 +186,34 @@ def test_exit_monitor_worker_settings(monkeypatch):
     from Backend.application import worker
 
     monkeypatch.delenv("QUANTGRID_EXIT_MONITOR_ENABLED", raising=False)
+    monkeypatch.delenv("QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED", raising=False)
     monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "0.2")
     monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", "bad-mode")
 
     assert worker._exit_monitor_enabled() is False
+    assert worker._narrative_loop_enabled() is True
     assert worker._exit_monitor_interval() == 1.0
     assert worker._exit_monitor_mode() == "paper"
 
     monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_ENABLED", "true")
     monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", "7")
     monkeypatch.setenv("QUANTGRID_EXIT_MONITOR_MODE", "live")
+    monkeypatch.setenv("QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED", "true")
+    monkeypatch.setenv("QUANTGRID_FNO_NARRATIVE_INTERVAL_SECONDS", "300")
+    monkeypatch.setenv("QUANTGRID_FNO_NARRATIVE_SYMBOLS", "NIFTY,BANKNIFTY")
+    monkeypatch.delenv("QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED", raising=False)
+    monkeypatch.setenv("QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS", "200")
 
     assert worker._exit_monitor_enabled() is True
     assert worker._exit_monitor_interval() == 7.0
     assert worker._exit_monitor_mode() == "live"
+    assert worker._narrative_loop_enabled() is True
+    assert worker._narrative_loop_interval() == 300.0
+    assert worker._narrative_symbols() == ["NIFTY", "BANKNIFTY"]
+    assert worker._investment_loop_enabled() is True
+    assert worker._investment_loop_interval() == 300.0
+
+    monkeypatch.setenv("QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED", "false")
+    monkeypatch.setenv("QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED", "false")
+    assert worker._narrative_loop_enabled() is False
+    assert worker._investment_loop_enabled() is False

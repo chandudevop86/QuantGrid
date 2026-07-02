@@ -1875,3 +1875,102 @@ select {
     transform: scale(1.1);
   }
 }
+
+.investment-section {
+  display: grid;
+  gap: 16px;
+}
+
+.investment-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.investment-card {
+  min-height: 238px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0f172a;
+  padding: 16px;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 12px;
+}
+
+.investment-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.investment-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.investment-card-header p {
+  margin: 4px 0 0;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.investment-score-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #111827;
+}
+
+.investment-score-row strong {
+  font-size: 1.1rem;
+}
+
+.investment-score-row span {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.investment-reason {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.investment-allocation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid #1e293b;
+  padding-top: 10px;
+}
+
+.investment-allocation small {
+  color: #94a3b8;
+}
+
+.investment-allocation strong {
+  text-align: right;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .investment-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .investment-card {
+    min-height: 0;
+  }
+
+  .investment-score-row {
+    grid-template-columns: auto 1fr;
+  }
+}

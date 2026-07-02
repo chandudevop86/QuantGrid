@@ -6,19 +6,33 @@ import logging
 import os
 import socket
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable
 
 from Backend.application.broker_reconciliation import reconcile_broker_state
+from Backend.application.fno_narrative_service import run_fno_narrative
+from Backend.application.investment_research_service import (
+    IST,
+    is_after_market_close_ist,
+    is_weekend_ist,
+    latest_investment_dashboard,
+    run_mutual_fund_research_loop,
+    run_portfolio_watchlist_loop,
+    run_stock_research_loop,
+)
 from Backend.application.job_queue import dequeue_job, mark_job_completed, mark_job_failed
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
 from Backend.application.notifications import send_alert
 from Backend.application.trade_exit_engine import monitor_open_positions
 from Backend.core.database import SessionLocal, init_database
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+from app.narratives.fo_narrative_loop import is_market_hours_ist
 
 logger = logging.getLogger(__name__)
 WORKER_ID = socket.gethostname()
+_LAST_STOCK_RESEARCH_DATE: str | None = None
+_LAST_FUND_RESEARCH_WEEK: str | None = None
 
 
 def _job_type(job: dict[str, Any], payload: dict[str, Any]) -> str:
@@ -27,6 +41,12 @@ def _job_type(job: dict[str, Any], payload: dict[str, Any]) -> str:
 
 def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _not_falsey(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _float_env(name: str, default: float) -> float:
@@ -47,6 +67,27 @@ def _exit_monitor_interval() -> float:
 def _exit_monitor_mode() -> str:
     mode = str(os.getenv("QUANTGRID_EXIT_MONITOR_MODE") or "paper").strip().lower()
     return mode if mode in {"paper", "live"} else "paper"
+
+
+def _narrative_loop_enabled() -> bool:
+    return _not_falsey(os.getenv("QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED"), default=True)
+
+
+def _narrative_loop_interval() -> float:
+    return max(60.0, _float_env("QUANTGRID_FNO_NARRATIVE_INTERVAL_SECONDS", 300.0))
+
+
+def _narrative_symbols() -> list[str]:
+    configured = os.getenv("QUANTGRID_FNO_NARRATIVE_SYMBOLS", "NIFTY,BANKNIFTY")
+    return [item.strip().upper() for item in configured.split(",") if item.strip()]
+
+
+def _investment_loop_enabled() -> bool:
+    return _not_falsey(os.getenv("QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED"), default=True)
+
+
+def _investment_loop_interval() -> float:
+    return max(300.0, _float_env("QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS", 900.0))
 
 
 def _run_live_analysis_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -108,12 +149,33 @@ def _run_notification_job(payload: dict[str, Any]) -> dict[str, str]:
     return {"status": "sent", "subject": subject}
 
 
+def _run_fno_narrative_job(payload: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(payload.get("symbol") or "NIFTY").upper()
+    result = run_fno_narrative(symbol)
+    return result.model_dump() if hasattr(result, "model_dump") else result.dict()
+
+
+def _run_investment_research_job(payload: dict[str, Any]) -> dict[str, Any]:
+    scope = str(payload.get("scope") or "dashboard").strip().lower()
+    if scope == "stocks":
+        scores = run_stock_research_loop(persist=True)
+        return {"status": "completed", "scope": "stocks", "items": [item.model_dump() for item in scores]}
+    if scope in {"mutual_funds", "funds"}:
+        scores = run_mutual_fund_research_loop(persist=True)
+        return {"status": "completed", "scope": "mutual_funds", "items": [item.model_dump() for item in scores]}
+    if scope == "watchlist":
+        return {"status": "completed", "scope": "watchlist", "dashboard": run_portfolio_watchlist_loop(persist=True)}
+    return {"status": "completed", "scope": "dashboard", "dashboard": latest_investment_dashboard()}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "live-analysis": _run_live_analysis_job,
     "auto-paper": _run_auto_paper_job,
     "order-reconciliation": _run_reconciliation_job,
     "exit-monitor": _run_exit_monitor_job,
     "notification": _run_notification_job,
+    "fno-narrative": _run_fno_narrative_job,
+    "investment-research": _run_investment_research_job,
 }
 
 
@@ -144,10 +206,46 @@ def _run_periodic_exit_monitor() -> dict[str, Any]:
     return _run_exit_monitor_job(payload)
 
 
+def _run_periodic_fno_narratives() -> dict[str, Any]:
+    if not is_market_hours_ist():
+        return {"status": "outside_market_hours", "symbols": _narrative_symbols()}
+    results = {}
+    for symbol in _narrative_symbols():
+        signal = run_fno_narrative(symbol)
+        results[symbol] = signal.model_dump() if hasattr(signal, "model_dump") else signal.dict()
+    logger.info("Worker generated F&O narratives for %s", ",".join(results))
+    return {"status": "completed", "results": results}
+
+
+def _run_periodic_investment_research() -> dict[str, Any]:
+    global _LAST_FUND_RESEARCH_WEEK, _LAST_STOCK_RESEARCH_DATE
+    now = datetime.now(timezone.utc)
+    ist_now = now.astimezone(IST)
+    ran: dict[str, Any] = {}
+    stock_date_key = ist_now.date().isoformat()
+    fund_week = ist_now.isocalendar()
+    fund_week_key = f"{fund_week.year}-{fund_week.week}"
+    if is_after_market_close_ist(now) and _LAST_STOCK_RESEARCH_DATE != stock_date_key:
+        scores = run_stock_research_loop(persist=True)
+        ran["stocks"] = [item.model_dump() for item in scores]
+        _LAST_STOCK_RESEARCH_DATE = stock_date_key
+    if is_weekend_ist(now) and _LAST_FUND_RESEARCH_WEEK != fund_week_key:
+        scores = run_mutual_fund_research_loop(persist=True)
+        ran["mutual_funds"] = [item.model_dump() for item in scores]
+        _LAST_FUND_RESEARCH_WEEK = fund_week_key
+    if not ran:
+        return {"status": "not_due"}
+    ran["dashboard"] = latest_investment_dashboard()
+    logger.info("Worker completed investment research loop scopes: %s", ",".join(ran.keys()))
+    return {"status": "completed", **ran}
+
+
 def run_worker_loop(poll_interval: float = 1.0) -> None:
     init_database()
     logger.info("QuantGrid worker started with id %s", WORKER_ID)
     next_exit_check = time.monotonic()
+    next_narrative_check = time.monotonic()
+    next_investment_check = time.monotonic()
     while True:
         processed = process_next_job()
         if _exit_monitor_enabled() and time.monotonic() >= next_exit_check:
@@ -156,6 +254,18 @@ def run_worker_loop(poll_interval: float = 1.0) -> None:
             except Exception:
                 logger.exception("Periodic exit monitor failed")
             next_exit_check = time.monotonic() + _exit_monitor_interval()
+        if _narrative_loop_enabled() and time.monotonic() >= next_narrative_check:
+            try:
+                _run_periodic_fno_narratives()
+            except Exception:
+                logger.exception("Periodic F&O narrative loop failed")
+            next_narrative_check = time.monotonic() + _narrative_loop_interval()
+        if _investment_loop_enabled() and time.monotonic() >= next_investment_check:
+            try:
+                _run_periodic_investment_research()
+            except Exception:
+                logger.exception("Periodic investment research loop failed")
+            next_investment_check = time.monotonic() + _investment_loop_interval()
         if processed is None:
             time.sleep(poll_interval)
 

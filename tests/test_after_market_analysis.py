@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
 from Backend.domain.models.signal import StrategySignal
@@ -40,6 +41,22 @@ def test_after_market_analysis_allowed_but_live_execution_blocked(monkeypatch):
     monkeypatch.setattr(worker, "split_signals", lambda signals, **kwargs: (signals, [], []))
     monkeypatch.setattr(worker, "validate_signals", lambda signals, **kwargs: (signals, "live"))
     monkeypatch.setattr(worker, "analyze_market_structure", lambda candles, **kwargs: {"trade_decision": "WAIT"})
+    monkeypatch.setattr(
+        worker,
+        "validate_live_candle",
+        lambda *args, **kwargs: SimpleNamespace(
+            valid=True,
+            valid_for_analysis=True,
+            valid_for_execution=False,
+            market_status="MARKET CLOSED",
+            model_dump=lambda: {
+                "valid": True,
+                "valid_for_analysis": True,
+                "valid_for_execution": False,
+                "market_status": "MARKET CLOSED",
+            },
+        ),
+    )
 
     result = run_live_analysis(
         LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=False, execution_mode="paper")

@@ -102,4 +102,9 @@ export const api = {
   closedPositions: () => API.get("/positions/closed").then((res) => res.data),
   backtestStrategy: (strategy: string) =>
     API.get(`/api/strategies/${strategy}/backtest`).then((res) => res.data),
+  investingDashboard: () => API.get("/investing/dashboard").then((res) => res.data),
+  stockResearch: () => API.get("/investing/stocks/research").then((res) => res.data),
+  stockTopPicks: () => API.get("/investing/stocks/top-picks").then((res) => res.data),
+  mutualFundResearch: () => API.get("/investing/mutual-funds/research").then((res) => res.data),
+  mutualFundTopPicks: () => API.get("/investing/mutual-funds/top-picks").then((res) => res.data),
 };

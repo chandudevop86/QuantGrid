@@ -7,6 +7,7 @@ import Candles from "./pages/Candles";
 import Dashboard from "./pages/Dashboard";
 import DhanLogin from "./pages/DhanLogin";
 import Execution from "./pages/Execution";
+import Investing from "./pages/Investing";
 import LiveAnalysis from "./pages/LiveAnalysis";
 import Jobs from "./pages/Jobs";
 import OptionChain from "./pages/OptionChain";
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/jobs" element={protect("/jobs", <Jobs />)} />
           <Route path="/operations" element={protect("/operations", <Operations />)} />
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
+          <Route path="/investing" element={protect("/investing", <Investing />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />
           <Route path="/trade" element={protect("/trade", <Trade />)} />

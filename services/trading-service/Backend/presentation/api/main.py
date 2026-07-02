@@ -20,6 +20,7 @@ from Backend.application.order_store import init_order_store
 from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.application.position_store import init_position_store
 from Backend.application.kill_switch import init_kill_switch_store
+from Backend.application.investment_research_service import init_investment_research_store
 from Backend.logging_config import configure_logging
 from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users, verify_token
 from Backend.domain.security.models import User
@@ -130,6 +131,7 @@ def create_app():
         init_paper_trade_store()
         init_position_store()
         init_kill_switch_store()
+        init_investment_research_store()
         manager.set_loop(asyncio.get_running_loop())
         start_market_data_stream()
 
@@ -276,6 +278,9 @@ def create_app():
 
     from Backend.presentation.api.modules_api import router as modules_router
     app.include_router(modules_router)
+
+    from Backend.presentation.api.investing_api import router as investing_router
+    app.include_router(investing_router)
 
     return app
 

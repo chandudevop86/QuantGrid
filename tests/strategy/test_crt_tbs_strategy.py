@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -123,6 +124,11 @@ def test_crt_tbs_signal_validator_accepts_liquidity_quality_signal(monkeypatch):
     signal = strategy.run(candles, StrategyContext(symbol="NIFTY", capital=100000, risk_pct=1, rr_ratio=2))[-1]
 
     monkeypatch.setattr(signal_validation, "get_price", lambda _symbol: {"source": "yahoo-finance", "price": signal.entry_price})
+    monkeypatch.setattr(
+        signal_validation,
+        "validate_live_candle",
+        lambda *_args, **_kwargs: SimpleNamespace(valid_for_analysis=True),
+    )
     valid, source = signal_validation.validate_signals(
         [signal],
         symbol="NIFTY",
