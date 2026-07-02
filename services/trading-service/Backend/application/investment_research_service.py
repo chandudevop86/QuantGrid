@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
-from Backend.core.database import Base, SessionLocal, engine
+from Backend.core.database import SessionLocal, init_database
 from Backend.domain.trading_store_models import InvestmentResearchRecord
 from app.investing.investment_research_loop import (
     DISCLAIMER,
@@ -128,9 +128,7 @@ def sample_mutual_fund_universe() -> list[MutualFundInput]:
 
 
 def init_investment_research_store() -> None:
-    import Backend.domain.trading_store_models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
+    init_database()
 
 
 def _score_to_record(score: StockScore | MutualFundScore) -> InvestmentResearchRecord:
