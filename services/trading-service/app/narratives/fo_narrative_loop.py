@@ -38,6 +38,7 @@ class NarrativeInput(BaseModel):
     spot_price: float
     futures_price: float | None = None
     option_chain: list[dict[str, Any]] = Field(default_factory=list)
+    option_chain_quality: dict[str, Any] | None = None
     pcr: float | None = None
     india_vix: float | None = None
     india_vix_change_pct: float | None = None
@@ -177,6 +178,7 @@ def generate_narrative_signal(payload: NarrativeInput) -> NarrativeSignal:
             "fii_index_futures": payload.fii_index_futures,
             "gift_nifty_change_pct": payload.gift_nifty_change_pct,
             "global_market_cues": payload.global_market_cues,
+            "option_chain_quality": payload.option_chain_quality,
         },
     )
 

@@ -1,4 +1,4 @@
-from conftest import TEST_ADMIN_PASSWORD, admin_headers
+from conftest import TEST_ADMIN_PASSWORD, admin_headers, reset_backend_modules
 from starlette.websockets import WebSocketDisconnect
 import pytest
 
@@ -30,9 +30,19 @@ def test_websocket_requires_authentication_in_production(app_client, monkeypatch
     assert exc_info.value.code == 4401
 
 
-def test_websocket_allows_local_dev_without_token(app_client, monkeypatch):
+def test_websocket_rejects_local_dev_without_token_by_default(app_client, monkeypatch):
     monkeypatch.setenv("QUANTGRID_ENV", "local")
     monkeypatch.delenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", raising=False)
+
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with app_client.websocket_connect("/ws") as websocket:
+            websocket.receive_json()
+    assert exc_info.value.code == 4401
+
+
+def test_websocket_allows_anonymous_only_when_explicitly_enabled(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.setenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", "true")
 
     with app_client.websocket_connect("/ws") as websocket:
         websocket.send_text("status")
@@ -57,6 +67,30 @@ def test_authenticated_websocket_returns_dashboard_status(app_client):
                 break
     assert message["type"] == "dashboard_status"
     assert "risk_summary" in message["payload"]
+
+
+def test_private_network_dev_cors_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    monkeypatch.delenv("QUANTGRID_ALLOW_PRIVATE_DEV_CORS", raising=False)
+    reset_backend_modules()
+
+    from Backend.presentation.api.main import _allowed_origin_regex
+
+    assert _allowed_origin_regex() == r"^http://(localhost|127\.0\.0\.1):(517[3-9])$"
+    reset_backend_modules()
+
+
+def test_private_network_dev_cors_can_be_enabled_for_lan_testing(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "local")
+    monkeypatch.setenv("QUANTGRID_ALLOW_PRIVATE_DEV_CORS", "true")
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    reset_backend_modules()
+
+    from Backend.presentation.api.main import _allowed_origin_regex
+
+    assert "10\\." in (_allowed_origin_regex() or "")
+    reset_backend_modules()
 
 
 def test_invalid_login_fails_with_error_message(app_client):

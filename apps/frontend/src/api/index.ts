@@ -108,4 +108,8 @@ export const api = {
   multibaggerPredictor: () => API.get("/investing/stocks/multibagger-predictor").then((res) => res.data),
   mutualFundResearch: () => API.get("/investing/mutual-funds/research").then((res) => res.data),
   mutualFundTopPicks: () => API.get("/investing/mutual-funds/top-picks").then((res) => res.data),
+  dataQualityDashboard: (symbol = "NIFTY", interval = "1m") =>
+    API.get("/data-quality/dashboard", { params: { symbol, interval } }).then((res) => res.data),
+  securityDashboard: () => API.get("/security/dashboard").then((res) => res.data),
+  securityFindings: () => API.get("/security/findings").then((res) => res.data),
 };

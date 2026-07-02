@@ -22,6 +22,8 @@ def test_health_reports_websocket_broadcast_mode(app_client):
     assert websocket["broadcast_mode"] in {"fallback", "redis"}
 
 
-def test_websocket_accepts_in_process_fallback_connection(app_client):
+def test_websocket_accepts_in_process_fallback_connection_when_anonymous_is_enabled(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", "true")
+
     with app_client.websocket_connect("/ws") as websocket:
         websocket.send_text("ping")

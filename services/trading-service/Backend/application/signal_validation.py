@@ -386,7 +386,11 @@ def diagnose_signal_run(
         diagnostics.append("Strategy generated no raw setup from the supplied candles.")
         return diagnostics
 
-    price_response = get_price(symbol)
+    try:
+        price_response = get_price(symbol)
+    except Exception as exc:
+        price_response = {"source": None, "price": None}
+        diagnostics.append(f"Live market price is unavailable: {exc}.")
     market_price = price_response.get("price")
     if not _is_usable_market_source(price_response.get("source")):
         diagnostics.append("Live market price is unavailable; signal cannot be market-aligned.")

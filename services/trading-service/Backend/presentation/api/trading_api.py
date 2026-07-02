@@ -13,6 +13,7 @@ from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.presentation.api.auth import current_user
 from Backend.presentation.api.roles import require_roles
+from app.validation.data_quality import CandleInput, validate_candles
 
 router = APIRouter(tags=["Trading"])
 
@@ -25,16 +26,20 @@ class StrategyRunRequest(BaseModel):
     capital: float
     risk_pct: float
     rr_ratio: float = 2.0
-    candles: list[dict[str, Any]]
-    htf_candles: list[dict[str, Any]] | None = None
-    h1_candles: list[dict[str, Any]] | None = None
-    h4_candles: list[dict[str, Any]] | None = None
-    mtf_candles: list[dict[str, Any]] | None = None
-    m15_candles: list[dict[str, Any]] | None = None
-    m5_candles: list[dict[str, Any]] | None = None
-    daily_candles: list[dict[str, Any]] | None = None
+    candles: list[CandleInput]
+    htf_candles: list[CandleInput] | None = None
+    h1_candles: list[CandleInput] | None = None
+    h4_candles: list[CandleInput] | None = None
+    mtf_candles: list[CandleInput] | None = None
+    m15_candles: list[CandleInput] | None = None
+    m5_candles: list[CandleInput] | None = None
+    daily_candles: list[CandleInput] | None = None
     candle_source: str | None = None
     include_diagnostics: bool = False
+
+
+def _candle_dicts(candles: list[CandleInput] | None) -> list[dict[str, Any]] | None:
+    return [candle.model_dump() for candle in candles] if candles is not None else None
 
 
 @router.post("/signals")
@@ -47,22 +52,24 @@ def generate_signals(
 ):
     service = TradingService()
     candle_source = payload.candle_source or "yahoo-finance"
+    candles = _candle_dicts(payload.candles) or []
+    _validated_candles, data_quality = validate_candles(candles, source=candle_source)
     params = {
         key: value
         for key, value in {
-            "htf_candles": payload.htf_candles,
-            "h1_candles": payload.h1_candles,
-            "h4_candles": payload.h4_candles,
-            "mtf_candles": payload.mtf_candles,
-            "m15_candles": payload.m15_candles,
-            "m5_candles": payload.m5_candles,
-            "daily_candles": payload.daily_candles,
+            "htf_candles": _candle_dicts(payload.htf_candles),
+            "h1_candles": _candle_dicts(payload.h1_candles),
+            "h4_candles": _candle_dicts(payload.h4_candles),
+            "mtf_candles": _candle_dicts(payload.mtf_candles),
+            "m15_candles": _candle_dicts(payload.m15_candles),
+            "m5_candles": _candle_dicts(payload.m5_candles),
+            "daily_candles": _candle_dicts(payload.daily_candles),
         }.items()
         if value is not None
     }
     signals = service.run_strategy(
         strategy_name=payload.strategy_name,
-        data=payload.candles,
+        data=candles,
         symbol=payload.symbol,
         capital=payload.capital,
         risk_pct=payload.risk_pct,
@@ -72,7 +79,7 @@ def generate_signals(
     validated_signals, _data_source = validate_signals(
         signals,
         symbol=payload.symbol,
-        candles=payload.candles,
+        candles=candles,
         candle_source=candle_source,
     )
     serialized = [serialize_signal(s) for s in validated_signals]
@@ -97,7 +104,7 @@ def generate_signals(
     diagnostics = diagnose_signal_run(
         signals,
         symbol=payload.symbol,
-        candles=payload.candles,
+        candles=candles,
         candle_source=candle_source,
     )
     strategy = payload.strategy_name.lower()
@@ -118,7 +125,8 @@ def generate_signals(
         "validated_signals": len(serialized),
         "diagnostics": diagnostics,
         "data_source": _data_source,
-        "validation_context": candle_freshness(payload.candles),
+        "validation_context": candle_freshness(candles),
+        "data_quality": data_quality.model_dump(),
     }
     write_audit_log(
         db,

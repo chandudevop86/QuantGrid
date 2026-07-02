@@ -105,6 +105,17 @@ def test_high_debt_stock_is_avoided_when_cash_flow_is_weak():
     assert any("Weak cash flow" in risk for risk in score.risks)
 
 
+def test_missing_stock_fundamentals_are_not_treated_as_zero_quality_data():
+    stock = StockResearchInput(symbol="MISS", name="Missing Fundamentals Ltd")
+
+    score = score_stock(stock)
+    prediction = predict_multibagger_stock(stock)
+
+    assert score.recommendation != InvestmentRecommendation.BUY
+    assert any("Missing fundamentals" in risk for risk in score.risks)
+    assert prediction.rating == "AVOID"
+
+
 def test_multibagger_predictor_finds_high_potential_quality_compounder():
     prediction = predict_multibagger_stock(_good_stock(pe=22, sector_pe=34, pb=3.2))
 

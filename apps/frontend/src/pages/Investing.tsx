@@ -59,6 +59,37 @@ function formatUpdated(value?: string) {
   return new Date(value).toLocaleString();
 }
 
+function isRecommendation(value: unknown): value is Recommendation {
+  return value === "BUY" || value === "HOLD" || value === "AVOID" || value === "WATCHLIST";
+}
+
+function isDashboardCard(value: unknown): value is DashboardCard {
+  const item = value as DashboardCard;
+  return Boolean(
+    item &&
+    typeof item.name === "string" &&
+    Number.isFinite(Number(item.score)) &&
+    isRecommendation(item.recommendation) &&
+    typeof item.key_reason === "string" &&
+    ["LOW", "MEDIUM", "HIGH"].includes(String(item.risk_level)) &&
+    typeof item.allocation_suggestion === "string"
+  );
+}
+
+function parseDashboardPayload(value: unknown): DashboardPayload {
+  const payload = value as DashboardPayload;
+  if (!payload || typeof payload !== "object" || !payload.cards || typeof payload.cards !== "object") {
+    throw new Error("Investment dashboard payload is missing cards.");
+  }
+  for (const key of Object.keys(payload.cards)) {
+    const items = payload.cards[key];
+    if (!Array.isArray(items) || !items.every(isDashboardCard)) {
+      throw new Error(`Investment dashboard card bucket '${key}' has an invalid shape.`);
+    }
+  }
+  return payload;
+}
+
 function ResearchCard({ item }: { item: DashboardCard }) {
   return (
     <article className="investment-card">
@@ -120,11 +151,11 @@ export default function Investing() {
     api.investingDashboard()
       .then((data) => {
         if (!active) return;
-        setPayload(data);
+        setPayload(parseDashboardPayload(data));
         setError(null);
       })
-      .catch(() => {
-        if (active) setError("Investment research dashboard is unavailable. Check that the backend is running.");
+      .catch((err) => {
+        if (active) setError(err?.message ?? "Investment research dashboard is unavailable. Check that the backend is running.");
       })
       .finally(() => {
         if (active) setLoading(false);

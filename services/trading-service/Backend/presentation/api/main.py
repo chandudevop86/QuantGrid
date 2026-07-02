@@ -52,14 +52,16 @@ def _allowed_origin_regex() -> str | None:
         return None
     if os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"prod", "production"}:
         return None
-    return r"^http://((localhost|127\.0\.0\.1)|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+):(517[3-9])$"
+    if os.getenv("QUANTGRID_ALLOW_PRIVATE_DEV_CORS", "").strip().lower() in {"1", "true", "yes"}:
+        return r"^http://((localhost|127\.0\.0\.1)|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+):(517[3-9])$"
+    return r"^http://(localhost|127\.0\.0\.1):(517[3-9])$"
 
 
 def _allow_anonymous_websocket() -> bool:
     explicit = os.getenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET")
     if explicit is not None:
         return explicit.strip().lower() in {"1", "true", "yes"}
-    return os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"local", "development", "dev", "test"}
+    return False
 
 
 def create_app():
@@ -287,6 +289,12 @@ def create_app():
 
     from Backend.presentation.api.investing_api import router as investing_router
     app.include_router(investing_router)
+
+    from Backend.presentation.api.data_quality_api import router as data_quality_router
+    app.include_router(data_quality_router)
+
+    from Backend.presentation.api.security_api import router as security_router
+    app.include_router(security_router)
 
     return app
 

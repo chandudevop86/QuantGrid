@@ -44,6 +44,12 @@ variable "allowed_http_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "alb_certificate_arn" {
+  description = "ACM certificate ARN for the public ALB. When set, HTTP redirects to HTTPS."
+  type        = string
+  default     = ""
+}
+
 variable "enable_nat_gateway" {
   description = "Whether private app subnets should route egress through NAT."
   type        = bool

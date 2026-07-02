@@ -14,7 +14,13 @@ spec:
       labels:
         app: quantgrid-backend
     spec:
+      serviceAccountName: quantgrid-backend
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: backend
           image: quantgrid/backend:beta
@@ -45,6 +51,23 @@ spec:
                 configMapKeyRef:
                   name: quantgrid-config
                   key: cors-allowed-origins
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/services/trading-service/Backend/data
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
           startupProbe:
             httpGet:
               path: /health
@@ -65,6 +88,11 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 3
             failureThreshold: 3
+      volumes:
+        - name: app-data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -77,3 +105,60 @@ spec:
     - name: http
       port: 8000
       targetPort: http
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quantgrid-backend
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: quantgrid-backend-read
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: quantgrid-backend-read
+subjects:
+  - kind: ServiceAccount
+    name: quantgrid-backend
+roleRef:
+  kind: Role
+  name: quantgrid-backend-read
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quantgrid-backend-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: quantgrid-backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443

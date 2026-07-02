@@ -7,7 +7,10 @@ After=network-online.target
 Type=simple
 WorkingDirectory=/root/QuantGrid/services/trading-service
 EnvironmentFile=/root/QuantGrid/services/trading-service/.env
-ExecStart=/root/venv/bin/uvicorn Backend.presentation.api.main:app --host 0.0.0.0 --port 8000
+Environment=QUANTGRID_ENV=production
+Environment=QUANTGRID_FORCE_HTTPS=true
+Environment=QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET=false
+ExecStart=/root/venv/bin/uvicorn Backend.presentation.api.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 KillSignal=SIGINT

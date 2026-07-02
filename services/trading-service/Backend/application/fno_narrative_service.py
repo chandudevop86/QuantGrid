@@ -8,6 +8,7 @@ from app.narratives.fo_narrative_loop import NarrativeInput, NarrativeSignal, ge
 from Backend.application.market_data_store import latest_candles, latest_price_tick
 from Backend.application.quant_modules import live_nse_option_chain, option_chain_engine
 from Backend.application.market_data_service import get_market_data_service
+from app.validation.data_quality import validate_option_chain_rows
 
 
 _LATEST: dict[str, NarrativeSignal] = {}
@@ -29,7 +30,10 @@ def build_narrative_input(symbol: str = "NIFTY", *, overrides: dict[str, Any] | 
     spot_payload = _spot_payload(symbol)
     spot = float(spot_payload.get("price") or spot_payload.get("ltp") or 0.0)
     chain_payload = _option_chain_payload(symbol)
-    rows = list(chain_payload.get("rows") or [])
+    rows, option_chain_quality = validate_option_chain_rows(
+        list(chain_payload.get("rows") or []),
+        source=str(chain_payload.get("source") or "unknown"),
+    )
     previous_spot = _previous_spot(symbol)
     base = {
         "symbol": symbol,
@@ -37,6 +41,7 @@ def build_narrative_input(symbol: str = "NIFTY", *, overrides: dict[str, Any] | 
         "spot_price": spot,
         "futures_price": _env_float(f"QUANTGRID_{symbol}_FUTURES_PRICE") or _env_float("QUANTGRID_FUTURES_PRICE") or spot,
         "option_chain": rows,
+        "option_chain_quality": option_chain_quality.model_dump(),
         "pcr": chain_payload.get("pcr") or chain_payload.get("PCR"),
         "india_vix": _env_float("INDIA_VIX"),
         "india_vix_change_pct": _env_float("INDIA_VIX_CHANGE_PCT"),

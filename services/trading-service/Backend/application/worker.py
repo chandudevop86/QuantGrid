@@ -28,6 +28,7 @@ from Backend.application.trade_exit_engine import monitor_open_positions
 from Backend.core.database import SessionLocal, init_database
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from app.narratives.fo_narrative_loop import is_market_hours_ist
+from app.security.security_ops_loop import SecurityCheckInput, run_security_scan
 
 logger = logging.getLogger(__name__)
 WORKER_ID = socket.gethostname()
@@ -88,6 +89,18 @@ def _investment_loop_enabled() -> bool:
 
 def _investment_loop_interval() -> float:
     return max(300.0, _float_env("QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS", 900.0))
+
+
+def _security_loop_enabled() -> bool:
+    return _not_falsey(os.getenv("QUANTGRID_SECURITY_LOOP_ENABLED"), default=True)
+
+
+def _security_full_interval() -> float:
+    return max(900.0, _float_env("QUANTGRID_SECURITY_FULL_SCAN_SECONDS", 21600.0))
+
+
+def _security_health_interval() -> float:
+    return max(300.0, _float_env("QUANTGRID_SECURITY_HEALTH_SCAN_SECONDS", 900.0))
 
 
 def _run_live_analysis_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -168,6 +181,12 @@ def _run_investment_research_job(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "completed", "scope": "dashboard", "dashboard": latest_investment_dashboard()}
 
 
+def _run_security_scan_job(payload: dict[str, Any]) -> dict[str, Any]:
+    scan_type = str(payload.get("scan_type") or payload.get("scope") or "full").strip().lower()
+    result = run_security_scan(SecurityCheckInput(scan_type=scan_type), persist=True)
+    return result.model_dump(mode="json") if hasattr(result, "model_dump") else result.dict()
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "live-analysis": _run_live_analysis_job,
     "auto-paper": _run_auto_paper_job,
@@ -176,6 +195,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "notification": _run_notification_job,
     "fno-narrative": _run_fno_narrative_job,
     "investment-research": _run_investment_research_job,
+    "security-scan": _run_security_scan_job,
 }
 
 
@@ -240,12 +260,20 @@ def _run_periodic_investment_research() -> dict[str, Any]:
     return {"status": "completed", **ran}
 
 
+def _run_periodic_security_scan(scan_type: str) -> dict[str, Any]:
+    result = run_security_scan(SecurityCheckInput(scan_type=scan_type), persist=True)
+    logger.info("Worker completed %s security scan: %s/%s", scan_type, result.overall_status.value, result.security_score)
+    return result.model_dump(mode="json") if hasattr(result, "model_dump") else result.dict()
+
+
 def run_worker_loop(poll_interval: float = 1.0) -> None:
     init_database()
     logger.info("QuantGrid worker started with id %s", WORKER_ID)
     next_exit_check = time.monotonic()
     next_narrative_check = time.monotonic()
     next_investment_check = time.monotonic()
+    next_security_full_check = time.monotonic()
+    next_security_health_check = time.monotonic()
     while True:
         processed = process_next_job()
         if _exit_monitor_enabled() and time.monotonic() >= next_exit_check:
@@ -266,6 +294,18 @@ def run_worker_loop(poll_interval: float = 1.0) -> None:
             except Exception:
                 logger.exception("Periodic investment research loop failed")
             next_investment_check = time.monotonic() + _investment_loop_interval()
+        if _security_loop_enabled() and time.monotonic() >= next_security_health_check:
+            try:
+                _run_periodic_security_scan("health")
+            except Exception:
+                logger.exception("Periodic security health scan failed")
+            next_security_health_check = time.monotonic() + _security_health_interval()
+        if _security_loop_enabled() and time.monotonic() >= next_security_full_check:
+            try:
+                _run_periodic_security_scan("full")
+            except Exception:
+                logger.exception("Periodic security full scan failed")
+            next_security_full_check = time.monotonic() + _security_full_interval()
         if processed is None:
             time.sleep(poll_interval)
 

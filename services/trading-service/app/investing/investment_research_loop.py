@@ -21,22 +21,22 @@ class StockResearchInput(BaseModel):
     symbol: str
     name: str
     sector: str = "Diversified"
-    revenue_growth_3y: float = 0.0
-    profit_growth_3y: float = 0.0
-    quarterly_revenue_growth: float = 0.0
-    quarterly_profit_growth: float = 0.0
-    debt_to_equity: float = 0.0
-    operating_cash_flow_positive: bool = True
-    free_cash_flow_positive: bool = True
-    roe: float = 0.0
-    roce: float = 0.0
-    promoter_holding: float = 0.0
-    fii_holding_change: float = 0.0
-    dii_holding_change: float = 0.0
-    pe: float = 0.0
-    sector_pe: float = 0.0
-    pb: float = 0.0
-    eps_growth: float = 0.0
+    revenue_growth_3y: float | None = None
+    profit_growth_3y: float | None = None
+    quarterly_revenue_growth: float | None = None
+    quarterly_profit_growth: float | None = None
+    debt_to_equity: float | None = None
+    operating_cash_flow_positive: bool | None = None
+    free_cash_flow_positive: bool | None = None
+    roe: float | None = None
+    roce: float | None = None
+    promoter_holding: float | None = None
+    fii_holding_change: float | None = None
+    dii_holding_change: float | None = None
+    pe: float | None = None
+    sector_pe: float | None = None
+    pb: float | None = None
+    eps_growth: float | None = None
     dividend_years: int = 0
     sector_trend: Literal["positive", "neutral", "negative"] = "neutral"
     price_trend: Literal["uptrend", "sideways", "downtrend"] = "sideways"
@@ -142,6 +142,32 @@ def _weighted_score(raw_percent: float, weight: float) -> float:
     return round(_clamp(raw_percent) * weight / 100, 2)
 
 
+def _metric(value: float | int | None, default: float = 0.0) -> float:
+    return default if value is None else float(value)
+
+
+def _flag(value: bool | None, default: bool = False) -> bool:
+    return default if value is None else bool(value)
+
+
+def _missing_stock_fields(stock: StockResearchInput) -> list[str]:
+    required = [
+        "revenue_growth_3y",
+        "profit_growth_3y",
+        "quarterly_revenue_growth",
+        "quarterly_profit_growth",
+        "debt_to_equity",
+        "operating_cash_flow_positive",
+        "free_cash_flow_positive",
+        "roe",
+        "roce",
+        "pe",
+        "pb",
+        "eps_growth",
+    ]
+    return [field for field in required if getattr(stock, field) is None]
+
+
 def _risk_level(score: float, risks: list[str]) -> Literal["LOW", "MEDIUM", "HIGH"]:
     if score < 50 or any(
         marker in risk.lower()
@@ -155,26 +181,42 @@ def _risk_level(score: float, risks: list[str]) -> Literal["LOW", "MEDIUM", "HIG
 
 
 def _stock_components(stock: StockResearchInput) -> dict[str, float]:
+    revenue_growth_3y = _metric(stock.revenue_growth_3y)
+    profit_growth_3y = _metric(stock.profit_growth_3y)
+    quarterly_revenue_growth = _metric(stock.quarterly_revenue_growth)
+    quarterly_profit_growth = _metric(stock.quarterly_profit_growth)
+    debt_to_equity = _metric(stock.debt_to_equity, 2.0)
+    operating_cash_flow_positive = _flag(stock.operating_cash_flow_positive)
+    free_cash_flow_positive = _flag(stock.free_cash_flow_positive)
+    roe = _metric(stock.roe)
+    roce = _metric(stock.roce)
+    promoter_holding = _metric(stock.promoter_holding)
+    fii_holding_change = _metric(stock.fii_holding_change)
+    dii_holding_change = _metric(stock.dii_holding_change)
+    pe = _metric(stock.pe)
+    sector_pe = _metric(stock.sector_pe)
+    pb = _metric(stock.pb, 10.0)
+    eps_growth = _metric(stock.eps_growth)
     growth_raw = (
-        _clamp(stock.revenue_growth_3y * 2.0)
-        + _clamp(stock.profit_growth_3y * 2.0)
-        + _clamp(stock.quarterly_revenue_growth * 2.5)
-        + _clamp(stock.quarterly_profit_growth * 2.5)
-        + _clamp(stock.eps_growth * 2.0)
+        _clamp(revenue_growth_3y * 2.0)
+        + _clamp(profit_growth_3y * 2.0)
+        + _clamp(quarterly_revenue_growth * 2.5)
+        + _clamp(quarterly_profit_growth * 2.5)
+        + _clamp(eps_growth * 2.0)
     ) / 5
     profitability_raw = (
-        _clamp(stock.roe * 3.0)
-        + _clamp(stock.roce * 2.5)
-        + (100 if stock.operating_cash_flow_positive else 20)
-        + (100 if stock.free_cash_flow_positive else 20)
+        _clamp(roe * 3.0)
+        + _clamp(roce * 2.5)
+        + (100 if operating_cash_flow_positive else 20)
+        + (100 if free_cash_flow_positive else 20)
     ) / 4
-    pe_discount = 100 if stock.sector_pe <= 0 else _clamp((stock.sector_pe - stock.pe) / stock.sector_pe * 100 + 55)
-    valuation_raw = (pe_discount + _clamp((8 - stock.pb) * 12.5) + _clamp(stock.eps_growth * 2.0)) / 3
+    pe_discount = 100 if sector_pe <= 0 else _clamp((sector_pe - pe) / sector_pe * 100 + 55)
+    valuation_raw = (pe_discount + _clamp((8 - pb) * 12.5) + _clamp(eps_growth * 2.0)) / 3
     balance_raw = (
-        _clamp((1.5 - stock.debt_to_equity) / 1.5 * 100)
-        + (100 if stock.operating_cash_flow_positive else 10)
-        + _clamp(stock.promoter_holding * 1.5)
-        + _clamp((stock.fii_holding_change + stock.dii_holding_change + 4) * 12.5)
+        _clamp((1.5 - debt_to_equity) / 1.5 * 100)
+        + (100 if operating_cash_flow_positive else 10)
+        + _clamp(promoter_holding * 1.5)
+        + _clamp((fii_holding_change + dii_holding_change + 4) * 12.5)
     ) / 4
     technical_raw = mean(
         [
@@ -188,7 +230,7 @@ def _stock_components(stock: StockResearchInput) -> dict[str, float]:
         [
             100 if stock.news_sentiment == "positive" else 55 if stock.news_sentiment == "neutral" else 15,
             _clamp(stock.dividend_years * 12),
-            _clamp((stock.fii_holding_change + stock.dii_holding_change + 4) * 12.5),
+            _clamp((fii_holding_change + dii_holding_change + 4) * 12.5),
         ]
     )
     return {
@@ -203,13 +245,23 @@ def _stock_components(stock: StockResearchInput) -> dict[str, float]:
 
 def _stock_risks(stock: StockResearchInput) -> list[str]:
     risks: list[str] = []
-    if stock.debt_to_equity > 1.2:
+    missing = _missing_stock_fields(stock)
+    if missing:
+        risks.append(f"Missing fundamentals: {', '.join(missing)}.")
+    revenue_growth_3y = _metric(stock.revenue_growth_3y)
+    profit_growth_3y = _metric(stock.profit_growth_3y)
+    debt_to_equity = _metric(stock.debt_to_equity, 2.0)
+    operating_cash_flow_positive = _flag(stock.operating_cash_flow_positive)
+    free_cash_flow_positive = _flag(stock.free_cash_flow_positive)
+    pe = _metric(stock.pe)
+    sector_pe = _metric(stock.sector_pe)
+    if debt_to_equity > 1.2:
         risks.append("High debt/equity can pressure long-term compounding.")
-    if not stock.operating_cash_flow_positive or not stock.free_cash_flow_positive:
+    if not operating_cash_flow_positive or not free_cash_flow_positive:
         risks.append("Weak cash flow reduces investment quality.")
-    if stock.revenue_growth_3y < 8 or stock.profit_growth_3y < 8:
+    if revenue_growth_3y < 8 or profit_growth_3y < 8:
         risks.append("Revenue or profit growth is not yet consistent.")
-    if stock.sector_pe > 0 and stock.pe > stock.sector_pe * 1.25:
+    if sector_pe > 0 and pe > sector_pe * 1.25:
         risks.append("Valuation is stretched versus sector average.")
     if stock.news_sentiment == "negative":
         risks.append("News sentiment is negative.")
@@ -220,16 +272,22 @@ def _stock_risks(stock: StockResearchInput) -> list[str]:
 
 def score_stock(stock: StockResearchInput) -> StockScore:
     components = _stock_components(stock)
-    total = round(sum(components.values()), 2)
+    missing = _missing_stock_fields(stock)
+    total = round(max(0.0, sum(components.values()) - len(missing) * 2.0), 2)
     risks = _stock_risks(stock)
-    overvalued = stock.sector_pe > 0 and stock.pe > stock.sector_pe * 1.25
-    high_debt_or_cashflow = stock.debt_to_equity > 1.2 or not stock.operating_cash_flow_positive or not stock.free_cash_flow_positive
+    sector_pe = _metric(stock.sector_pe)
+    pe = _metric(stock.pe)
+    debt_to_equity = _metric(stock.debt_to_equity, 2.0)
+    operating_cash_flow_positive = _flag(stock.operating_cash_flow_positive)
+    free_cash_flow_positive = _flag(stock.free_cash_flow_positive)
+    overvalued = sector_pe > 0 and pe > sector_pe * 1.25
+    high_debt_or_cashflow = debt_to_equity > 1.2 or not operating_cash_flow_positive or not free_cash_flow_positive
 
     if high_debt_or_cashflow and total < 72:
         recommendation = InvestmentRecommendation.AVOID
     elif overvalued:
         recommendation = InvestmentRecommendation.WATCHLIST if total >= 65 else InvestmentRecommendation.AVOID
-    elif total >= 70 and components["growth"] >= 9 and components["profitability"] >= 16 and len(risks) <= 1:
+    elif not missing and total >= 70 and components["growth"] >= 9 and components["profitability"] >= 16 and len(risks) <= 1:
         recommendation = InvestmentRecommendation.BUY
     elif total >= 62:
         recommendation = InvestmentRecommendation.HOLD
@@ -268,42 +326,58 @@ def score_stock(stock: StockResearchInput) -> StockScore:
 
 
 def _multibagger_components(stock: StockResearchInput) -> dict[str, float]:
+    revenue_growth_3y = _metric(stock.revenue_growth_3y)
+    profit_growth_3y = _metric(stock.profit_growth_3y)
+    quarterly_revenue_growth = _metric(stock.quarterly_revenue_growth)
+    quarterly_profit_growth = _metric(stock.quarterly_profit_growth)
+    eps_growth = _metric(stock.eps_growth)
+    roe = _metric(stock.roe)
+    roce = _metric(stock.roce)
+    debt_to_equity = _metric(stock.debt_to_equity, 2.0)
+    operating_cash_flow_positive = _flag(stock.operating_cash_flow_positive)
+    free_cash_flow_positive = _flag(stock.free_cash_flow_positive)
+    sector_pe = _metric(stock.sector_pe)
+    pe = _metric(stock.pe)
+    pb = _metric(stock.pb, 10.0)
+    promoter_holding = _metric(stock.promoter_holding)
+    fii_holding_change = _metric(stock.fii_holding_change)
+    dii_holding_change = _metric(stock.dii_holding_change)
     growth_runway_raw = mean(
         [
-            _clamp(stock.revenue_growth_3y * 3.0),
-            _clamp(stock.profit_growth_3y * 3.0),
-            _clamp(stock.quarterly_revenue_growth * 3.0),
-            _clamp(stock.quarterly_profit_growth * 3.0),
-            _clamp(stock.eps_growth * 3.0),
+            _clamp(revenue_growth_3y * 3.0),
+            _clamp(profit_growth_3y * 3.0),
+            _clamp(quarterly_revenue_growth * 3.0),
+            _clamp(quarterly_profit_growth * 3.0),
+            _clamp(eps_growth * 3.0),
         ]
     )
     reinvestment_quality_raw = mean(
         [
-            _clamp(stock.roe * 3.2),
-            _clamp(stock.roce * 3.0),
-            100 if stock.operating_cash_flow_positive else 15,
-            100 if stock.free_cash_flow_positive else 20,
+            _clamp(roe * 3.2),
+            _clamp(roce * 3.0),
+            100 if operating_cash_flow_positive else 15,
+            100 if free_cash_flow_positive else 20,
         ]
     )
     valuation_room_raw = mean(
         [
-            100 if stock.sector_pe <= 0 else _clamp((stock.sector_pe - stock.pe) / stock.sector_pe * 100 + 60),
-            _clamp((7 - stock.pb) * 14),
-            _clamp((stock.eps_growth * 2.5) - max(stock.pe - stock.sector_pe, 0)),
+            100 if sector_pe <= 0 else _clamp((sector_pe - pe) / sector_pe * 100 + 60),
+            _clamp((7 - pb) * 14),
+            _clamp((eps_growth * 2.5) - max(pe - sector_pe, 0)),
         ]
     )
     balance_sheet_raw = mean(
         [
-            _clamp((1.0 - stock.debt_to_equity) * 100),
-            100 if stock.operating_cash_flow_positive else 10,
-            100 if stock.free_cash_flow_positive else 15,
+            _clamp((1.0 - debt_to_equity) * 100),
+            100 if operating_cash_flow_positive else 10,
+            100 if free_cash_flow_positive else 15,
         ]
     )
     ownership_raw = mean(
         [
-            _clamp(stock.promoter_holding * 1.6),
-            _clamp((stock.fii_holding_change + 3) * 16),
-            _clamp((stock.dii_holding_change + 3) * 16),
+            _clamp(promoter_holding * 1.6),
+            _clamp((fii_holding_change + 3) * 16),
+            _clamp((dii_holding_change + 3) * 16),
         ]
     )
     trend_raw = mean(
@@ -326,24 +400,37 @@ def _multibagger_components(stock: StockResearchInput) -> dict[str, float]:
 
 def predict_multibagger_stock(stock: StockResearchInput) -> MultibaggerPrediction:
     components = _multibagger_components(stock)
-    score = round(sum(components.values()), 2)
+    missing = _missing_stock_fields(stock)
+    score = round(max(0.0, sum(components.values()) - len(missing) * 2.5), 2)
     risks = _stock_risks(stock)
     catalysts: list[str] = []
 
-    if stock.revenue_growth_3y >= 15 and stock.profit_growth_3y >= 15:
+    revenue_growth_3y = _metric(stock.revenue_growth_3y)
+    profit_growth_3y = _metric(stock.profit_growth_3y)
+    roe = _metric(stock.roe)
+    roce = _metric(stock.roce)
+    debt_to_equity = _metric(stock.debt_to_equity, 2.0)
+    operating_cash_flow_positive = _flag(stock.operating_cash_flow_positive)
+    free_cash_flow_positive = _flag(stock.free_cash_flow_positive)
+    sector_pe = _metric(stock.sector_pe)
+    pe = _metric(stock.pe)
+    fii_holding_change = _metric(stock.fii_holding_change)
+    dii_holding_change = _metric(stock.dii_holding_change)
+
+    if revenue_growth_3y >= 15 and profit_growth_3y >= 15:
         catalysts.append("Consistent revenue and profit growth above multibagger threshold.")
-    if stock.roe >= 18 and stock.roce >= 18:
+    if roe >= 18 and roce >= 18:
         catalysts.append("High ROE/ROCE suggests strong reinvestment economics.")
-    if stock.debt_to_equity <= 0.5 and stock.operating_cash_flow_positive and stock.free_cash_flow_positive:
+    if debt_to_equity <= 0.5 and operating_cash_flow_positive and free_cash_flow_positive:
         catalysts.append("Low leverage with positive operating and free cash flow.")
     if stock.sector_trend == "positive":
         catalysts.append("Sector trend is supportive.")
-    if stock.fii_holding_change > 0 or stock.dii_holding_change > 0:
+    if fii_holding_change > 0 or dii_holding_change > 0:
         catalysts.append("Institutional ownership trend is improving.")
 
-    hard_block = stock.debt_to_equity > 1.2 or not stock.operating_cash_flow_positive or not stock.free_cash_flow_positive
-    overvalued = stock.sector_pe > 0 and stock.pe > stock.sector_pe * 1.4
-    if hard_block:
+    hard_block = debt_to_equity > 1.2 or not operating_cash_flow_positive or not free_cash_flow_positive
+    overvalued = sector_pe > 0 and pe > sector_pe * 1.4
+    if hard_block or missing:
         rating: Literal["HIGH_POTENTIAL", "MODERATE_POTENTIAL", "LOW_POTENTIAL", "AVOID"] = "AVOID"
     elif score >= 78 and len(risks) <= 1 and not overvalued:
         rating = "HIGH_POTENTIAL"

@@ -30,6 +30,7 @@ from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
+from app.validation.data_quality import validate_candles, validate_option_chain_rows
 
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
@@ -49,6 +50,7 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
     candles = latest_candles(symbol, interval, limit)
     if not candles:
         return None
+    valid_candles, data_quality = validate_candles(candles, source="stored-live-cache")
 
     return {
         "symbol": symbol.upper(),
@@ -57,7 +59,8 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
         "period": period,
         "source": "stored-live-cache",
         "volume_status": _volume_status(_market_symbol(symbol), candles),
-        "candles": candles,
+        "candles": valid_candles,
+        "data_quality": data_quality.model_dump(),
         "cached": True,
         "warning": "Live market data provider is unavailable; served latest stored live candles.",
     }
@@ -457,6 +460,7 @@ def get_option_chain(
                 rows = _derived_option_rows(strikes)
                 warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
 
+    rows, data_quality = validate_option_chain_rows(rows, source=source)
     call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
     put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
     pcr = round(put_oi / call_oi, 3) if call_oi else 0.0
@@ -477,6 +481,7 @@ def get_option_chain(
         "warning": warning,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
+        "data_quality": data_quality.model_dump(),
         "pcr": pcr,
         "PCR": pcr,
         "max_pain": atm,
@@ -524,6 +529,7 @@ def get_candles(
         )
         if settings.live_trading_enabled and not validation.valid_for_execution:
             raise RuntimeError(f"Live market data failed validation: {validation.market_status}")
+        candles, data_quality = validate_candles(candles, source=str(source))
 
         payload = {
             "symbol": symbol.upper(),
@@ -538,6 +544,7 @@ def get_candles(
             "feed_delay_seconds": service_payload.get("feed_delay_seconds"),
             "candles": candles,
             "validation": validation.model_dump(),
+            "data_quality": data_quality.model_dump(),
         }
         store_candles(
             symbol=symbol,
@@ -555,6 +562,8 @@ def get_candles(
             return cached
         if not _allow_sample_market_data():
             raise _market_data_unavailable(exc) from exc
+        sample_candles = _sample_candles(symbol, limit=min(limit, 100))
+        valid_sample_candles, data_quality = validate_candles(sample_candles, source="sample-fallback")
         return {
             "symbol": symbol.upper(),
             "market_symbol": _market_symbol(symbol),
@@ -563,8 +572,9 @@ def get_candles(
             "source": "sample-fallback",
             "volume_status": "reported",
             "warning": f"Live market data unavailable: {exc}",
-            "candles": _sample_candles(symbol, limit=min(limit, 100)),
-            "validation": validate_live_candle(_sample_candles(symbol, limit=min(limit, 100)), interval=interval, source="sample-fallback").model_dump(),
+            "candles": valid_sample_candles,
+            "validation": validate_live_candle(valid_sample_candles, interval=interval, source="sample-fallback").model_dump(),
+            "data_quality": data_quality.model_dump(),
         }
 
 

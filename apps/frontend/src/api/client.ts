@@ -20,7 +20,7 @@ function normalizeBaseURL(baseURL: string) {
     const targetIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
 
     if (browserIsRemote && targetIsLoopback) {
-      return `${window.location.protocol}//${window.location.hostname}:${target.port || "8000"}${target.pathname === "/" ? "" : target.pathname}`;
+      return `${window.location.origin}/api`;
     }
 
     if (!import.meta.env.DEV && isSameHostBackendPort) {

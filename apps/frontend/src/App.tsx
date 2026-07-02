@@ -13,6 +13,7 @@ import Jobs from "./pages/Jobs";
 import OptionChain from "./pages/OptionChain";
 import Operations from "./pages/Operations";
 import ProfessionalSignals from "./pages/ProfessionalSignals";
+import Security from "./pages/Security";
 import Strategies from "./pages/Strategies";
 import Trade from "./pages/Trade";
 import TradeJournal from "./pages/TradeJournal";
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/operations" element={protect("/operations", <Operations />)} />
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
           <Route path="/investing" element={protect("/investing", <Investing />)} />
+          <Route path="/security" element={protect("/security", <Security />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />
           <Route path="/trade" element={protect("/trade", <Trade />)} />
