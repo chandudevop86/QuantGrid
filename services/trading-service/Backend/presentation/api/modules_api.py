@@ -33,6 +33,12 @@ class BacktestModuleRequest(BaseModel):
     candles: list[dict[str, Any]] | None = Field(default=None)
 
 
+def _module_option_chain_payload(payload: dict[str, Any], *, legacy_source: bool = False) -> dict[str, Any]:
+    if legacy_source and payload.get("source") == "synthetic-demo-chain":
+        return {**payload, "source": "synthetic", "data_source": "synthetic-demo-chain"}
+    return payload
+
+
 @router.get("/option-chain/{symbol}")
 def option_chain_module(
     symbol: str,
@@ -41,11 +47,14 @@ def option_chain_module(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     try:
-        return option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
+        return _module_option_chain_payload(
+            option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step),
+            legacy_source=True,
+        )
     except Exception as exc:
         logger.exception("option_chain_module_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         payload = option_chain_engine("NIFTY", strikes_each_side=strikes_each_side, step=step)
-        return _live_nse_fallback_payload(payload, exc)
+        return _module_option_chain_payload(_live_nse_fallback_payload(payload, exc), legacy_source=True)
 
 
 @router.get("/option-chain/{symbol}/live-nse")
@@ -56,11 +65,14 @@ def live_nse_option_chain_module(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     try:
-        return live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step)
+        return _module_option_chain_payload(live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step))
     except Exception as exc:
         logger.exception("live_nse_option_chain_module_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         payload = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
-        return _live_nse_fallback_payload(payload, exc)
+        return _module_option_chain_payload(
+            _live_nse_fallback_payload(payload, exc),
+            legacy_source="provider unavailable" in str(exc).lower(),
+        )
 
 
 @router.get("/option-chain/{symbol}/historical")

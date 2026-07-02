@@ -28,6 +28,10 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
             "sharpe_ratio": 0.0,
             "expectancy": 0.0,
             "average_rr": 0.0,
+            "gross_pnl": 0.0,
+            "total_costs": 0.0,
+            "net_pnl": 0.0,
+            "average_latency_ms": 0.0,
             "best_setup_type": None,
             "win_rate_by_grade": {"A+": 0.0, "A": 0.0, "B": 0.0, "Watchlist": 0.0},
             "losing_streak": 0,
@@ -35,6 +39,9 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
         }
 
     pnls = [float(trade.pnl) for trade in trades]
+    costs = [float(trade.metadata.get("total_costs") or 0.0) for trade in trades]
+    gross_pnls = [float(trade.metadata.get("gross_pnl") or float(trade.pnl) + float(trade.metadata.get("total_costs") or 0.0)) for trade in trades]
+    latencies = [float(trade.metadata.get("latency_ms") or 0.0) for trade in trades]
     wins = [pnl > 0 for pnl in pnls]
     gross_profit = sum(pnl for pnl in pnls if pnl > 0)
     gross_loss = abs(sum(pnl for pnl in pnls if pnl < 0))
@@ -74,6 +81,10 @@ def calculate_metrics(trades: list[BacktestTrade]) -> dict[str, Any]:
         "sharpe_ratio": round(sharpe, 2),
         "expectancy": round(mean, 2),
         "average_rr": round(sum(float(trade.rr) for trade in trades) / len(trades), 2),
+        "gross_pnl": round(sum(gross_pnls), 2),
+        "total_costs": round(sum(costs), 2),
+        "net_pnl": round(sum(pnls), 2),
+        "average_latency_ms": round(sum(latencies) / len(latencies), 2) if latencies else 0.0,
         "best_setup_type": max(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
         "win_rate_by_grade": {
             grade: round(values["wins"] / values["total"] * 100, 2) if values["total"] else 0.0

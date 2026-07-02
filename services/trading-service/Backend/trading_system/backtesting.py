@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from math import sqrt
@@ -30,6 +31,12 @@ class BacktestTrade:
     pnl: float
     rr: float
     exit_reason: str
+    gross_pnl: float = 0.0
+    total_costs: float = 0.0
+    slippage_cost: float = 0.0
+    brokerage: float = 0.0
+    taxes: float = 0.0
+    latency_ms: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -46,6 +53,12 @@ class BacktestMetrics:
     pnl: float
     max_drawdown: float
     sharpe_ratio: float
+    gross_pnl: float = 0.0
+    total_costs: float = 0.0
+    net_pnl: float = 0.0
+    expectancy: float = 0.0
+    rejected_signal_count: int = 0
+    average_latency_ms: float = 0.0
     rr_distribution: list[float] = field(default_factory=list)
     trades: list[dict[str, Any]] = field(default_factory=list)
 
@@ -56,6 +69,12 @@ class BacktestMetrics:
             "pnl": self.pnl,
             "max_drawdown": self.max_drawdown,
             "sharpe_ratio": self.sharpe_ratio,
+            "gross_pnl": self.gross_pnl,
+            "total_costs": self.total_costs,
+            "net_pnl": self.net_pnl,
+            "expectancy": self.expectancy,
+            "rejected_signal_count": self.rejected_signal_count,
+            "average_latency_ms": self.average_latency_ms,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,10 +90,18 @@ class BacktestEngine:
         strategy_engine: StrategyEngine | None = None,
         slippage_model: SlippageModel | None = None,
         risk_manager: GlobalRiskManager | None = None,
+        brokerage_per_order: float | None = None,
+        brokerage_bps: float | None = None,
+        taxes_bps: float | None = None,
+        latency_ms: int | None = None,
     ) -> None:
         self.strategy_engine = strategy_engine or StrategyEngine()
         self.slippage_model = slippage_model or SlippageModel()
         self.risk_manager = risk_manager or GlobalRiskManager()
+        self.brokerage_per_order = _float_env("BACKTEST_BROKERAGE_PER_ORDER", brokerage_per_order, 20.0)
+        self.brokerage_bps = _float_env("BACKTEST_BROKERAGE_BPS", brokerage_bps, 0.0)
+        self.taxes_bps = _float_env("BACKTEST_TAXES_BPS", taxes_bps, 2.5)
+        self.latency_ms = int(_float_env("BACKTEST_LATENCY_MS", latency_ms, 0.0))
         self.logger = get_logger(__name__)
 
     def run(
@@ -115,6 +142,7 @@ class BacktestEngine:
         entry_price = 0.0
         quantity = 0
         seen_signal_keys: set[tuple[str, datetime, str]] = set()
+        rejected_signal_count = 0
 
         for index in range(1, len(frame)):
             row = frame.iloc[index]
@@ -148,12 +176,14 @@ class BacktestEngine:
                 seen_signal_keys.add(key)
                 valid, reason = self.risk_manager.validate_signal(signal, now=pd.Timestamp(row["timestamp"]).to_pydatetime())
                 if not valid:
+                    rejected_signal_count += 1
                     self.logger.info("backtest_signal_rejected", {"symbol": symbol, "reason": reason, "event": "backtest_signal_rejected"})
                     continue
                 open_signal = signal
                 entry_index = index
                 raw_entry = float(row["open"])
                 entry_price = self.slippage_model.apply(raw_entry, signal.side, "entry", frame, index)
+                signal.metadata["backtest_raw_entry_price"] = raw_entry
                 quantity = max(1, int(signal.metadata.get("quantity", 1)))
                 self.risk_manager.record_trade_opened(signal.signal_time)
                 self.logger.info("backtest_trade_opened", {"symbol": symbol, "side": signal.side, "entry": entry_price, "event": "backtest_trade_opened"})
@@ -163,11 +193,21 @@ class BacktestEngine:
             final_index = len(frame) - 1
             final_row = frame.iloc[final_index]
             exit_price = self.slippage_model.apply(float(final_row["close"]), open_signal.side, "exit", frame, final_index)
-            trade = self._build_trade(open_signal, entry_price, exit_price, entry_index, final_index, quantity, "end_of_data", frame)
+            trade = self._build_trade(
+                open_signal,
+                entry_price,
+                exit_price,
+                entry_index,
+                final_index,
+                quantity,
+                "end_of_data",
+                frame,
+                raw_exit_price=float(final_row["close"]),
+            )
             trades.append(trade)
             equity_curve.append(equity_curve[-1] + trade.pnl)
 
-        return self._metrics(trades, equity_curve)
+        return self._metrics(trades, equity_curve, rejected_signal_count=rejected_signal_count)
 
     def _try_exit(
         self,
@@ -206,7 +246,17 @@ class BacktestEngine:
             raw_exit = target
 
         exit_price = self.slippage_model.apply(raw_exit, side, "exit", frame, index)
-        return self._build_trade(signal, entry_price, exit_price, entry_index, index, quantity, exit_reason, frame)
+        return self._build_trade(
+            signal,
+            entry_price,
+            exit_price,
+            entry_index,
+            index,
+            quantity,
+            exit_reason,
+            frame,
+            raw_exit_price=raw_exit,
+        )
 
     def _build_trade(
         self,
@@ -218,9 +268,20 @@ class BacktestEngine:
         quantity: int,
         exit_reason: str,
         frame: pd.DataFrame,
+        raw_exit_price: float | None = None,
     ) -> BacktestTrade:
         direction = 1 if signal.side.upper() == "BUY" else -1
-        pnl = (float(exit_price) - float(entry_price)) * direction * int(quantity)
+        gross_pnl = (float(exit_price) - float(entry_price)) * direction * int(quantity)
+        raw_entry = float(signal.metadata.get("backtest_raw_entry_price") or entry_price)
+        raw_exit = float(raw_exit_price if raw_exit_price is not None else exit_price)
+        slippage_cost = (
+            abs(float(entry_price) - raw_entry) + abs(float(exit_price) - raw_exit)
+        ) * int(quantity)
+        turnover = (abs(float(entry_price)) + abs(float(exit_price))) * int(quantity)
+        brokerage = self.brokerage_per_order * 2 + turnover * self.brokerage_bps / 10_000.0
+        taxes = turnover * self.taxes_bps / 10_000.0
+        total_costs = brokerage + taxes
+        pnl = gross_pnl - total_costs
         risk = max(abs(float(entry_price) - float(signal.stop_loss)), 1e-9)
         reward = (float(exit_price) - float(entry_price)) * direction
         return BacktestTrade(
@@ -234,24 +295,45 @@ class BacktestEngine:
             exit_price=float(exit_price),
             stop_loss=float(signal.stop_loss),
             target_price=float(signal.target_price),
-            pnl=float(pnl),
+            pnl=round(float(pnl), 2),
             rr=float(reward / risk),
             exit_reason=exit_reason,
+            gross_pnl=round(float(gross_pnl), 2),
+            total_costs=round(float(total_costs), 2),
+            slippage_cost=round(float(slippage_cost), 2),
+            brokerage=round(float(brokerage), 2),
+            taxes=round(float(taxes), 2),
+            latency_ms=self.latency_ms,
             metadata={"signal_score": self._score(signal)},
         )
 
-    def _metrics(self, trades: list[BacktestTrade], equity_curve: list[float]) -> BacktestMetrics:
+    def _metrics(
+        self,
+        trades: list[BacktestTrade],
+        equity_curve: list[float],
+        *,
+        rejected_signal_count: int = 0,
+    ) -> BacktestMetrics:
         total = len(trades)
         wins = sum(1 for trade in trades if trade.pnl > 0)
         pnl = sum(trade.pnl for trade in trades)
         returns = [trade.pnl / max(abs(trade.entry_price * trade.quantity), 1.0) for trade in trades]
         sharpe = self._sharpe(returns)
+        total_costs = sum(trade.total_costs for trade in trades)
+        gross_pnl = sum(trade.gross_pnl for trade in trades)
+        avg_latency = sum(trade.latency_ms for trade in trades) / total if total else 0.0
         return BacktestMetrics(
             total_trades=total,
             win_rate=wins / total if total else 0.0,
-            pnl=float(pnl),
+            pnl=round(float(pnl), 2),
             max_drawdown=self._max_drawdown(equity_curve),
             sharpe_ratio=sharpe,
+            gross_pnl=round(float(gross_pnl), 2),
+            total_costs=round(float(total_costs), 2),
+            net_pnl=round(float(pnl), 2),
+            expectancy=round(float(pnl) / total, 2) if total else 0.0,
+            rejected_signal_count=rejected_signal_count,
+            average_latency_ms=round(float(avg_latency), 2),
             rr_distribution=[trade.rr for trade in trades],
             trades=[trade.to_dict() for trade in trades],
         )
@@ -319,3 +401,12 @@ class BacktestEngine:
             if key in signal.metadata:
                 return float(signal.metadata[key])
         return 0.0
+
+
+def _float_env(name: str, value: float | int | None, default: float) -> float:
+    if value is not None:
+        return float(value)
+    raw = os.getenv(name)
+    if raw in {None, ""}:
+        return float(default)
+    return float(raw)

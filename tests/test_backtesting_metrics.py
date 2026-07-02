@@ -19,6 +19,7 @@ def _trade(pnl: float, outcome: str) -> BacktestTrade:
         pnl=pnl,
         rr=2.0,
         outcome=outcome,
+        metadata={"gross_pnl": pnl + 5, "total_costs": 5, "latency_ms": 25},
     )
 
 
@@ -29,5 +30,9 @@ def test_backtest_metrics_calculation():
     assert metrics["win_rate"] == 66.67
     assert metrics["pnl"] == 200
     assert metrics["profit_factor"] == 5
+    assert metrics["gross_pnl"] == 215
+    assert metrics["total_costs"] == 15
+    assert metrics["net_pnl"] == 200
+    assert metrics["average_latency_ms"] == 25
     assert metrics["winning_streak"] == 1
     assert metrics["losing_streak"] == 1

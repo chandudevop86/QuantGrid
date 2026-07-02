@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -117,9 +118,13 @@ def audit_strategy(item: StrategyAuditInput) -> dict[str, Any]:
         rejected_count = len(item.raw_signals)
         execution_decision = "REJECTED_SIGNAL"
     else:
-        decision = decide_signal(latest_signal, candles_1m=item.candles, candles_15m=item.trend_candles)
-        gate = evaluate_risk_gate(decision)
-        risk_decision = validate_order_risk(latest_signal, execution_mode=item.execution_mode, candles_1m=item.candles)
+        current_module = sys.modules.get(__name__)
+        decide_signal_fn = getattr(current_module, "decide_signal", decide_signal)
+        evaluate_risk_gate_fn = getattr(current_module, "evaluate_risk_gate", evaluate_risk_gate)
+        validate_order_risk_fn = getattr(current_module, "validate_order_risk", validate_order_risk)
+        decision = decide_signal_fn(latest_signal, candles_1m=item.candles, candles_15m=item.trend_candles)
+        gate = evaluate_risk_gate_fn(decision)
+        risk_decision = validate_order_risk_fn(latest_signal, execution_mode=item.execution_mode, candles_1m=item.candles)
         market_status = str(getattr(item.candle_validation, "market_status", "LIVE MARKET"))
         if not getattr(item.candle_validation, "valid_for_execution", False) or market_status.upper() != "LIVE MARKET":
             rejection_reason = normalize_rejection_reason(f"MARKET_NOT_LIVE_FOR_EXECUTION: {market_status}", latest_signal)

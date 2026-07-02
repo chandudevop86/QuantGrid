@@ -236,7 +236,7 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
     return _option_chain_compat_payload({
         **payload,
         "module": "live_nse_option_chain",
-        "source": "synthetic",
+        "source": "synthetic-demo-chain",
         "synthetic": True,
         "fallback_reason": exc.__class__.__name__,
         "provider_warning": "Live NSE option-chain provider unavailable; using synthetic fallback data.",
@@ -274,7 +274,7 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         signal = "NO_TRADE"
     raw_source = str(payload.get("source") or "")
-    source = "live" if raw_source in {"live", "live-nse-chain"} else "synthetic"
+    source = "live" if raw_source in {"live", "live-nse-chain"} else raw_source or "synthetic-demo-chain"
     return {
         **payload,
         "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
@@ -353,7 +353,7 @@ def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, st
         "atm_strike": atm,
         "expiry": expiry_date,
         "step": step,
-        "source": "synthetic",
+        "source": "synthetic-demo-chain",
         "synthetic": True,
         "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
         "max_pain": _max_pain(rows),
@@ -444,7 +444,22 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "module": "backtesting",
         "symbol": symbol,
         "payload": {key: value for key, value in payload.items() if key != "candles"} | {"candles": len(candles)},
-        "metrics": {key: result.get(key) for key in ("total_trades", "win_rate", "pnl", "max_drawdown", "sharpe_ratio")},
+        "metrics": {
+            key: result.get(key)
+            for key in (
+                "total_trades",
+                "win_rate",
+                "gross_pnl",
+                "total_costs",
+                "net_pnl",
+                "pnl",
+                "expectancy",
+                "max_drawdown",
+                "sharpe_ratio",
+                "rejected_signal_count",
+                "average_latency_ms",
+            )
+        },
         "equity_curve": curve,
         "recent_outcomes": trades[-10:],
         "updated_at": datetime.now(timezone.utc).isoformat(),
