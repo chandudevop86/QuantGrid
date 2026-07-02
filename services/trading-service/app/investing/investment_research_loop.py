@@ -79,6 +79,24 @@ class DashboardCard(BaseModel):
     allocation_suggestion: str
 
 
+class MultibaggerPrediction(BaseModel):
+    symbol: str
+    name: str
+    asset_type: Literal["multibagger_stock"] = "multibagger_stock"
+    potential_score: float
+    probability: int = Field(ge=0, le=100)
+    rating: Literal["HIGH_POTENTIAL", "MODERATE_POTENTIAL", "LOW_POTENTIAL", "AVOID"]
+    component_scores: dict[str, float]
+    reason: str
+    catalysts: list[str]
+    risks: list[str]
+    ideal_holding_period: str
+    target_allocation: str
+    risk_level: Literal["LOW", "MEDIUM", "HIGH"]
+    disclaimer: str = DISCLAIMER
+    scored_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
 class StockScore(BaseModel):
     symbol: str
     name: str
@@ -249,6 +267,124 @@ def score_stock(stock: StockResearchInput) -> StockScore:
     )
 
 
+def _multibagger_components(stock: StockResearchInput) -> dict[str, float]:
+    growth_runway_raw = mean(
+        [
+            _clamp(stock.revenue_growth_3y * 3.0),
+            _clamp(stock.profit_growth_3y * 3.0),
+            _clamp(stock.quarterly_revenue_growth * 3.0),
+            _clamp(stock.quarterly_profit_growth * 3.0),
+            _clamp(stock.eps_growth * 3.0),
+        ]
+    )
+    reinvestment_quality_raw = mean(
+        [
+            _clamp(stock.roe * 3.2),
+            _clamp(stock.roce * 3.0),
+            100 if stock.operating_cash_flow_positive else 15,
+            100 if stock.free_cash_flow_positive else 20,
+        ]
+    )
+    valuation_room_raw = mean(
+        [
+            100 if stock.sector_pe <= 0 else _clamp((stock.sector_pe - stock.pe) / stock.sector_pe * 100 + 60),
+            _clamp((7 - stock.pb) * 14),
+            _clamp((stock.eps_growth * 2.5) - max(stock.pe - stock.sector_pe, 0)),
+        ]
+    )
+    balance_sheet_raw = mean(
+        [
+            _clamp((1.0 - stock.debt_to_equity) * 100),
+            100 if stock.operating_cash_flow_positive else 10,
+            100 if stock.free_cash_flow_positive else 15,
+        ]
+    )
+    ownership_raw = mean(
+        [
+            _clamp(stock.promoter_holding * 1.6),
+            _clamp((stock.fii_holding_change + 3) * 16),
+            _clamp((stock.dii_holding_change + 3) * 16),
+        ]
+    )
+    trend_raw = mean(
+        [
+            100 if stock.sector_trend == "positive" else 55 if stock.sector_trend == "neutral" else 15,
+            100 if stock.price_trend == "uptrend" else 45 if stock.price_trend == "sideways" else 10,
+            100 if stock.price_above_200dma else 30,
+            _clamp(100 - max(stock.price_to_52w_high_pct - 25, 0) * 3),
+        ]
+    )
+    return {
+        "growth_runway": _weighted_score(growth_runway_raw, 25),
+        "reinvestment_quality": _weighted_score(reinvestment_quality_raw, 20),
+        "valuation_room": _weighted_score(valuation_room_raw, 15),
+        "balance_sheet_safety": _weighted_score(balance_sheet_raw, 15),
+        "ownership_support": _weighted_score(ownership_raw, 10),
+        "trend_confirmation": _weighted_score(trend_raw, 15),
+    }
+
+
+def predict_multibagger_stock(stock: StockResearchInput) -> MultibaggerPrediction:
+    components = _multibagger_components(stock)
+    score = round(sum(components.values()), 2)
+    risks = _stock_risks(stock)
+    catalysts: list[str] = []
+
+    if stock.revenue_growth_3y >= 15 and stock.profit_growth_3y >= 15:
+        catalysts.append("Consistent revenue and profit growth above multibagger threshold.")
+    if stock.roe >= 18 and stock.roce >= 18:
+        catalysts.append("High ROE/ROCE suggests strong reinvestment economics.")
+    if stock.debt_to_equity <= 0.5 and stock.operating_cash_flow_positive and stock.free_cash_flow_positive:
+        catalysts.append("Low leverage with positive operating and free cash flow.")
+    if stock.sector_trend == "positive":
+        catalysts.append("Sector trend is supportive.")
+    if stock.fii_holding_change > 0 or stock.dii_holding_change > 0:
+        catalysts.append("Institutional ownership trend is improving.")
+
+    hard_block = stock.debt_to_equity > 1.2 or not stock.operating_cash_flow_positive or not stock.free_cash_flow_positive
+    overvalued = stock.sector_pe > 0 and stock.pe > stock.sector_pe * 1.4
+    if hard_block:
+        rating: Literal["HIGH_POTENTIAL", "MODERATE_POTENTIAL", "LOW_POTENTIAL", "AVOID"] = "AVOID"
+    elif score >= 78 and len(risks) <= 1 and not overvalued:
+        rating = "HIGH_POTENTIAL"
+    elif score >= 65 and len(risks) <= 2:
+        rating = "MODERATE_POTENTIAL"
+    elif score >= 50:
+        rating = "LOW_POTENTIAL"
+    else:
+        rating = "AVOID"
+
+    if overvalued:
+        risks.append("Multibagger upside may be capped by elevated valuation.")
+    if stock.price_trend == "downtrend":
+        risks.append("Technical trend has not confirmed accumulation.")
+    if not catalysts:
+        catalysts.append("No strong catalyst from supplied inputs.")
+
+    probability = int(_clamp(score - len(risks) * 5 + (8 if rating == "HIGH_POTENTIAL" else 0), 20, 92))
+    risk_level = _risk_level(score, risks)
+    reason = (
+        f"{stock.name} multibagger potential score is {score:.1f}/100; "
+        f"growth runway {components['growth_runway']:.1f}/25, "
+        f"reinvestment quality {components['reinvestment_quality']:.1f}/20, "
+        f"valuation room {components['valuation_room']:.1f}/15."
+    )
+    return MultibaggerPrediction(
+        symbol=stock.symbol.upper(),
+        name=stock.name,
+        potential_score=score,
+        probability=probability,
+        rating=rating,
+        component_scores=components,
+        reason=reason,
+        catalysts=catalysts,
+        risks=risks or ["No major multibagger risk flag from supplied inputs."],
+        ideal_holding_period="5-10 years with quarterly thesis review",
+        target_allocation="2-4%" if rating == "HIGH_POTENTIAL" else "1-2%" if rating == "MODERATE_POTENTIAL" else "0-1%",
+        risk_level=risk_level,
+    )
+
+
 def _fund_components(fund: MutualFundInput) -> dict[str, float]:
     excess_1y = fund.return_1y - fund.category_return_1y
     excess_3y = fund.return_3y - fund.category_return_3y
@@ -334,7 +470,24 @@ def score_mutual_fund(fund: MutualFundInput) -> MutualFundScore:
     )
 
 
-def build_dashboard_card(category: str, score: StockScore | MutualFundScore) -> DashboardCard:
+def build_dashboard_card(category: str, score: StockScore | MutualFundScore | MultibaggerPrediction) -> DashboardCard:
+    if isinstance(score, MultibaggerPrediction):
+        recommendation = (
+            InvestmentRecommendation.BUY
+            if score.rating == "HIGH_POTENTIAL"
+            else InvestmentRecommendation.WATCHLIST
+            if score.rating in {"MODERATE_POTENTIAL", "LOW_POTENTIAL"}
+            else InvestmentRecommendation.AVOID
+        )
+        return DashboardCard(
+            category=category,
+            name=score.name,
+            score=score.potential_score,
+            recommendation=recommendation,
+            key_reason=score.reason,
+            risk_level=score.risk_level,
+            allocation_suggestion=score.target_allocation,
+        )
     return DashboardCard(
         category=category,
         name=score.name,
@@ -349,7 +502,9 @@ def build_dashboard_card(category: str, score: StockScore | MutualFundScore) -> 
 def build_investment_dashboard(
     stock_scores: list[StockScore],
     fund_scores: list[MutualFundScore],
+    multibagger_predictions: list[MultibaggerPrediction] | None = None,
 ) -> dict[str, object]:
+    multibagger_predictions = multibagger_predictions or []
     top_stocks = [item for item in stock_scores if item.recommendation in {InvestmentRecommendation.BUY, InvestmentRecommendation.HOLD}]
     watchlist = [item for item in stock_scores if item.recommendation == InvestmentRecommendation.WATCHLIST]
     avoid_stocks = [item for item in stock_scores if item.recommendation == InvestmentRecommendation.AVOID]
@@ -365,6 +520,14 @@ def build_investment_dashboard(
     risk_alerts = [score for score in [*stock_scores, *fund_scores] if score.risk_level == "HIGH"]
 
     cards = {
+        "multibagger_candidates": [
+            build_dashboard_card("Multibagger candidates", item)
+            for item in sorted(
+                [candidate for candidate in multibagger_predictions if candidate.rating in {"HIGH_POTENTIAL", "MODERATE_POTENTIAL"}],
+                key=lambda value: value.potential_score,
+                reverse=True,
+            )[:5]
+        ],
         "top_stock_picks": [build_dashboard_card("Top stock picks", item) for item in sorted(top_stocks, key=lambda value: value.total_score, reverse=True)[:5]],
         "watchlist_stocks": [build_dashboard_card("Watchlist stocks", item) for item in sorted(watchlist, key=lambda value: value.total_score, reverse=True)[:5]],
         "avoid_stocks": [build_dashboard_card("Avoid stocks", item) for item in sorted(avoid_stocks, key=lambda value: value.total_score)[:5]],
@@ -386,7 +549,7 @@ def build_investment_dashboard(
     }
 
     summary = (
-        f"{len(cards['top_stock_picks'])} stock ideas, {len(cards['top_mutual_funds'])} mutual fund ideas, "
+        f"{len(cards['multibagger_candidates'])} multibagger candidates, {len(cards['top_stock_picks'])} stock ideas, {len(cards['top_mutual_funds'])} mutual fund ideas, "
         f"{len(cards['risk_alerts'])} high-risk alerts. {DISCLAIMER}"
     )
     return {"cards": cards, "summary": summary, "disclaimer": DISCLAIMER}

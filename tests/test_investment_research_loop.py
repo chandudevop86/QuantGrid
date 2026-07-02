@@ -11,6 +11,7 @@ from app.investing.investment_research_loop import (
     InvestmentRecommendation,
     MutualFundInput,
     StockResearchInput,
+    predict_multibagger_stock,
     score_mutual_fund,
     score_stock,
 )
@@ -104,6 +105,26 @@ def test_high_debt_stock_is_avoided_when_cash_flow_is_weak():
     assert any("Weak cash flow" in risk for risk in score.risks)
 
 
+def test_multibagger_predictor_finds_high_potential_quality_compounder():
+    prediction = predict_multibagger_stock(_good_stock(pe=22, sector_pe=34, pb=3.2))
+
+    assert prediction.rating == "HIGH_POTENTIAL"
+    assert prediction.potential_score >= 78
+    assert prediction.probability >= 70
+    assert "growth_runway" in prediction.component_scores
+    assert prediction.target_allocation == "2-4%"
+
+
+def test_multibagger_predictor_blocks_high_debt_weak_cash_flow_stock():
+    prediction = predict_multibagger_stock(
+        _good_stock(debt_to_equity=1.8, operating_cash_flow_positive=False, free_cash_flow_positive=False)
+    )
+
+    assert prediction.rating == "AVOID"
+    assert prediction.risk_level == "HIGH"
+    assert any("High debt" in risk for risk in prediction.risks)
+
+
 def test_good_mutual_fund_scores_buy_against_category_average():
     score = score_mutual_fund(_good_fund())
 
@@ -137,5 +158,18 @@ def test_investing_dashboard_endpoint_returns_cards(app_client):
     payload = response.json()
     assert "Educational research" in payload["disclaimer"]
     assert "top_stock_picks" in payload["cards"]
+    assert "multibagger_candidates" in payload["cards"]
     assert "top_mutual_funds" in payload["cards"]
     assert payload["summary"]
+
+
+def test_multibagger_predictor_endpoint_returns_ranked_items(app_client):
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/investing/stocks/multibagger-predictor", headers=headers)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["items"]
+    assert "potential_score" in payload["items"][0]
+    assert "Educational research" in payload["disclaimer"]

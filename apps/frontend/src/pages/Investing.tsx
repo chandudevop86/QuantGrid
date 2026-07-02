@@ -21,6 +21,7 @@ type DashboardPayload = {
 };
 
 const cardTitles: Record<string, string> = {
+  multibagger_candidates: "Multibagger Candidates",
   top_stock_picks: "Top Stock Picks",
   watchlist_stocks: "Watchlist Stocks",
   avoid_stocks: "Avoid Stocks",
@@ -31,6 +32,7 @@ const cardTitles: Record<string, string> = {
 };
 
 const cardOrder = [
+  "multibagger_candidates",
   "top_stock_picks",
   "watchlist_stocks",
   "avoid_stocks",

@@ -12,11 +12,13 @@ from Backend.core.database import SessionLocal, init_database
 from Backend.domain.trading_store_models import InvestmentResearchRecord
 from app.investing.investment_research_loop import (
     DISCLAIMER,
+    MultibaggerPrediction,
     MutualFundInput,
     MutualFundScore,
     StockResearchInput,
     StockScore,
     build_investment_dashboard,
+    predict_multibagger_stock,
     score_mutual_fund,
     score_stock,
 )
@@ -215,6 +217,13 @@ def run_stock_research_loop(
     return scores
 
 
+def run_multibagger_predictor(
+    inputs: list[StockResearchInput] | None = None,
+) -> list[MultibaggerPrediction]:
+    predictions = [predict_multibagger_stock(item) for item in (inputs or sample_stock_universe())]
+    return sorted(predictions, key=lambda item: item.potential_score, reverse=True)
+
+
 def run_mutual_fund_research_loop(
     inputs: list[MutualFundInput] | None = None,
     *,
@@ -242,13 +251,16 @@ def run_portfolio_watchlist_loop(
 def investment_dashboard_from_scores(
     stock_scores: list[StockScore],
     fund_scores: list[MutualFundScore],
+    multibagger_predictions: list[MultibaggerPrediction] | None = None,
 ) -> dict[str, Any]:
-    dashboard = build_investment_dashboard(stock_scores, fund_scores)
+    multibagger_predictions = multibagger_predictions or run_multibagger_predictor(sample_stock_universe())
+    dashboard = build_investment_dashboard(stock_scores, fund_scores, multibagger_predictions)
     return {
         "generated_at": _utc_now(),
         "summary": dashboard["summary"],
         "cards": dashboard["cards"],
         "stocks": [item.model_dump() for item in stock_scores],
+        "multibagger_predictions": [item.model_dump() for item in multibagger_predictions],
         "mutual_funds": [item.model_dump() for item in fund_scores],
         "disclaimer": DISCLAIMER,
     }

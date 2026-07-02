@@ -7,6 +7,7 @@ from Backend.application.investment_research_service import (
     latest_investment_dashboard,
     latest_mutual_fund_research,
     latest_stock_research,
+    run_multibagger_predictor,
 )
 from Backend.core.database import get_db
 from Backend.presentation.api.roles import require_roles
@@ -33,6 +34,16 @@ def stock_top_picks(
     items = latest_stock_research(db=db)
     picks = [item for item in items if item.get("recommendation") in {"BUY", "HOLD"}]
     return {"items": sorted(picks, key=lambda item: item.get("total_score", 0), reverse=True)[:10]}
+
+
+@router.get("/stocks/multibagger-predictor")
+def stock_multibagger_predictor(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    return {
+        "items": [item.model_dump() for item in run_multibagger_predictor()],
+        "disclaimer": "Educational research, not financial advice.",
+    }
 
 
 @router.get("/mutual-funds/research")
