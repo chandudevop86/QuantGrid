@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from Backend.application.kill_switch import activate_kill_switch, deactivate_kill_switch, kill_switch_status
+from Backend.application.portfolio_risk import build_portfolio_risk_dashboard
 from Backend.core.database import get_db
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -23,6 +24,22 @@ class KillSwitchActivationRequest(BaseModel):
 @router.get("/kill-switch/status")
 def get_kill_switch_status(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
     return kill_switch_status()
+
+
+@router.get("/dashboard")
+def portfolio_risk_dashboard(
+    symbol: str = "NIFTY",
+    entry_price: float | None = None,
+    stop_loss: float | None = None,
+    atr_multiplier: float = 1.5,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    return build_portfolio_risk_dashboard(
+        symbol,
+        entry_price=entry_price,
+        stop_loss=stop_loss,
+        atr_multiplier=atr_multiplier,
+    )
 
 
 @router.post("/kill-switch/activate")

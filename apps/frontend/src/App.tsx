@@ -15,6 +15,7 @@ import Jobs from "./pages/Jobs";
 import OptionChain from "./pages/OptionChain";
 import Operations from "./pages/Operations";
 import ProfessionalSignals from "./pages/ProfessionalSignals";
+import RiskDashboard from "./pages/RiskDashboard";
 import Security from "./pages/Security";
 import Strategies from "./pages/Strategies";
 import Trade from "./pages/Trade";
@@ -43,6 +44,7 @@ export default function App() {
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
           <Route path="/institutional" element={protect("/institutional", <InstitutionalDashboard />)} />
           <Route path="/investing" element={protect("/investing", <Investing />)} />
+          <Route path="/risk" element={protect("/risk", <RiskDashboard />)} />
           <Route path="/security" element={protect("/security", <Security />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />

@@ -188,6 +188,28 @@ Sharpe ratio, profit factor, total trades, average profit, average loss,
 average P/L, and an equity curve. The comparison endpoint ranks strategies by
 Sharpe, net P&L, and drawdown using the same paper-only replay engine.
 
+## Portfolio & Risk Engine
+
+Phase 3 adds a portfolio-risk workspace at `/risk` backed by
+`GET /risk/dashboard`. The dashboard aggregates daily, weekly, and monthly
+P&L, fixed-risk sizing, ATR-based sizing, daily loss limit, max open trades,
+max trades per day, exposure limit, and open-position risk.
+
+Optional risk inputs:
+
+```bash
+QUANTGRID_CAPITAL=100000
+QUANTGRID_RISK_PER_TRADE_PCT=1
+QUANTGRID_MAX_DAILY_LOSS=3000
+QUANTGRID_MAX_OPEN_POSITIONS=3
+QUANTGRID_MAX_TRADES_PER_DAY=3
+QUANTGRID_MAX_EXPOSURE=150000
+QUANTGRID_ATR_FALLBACK=25
+```
+
+The risk dashboard is read-only. Execution remains protected by the existing
+paper/live separation, risk gate, kill switch, and broker guardrails.
+
 The candle validator normalizes timestamps to `Asia/Kolkata`, understands the
 NSE regular session, and disables stale-candle rejection after close, on
 weekends, and on configured holidays. During live market hours, candles warn

@@ -129,6 +129,7 @@ export const api = {
     API.get("/api/risk/status")
       .then((res) => res.data)
       .catch(() => API.get("/risk/status").then((res) => res.data)),
+  portfolioRiskDashboard: () => API.get("/risk/dashboard").then((res) => res.data),
   positionSummary: () => API.get("/positions/summary").then((res) => res.data),
   openPositions: () => API.get("/positions/open").then((res) => res.data),
   closedPositions: () => API.get("/positions/closed").then((res) => res.data),
