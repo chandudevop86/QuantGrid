@@ -135,6 +135,7 @@ export const api = {
       .then((res) => res.data)
       .catch(() => API.get(`/strategies/${strategy}/backtest`).then((res) => res.data)),
   investingDashboard: () => API.get("/investing/dashboard").then((res) => res.data),
+  institutionalDashboard: () => API.get("/institutional/dashboard").then((res) => res.data),
   stockResearch: () => API.get("/investing/stocks/research").then((res) => res.data),
   stockTopPicks: () => API.get("/investing/stocks/top-picks").then((res) => res.data),
   multibaggerPredictor: () => API.get("/investing/stocks/multibagger-predictor").then((res) => res.data),

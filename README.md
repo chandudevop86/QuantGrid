@@ -151,6 +151,31 @@ execution.
 Market data defaults to `QUANTGRID_MARKET_DATA_PROVIDER=yahoo`. Yahoo data is
 not trading-grade and should not be used for live execution.
 
+## Institutional Dashboard
+
+Phase 1 adds a first-pass market command center at `/institutional` backed by
+`GET /institutional/dashboard`. It combines configured institutional inputs
+with live option-chain metrics when a provider returns real rows. Missing feeds
+stay unavailable instead of being replaced with synthetic FII/DII, macro, PCR,
+or max-pain values.
+
+Optional configured inputs:
+
+```bash
+FII_CASH_FLOW=150.5
+DII_CASH_FLOW=-20
+FII_INDEX_FUTURES=12500
+GIFT_NIFTY=24510
+INDIA_VIX=13.4
+USDINR=83.25
+CRUDE_OIL=84.7
+GOLD=2350
+GLOBAL_INDICES_JSON='[{"label":"S&P 500","value":6200,"change_pct":0.4}]'
+```
+
+Option-chain derived PCR, max pain, highest call OI, highest put OI, and OI
+change are shown only when live provider data is available.
+
 The candle validator normalizes timestamps to `Asia/Kolkata`, understands the
 NSE regular session, and disables stale-candle rejection after close, on
 weekends, and on configured holidays. During live market hours, candles warn

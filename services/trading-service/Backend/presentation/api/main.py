@@ -292,6 +292,9 @@ def create_app():
     from Backend.presentation.api.investing_api import router as investing_router
     app.include_router(investing_router)
 
+    from Backend.presentation.api.institutional_api import router as institutional_router
+    app.include_router(institutional_router)
+
     from Backend.presentation.api.data_quality_api import router as data_quality_router
     app.include_router(data_quality_router)
 

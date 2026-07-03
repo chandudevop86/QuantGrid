@@ -14,6 +14,7 @@ export default function Sidebar() {
     { to: "/jobs", label: "Jobs" },
     { to: "/operations", label: "Operations" },
     { to: "/signals", label: "Signals" },
+    { to: "/institutional", label: "Institutional" },
     { to: "/investing", label: "Investing" },
     { to: "/security", label: "Security" },
     { to: "/strategies", label: "Strategies" },
