@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "./layouts/AppLayout";
 import AdminNotifications from "./pages/AdminNotifications";
 import AdminUsers from "./pages/AdminUsers";
+import Backtesting from "./pages/Backtesting";
 import Candles from "./pages/Candles";
 import Dashboard from "./pages/Dashboard";
 import DhanLogin from "./pages/DhanLogin";
@@ -31,6 +32,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={protect("/", <Dashboard />)} />
           <Route path="/candles" element={protect("/candles", <Candles />)} />
+          <Route path="/backtesting" element={protect("/backtesting", <Backtesting />)} />
           <Route path="/execution" element={protect("/execution", <Execution />)} />
           <Route path="/live" element={protect("/live", <LiveAnalysis />)} />
           <Route path="/analysis" element={protect("/analysis", <LiveAnalysis />)} />

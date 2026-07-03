@@ -8,6 +8,7 @@ export default function Sidebar() {
   const navItems = [
     { to: "/", label: "Dashboard" },
     { to: "/candles", label: "Candles" },
+    { to: "/backtesting", label: "Backtesting" },
     { to: "/option-chain", label: "Option Chain" },
     { to: "/live", label: "Live Analysis" },
     { to: "/dhan-login", label: "Dhan Login" },

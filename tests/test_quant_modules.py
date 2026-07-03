@@ -38,6 +38,32 @@ def test_backtesting_module_accepts_payload(app_client):
     assert payload["module"] == "backtesting"
     assert payload["payload"]["candles"] == len(candles)
     assert "recent_outcomes" in payload
+    assert {"cagr", "profit_factor", "average_profit", "average_loss", "win_rate_pct"} <= set(payload["metrics"])
+
+
+def test_backtesting_comparison_ranks_strategy_runs(app_client):
+    headers = admin_headers(app_client)
+    candles = [
+        {"timestamp": "2026-05-22T09:15:00+05:30", "open": 100, "high": 104, "low": 99, "close": 102, "volume": 1000},
+        {"timestamp": "2026-05-22T09:20:00+05:30", "open": 102, "high": 108, "low": 101, "close": 107, "volume": 1100},
+        {"timestamp": "2026-05-22T09:25:00+05:30", "open": 107, "high": 111, "low": 105, "close": 110, "volume": 1200},
+        {"timestamp": "2026-05-22T09:30:00+05:30", "open": 110, "high": 113, "low": 108, "close": 111, "volume": 1300},
+        {"timestamp": "2026-05-22T09:35:00+05:30", "open": 111, "high": 116, "low": 110, "close": 115, "volume": 1400},
+    ]
+
+    response = app_client.post(
+        "/modules/backtesting/comparison",
+        json={"symbol": "NIFTY", "strategies": ["amd", "breakout"], "candles": candles, "min_score": 0},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["module"] == "backtesting_comparison"
+    assert len(payload["runs"]) == 2
+    assert len(payload["ranked"]) == 2
+    assert payload["best_strategy"] in {"amd", "breakout"}
+    assert "equity_curve" in payload["runs"][0]
 
 
 def test_historical_option_chain_module_returns_snapshots(app_client):

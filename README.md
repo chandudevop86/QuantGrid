@@ -176,6 +176,18 @@ GLOBAL_INDICES_JSON='[{"label":"S&P 500","value":6200,"change_pct":0.4}]'
 Option-chain derived PCR, max pain, highest call OI, highest put OI, and OI
 change are shown only when live provider data is available.
 
+## Backtesting Engine
+
+Phase 2 adds a dedicated backtesting workspace at `/backtesting` backed by:
+
+- `POST /modules/backtesting` for one strategy replay.
+- `POST /modules/backtesting/comparison` for multi-strategy ranking.
+
+The backtest response includes CAGR, total return, win rate, max drawdown,
+Sharpe ratio, profit factor, total trades, average profit, average loss,
+average P/L, and an equity curve. The comparison endpoint ranks strategies by
+Sharpe, net P&L, and drawdown using the same paper-only replay engine.
+
 The candle validator normalizes timestamps to `Asia/Kolkata`, understands the
 NSE regular session, and disables stale-candle rejection after close, on
 weekends, and on configured holidays. During live market hours, candles warn

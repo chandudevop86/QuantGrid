@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from Backend.application.quant_modules import (
+    backtesting_comparison,
     backtesting_module,
     historical_option_chain,
     _live_nse_fallback_payload,
@@ -31,6 +32,10 @@ class BacktestModuleRequest(BaseModel):
     rr_ratio: float = 2.0
     min_score: float = 0.0
     candles: list[dict[str, Any]] | None = Field(default=None)
+
+
+class BacktestComparisonRequest(BacktestModuleRequest):
+    strategies: list[str] = Field(default_factory=lambda: ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"])
 
 
 def _module_option_chain_payload(payload: dict[str, Any], *, legacy_source: bool = False) -> dict[str, Any]:
@@ -92,6 +97,15 @@ def run_backtesting_module(
 ):
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     return backtesting_module(payload_data)
+
+
+@router.post("/backtesting/comparison")
+def run_backtesting_comparison(
+    payload: BacktestComparisonRequest,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+):
+    payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    return backtesting_comparison(payload_data)
 
 
 @router.get("/risk-engine")

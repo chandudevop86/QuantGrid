@@ -423,47 +423,139 @@ def _sample_candles(symbol: str) -> list[dict[str, Any]]:
 def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or {}
     symbol = str(payload.get("symbol") or "NIFTY").upper()
+    capital = float(payload.get("capital") or 100000)
     candles = payload.get("candles") or _sample_candles(symbol)
     engine = BacktestEngine(risk_manager=GlobalRiskManager())
     result = engine.run(
         candles=candles,
         strategy_name=str(payload.get("strategy_name") or "amd"),
         symbol=symbol,
-        capital=float(payload.get("capital") or 100000),
+        capital=capital,
         risk_pct=float(payload.get("risk_pct") or 1.0),
         rr_ratio=float(payload.get("rr_ratio") or 2.0),
         min_score=float(payload.get("min_score") or 0.0),
     ).to_dict()
     trades = result.get("trades", [])
-    equity = float(payload.get("capital") or 100000)
+    equity = capital
     curve = [{"index": 0, "equity": round(equity, 2)}]
     for index, trade in enumerate(trades, start=1):
         equity += float(trade.get("pnl") or 0.0)
         curve.append({"index": index, "equity": round(equity, 2), "time": trade.get("exit_time")})
+    metrics = {
+        key: result.get(key)
+        for key in (
+            "total_trades",
+            "win_rate",
+            "gross_pnl",
+            "total_costs",
+            "net_pnl",
+            "pnl",
+            "expectancy",
+            "max_drawdown",
+            "sharpe_ratio",
+            "rejected_signal_count",
+            "average_latency_ms",
+        )
+    }
+    metrics.update(_professional_backtest_metrics(candles, trades, curve, capital))
     return {
         "module": "backtesting",
         "symbol": symbol,
         "payload": {key: value for key, value in payload.items() if key != "candles"} | {"candles": len(candles)},
-        "metrics": {
-            key: result.get(key)
-            for key in (
-                "total_trades",
-                "win_rate",
-                "gross_pnl",
-                "total_costs",
-                "net_pnl",
-                "pnl",
-                "expectancy",
-                "max_drawdown",
-                "sharpe_ratio",
-                "rejected_signal_count",
-                "average_latency_ms",
-            )
-        },
+        "metrics": metrics,
         "equity_curve": curve,
         "recent_outcomes": trades[-10:],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = payload or {}
+    strategies = payload.get("strategies") or ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
+    normalized = [str(strategy).strip().lower() for strategy in strategies if str(strategy).strip()]
+    if not normalized:
+        normalized = ["amd"]
+    runs = []
+    for strategy in normalized[:12]:
+        run_payload = {**payload, "strategy_name": strategy}
+        run_payload.pop("strategies", None)
+        result = backtesting_module(run_payload)
+        metrics = result.get("metrics", {})
+        runs.append({
+            "strategy": strategy,
+            "symbol": result.get("symbol"),
+            "metrics": metrics,
+            "equity_curve": result.get("equity_curve", []),
+            "recent_outcomes": result.get("recent_outcomes", []),
+        })
+    ranked = sorted(
+        runs,
+        key=lambda item: (
+            float(item["metrics"].get("sharpe_ratio") or 0),
+            float(item["metrics"].get("net_pnl") or item["metrics"].get("pnl") or 0),
+            -float(item["metrics"].get("max_drawdown") or 0),
+        ),
+        reverse=True,
+    )
+    return {
+        "module": "backtesting_comparison",
+        "symbol": str(payload.get("symbol") or "NIFTY").upper(),
+        "runs": runs,
+        "ranked": ranked,
+        "best_strategy": ranked[0]["strategy"] if ranked else None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _professional_backtest_metrics(
+    candles: list[dict[str, Any]],
+    trades: list[dict[str, Any]],
+    equity_curve: list[dict[str, Any]],
+    capital: float,
+) -> dict[str, Any]:
+    pnls = [float(trade.get("pnl") or 0.0) for trade in trades]
+    wins = [pnl for pnl in pnls if pnl > 0]
+    losses = [pnl for pnl in pnls if pnl < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    final_equity = float(equity_curve[-1]["equity"]) if equity_curve else capital
+    net_pnl = final_equity - capital
+    total_return_pct = net_pnl / max(capital, 1.0) * 100.0
+    period_years = _backtest_period_years(candles)
+    cagr = ((final_equity / max(capital, 1.0)) ** (1 / period_years) - 1) * 100 if period_years and final_equity > 0 else 0.0
+    return {
+        "cagr": round(float(cagr), 2),
+        "total_return_pct": round(float(total_return_pct), 2),
+        "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else round(gross_profit, 2) if gross_profit else 0.0,
+        "average_profit": round(sum(wins) / len(wins), 2) if wins else 0.0,
+        "average_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
+        "average_pnl": round(sum(pnls) / len(pnls), 2) if pnls else 0.0,
+        "win_rate_pct": round(len(wins) / len(pnls) * 100, 2) if pnls else 0.0,
+        "period_years": round(period_years, 4),
+        "starting_equity": round(capital, 2),
+        "ending_equity": round(final_equity, 2),
+    }
+
+
+def _backtest_period_years(candles: list[dict[str, Any]]) -> float:
+    if len(candles) < 2:
+        return 1 / 252
+    start = _candle_timestamp(candles[0])
+    end = _candle_timestamp(candles[-1])
+    if start is None or end is None or end <= start:
+        return max(len(candles) / (252 * 78), 1 / 252)
+    days = max((end - start).total_seconds() / 86400, 1.0)
+    return max(days / 365.0, 1 / 365)
+
+
+def _candle_timestamp(candle: dict[str, Any]) -> datetime | None:
+    raw = candle.get("timestamp")
+    if raw is None:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def risk_engine_summary() -> dict[str, Any]:
