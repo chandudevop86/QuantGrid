@@ -599,7 +599,7 @@ def get_option_chain(
     strikes = [atm + (offset * step) for offset in range(-strikes_each_side, strikes_each_side + 1)]
     source = "derived-from-underlying"
     expiry = None
-    warning = "Live option-chain provider unavailable; showing ATM strike ladder from current NIFTY price."
+    warning = "Live option-chain provider unavailable. Option-chain rows are hidden until provider data is available."
     provider_available = False
 
     try:
@@ -610,7 +610,7 @@ def get_option_chain(
             provider_available = True
         else:
             rows = _derived_option_rows(strikes)
-            warning = "Dhan option-chain returned no matching strikes; showing ATM strike ladder from current NIFTY price."
+            warning = "Dhan option-chain returned no matching strikes. Option-chain rows are hidden until provider data is available."
     except Exception as dhan_exc:
         logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "dhan", "error_type": dhan_exc.__class__.__name__})
         observe_option_chain_failure("dhan", dhan_exc.__class__.__name__)
@@ -620,7 +620,7 @@ def get_option_chain(
             logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "yahoo", "error_type": yahoo_exc.__class__.__name__})
             observe_option_chain_failure("yahoo", yahoo_exc.__class__.__name__)
             rows = _derived_option_rows(strikes)
-            warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
+            warning = f"Live option-chain provider unavailable: {dhan_exc}. Option-chain rows are hidden until provider data is available."
         else:
             if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
                 source = "yahoo-finance-options"
@@ -628,7 +628,7 @@ def get_option_chain(
                 provider_available = True
             else:
                 rows = _derived_option_rows(strikes)
-                warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
+                warning = f"Live option-chain provider unavailable: {dhan_exc}. Option-chain rows are hidden until provider data is available."
 
     if not provider_available:
         source = "option-chain-unavailable"
