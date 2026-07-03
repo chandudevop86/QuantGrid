@@ -19,7 +19,13 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert decision["target"]
     assert decision["risk_level"]
     assert decision["simple_explanation"]
-    assert decision["system_status"] in {"Ready", "Caution"}
+    assert decision["system_status"] in {"LIVE", "DEGRADED", "STALE", "CLOSED"}
+    assert decision["data_status"] in {"LIVE", "DEGRADED", "STALE", "CLOSED"}
+    assert isinstance(decision["blocked"], bool)
+    assert isinstance(decision["supporting_factors"], list)
+    assert isinstance(decision["opposing_factors"], list)
+    assert isinstance(decision["warnings"], list)
+    assert decision["invalidation_level"]
     assert "market_status" in payload
     assert "risk_summary" in payload
     assert "system_health" in payload

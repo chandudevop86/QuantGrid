@@ -595,17 +595,43 @@ def trade_journal_summary(limit: int = 100) -> dict[str, Any]:
     pnl_values = [float(trade.get("pnl") or 0.0) for trade in closed]
     wins = [value for value in pnl_values if value > 0]
     losses = [value for value in pnl_values if value < 0]
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
+    expectancy = mean(pnl_values) if pnl_values else 0.0
+    strategy_pnl: dict[str, float] = {}
+    for trade in closed:
+        strategy = str(trade.get("strategy") or trade.get("strategy_name") or "unknown")
+        strategy_pnl[strategy] = strategy_pnl.get(strategy, 0.0) + float(trade.get("pnl") or 0.0)
+    ranked_strategies = sorted(strategy_pnl.items(), key=lambda item: item[1], reverse=True)
     return {
         "module": "trade_journal",
         "total_trades": len(trades),
         "closed_trades": len(closed),
         "win_rate": round(len(wins) / len(closed), 4) if closed else 0.0,
         "pnl": round(sum(pnl_values), 2),
+        "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else round(gross_profit, 2) if gross_profit else 0.0,
+        "expectancy": round(expectancy, 2),
+        "max_drawdown": round(_max_drawdown(pnl_values), 2),
         "avg_win": round(mean(wins), 2) if wins else 0.0,
         "avg_loss": round(mean(losses), 2) if losses else 0.0,
+        "average_win": round(mean(wins), 2) if wins else 0.0,
+        "average_loss": round(mean(losses), 2) if losses else 0.0,
+        "best_strategy": ranked_strategies[0][0] if ranked_strategies else None,
+        "worst_strategy": ranked_strategies[-1][0] if ranked_strategies else None,
         "recent_trades": trades[: min(limit, 20)],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _max_drawdown(pnl_values: list[float]) -> float:
+    equity = 0.0
+    peak = 0.0
+    max_drawdown = 0.0
+    for pnl in pnl_values:
+        equity += pnl
+        peak = max(peak, equity)
+        max_drawdown = min(max_drawdown, equity - peak)
+    return abs(max_drawdown)
 
 
 def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:

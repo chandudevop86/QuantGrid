@@ -64,6 +64,27 @@ def _redis_status() -> dict:
     }
 
 
+def _float_env(name: str) -> float | None:
+    raw = os.getenv(name)
+    if raw in {None, ""}:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _bool_env(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 @router.get("/operations")
 def operations(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     settings = get_settings()
@@ -107,6 +128,19 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             feed_delay_seconds=validation.delay_seconds,
             warnings=validation.warnings,
             market_bias=os.getenv("MARKET_BIAS", "NEUTRAL"),
+            market_trend=os.getenv("MARKET_TREND"),
+            price_action=os.getenv("PRICE_ACTION"),
+            support=os.getenv("SUPPORT_LEVEL", "Nearest confirmed demand zone"),
+            resistance=os.getenv("RESISTANCE_LEVEL", "Nearest confirmed supply zone"),
+            oi_bias=os.getenv("OI_BIAS"),
+            pcr=_float_env("PCR"),
+            vix=_float_env("INDIA_VIX"),
+            fii_dii_bias=os.getenv("FII_DII_BIAS"),
+            max_pain=os.getenv("MAX_PAIN"),
+            vwap_relation=os.getenv("VWAP_RELATION"),
+            gift_nifty_bias=os.getenv("GIFT_NIFTY_BIAS"),
+            expiry_day=_bool_env("EXPIRY_DAY"),
+            confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
         )
     )
 

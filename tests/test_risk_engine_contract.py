@@ -46,6 +46,7 @@ def test_risk_engine_allows_clean_signal():
     assert result.reasons == ["OK"]
     assert result.blocked_by == []
     assert result.risk_score == 100
+    assert result.warnings == []
 
 
 def test_risk_engine_returns_blockers_and_score():
@@ -66,4 +67,45 @@ def test_risk_engine_returns_blockers_and_score():
     assert "MAX_TRADES_PER_DAY" in result.blocked_by
     assert "STOP_LOSS_REQUIRED" in result.blocked_by
     assert "STALE_MARKET_DATA" in result.blocked_by
+    assert result.risk_score < 100
+
+
+def test_risk_engine_blocks_duplicate_and_weak_risk_reward():
+    result = RiskEngine(RiskLimits(min_risk_reward=2.0)).validate(
+        _signal(target_price=106.0),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "active_trade_keys": ["NIFTY:BUY:TEST"],
+        },
+    )
+
+    assert result.allowed is False
+    assert "DUPLICATE_TRADE" in result.blocked_by
+    assert "RISK_REWARD_TOO_LOW" in result.blocked_by
+
+
+def test_risk_engine_warns_on_expiry_and_volatility_zone():
+    result = RiskEngine().validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 75,
+            "vix": 19,
+            "kill_switch_active": False,
+            "expiry_day": True,
+        },
+    )
+
+    assert result.allowed is True
+    assert result.blocked_by == []
+    assert len(result.warnings) == 3
     assert result.risk_score < 100

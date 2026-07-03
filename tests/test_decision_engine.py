@@ -24,8 +24,10 @@ def test_decision_engine_maps_bullish_bias_to_buy_ce():
 
     assert decision.market_bias == "Bullish"
     assert decision.trade_recommendation == "Buy CE"
-    assert decision.confidence == 78
-    assert "bulls" in decision.simple_explanation
+    assert decision.confidence >= 70
+    assert decision.data_status == "LIVE"
+    assert decision.supporting_factors
+    assert "upside" in decision.simple_explanation
 
 
 def test_decision_engine_maps_bearish_bias_to_buy_pe():
@@ -41,7 +43,7 @@ def test_decision_engine_maps_bearish_bias_to_buy_pe():
 
     assert decision.market_bias == "Bearish"
     assert decision.trade_recommendation == "Buy PE"
-    assert "bears" in decision.simple_explanation
+    assert "downside" in decision.simple_explanation
 
 
 def test_decision_engine_blocks_when_market_data_is_not_valid():
@@ -57,5 +59,30 @@ def test_decision_engine_blocks_when_market_data_is_not_valid():
 
     assert decision.market_bias == "Neutral"
     assert decision.trade_recommendation == "No Trade"
-    assert decision.system_status == "Caution"
+    assert decision.system_status == "STALE"
+    assert decision.data_status == "STALE"
     assert "stale" in decision.simple_explanation.lower()
+
+
+def test_decision_engine_blocks_low_confidence_mixed_setup():
+    decision = DecisionEngine().decide(
+        DecisionInputs(
+            market_live=True,
+            valid_for_execution=True,
+            risk_blocked=False,
+            feed_delay_seconds=18,
+            market_bias="BULLISH",
+            market_trend="BEARISH",
+            oi_bias="BEARISH",
+            pcr=0.8,
+            vix=24,
+            expiry_day=True,
+        )
+    )
+
+    assert decision.trade_recommendation == "No Trade"
+    assert decision.blocked is True
+    assert decision.confidence < 70
+    assert decision.data_status == "DEGRADED"
+    assert decision.opposing_factors
+    assert decision.warnings
