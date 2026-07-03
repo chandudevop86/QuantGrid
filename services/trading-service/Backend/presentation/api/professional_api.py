@@ -116,6 +116,7 @@ def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_dat
 
 
 @router.get("/api/strategies/{strategy}/backtest")
+@router.get("/strategies/{strategy}/backtest", include_in_schema=False)
 def backtest_strategy(
     strategy: str,
     symbol: str = "NIFTY",
@@ -160,6 +161,7 @@ def backtest_strategy(
 
 
 @router.get("/api/trades/paper")
+@router.get("/trades/paper", include_in_schema=False)
 def paper_trades(
     limit: int = Query(default=100, ge=1, le=500),
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
@@ -230,6 +232,7 @@ def patch_trade_journal(
 
 
 @router.get("/api/risk/status")
+@router.get("/risk/status", include_in_schema=False)
 def get_risk_status(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     status = risk_status()
     status["minimum_score"] = 7
@@ -250,6 +253,8 @@ def _empty_signals(symbol: str, *, reason: str | None = None) -> dict:
 
 @router.get("/api/signals")
 @router.get("/api/signals/latest")
+@router.get("/signals", include_in_schema=False)
+@router.get("/signals/latest", include_in_schema=False)
 def latest_signals(
     symbol: str = "NIFTY",
     strategy: str | None = None,
@@ -341,6 +346,7 @@ def latest_signals(
 
 
 @router.get("/api/signals/audit")
+@router.get("/signals/audit", include_in_schema=False)
 def signals_audit(
     symbol: str = "NIFTY",
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
@@ -349,6 +355,7 @@ def signals_audit(
 
 
 @router.get("/api/system/audit")
+@router.get("/system/audit", include_in_schema=False)
 def system_audit(
     symbol: str = "NIFTY",
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),

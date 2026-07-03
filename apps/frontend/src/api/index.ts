@@ -95,16 +95,33 @@ export const api = {
     API.post("/dashboard/live-analysis/jobs", payload).then((res) => res.data),
   getJobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
   jobs: () => API.get("/dashboard/live-analysis/jobs").then((res) => res.data),
-  latestSignals: () => API.get("/api/signals").then((res) => res.data),
-  signalsAudit: () => API.get("/api/signals/audit").then((res) => res.data),
-  systemAudit: () => API.get("/api/system/audit").then((res) => res.data),
-  paperTrades: () => API.get("/api/trades/paper").then((res) => res.data),
-  riskStatus: () => API.get("/api/risk/status").then((res) => res.data),
+  latestSignals: () =>
+    API.get("/api/signals")
+      .then((res) => res.data)
+      .catch(() => API.get("/signals").then((res) => res.data)),
+  signalsAudit: () =>
+    API.get("/api/signals/audit")
+      .then((res) => res.data)
+      .catch(() => API.get("/signals/audit").then((res) => res.data)),
+  systemAudit: () =>
+    API.get("/api/system/audit")
+      .then((res) => res.data)
+      .catch(() => API.get("/system/audit").then((res) => res.data)),
+  paperTrades: () =>
+    API.get("/api/trades/paper")
+      .then((res) => res.data)
+      .catch(() => API.get("/trades/paper").then((res) => res.data)),
+  riskStatus: () =>
+    API.get("/api/risk/status")
+      .then((res) => res.data)
+      .catch(() => API.get("/risk/status").then((res) => res.data)),
   positionSummary: () => API.get("/positions/summary").then((res) => res.data),
   openPositions: () => API.get("/positions/open").then((res) => res.data),
   closedPositions: () => API.get("/positions/closed").then((res) => res.data),
   backtestStrategy: (strategy: string) =>
-    API.get(`/api/strategies/${strategy}/backtest`).then((res) => res.data),
+    API.get(`/api/strategies/${strategy}/backtest`)
+      .then((res) => res.data)
+      .catch(() => API.get(`/strategies/${strategy}/backtest`).then((res) => res.data)),
   investingDashboard: () => API.get("/investing/dashboard").then((res) => res.data),
   stockResearch: () => API.get("/investing/stocks/research").then((res) => res.data),
   stockTopPicks: () => API.get("/investing/stocks/top-picks").then((res) => res.data),
