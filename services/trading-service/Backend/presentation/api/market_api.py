@@ -27,6 +27,7 @@ from Backend.infrastructure.data.market_data_provider import (
 )
 from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
+from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
 from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
@@ -248,11 +249,72 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with urlopen(request, timeout=8) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return _ensure_dhan_success(json.loads(response.read().decode("utf-8")))
     except HTTPError as exc:
+        detail = _dhan_http_error_detail(exc)
         if exc.code in {401, 403}:
-            raise RuntimeError("Dhan rejected the saved access token. Open Dhan Login and save a fresh token.") from exc
-        raise
+            raise RuntimeError(detail or "Dhan rejected the saved access token. Open Dhan Login and save a fresh token.") from exc
+        raise RuntimeError(detail or f"Dhan option-chain API failed with HTTP {exc.code}.") from exc
+
+
+def _dhan_http_error_detail(exc: HTTPError) -> str | None:
+    try:
+        payload = json.loads(exc.read().decode("utf-8"))
+    except Exception:
+        return None
+    return _dhan_failure_message(payload) or f"Dhan option-chain API failed with HTTP {exc.code}."
+
+
+def _dhan_failure_message(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    remarks = payload.get("remarks")
+    if isinstance(remarks, dict):
+        message = remarks.get("error_message") or remarks.get("errorMessage") or remarks.get("message")
+        code = remarks.get("error_code") or remarks.get("errorCode")
+        if message and code:
+            return f"Dhan option-chain API rejected the request ({code}): {message}"
+        if message:
+            return f"Dhan option-chain API rejected the request: {message}"
+    if isinstance(remarks, str) and remarks:
+        return f"Dhan option-chain API rejected the request: {remarks}"
+    message = payload.get("errorMessage") or payload.get("error_message") or payload.get("message")
+    code = payload.get("errorCode") or payload.get("error_code")
+    if message and code:
+        return f"Dhan option-chain API rejected the request ({code}): {message}"
+    if message:
+        return f"Dhan option-chain API rejected the request: {message}"
+    return None
+
+
+def _ensure_dhan_success(payload: dict[str, Any]) -> dict[str, Any]:
+    if str(payload.get("status") or "").lower() == "failure":
+        raise RuntimeError(_dhan_failure_message(payload) or "Dhan option-chain API rejected the request.")
+    return payload
+
+
+def _dhan_sdk_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    security_id = int(body["UnderlyingScrip"])
+    exchange_segment = str(body["UnderlyingSeg"])
+    dhan = dhan_sdk_client()
+    if path == "optionchain/expirylist":
+        method = getattr(dhan, "expiry_list", None)
+        if not callable(method):
+            raise DhanSdkUnavailable("dhanhq package does not expose expiry_list")
+        return _ensure_dhan_success(method(security_id, exchange_segment))
+    if path == "optionchain":
+        method = getattr(dhan, "option_chain", None)
+        if not callable(method):
+            raise DhanSdkUnavailable("dhanhq package does not expose option_chain")
+        return _ensure_dhan_success(method(security_id, exchange_segment, str(body["Expiry"])))
+    raise DhanSdkUnavailable(f"dhanhq package does not expose {path}")
+
+
+def _dhan_option_provider_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return _dhan_sdk_option_payload(path, body)
+    except DhanSdkUnavailable:
+        return _dhan_option_payload(path, body)
 
 
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
@@ -368,13 +430,13 @@ def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, A
     security_id, exchange_segment = _dhan_underlying(symbol)
     base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
 
-    expiry_payload = _dhan_option_payload("optionchain/expirylist", base_body)
+    expiry_payload = _dhan_option_provider_payload("optionchain/expirylist", base_body)
     expiry_values = _dhan_expiry_values(expiry_payload)
     expiry = next((str(item) for item in expiry_values if item), None)
     if not expiry:
         raise RuntimeError("Dhan did not return an option-chain expiry.")
 
-    chain_payload = _dhan_option_payload("optionchain", base_body | {"Expiry": expiry})
+    chain_payload = _dhan_option_provider_payload("optionchain", base_body | {"Expiry": expiry})
     option_chain = _dhan_option_chain(chain_payload)
 
     rows = []

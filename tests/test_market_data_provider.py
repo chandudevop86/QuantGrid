@@ -339,6 +339,76 @@ def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
     assert captured["headers"]["Client-id"] == "client-123"
 
 
+def test_option_chain_uses_dhan_sdk_when_available(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    class FakeDhan:
+        def expiry_list(self, security_id, exchange_segment):
+            assert security_id == 13
+            assert exchange_segment == "IDX_I"
+            return {"status": "success", "data": {"data": ["2026-06-25"]}}
+
+        def option_chain(self, security_id, exchange_segment, expiry):
+            assert security_id == 13
+            assert exchange_segment == "IDX_I"
+            assert expiry == "2026-06-25"
+            return {
+                "status": "success",
+                "data": {
+                    "data": {
+                        "oc": {
+                            "23400.000000": {
+                                "ce": {"last_price": 101.5, "oi": 1000, "volume": 50},
+                                "pe": {"last_price": 88.25, "oi": 900, "volume": 45},
+                            }
+                        }
+                    }
+                },
+            }
+
+    monkeypatch.setattr(market_api, "get_price", lambda symbol, _role=None: {"price": 23400})
+    monkeypatch.setattr(market_api, "dhan_sdk_client", lambda: FakeDhan())
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("direct HTTP should not be used when SDK works")),
+    )
+
+    result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
+
+    assert result["source"] == "dhan-option-chain"
+    assert result["provider_available"] is True
+    assert result["expiry"] == "2026-06-25"
+
+
+def test_dhan_failure_payload_preserves_reason():
+    from Backend.presentation.api import market_api
+
+    payload = {
+        "status": "failure",
+        "remarks": {
+            "error_code": "DH-904",
+            "error_message": "Invalid access for option chain",
+        },
+        "data": "",
+    }
+
+    try:
+        market_api._ensure_dhan_success(payload)
+    except RuntimeError as exc:
+        assert "DH-904" in str(exc)
+        assert "Invalid access for option chain" in str(exc)
+    else:
+        raise AssertionError("Dhan failure payload should raise")
+
+
 def test_option_chain_reports_dhan_token_rejected(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 
