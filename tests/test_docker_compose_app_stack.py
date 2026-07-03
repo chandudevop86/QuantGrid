@@ -7,11 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_app_compose_includes_full_local_stack_with_healthchecks():
     compose = (ROOT / "docker-compose.app.yml").read_text(encoding="utf-8")
 
-    for service in ("backend:", "frontend:", "postgres:", "redis:"):
+    for service in ("backend:", "worker:", "frontend:", "postgres:", "redis:"):
         assert service in compose
 
     assert compose.count("healthcheck:") >= 4
     assert "docker/backend.Dockerfile" in compose
+    assert '"Backend.application.worker"' in compose
     assert "docker/frontend.Dockerfile" in compose
     assert "postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid" in compose
     assert "redis://redis:6379/0" in compose

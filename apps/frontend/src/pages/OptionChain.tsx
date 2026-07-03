@@ -157,7 +157,7 @@ export default function OptionChain() {
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
           <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">{isProviderBacked ? "Provider chain" : chain ? "Fallback ladder" : "No chain loaded"}</span>
+          <span className="metric-helper">{isProviderBacked ? "Provider chain" : chainUnavailable ? "Provider unavailable" : chain ? "Fallback hidden" : "No chain loaded"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>

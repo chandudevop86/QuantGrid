@@ -81,6 +81,33 @@ def test_worker_processes_live_analysis_job(monkeypatch):
     assert stored["result"]["symbol"] == "NIFTY"
 
 
+def test_worker_processes_specific_job_without_draining_older_queue(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import job_queue, job_store, worker
+
+    monkeypatch.setattr(job_queue, "publish_job_update", lambda _job: None)
+    monkeypatch.setattr(job_queue, "alert_job_finished", lambda _job: None)
+    monkeypatch.setattr(worker, "run_live_analysis", lambda payload: {"symbol": payload.symbol, "signals": []})
+
+    job_queue.enqueue_job(
+        "notification",
+        {"subject": "Older", "message": "Leave queued"},
+        job_id="older-job-1",
+    )
+    job_queue.enqueue_job(
+        "live-analysis",
+        {"symbol": "NIFTY", "interval": "1m", "period": "1d", "strategy": "breakout"},
+        job_id="target-live-job-1",
+    )
+
+    processed = worker.process_job("target-live-job-1")
+
+    assert processed is not None
+    assert processed["status"] == "completed"
+    assert job_store.get_job("older-job-1")["status"] == "queued"
+    assert job_store.get_job("target-live-job-1")["status"] == "completed"
+
+
 def test_worker_marks_unsupported_job_failed(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import job_queue, job_store, worker

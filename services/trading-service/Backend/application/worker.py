@@ -22,6 +22,7 @@ from Backend.application.investment_research_service import (
     run_stock_research_loop,
 )
 from Backend.application.job_queue import dequeue_job, mark_job_completed, mark_job_failed
+from Backend.application.job_store import claim_job
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
 from Backend.application.notifications import send_alert
 from Backend.application.trade_exit_engine import monitor_open_positions
@@ -199,11 +200,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
 }
 
 
-def process_next_job() -> dict[str, Any] | None:
-    claimed = dequeue_job()
-    if claimed is None:
-        return None
-
+def _process_claimed_job(claimed: tuple[dict[str, Any], dict[str, Any]]) -> dict[str, Any] | None:
     job, payload = claimed
     job_id = str(job["job_id"])
     job_type = _job_type(job, payload)
@@ -218,6 +215,20 @@ def process_next_job() -> dict[str, Any] | None:
     except Exception as exc:
         logger.exception("Worker failed %s job %s", job_type, job_id)
         return mark_job_failed(job_id, str(exc))
+
+
+def process_next_job() -> dict[str, Any] | None:
+    claimed = dequeue_job()
+    if claimed is None:
+        return None
+    return _process_claimed_job(claimed)
+
+
+def process_job(job_id: str) -> dict[str, Any] | None:
+    claimed = claim_job(job_id)
+    if claimed is None:
+        return None
+    return _process_claimed_job(claimed)
 
 
 def _run_periodic_exit_monitor() -> dict[str, Any]:

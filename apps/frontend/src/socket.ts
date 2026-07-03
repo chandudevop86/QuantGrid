@@ -19,6 +19,12 @@ function normalizeSocketUrl(socketUrl: string | undefined) {
     const target = new URL(socketUrl, window.location.origin);
     const isSameHost = target.hostname === window.location.hostname;
     const isBackendPort = target.port === "8000";
+    const browserIsRemote = !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    const targetIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(target.hostname);
+
+    if (browserIsRemote && targetIsLoopback) {
+      return defaultSocketUrl();
+    }
 
     if (!import.meta.env.DEV && isSameHost && (isBackendPort || target.pathname === "/ws")) {
       return defaultSocketUrl();
