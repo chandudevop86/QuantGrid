@@ -1,25 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+
 import { api } from "../api";
 import Loader from "../components/Loader";
-import MetricCard from "../components/MetricCard";
-import SystemHealthWidget from "../components/SystemHealthWidget";
-import { useLiveJobs } from "../hooks/useLiveJobs";
-import { getCurrentUiMode, setCurrentUiMode, type UiMode } from "../mode";
 import { hasAuthToken } from "../roles";
 import { createSocket } from "../socket";
 import { getMarketStatusClass, getMarketStatusLabel } from "../utils/marketStatus";
 
-function isActiveJob(job: any) {
-  return ["queued", "running"].includes(String(job?.status ?? "").toLowerCase());
-}
-
-type HealthTone = "ok" | "warn" | "fail";
-
-function statusTone(tone: HealthTone) {
-  if (tone === "ok") return "health-ok";
-  if (tone === "warn") return "health-warn";
-  return "health-fail";
-}
+type Decision = {
+  market_bias?: "Bullish" | "Bearish" | "Neutral" | string;
+  trade_recommendation?: "Buy CE" | "Buy PE" | "No Trade" | string;
+  confidence?: number;
+  entry_zone?: string;
+  stop_loss?: string;
+  target?: string;
+  risk_level?: string;
+  support?: string;
+  resistance?: string;
+  simple_explanation?: string;
+  system_status?: string;
+};
 
 function formatMoney(value: unknown) {
   const numeric = Number(value ?? 0);
@@ -30,96 +29,67 @@ function formatMoney(value: unknown) {
   }).format(Number.isFinite(numeric) ? numeric : 0);
 }
 
-function formatPercent(value: unknown) {
-  const numeric = Number(value ?? 0);
-  return `${Number.isFinite(numeric) ? numeric.toFixed(2).replace(/\.?0+$/, "") : "0"}%`;
-}
-
 function formatTime(value: unknown) {
   if (!value) return "-";
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString();
 }
 
-function formatDisplayValue(value: unknown, fallback = "-"): string {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.length ? value.map((item) => formatDisplayValue(item, "")).filter(Boolean).join(", ") : fallback;
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    if ("generated" in record || "validated" in record) {
-      return `${formatDisplayValue(record.generated, "0")} generated / ${formatDisplayValue(record.validated, "0")} validated`;
-    }
-    if ("seconds" in record) {
-      return `${formatDisplayValue(record.seconds, "0")}s`;
-    }
-    if ("count" in record) {
-      return formatDisplayValue(record.count, fallback);
-    }
-    if ("message" in record) {
-      return formatDisplayValue(record.message, fallback);
-    }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return fallback;
-    }
-  }
-  return fallback;
+function confidenceTone(confidence: number) {
+  if (confidence >= 70) return "good";
+  if (confidence >= 45) return "warn";
+  return "danger";
 }
 
-function friendlyMarketMessage(market: any) {
-  if (market?.valid_for_execution) return "Market data is fresh enough for confirmation checks.";
-  if (market?.state === "holiday") return "Market is closed for a holiday.";
-  if (market?.session_state === "closed") return "Market session is closed.";
-  return "Current market conditions do not meet confirmation criteria.";
+function optionsRead(bias: string) {
+  if (bias === "Bullish") return "Options positioning supports bulls.";
+  if (bias === "Bearish") return "Options positioning supports bears.";
+  return "Options positioning does not justify a trade.";
 }
 
-function brokerLoginValue(brokerStatus: any) {
-  if (!brokerStatus) return "Checking";
-  if (brokerStatus.provider === "dhan") {
-    if (brokerStatus.connected && brokerStatus.paper_only) return "Paper mode only";
-    if (brokerStatus.connected) return "Connected";
-    if (brokerStatus.error === "missing_client_id") return "Client ID missing";
-    if (brokerStatus.error === "token_missing") return "Token missing";
-    if (brokerStatus.error === "token_expired") return "Token expired";
-    if (brokerStatus.error === "invalid_token") return "Invalid token";
-    if (brokerStatus.error === "api_timeout") return "API timeout";
-    return "Dhan offline";
-  }
-  return brokerStatus.configured ? String(brokerStatus.provider ?? "Broker").toUpperCase() : "Paper";
+function fallbackDecision(): Decision {
+  return {
+    market_bias: "Neutral",
+    trade_recommendation: "No Trade",
+    confidence: 0,
+    entry_zone: "Waiting for market data",
+    stop_loss: "Not applicable",
+    target: "Not applicable",
+    risk_level: "Low",
+    support: "Nearest confirmed demand zone",
+    resistance: "Nearest confirmed supply zone",
+    simple_explanation: "Login and wait for a clean market read.",
+    system_status: "Checking",
+  };
 }
 
-function brokerLoginTone(brokerStatus: any) {
-  if (brokerStatus?.connected) return "good";
-  return brokerStatus?.configured ? "warn" : "warn";
-}
-
-function useDashboardOperations(isAuthenticated: boolean) {
+export default function Dashboard() {
   const [operations, setOperations] = useState<any>(null);
-  const [socketActive, setSocketActive] = useState(false);
-  const [socketStatus, setSocketStatus] = useState<"online" | "offline" | "polling">("offline");
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
+  const [socketStatus, setSocketStatus] = useState<"online" | "offline" | "polling">("offline");
+
+  useEffect(() => {
+    const syncAuth = () => setIsAuthenticated(hasAuthToken());
+    window.addEventListener("quantgrid-role-change", syncAuth);
+    window.addEventListener("storage", syncAuth);
+    return () => {
+      window.removeEventListener("quantgrid-role-change", syncAuth);
+      window.removeEventListener("storage", syncAuth);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setOperations(null);
-      setSocketActive(false);
-      setSocketStatus("offline");
-      setError(null);
+      setLoading(false);
       return;
     }
 
     let active = true;
     let socket: WebSocket | null = null;
     let fallbackId: number | null = null;
-    let reconnectId: number | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 5;
 
     const load = async () => {
       try {
@@ -129,582 +99,155 @@ function useDashboardOperations(isAuthenticated: boolean) {
         setError(null);
       } catch {
         if (active) setError("Dashboard API is not available yet.");
-      }
-    };
-
-    const stopFallback = () => {
-      if (fallbackId !== null) {
-        window.clearInterval(fallbackId);
-        fallbackId = null;
+      } finally {
+        if (active) setLoading(false);
       }
     };
 
     const startFallback = () => {
       if (fallbackId !== null) return;
       setSocketStatus("polling");
-      void load();
       fallbackId = window.setInterval(load, 15000);
     };
 
-    const connect = () => {
-      if (!active) return;
-      socket = createSocket();
-
-      socket.onopen = () => {
-        if (!active) return;
-        reconnectAttempts = 0;
-        setSocketActive(true);
-        setSocketStatus("online");
-        stopFallback();
-        void load();
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message?.type === "dashboard_status" && message?.payload) {
-            setOperations(message.payload);
-            setError(null);
-          }
-        } catch {
-          if (active) setError("Received an invalid dashboard status update.");
-        }
-      };
-
-      socket.onerror = () => {
-        socket?.close();
-      };
-
-      socket.onclose = () => {
-        if (!active) return;
-        setSocketActive(false);
-        reconnectAttempts += 1;
-        if (reconnectAttempts > maxReconnectAttempts) {
-          startFallback();
-          return;
-        }
-        setSocketStatus("offline");
-        const delay = Math.min(30000, 1000 * 2 ** (reconnectAttempts - 1));
-        reconnectId = window.setTimeout(connect, delay);
-      };
-    };
-
     void load();
-    connect();
+    socket = createSocket();
+    socket.onopen = () => {
+      setSocketStatus("online");
+      if (fallbackId !== null) {
+        window.clearInterval(fallbackId);
+        fallbackId = null;
+      }
+    };
+    socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message?.type === "dashboard_status" && message?.payload) {
+          setOperations(message.payload);
+        }
+      } catch {
+        setError("Received an invalid dashboard status update.");
+      }
+    };
+    socket.onerror = () => socket?.close();
+    socket.onclose = () => {
+      if (!active) return;
+      setSocketStatus("offline");
+      startFallback();
+    };
 
     return () => {
       active = false;
-      stopFallback();
-      if (reconnectId !== null) window.clearTimeout(reconnectId);
+      if (fallbackId !== null) window.clearInterval(fallbackId);
       socket?.close();
     };
   }, [isAuthenticated]);
 
-  return { operations, socketActive, socketStatus, error };
-}
-
-export default function Dashboard() {
-  const [summary, setSummary] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [marketStore, setMarketStore] = useState<any>(null);
-  const [marketProvider, setMarketProvider] = useState<any>(null);
-  const [brokerStatus, setBrokerStatus] = useState<any>(null);
-  const [positionSummary, setPositionSummary] = useState<any>(null);
-  const [modules, setModules] = useState<any>(null);
-  const [systemAudit, setSystemAudit] = useState<any>(null);
-  const [systemAuditError, setSystemAuditError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
-  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
-  const { jobs, error: jobsError, socketConnected: jobsSocketConnected } = useLiveJobs();
-  const { operations, socketActive, socketStatus, error: operationsError } = useDashboardOperations(isAuthenticated);
-
-  useEffect(() => {
-    const syncAuth = () => setIsAuthenticated(hasAuthToken());
-    const syncUiMode = () => setUiMode(getCurrentUiMode());
-    window.addEventListener("quantgrid-role-change", syncAuth);
-    window.addEventListener("storage", syncAuth);
-    window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
-    return () => {
-      window.removeEventListener("quantgrid-role-change", syncAuth);
-      window.removeEventListener("storage", syncAuth);
-      window.removeEventListener("quantgrid-ui-mode-change", syncUiMode);
-    };
-  }, []);
-
-  useEffect(() => {
-    setError(null);
-    if (!isAuthenticated) {
-      setSummary(null);
-      setMarketStore(null);
-      setMarketProvider(null);
-      setBrokerStatus(null);
-      setPositionSummary(null);
-      setModules(null);
-      setSystemAudit(null);
-      setSystemAuditError(null);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    Promise.all([
-      api.getSummary(),
-      api.marketStoreStatus("NIFTY", "1m"),
-      api.marketProviderStatus("NIFTY", "1m").catch(() => null),
-      api.brokerStatus(),
-      api.positionSummary().catch(() => null),
-      api.modulesDashboard().catch(() => null),
-      api.systemAudit().then((data) => ({ data, error: null })).catch((err) => ({ data: null, error: err?.message ?? "System audit endpoint is unavailable." })),
-    ])
-      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData, systemAuditResult]) => {
-        setSummary(summaryData);
-        setMarketStore(marketStoreData);
-        setMarketProvider(marketProviderData);
-        setBrokerStatus(brokerData);
-        setPositionSummary(positionData);
-        setModules(modulesData);
-        setSystemAudit(systemAuditResult.data);
-        setSystemAuditError(systemAuditResult.error);
-      })
-      .catch(() => setError("Dashboard API is not available yet."))
-      .finally(() => setLoading(false));
-  }, [isAuthenticated]);
-
-  const activeJobs = jobs.filter(isActiveJob).length;
-  const lastUpdated = summary?.updated_at
-    ? new Date(summary.updated_at).toLocaleString()
-    : "Not available";
+  const decision = { ...fallbackDecision(), ...(operations?.decision ?? {}) };
+  const confidence = Number(decision.confidence ?? 0);
   const market = operations?.market_status;
-  const health = operations?.system_health;
   const risk = operations?.risk_summary;
-  const auditLoaded = Boolean(systemAudit);
-  const observability = operations?.observability;
-  const backtest = operations?.backtest_context;
-  const liveTrading = risk?.live_trading_enabled || risk?.execution_mode === "LIVE";
+  const health = operations?.system_health;
   const marketStatusLabel = getMarketStatusLabel(market);
-  const feedBadge =
-    marketProvider?.feed_status === "LIVE FEED"
-      ? "🟢 LIVE FEED"
-      : marketProvider?.feed_status === "DELAYED FEED"
-        ? "🟡 DELAYED FEED"
-        : marketProvider?.feed_status === "FEED DOWN"
-          ? "🔴 FEED DOWN"
-          : "⚫ DEMO/YAHOO MODE";
-
-  const healthItems = useMemo(() => {
-    const redisConfigured = health?.redis?.message !== "REDIS_URL is not configured.";
-    const brokerConfigured = health?.broker?.provider !== "paper" || brokerStatus?.configured === true;
-    const brokerConnected = health?.broker?.connected === true || brokerStatus?.connected === true;
-    const websocketConnected = socketActive || health?.websocket?.active === true;
-
-    return [
-      { label: "API", tone: health?.api?.healthy === true ? "ok" : "fail", status: health?.api?.healthy === true ? "OK" : "FAIL" },
-      { label: "DB", tone: health?.db?.healthy === true ? "ok" : "fail", status: health?.db?.healthy === true ? "OK" : "FAIL" },
-      {
-        label: "Redis",
-        tone: health?.redis?.connected === true ? "ok" : redisConfigured ? "fail" : "warn",
-        status: health?.redis?.connected === true ? "OK" : redisConfigured ? "FAIL" : "OFF",
-      },
-      {
-        label: "WebSocket",
-        tone: websocketConnected ? "ok" : "warn",
-        status: websocketConnected ? "OK" : "POLL",
-      },
-      {
-        label: "Broker",
-        tone: brokerConnected || !brokerConfigured ? "ok" : "warn",
-        status: brokerConnected ? "OK" : brokerConfigured ? "CHECK" : "PAPER",
-      },
-    ] as Array<{ label: string; tone: HealthTone; status: string }>;
-  }, [brokerStatus, health, socketActive]);
-  const failingHealthItems = healthItems.filter((item) => item.tone === "fail");
-  const warningHealthItems = healthItems.filter((item) => item.tone === "warn");
-  const healthSummary =
-    failingHealthItems.length > 0 ? "Needs attention" : warningHealthItems.length > 0 ? "Review" : "Healthy";
-
-  const diagnostics = operations?.diagnostics ?? {
-    trader_message: friendlyMarketMessage(market),
-    validation_summary: market?.valid_for_execution ? "Confirmation checks available." : "Confirmation criteria are not met.",
-    technical_details: market?.warnings ?? [],
-  };
-  const optionModule = modules?.option_chain;
-  const backtestModule = modules?.backtesting;
-  const riskModule = modules?.risk_engine;
-  const journalModule = modules?.trade_journal;
 
   return (
-    <section className="dashboard-page">
+    <section className="dashboard-page decision-dashboard">
       <div className="page-heading dashboard-heading">
         <div>
-          <h1>QuantGrid Dashboard</h1>
-          <p>Production trading status, operational health, and execution safety.</p>
+          <h1>QuantGrid</h1>
+          <p>In less than 30 seconds: Buy CE, Buy PE, or No Trade.</p>
         </div>
-        <div className="mode-toggle" aria-label="Dashboard display mode">
-          {(["trader", "developer"] as UiMode[]).map((mode) => (
-            <button
-              key={mode}
-              className={uiMode === mode ? "active" : ""}
-              type="button"
-              onClick={() => {
-                setCurrentUiMode(mode);
-                setUiMode(mode);
-              }}
-            >
-              {mode === "trader" ? "Trader" : "Developer"}
-            </button>
-          ))}
-        </div>
+        <span className={`decision-status decision-status-${String(decision.system_status).toLowerCase()}`}>
+          {decision.system_status}
+        </span>
       </div>
-
-      {liveTrading && (
-        <div className="alert alert-error live-warning" role="alert">
-          LIVE TRADING ENABLED
-        </div>
-      )}
 
       {!isAuthenticated && (
         <div className="alert alert-warning" role="status">
-          Login with an authorized account to view dashboard data and trading workflows.
+          Login with an authorized account to view today&apos;s trading decision.
         </div>
       )}
 
-      {isAuthenticated && loading && <Loader label="Loading dashboard..." />}
-      {(error || jobsError || operationsError) && <p className="error-text">{error ?? jobsError ?? operationsError}</p>}
+      {isAuthenticated && loading && <Loader label="Reading market..." />}
+      {error && <p className="error-text">{error}</p>}
 
-      {isAuthenticated && !loading && !error && !jobsError && (
+      {isAuthenticated && !loading && !error && (
         <>
-          <div className="status-panel-grid">
+          <article className="decision-card">
+            <div className="decision-copy">
+              <span className="decision-kicker">{decision.market_bias} Bias</span>
+              <strong>{decision.trade_recommendation}</strong>
+              <p>{decision.simple_explanation}</p>
+            </div>
+            <div className={`confidence-card confidence-${confidenceTone(confidence)}`}>
+              <span>Confidence</span>
+              <strong>{confidence}%</strong>
+              <div className="confidence-track" style={{ "--confidence": `${confidence}%` } as CSSProperties}>
+                <span />
+              </div>
+            </div>
+          </article>
+
+          <div className="decision-grid">
+            <span><small>Entry Zone</small><strong>{decision.entry_zone}</strong></span>
+            <span><small>Stop Loss</small><strong>{decision.stop_loss}</strong></span>
+            <span><small>Target</small><strong>{decision.target}</strong></span>
+            <span><small>Risk Level</small><strong>{decision.risk_level}</strong></span>
+            <span><small>Support</small><strong>{decision.support}</strong></span>
+            <span><small>Resistance</small><strong>{decision.resistance}</strong></span>
+          </div>
+
+          <div className="status-panel-grid compact-status-grid">
             <div className="status-panel">
               <div className="status-panel-header">
-                <span>Market Status</span>
+                <span>Market</span>
                 <strong className={`market-status-text ${getMarketStatusClass(marketStatusLabel)}`}>
                   {marketStatusLabel}
                 </strong>
               </div>
               <div className="status-panel-body">
-                <span>System state: {marketStatusLabel}</span>
+                <span>Session: {market?.session_state ?? "unknown"}</span>
                 <span>Feed delay: {market?.feed_delay_seconds ?? "-"}s</span>
                 <span>Last candle: {formatTime(market?.last_candle_timestamp)}</span>
-                <span>Session: {market?.session_state ?? "unknown"}</span>
-                <span>{friendlyMarketMessage(market)}</span>
               </div>
             </div>
 
             <div className="status-panel">
               <div className="status-panel-header">
-                <span>System Health</span>
-                <strong>{healthSummary}</strong>
-              </div>
-              <div className="health-dot-grid">
-                {healthItems.map((item) => (
-                  <span key={item.label} className={statusTone(item.tone)}>
-                    <strong>{item.label}</strong>
-                    <small>{item.status}</small>
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="status-panel risk-panel">
-              <div className="status-panel-header">
-                <span>Risk Summary</span>
-                <strong>{risk?.execution_mode ?? "PAPER"}</strong>
+                <span>Signal</span>
+                <strong>{decision.market_bias}</strong>
               </div>
               <div className="status-panel-body">
-                <span>Trades today: {risk?.trades_today ?? 0}</span>
-                <span>Daily PnL: {formatMoney(risk?.daily_pnl)}</span>
-                <span>Loss remaining: {formatMoney(risk?.daily_loss_remaining)}</span>
-                <span>Consecutive losses: {risk?.consecutive_losses ?? 0}</span>
+                <span>{optionsRead(String(decision.market_bias))}</span>
+                <span>Recommendation: {decision.trade_recommendation}</span>
+                <span>Wait when confidence is below 70%.</span>
+              </div>
+            </div>
+
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>System</span>
+                <strong>{decision.system_status}</strong>
+              </div>
+              <div className="status-panel-body">
+                <span>Mode: {risk?.execution_mode ?? "PAPER"}</span>
                 <span>Risk state: {risk?.active_risk_state ?? "UNKNOWN"}</span>
-              </div>
-            </div>
-          </div>
-
-          <SystemHealthWidget operations={operations} websocketConnected={socketActive} websocketStatus={socketStatus} />
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>System Audit</h2>
-              <span>{auditLoaded ? systemAudit?.data_status ?? "UNKNOWN" : systemAuditError ? "UNAVAILABLE" : "Checking"}</span>
-            </div>
-            <div className="system-audit-strip">
-              <span className={!auditLoaded ? "health-warn" : systemAudit?.data_ok ? "health-ok" : "health-fail"}>
-                <small>Data OK</small>
-                <strong>{!auditLoaded ? "WAITING" : systemAudit?.data_ok ? "YES" : "NO"}</strong>
-                <em>{auditLoaded ? `${systemAudit?.candle_count ?? 0} candles | age ${systemAudit?.candle_age_seconds ?? "-"}s` : systemAuditError ?? "Audit not loaded yet."}</em>
-              </span>
-              <span className={!auditLoaded ? "health-warn" : systemAudit?.logic_ok ? "health-ok" : "health-warn"}>
-                <small>Logic OK</small>
-                <strong>{!auditLoaded ? "WAITING" : systemAudit?.logic_ok ? "YES" : "REVIEW"}</strong>
-                <em>{auditLoaded ? `${systemAudit?.raw_signals ?? 0} raw | ${systemAudit?.validated_signals ?? 0} validated` : "Waiting for strategy audit rows."}</em>
-              </span>
-              <span className={!auditLoaded ? "health-warn" : (systemAudit?.trades_created ?? 0) > 0 ? "health-ok" : "health-warn"}>
-                <small>Trade Not Created Because...</small>
-                <strong>{!auditLoaded ? "WAITING" : (systemAudit?.trades_created ?? 0) > 0 ? "TRADE CREATED" : "BLOCKED"}</strong>
-                <em>{auditLoaded ? formatDisplayValue(systemAudit?.trade_not_created_because, "No blocking reason returned.") : systemAuditError ?? "Audit not loaded yet."}</em>
-              </span>
-            </div>
-            {uiMode === "developer" && systemAudit && (
-              <details className="technical-details">
-                <summary>System Audit Payload</summary>
-                <pre>{JSON.stringify(systemAudit, null, 2)}</pre>
-              </details>
-            )}
-          </div>
-
-          <div className="metric-grid">
-            <MetricCard
-              label="API Status"
-              value={summary?.status ?? "unknown"}
-              helper={`Updated ${lastUpdated}`}
-              tone={summary?.status === "ready" ? "good" : "warn"}
-            />
-            <MetricCard
-              label="Realtime Channel"
-              value={socketStatus === "online" ? "WebSocket Online" : socketStatus === "polling" ? "Polling fallback" : "WebSocket Offline"}
-              helper={jobsSocketConnected ? "Job stream active" : socketStatus === "polling" ? "Polling after socket failure" : "Reconnect backoff active"}
-              tone={socketActive ? "good" : "warn"}
-            />
-            <MetricCard
-              label="Active Jobs"
-              value={activeJobs}
-              helper={`${jobs.length} total jobs`}
-            />
-            <MetricCard
-              label="Broker Login"
-              value={brokerLoginValue(brokerStatus)}
-              helper={brokerStatus?.message ?? "Real-money orders disabled"}
-              tone={brokerLoginTone(brokerStatus)}
-            />
-            <MetricCard
-              label="Market Provider"
-              value={marketProvider?.provider_name ?? marketProvider?.provider ?? "Unknown"}
-              helper={`${marketProvider?.suitability ?? (marketProvider?.live_suitable ? "live" : "paper")} - ${feedBadge}`}
-              tone={marketProvider?.live_suitable && marketProvider?.fresh ? "good" : "warn"}
-            />
-            <MetricCard
-              label="Provider Fetch"
-              value={marketProvider?.fresh ? "Fresh" : "Stale"}
-              helper={marketProvider?.latest_fetch_time || marketProvider?.latest_fetch_at || marketProvider?.last_tick_time ? `Latest ${new Date(marketProvider.latest_fetch_time ?? marketProvider.latest_fetch_at ?? marketProvider.last_tick_time).toLocaleTimeString()}` : "No fetch yet"}
-              tone={marketProvider?.fresh ? "good" : "warn"}
-            />
-            <MetricCard
-              label="Feed Delay"
-              value={`${marketProvider?.feed_delay_seconds ?? observability?.feed_delay_seconds ?? 0}s`}
-              helper={`Cache ${marketProvider?.cache_status ?? "unknown"}`}
-              tone={(marketProvider?.feed_delay_seconds ?? observability?.feed_delay_seconds ?? 999) > 10 ? "warn" : "good"}
-            />
-            <MetricCard
-              label="Stored Live Candles"
-              value={marketStore?.candles ?? 0}
-              helper={marketStore?.latest_candle_at ? `Latest ${new Date(marketStore.latest_candle_at).toLocaleTimeString()}` : "NIFTY 1m database"}
-            />
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>QuantGrid Modules</h2>
-              <span>{modules ? "Live" : "Loading"}</span>
-            </div>
-            <div className="module-grid">
-              <div className="module-panel">
-                <div className="module-panel-header">
-                  <span>Option Chain Engine</span>
-                  <strong>{optionModule?.symbol ?? "NIFTY"}</strong>
-                </div>
-                <div className="status-panel-body">
-                  <span>ATM strike: {optionModule?.atm_strike ?? "-"}</span>
-                  <span>PCR: {optionModule?.pcr ?? "-"}</span>
-                  <span>Max pain: {optionModule?.max_pain ?? "-"}</span>
-                  <span>Greeks: {optionModule?.greek_model ?? "Black-Scholes demo"}</span>
-                </div>
-              </div>
-
-              <div className="module-panel">
-                <div className="module-panel-header">
-                  <span>Backtesting</span>
-                  <strong>{backtestModule?.metrics?.total_trades ?? 0} trades</strong>
-                </div>
-                <div className="status-panel-body">
-                  <span>PnL: {formatMoney(backtestModule?.metrics?.pnl)}</span>
-                  <span>Win rate: {Math.round(Number(backtestModule?.metrics?.win_rate ?? 0) * 100)}%</span>
-                  <span>Max drawdown: {Math.round(Number(backtestModule?.metrics?.max_drawdown ?? 0) * 100)}%</span>
-                  <span>Equity points: {backtestModule?.equity_curve?.length ?? 0}</span>
-                </div>
-              </div>
-
-              <div className="module-panel">
-                <div className="module-panel-header">
-                  <span>Risk Engine</span>
-                  <strong>{riskModule?.state ?? risk?.active_risk_state ?? "normal"}</strong>
-                </div>
-                <div className="status-panel-body">
-                  <span>Daily loss: {riskModule?.checks?.daily_loss ? "OK" : "Blocked"}</span>
-                  <span>Trades/day: {riskModule?.checks?.trades_per_day ? "OK" : "Blocked"}</span>
-                  <span>Open positions: {riskModule?.checks?.open_positions ? "OK" : "Blocked"}</span>
-                  <span>Kill switch: {riskModule?.checks?.kill_switch ? "Ready" : "Active"}</span>
-                </div>
-              </div>
-
-              <div className="module-panel">
-                <div className="module-panel-header">
-                  <span>Trade Journal</span>
-                  <strong>{journalModule?.closed_trades ?? 0} closed</strong>
-                </div>
-                <div className="status-panel-body">
-                  <span>PnL: {formatMoney(journalModule?.pnl)}</span>
-                  <span>Win rate: {Math.round(Number(journalModule?.win_rate ?? 0) * 100)}%</span>
-                  <span>Avg win: {formatMoney(journalModule?.avg_win)}</span>
-                  <span>Avg loss: {formatMoney(journalModule?.avg_loss)}</span>
-                </div>
+                <span>Daily PnL: {formatMoney(risk?.daily_pnl)}</span>
+                <span>Realtime: {socketStatus}</span>
               </div>
             </div>
           </div>
 
           <div className="dashboard-section">
             <div className="section-header">
-              <h2>Risk Summary</h2>
-              <span>{risk?.risk_configured ? "Configured" : "Using defaults"}</span>
-            </div>
-            {liveTrading && !risk?.risk_configured && (
-              <div className="alert alert-error" role="alert">
-                Live trading blocked until capital, risk per trade, and max daily loss are configured.
-              </div>
-            )}
-            <div className="risk-summary-grid">
-              <span>
-                <small>Capital</small>
-                <strong>{formatMoney(risk?.capital ?? 100000)}</strong>
-              </span>
-              <span>
-                <small>Risk per trade</small>
-                <strong>{formatPercent(risk?.risk_per_trade_pct ?? 1)}</strong>
-                <small>{formatMoney(risk?.risk_per_trade_amount ?? 1000)}</small>
-              </span>
-              <span>
-                <small>Open positions</small>
-                <strong>{risk?.open_positions ?? summary?.open_positions ?? 0}</strong>
-              </span>
-              <span>
-                <small>Current exposure</small>
-                <strong>{formatMoney(risk?.current_exposure ?? 0)}</strong>
-              </span>
-              <span>
-                <small>Paper/live mode</small>
-                <strong>{risk?.execution_mode ?? "PAPER"}</strong>
-              </span>
-              <span>
-                <small>Max daily loss</small>
-                <strong>{formatMoney(risk?.max_daily_loss ?? 3000)}</strong>
-              </span>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Positions</h2>
-              <span>{positionSummary?.open_positions ?? risk?.open_positions ?? 0} open</span>
-            </div>
-            <div className="risk-summary-grid">
-              <span><small>Open positions</small><strong>{positionSummary?.open_positions ?? risk?.open_positions ?? 0}</strong></span>
-              <span><small>Today's PnL</small><strong>{formatMoney(positionSummary?.todays_pnl ?? risk?.daily_pnl ?? 0)}</strong></span>
-              <span><small>Current exposure</small><strong>{formatMoney(positionSummary?.current_exposure ?? risk?.current_exposure ?? 0)}</strong></span>
-              <span><small>Realized PnL</small><strong>{formatMoney(positionSummary?.realized_pnl ?? risk?.realized_pnl ?? 0)}</strong></span>
-              <span><small>Unrealized PnL</small><strong>{formatMoney(positionSummary?.unrealized_pnl ?? risk?.unrealized_pnl ?? 0)}</strong></span>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Execution Safety</h2>
-              <span>{risk?.active_risk_state ?? "UNKNOWN"}</span>
+              <h2>System Status</h2>
+              <span>Only what affects the decision</span>
             </div>
             <div className="execution-safety-grid">
-              <span><small>Validation status</small><strong>{market?.valid_for_execution ? "Ready" : "Waiting"}</strong></span>
-              <span><small>Risk status</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
-              <span><small>Execution eligibility</small><strong>{market?.valid_for_execution && risk?.active_risk_state === "NORMAL" ? "Eligible" : "Blocked"}</strong></span>
-              <span><small>Market session</small><strong>{market?.session_state ?? "unknown"}</strong></span>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Strategy Context</h2>
-              <span>Backtest and replay</span>
-            </div>
-            <div className="strategy-context">
-              <span><small>Historical win rate</small><strong>{backtest?.historical_trade_count ? `${Math.round((backtest?.historical_win_rate ?? 0) * 100)}%` : "No trades yet"}</strong><small>Run backtest to calculate performance.</small></span>
-              <span><small>Sharpe ratio</small><strong>{backtest?.historical_trade_count ? backtest?.sharpe_ratio ?? 0 : "Backtest not run"}</strong><small>Run backtest to calculate performance.</small></span>
-              <span><small>Recent outcomes</small><strong>{backtest?.recent_trade_outcomes?.length ?? 0}</strong></span>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Diagnostics</h2>
-              <span>{uiMode === "trader" ? "Trader mode" : "Developer mode"}</span>
-            </div>
-            <div className="diagnostic-list">
-              <span>{formatDisplayValue(diagnostics.trader_message, "No trader diagnostics returned.")}</span>
-              <span>{formatDisplayValue(diagnostics.validation_summary, "No validation summary returned.")}</span>
-            </div>
-            {uiMode === "developer" && (
-              <details className="technical-details" open>
-                <summary>Show Technical Details</summary>
-                <pre>{JSON.stringify({ operations, summary, marketStore, marketProvider, brokerStatus }, null, 2)}</pre>
-              </details>
-            )}
-          </div>
-
-          {uiMode === "developer" && (
-            <div className="dashboard-section">
-              <div className="section-header">
-                <h2>Operational Dashboard</h2>
-                <span>{socketStatus === "online" ? "WebSocket Online" : socketStatus === "polling" ? "Polling fallback" : "WebSocket Offline"}</span>
-              </div>
-              <div className="metric-grid observability-grid">
-                <MetricCard label="WebSocket Connections" value={observability?.websocket_connections ?? 0} helper="Connected dashboard clients" />
-                <MetricCard label="API Latency" value={formatDisplayValue(observability?.api_latency_status, "tracked")} helper="Prometheus metric" />
-                <MetricCard label="Signals" value={formatDisplayValue(observability?.signal_generation_metrics, "tracked")} helper="Generation metrics" />
-                <MetricCard label="Rejected Orders" value={formatDisplayValue(observability?.rejected_order_metrics, "tracked")} helper="Safety rejection metric" />
-                <MetricCard label="Redis" value={observability?.redis_healthy ? "OK" : "Review"} helper="Pub/sub and cache" tone={observability?.redis_healthy ? "good" : "warn"} />
-                <MetricCard label="DB" value={observability?.db_healthy ? "OK" : "Review"} helper="Persistence health" tone={observability?.db_healthy ? "good" : "warn"} />
-              </div>
-            </div>
-          )}
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Recent Jobs</h2>
-              <span>{jobs.length} total</span>
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Status</th>
-                    <th>Symbol</th>
-                    <th>Strategy</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.slice(0, 5).map((job) => (
-                    <tr key={job.job_id ?? job.id}>
-                      <td>{job.job_id ?? job.id}</td>
-                      <td>{job.status ?? "unknown"}</td>
-                      <td>{job.symbol ?? "-"}</td>
-                      <td>{job.strategy ?? "-"}</td>
-                    </tr>
-                  ))}
-                  {jobs.length === 0 && (
-                    <tr>
-                      <td colSpan={4}>No live-analysis jobs yet.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <span><small>API</small><strong>{health?.api?.healthy ? "Ready" : "Review"}</strong></span>
+              <span><small>Database</small><strong>{health?.db?.healthy ? "Ready" : "Review"}</strong></span>
+              <span><small>Market Data</small><strong>{health?.market_data?.healthy ? "Usable" : "Waiting"}</strong></span>
+              <span><small>Broker</small><strong>{health?.broker?.connected ? "Connected" : "Paper"}</strong></span>
             </div>
           </div>
         </>

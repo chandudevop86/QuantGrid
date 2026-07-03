@@ -13,6 +13,11 @@ export const roleLabels: Record<Role, string> = {
 
 export const routeRoles: Record<string, Role[]> = {
   "/": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/market": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/signals": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/paper-trades": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/history": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/settings": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/candles": ["admin", "trader", "viewer"],
   "/backtesting": ["admin", "developer", "trader", "analyst"],
   "/option-chain": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
@@ -23,7 +28,6 @@ export const routeRoles: Record<string, Role[]> = {
   "/analysis": ["admin"],
   "/jobs": ["admin", "developer"],
   "/operations": ["admin", "developer"],
-  "/signals": ["admin", "trader"],
   "/institutional": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/investing": ["admin", "developer", "trader", "analyst", "viewer"],
   "/risk": ["admin", "developer", "trader", "analyst", "viewer", "ops"],

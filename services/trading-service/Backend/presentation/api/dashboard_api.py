@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -97,9 +98,17 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         if validation.valid_for_execution
         else "Current market conditions do not meet confirmation criteria."
     )
+    decision = _decision_summary(
+        market_live=validation.market_live,
+        valid_for_execution=validation.valid_for_execution,
+        risk_blocked=risk_blocked,
+        feed_delay_seconds=validation.delay_seconds,
+        warnings=validation.warnings,
+    )
 
     return {
         "updated_at": utc_now(),
+        "decision": decision,
         "market_status": {
             "label": validation.ui_status,
             "state": validation.market_status,
@@ -177,6 +186,71 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "replay_links": [],
             "message": "Run a backtest or replay to attach historical confidence to this strategy.",
         },
+    }
+
+
+def _decision_summary(
+    *,
+    market_live: bool,
+    valid_for_execution: bool,
+    risk_blocked: bool,
+    feed_delay_seconds: int | float,
+    warnings: list[str],
+) -> dict:
+    if risk_blocked:
+        return {
+            "market_bias": "Neutral",
+            "trade_recommendation": "No Trade",
+            "confidence": 35,
+            "entry_zone": "Wait until risk limits reset",
+            "stop_loss": "Not applicable",
+            "target": "Not applicable",
+            "risk_level": "Low",
+            "support": "Nearest confirmed demand zone",
+            "resistance": "Nearest confirmed supply zone",
+            "simple_explanation": "Risk controls are blocking new trades. Protect capital.",
+            "system_status": "Caution",
+        }
+
+    if not market_live or not valid_for_execution:
+        reason = "Market is closed." if not market_live else "Market data is not clean enough."
+        if warnings:
+            reason = f"{reason} {warnings[0]}"
+        return {
+            "market_bias": "Neutral",
+            "trade_recommendation": "No Trade",
+            "confidence": 48,
+            "entry_zone": "Wait for a clean pullback near support",
+            "stop_loss": "Below the decision zone",
+            "target": "Next intraday level",
+            "risk_level": "Low",
+            "support": "Nearest confirmed demand zone",
+            "resistance": "Nearest confirmed supply zone",
+            "simple_explanation": reason,
+            "system_status": "Caution",
+        }
+
+    configured_bias = os.getenv("MARKET_BIAS", "NEUTRAL").strip().upper()
+    bias = configured_bias if configured_bias in {"BULLISH", "BEARISH"} else "NEUTRAL"
+    recommendation = {"BULLISH": "Buy CE", "BEARISH": "Buy PE", "NEUTRAL": "No Trade"}[bias]
+    explanation = {
+        "BULLISH": "Market structure favors upside. Options positioning supports bulls.",
+        "BEARISH": "Market structure favors downside. Options positioning supports bears.",
+        "NEUTRAL": "Market data is usable, but directional edge is not strong enough yet.",
+    }[bias]
+    confidence = 78 if feed_delay_seconds <= 10 else 64
+    return {
+        "market_bias": bias.title(),
+        "trade_recommendation": recommendation,
+        "confidence": confidence,
+        "entry_zone": "Wait for price to confirm direction",
+        "stop_loss": "Below or above the decision zone",
+        "target": "Next intraday support or resistance",
+        "risk_level": "Medium",
+        "support": "Nearest confirmed demand zone",
+        "resistance": "Nearest confirmed supply zone",
+        "simple_explanation": explanation,
+        "system_status": "Ready",
     }
 
 

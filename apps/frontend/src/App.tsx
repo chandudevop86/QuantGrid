@@ -34,6 +34,10 @@ export default function App() {
       <AppLayout>
         <Routes>
           <Route path="/" element={protect("/", <Dashboard />)} />
+          <Route path="/market" element={protect("/market", <OptionChain />)} />
+          <Route path="/paper-trades" element={protect("/paper-trades", <TradeJournal />)} />
+          <Route path="/history" element={protect("/history", <Backtesting />)} />
+          <Route path="/settings" element={protect("/settings", <RiskDashboard />)} />
           <Route path="/candles" element={protect("/candles", <Candles />)} />
           <Route path="/backtesting" element={protect("/backtesting", <Backtesting />)} />
           <Route path="/execution" element={protect("/execution", <Execution />)} />
