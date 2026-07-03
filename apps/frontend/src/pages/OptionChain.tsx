@@ -24,101 +24,19 @@ function enrichOptionChain(data: any) {
       return pain < best.pain ? { strike: candidateStrike, pain } : best;
     }, { strike: Number(rows[0]?.strike ?? 0), pain: Number.POSITIVE_INFINITY }).strike
     : data?.max_pain;
-  const atm = Number(data?.atm_strike ?? 0);
-  const step = Number(data?.step ?? 50) || 50;
-
   return {
     ...data,
     pcr: data?.pcr ?? (totalCallOi > 0 ? Number((totalPutOi / totalCallOi).toFixed(3)) : undefined),
     max_pain: data?.max_pain ?? maxPain,
-    greek_model: data?.greek_model ?? "derived delta",
+    greek_model: data?.greek_model ?? (rows.some((row: any) => row?.ce?.greeks || row?.pe?.greeks) ? "provider greeks" : undefined),
     source: data?.source ?? "market-option-chain",
-    rows: rows.map((row: any) => {
-      const strike = Number(row?.strike ?? 0);
-      const distance = atm && strike ? Math.max(-1, Math.min(1, (atm - strike) / (step * 4))) : 0;
-      return {
-        ...row,
-        ce: { ...row.ce, greeks: row.ce?.greeks ?? { delta: Number((0.5 + distance / 2).toFixed(2)) } },
-        pe: { ...row.pe, greeks: row.pe?.greeks ?? { delta: Number((-0.5 + distance / 2).toFixed(2)) } },
-      };
-    }),
-  };
-}
-
-function demoOptionChain(symbol = "NIFTY") {
-  const underlying = 22500;
-  const step = 50;
-  const atm = 22500;
-  const rows = Array.from({ length: 11 }, (_, index) => {
-    const strike = atm + (index - 5) * step;
-    const distance = Math.abs(strike - underlying);
-    const timeValue = Math.max(12, 95 * Math.exp(-distance / (step * 4)));
-    const ceOi = Math.round(90000 + Math.max(index - 5, 0) * 17500 + distance * 80);
-    const peOi = Math.round(90000 + Math.max(5 - index, 0) * 17500 + distance * 80);
-    const deltaShift = Math.max(-1, Math.min(1, (atm - strike) / (step * 4)));
-
-    return {
-      strike,
-      ce: {
-        ltp: Number((Math.max(underlying - strike, 0) + timeValue).toFixed(2)),
-        oi: ceOi,
-        volume: Math.round(ceOi * 0.18),
-        greeks: { delta: Number((0.5 + deltaShift / 2).toFixed(2)) },
-      },
-      pe: {
-        ltp: Number((Math.max(strike - underlying, 0) + timeValue).toFixed(2)),
-        oi: peOi,
-        volume: Math.round(peOi * 0.18),
-        greeks: { delta: Number((-0.5 + deltaShift / 2).toFixed(2)) },
-      },
-    };
-  });
-
-  return enrichOptionChain({
-    symbol,
-    underlying_price: underlying,
-    atm_strike: atm,
-    step,
-    expiry: "Demo",
-    source: "synthetic",
-    warning: "Backend is offline; showing demo option-chain data.",
     rows,
-  });
-}
-
-function demoHistoricalChain(symbol = "NIFTY") {
-  const now = Date.now();
-  const snapshots = Array.from({ length: 12 }, (_, index) => {
-    const age = 11 - index;
-    const underlying = 22500 + ((index % 5) - 2) * 18 - age * 1.75;
-    const atm = Math.round(underlying / 50) * 50;
-    const callOi = 950000 + index * 7200 + Math.max(underlying - atm, 0) * 120;
-    const putOi = 940000 + (12 - index) * 6500 + Math.max(atm - underlying, 0) * 120;
-    const pcr = callOi > 0 ? putOi / callOi : 0;
-
-    return {
-      timestamp: new Date(now - age * 5 * 60 * 1000).toISOString(),
-      underlying_price: Number(underlying.toFixed(2)),
-      atm_strike: atm,
-      pcr: Number(pcr.toFixed(3)),
-      max_pain: atm + (pcr > 1.05 ? 50 : pcr < 0.95 ? -50 : 0),
-      call_oi: Math.round(callOi),
-      put_oi: Math.round(putOi),
-    };
-  });
-
-  return {
-    module: "historical_option_chain",
-    symbol,
-    source: "offline-synthetic-history",
-    interval: "5m",
-    snapshots,
   };
 }
 
 export default function OptionChain() {
-  const [chain, setChain] = useState<any>(() => demoOptionChain("NIFTY"));
-  const [history, setHistory] = useState<any>(() => demoHistoricalChain("NIFTY"));
+  const [chain, setChain] = useState<any>(null);
+  const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,10 +50,10 @@ export default function OptionChain() {
     }
     setError(null);
 
-    const chainRequest = api.liveNseOptionChain("NIFTY");
+    const chainRequest = api.optionChain("NIFTY");
     const historyRequest = api
       .historicalOptionChain("NIFTY")
-      .catch(() => demoHistoricalChain("NIFTY"));
+      .catch(() => null);
 
     return Promise.all([chainRequest, historyRequest])
       .then(([data, historicalData]) => {
@@ -144,13 +62,13 @@ export default function OptionChain() {
         setLastRefreshed(new Date());
       })
       .catch((err: any) => {
-        setChain(demoOptionChain("NIFTY"));
-        setHistory(demoHistoricalChain("NIFTY"));
+        setChain(null);
+        setHistory(null);
         setLastRefreshed(new Date());
         setError(
           err?.message === "Network Error" || !err?.response
-            ? "Using Synthetic Option Chain Data"
-            : err?.response?.data?.detail ?? err?.message ?? "Failed to load live NSE option chain."
+            ? "Option chain API is unavailable. No live option-chain data is being shown."
+            : err?.response?.data?.detail ?? err?.message ?? "Failed to load live option chain."
         );
       })
       .finally(() => {
@@ -171,13 +89,17 @@ export default function OptionChain() {
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 15s";
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
+  const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
+  const historyIsSynthetic = String(history?.source ?? "").includes("synthetic");
+  const visibleRows = usingSynthetic ? [] : chain?.rows ?? [];
+  const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
 
   return (
     <section className="dashboard-page">
       <div className="page-heading dashboard-heading">
         <div>
           <h1>Option Chain</h1>
-          <p>Live NSE option-chain data, real OI, real PCR, and chain-derived signals.</p>
+          <p>Live broker option-chain data, real OI, real PCR, and chain-derived signals.</p>
         </div>
         <button
           type="button"
@@ -189,8 +111,18 @@ export default function OptionChain() {
         </button>
       </div>
 
+      {loading && <div className="alert" role="status">Loading live option-chain data...</div>}
       {error && <div className="alert alert-warning" role="status">{error}</div>}
-      {usingSynthetic && error !== "Using Synthetic Option Chain Data" && <div className="alert alert-warning" role="status">Using Synthetic Option Chain Data</div>}
+      {usingSynthetic && (
+        <div className="alert alert-warning" role="status">
+          Synthetic option-chain fallback was returned by the backend, so rows are hidden to avoid showing wrong live data.
+        </div>
+      )}
+      {chain && !isProviderBacked && !usingSynthetic && (
+        <div className="alert alert-warning" role="status">
+          Live Dhan option-chain data is not available; showing derived strike ladder only.
+        </div>
+      )}
       {chain?.warning && !error && <div className="alert alert-warning" role="status">{chain.warning}</div>}
 
       <div className="metric-grid">
@@ -201,42 +133,42 @@ export default function OptionChain() {
         </div>
         <div className="metric-card">
           <span className="metric-label">Current Price</span>
-          <strong className="metric-value">{formatNumber(chain?.spot ?? chain?.underlying_price)}</strong>
+          <strong className="metric-value">{usingSynthetic ? "-" : formatNumber(chain?.spot ?? chain?.underlying_price)}</strong>
           <span className="metric-helper">{refreshLabel}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">ATM Strike</span>
-          <strong className="metric-value">{chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic ? "-" : chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
           <span className="metric-helper">Step {chain?.step ?? 50}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
           <strong className="metric-value">{chain?.expiry ?? "Demo"}</strong>
-          <span className="metric-helper">{chain?.source === "live" ? "Live NSE chain" : "Synthetic fallback"}</span>
+          <span className="metric-helper">{isProviderBacked ? "Provider chain" : chain ? "Fallback ladder" : "No chain loaded"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>
-          <strong className="metric-value">{formatNumber(chain?.pcr)}</strong>
+          <strong className="metric-value">{usingSynthetic ? "-" : formatNumber(chain?.pcr)}</strong>
           <span className="metric-helper">Put/call open interest</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Max Pain</span>
-          <strong className="metric-value">{chain?.max_pain ?? "-"}</strong>
-          <span className="metric-helper">{chain?.greek_model ?? "Greeks"}</span>
+          <strong className="metric-value">{usingSynthetic ? "-" : chain?.max_pain ?? "-"}</strong>
+          <span className="metric-helper">{chain?.greek_model ?? "Greeks unavailable"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Support</span>
-          <strong className="metric-value">{chain?.support ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic ? "-" : chain?.support ?? "-"}</strong>
           <span className="metric-helper">Highest put OI below ATM</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Resistance</span>
-          <strong className="metric-value">{chain?.resistance ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic ? "-" : chain?.resistance ?? "-"}</strong>
           <span className="metric-helper">Highest call OI above ATM</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Real Signal</span>
-          <strong className="metric-value">{chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
+          <strong className="metric-value">{usingSynthetic ? "NO_LIVE_DATA" : chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
           <span className="metric-helper">{chain?.signals?.reason ?? "PCR / OI / max pain"}</span>
         </div>
       </div>
@@ -260,7 +192,7 @@ export default function OptionChain() {
               </tr>
             </thead>
             <tbody>
-              {(history?.snapshots ?? []).slice().reverse().map((row: any) => (
+              {visibleHistory.slice().reverse().map((row: any) => (
                 <tr key={row.timestamp}>
                   <td>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString() : "-"}</td>
                   <td>{formatNumber(row.underlying_price)}</td>
@@ -271,9 +203,11 @@ export default function OptionChain() {
                   <td>{formatNumber(row.put_oi)}</td>
                 </tr>
               ))}
-              {(!history?.snapshots || history.snapshots.length === 0) && (
+              {visibleHistory.length === 0 && (
                 <tr>
-                  <td colSpan={7}>Historical chain data is not available yet.</td>
+                  <td colSpan={7}>
+                    {historyIsSynthetic ? "Synthetic historical chain hidden." : "Historical chain data is not available yet."}
+                  </td>
                 </tr>
               )}
             </tbody>
@@ -302,7 +236,7 @@ export default function OptionChain() {
               </tr>
             </thead>
             <tbody>
-              {(chain?.rows ?? []).map((row: any) => (
+              {visibleRows.map((row: any) => (
                 <tr key={row.strike} className={row.strike === chain?.atm_strike ? "option-atm-row" : ""}>
                   <td>{formatNumber(row.ce?.ltp)}</td>
                   <td>{formatNumber(row.ce?.oi)}</td>
@@ -315,9 +249,11 @@ export default function OptionChain() {
                   <td>{formatNumber(row.pe?.ltp)}</td>
                 </tr>
               ))}
-              {(!chain?.rows || chain.rows.length === 0) && (
+              {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={9}>Option chain data is not available yet.</td>
+                  <td colSpan={9}>
+                    {usingSynthetic ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data." : "Option chain data is not available yet."}
+                  </td>
                 </tr>
               )}
             </tbody>
