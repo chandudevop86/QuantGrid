@@ -241,8 +241,10 @@ def create_app():
         except WebSocketDisconnect:
             manager.disconnect(websocket)
 
+    from Backend.presentation.api.dashboard_api import compatibility_router as dashboard_compatibility_router
     from Backend.presentation.api.dashboard_api import router as dashboard_router
     app.include_router(dashboard_router, prefix="/dashboard", tags=["Dashboard"])
+    app.include_router(dashboard_compatibility_router, tags=["Dashboard"])
 
     from Backend.presentation.api.audit_api import router as audit_router
     app.include_router(audit_router)

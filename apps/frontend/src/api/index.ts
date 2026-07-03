@@ -47,7 +47,10 @@ export const api = {
   dhanLogin: (payload: { client_id: string; access_token: string; persist?: boolean }) =>
     API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
-  operationsStatus: () => API.get("/dashboard/operations").then((res) => res.data),
+  operationsStatus: () =>
+    API.get("/dashboard/operations")
+      .then((res) => res.data)
+      .catch(() => API.get("/operations/status").then((res) => res.data)),
   auditTrail: () => API.get("/audit/logs", { params: { limit: 50 } }).then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),

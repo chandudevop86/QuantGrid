@@ -18,6 +18,7 @@ export default function Operations() {
           if (!isMounted) return;
           setOperations(data);
           setAuditEvents(Array.isArray(auditData?.events) ? auditData.events : []);
+          setError(null);
         })
         .catch(() => {
           if (isMounted) setError("Operations API is not available.");

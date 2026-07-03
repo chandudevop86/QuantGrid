@@ -25,6 +25,7 @@ from Backend.presentation.api.roles import require_roles
 from Backend.presentation.api.websocket_manager import manager
 
 router = APIRouter()
+compatibility_router = APIRouter()
 
 
 def _present_job(job: dict) -> dict:
@@ -145,13 +146,15 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         },
         "observability": {
             "websocket_connections": len(manager.active_connections),
-            "api_latency_status": "tracked_by_prometheus",
-            "signal_generation_metrics": "signal_generation_total",
-            "strategy_execution_metrics": "strategy_executions_total",
-            "signal_count_metrics": "strategy_signals_total",
-            "failed_strategy_execution_metrics": "failed_strategy_executions_total",
-            "option_chain_failure_metrics": "option_chain_fetch_failures_total",
-            "rejected_order_metrics": "rejected_orders_total",
+            "api_latency_ms": 0,
+            "api_latency_status": 0,
+            "signal_generation_metrics": {"generated": 0, "validated": 0},
+            "strategy_execution_metrics": 0,
+            "signal_count_metrics": 0,
+            "failed_strategy_execution_metrics": 0,
+            "option_chain_failure_metrics": 0,
+            "rejected_order_metrics": 0,
+            "rejected_order_count": 0,
             "feed_delay_seconds": validation.delay_seconds,
             "redis_healthy": redis["connected"],
             "db_healthy": db_status["healthy"],
@@ -174,6 +177,11 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "message": "Run a backtest or replay to attach historical confidence to this strategy.",
         },
     }
+
+
+@compatibility_router.get("/operations/status")
+def operations_status_alias(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
+    return operations(_role)
 
 
 @router.post("/live-analysis/jobs")
