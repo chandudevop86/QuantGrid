@@ -181,6 +181,7 @@ export default function Dashboard() {
   const [positionSummary, setPositionSummary] = useState<any>(null);
   const [modules, setModules] = useState<any>(null);
   const [systemAudit, setSystemAudit] = useState<any>(null);
+  const [systemAuditError, setSystemAuditError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
@@ -210,6 +211,7 @@ export default function Dashboard() {
       setPositionSummary(null);
       setModules(null);
       setSystemAudit(null);
+      setSystemAuditError(null);
       setLoading(false);
       return;
     }
@@ -222,16 +224,17 @@ export default function Dashboard() {
       api.brokerStatus(),
       api.positionSummary().catch(() => null),
       api.modulesDashboard().catch(() => null),
-      api.systemAudit().catch(() => null),
+      api.systemAudit().then((data) => ({ data, error: null })).catch((err) => ({ data: null, error: err?.message ?? "System audit endpoint is unavailable." })),
     ])
-      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData, systemAuditData]) => {
+      .then(([summaryData, marketStoreData, marketProviderData, brokerData, positionData, modulesData, systemAuditResult]) => {
         setSummary(summaryData);
         setMarketStore(marketStoreData);
         setMarketProvider(marketProviderData);
         setBrokerStatus(brokerData);
         setPositionSummary(positionData);
         setModules(modulesData);
-        setSystemAudit(systemAuditData);
+        setSystemAudit(systemAuditResult.data);
+        setSystemAuditError(systemAuditResult.error);
       })
       .catch(() => setError("Dashboard API is not available yet."))
       .finally(() => setLoading(false));
@@ -244,6 +247,7 @@ export default function Dashboard() {
   const market = operations?.market_status;
   const health = operations?.system_health;
   const risk = operations?.risk_summary;
+  const auditLoaded = Boolean(systemAudit);
   const observability = operations?.observability;
   const backtest = operations?.backtest_context;
   const liveTrading = risk?.live_trading_enabled || risk?.execution_mode === "LIVE";
@@ -391,23 +395,23 @@ export default function Dashboard() {
           <div className="dashboard-section">
             <div className="section-header">
               <h2>System Audit</h2>
-              <span>{systemAudit?.data_status ?? "Checking"}</span>
+              <span>{auditLoaded ? systemAudit?.data_status ?? "UNKNOWN" : systemAuditError ? "UNAVAILABLE" : "Checking"}</span>
             </div>
             <div className="system-audit-strip">
-              <span className={systemAudit?.data_ok ? "health-ok" : "health-fail"}>
+              <span className={!auditLoaded ? "health-warn" : systemAudit?.data_ok ? "health-ok" : "health-fail"}>
                 <small>Data OK</small>
-                <strong>{systemAudit?.data_ok ? "YES" : "NO"}</strong>
-                <em>{systemAudit?.candle_count ?? 0} candles | age {systemAudit?.candle_age_seconds ?? "-"}s</em>
+                <strong>{!auditLoaded ? "WAITING" : systemAudit?.data_ok ? "YES" : "NO"}</strong>
+                <em>{auditLoaded ? `${systemAudit?.candle_count ?? 0} candles | age ${systemAudit?.candle_age_seconds ?? "-"}s` : systemAuditError ?? "Audit not loaded yet."}</em>
               </span>
-              <span className={systemAudit?.logic_ok ? "health-ok" : "health-warn"}>
+              <span className={!auditLoaded ? "health-warn" : systemAudit?.logic_ok ? "health-ok" : "health-warn"}>
                 <small>Logic OK</small>
-                <strong>{systemAudit?.logic_ok ? "YES" : "REVIEW"}</strong>
-                <em>{systemAudit?.raw_signals ?? 0} raw | {systemAudit?.validated_signals ?? 0} validated</em>
+                <strong>{!auditLoaded ? "WAITING" : systemAudit?.logic_ok ? "YES" : "REVIEW"}</strong>
+                <em>{auditLoaded ? `${systemAudit?.raw_signals ?? 0} raw | ${systemAudit?.validated_signals ?? 0} validated` : "Waiting for strategy audit rows."}</em>
               </span>
-              <span className={(systemAudit?.trades_created ?? 0) > 0 ? "health-ok" : "health-warn"}>
+              <span className={!auditLoaded ? "health-warn" : (systemAudit?.trades_created ?? 0) > 0 ? "health-ok" : "health-warn"}>
                 <small>Trade Not Created Because...</small>
-                <strong>{(systemAudit?.trades_created ?? 0) > 0 ? "TRADE CREATED" : "BLOCKED"}</strong>
-                <em>{systemAudit?.trade_not_created_because ?? "Audit not loaded yet."}</em>
+                <strong>{!auditLoaded ? "WAITING" : (systemAudit?.trades_created ?? 0) > 0 ? "TRADE CREATED" : "BLOCKED"}</strong>
+                <em>{auditLoaded ? systemAudit?.trade_not_created_because ?? "No blocking reason returned." : systemAuditError ?? "Audit not loaded yet."}</em>
               </span>
             </div>
             {uiMode === "developer" && systemAudit && (
