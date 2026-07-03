@@ -52,6 +52,7 @@ coverage.xml
 .pytest_*/
 pytest-cache-files-*/
 tmp_pytest_run/
+tmp/
 cover/
 
 # Translations

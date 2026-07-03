@@ -21,6 +21,7 @@ ignore = []
 testpaths = ["tests"]
 pythonpath = [".", "services/trading-service"]
 addopts = "-ra"
+cache_dir = "tmp/.pytest_cache"
 
 [tool.coverage.run]
 branch = true

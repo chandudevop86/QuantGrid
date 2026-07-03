@@ -171,6 +171,8 @@ def paper_trades(
 
 @router.get("/api/trade-journal")
 @router.get("/api/trades/journal")
+@router.get("/trade-journal", include_in_schema=False)
+@router.get("/trades/journal", include_in_schema=False)
 def trade_journal(
     limit: int = Query(default=100, ge=1, le=500),
     strategy: str | None = None,
@@ -194,6 +196,7 @@ def trade_journal(
 
 
 @router.get("/api/trades/journal/{entry_id}")
+@router.get("/trades/journal/{entry_id}", include_in_schema=False)
 def trade_journal_entry(
     entry_id: int,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
@@ -206,6 +209,8 @@ def trade_journal_entry(
 
 @router.post("/api/trade-journal")
 @router.post("/api/trades/journal")
+@router.post("/trade-journal", include_in_schema=False)
+@router.post("/trades/journal", include_in_schema=False)
 def create_trade_journal(
     payload: TradeJournalEntryRequest,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
@@ -219,6 +224,7 @@ def create_trade_journal(
 
 
 @router.patch("/api/trades/journal/{entry_id}")
+@router.patch("/trades/journal/{entry_id}", include_in_schema=False)
 def patch_trade_journal(
     entry_id: int,
     payload: TradeJournalPatchRequest,

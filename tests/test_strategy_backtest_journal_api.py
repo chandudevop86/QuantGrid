@@ -106,6 +106,38 @@ def test_trade_journal_crud_and_filters(app_client):
     assert filtered.json()["summary"]["total_trades"] == 1
 
 
+def test_trade_journal_unprefixed_aliases_match_proxy_rewrite_contract(app_client):
+    headers = admin_headers(app_client)
+
+    created = app_client.post(
+        "/trades/journal",
+        headers=headers,
+        json={
+            "strategy": "breakout",
+            "signal": "BUY",
+            "symbol": "NIFTY",
+            "entry_price": 22500,
+            "stop_loss": 22450,
+            "target": 22600,
+            "quantity": 50,
+            "status": "accepted_signal",
+            "source": "proxy-contract-test",
+        },
+    )
+
+    assert created.status_code == 200, created.text
+    entry_id = created.json()["id"]
+
+    listed = app_client.get("/trades/journal", headers=headers)
+    fetched = app_client.get(f"/trades/journal/{entry_id}", headers=headers)
+    patched = app_client.patch(f"/trades/journal/{entry_id}", headers=headers, json={"status": "closed", "exit_reason": "manual"})
+
+    assert listed.status_code == 200
+    assert fetched.status_code == 200
+    assert patched.status_code == 200
+    assert patched.json()["status"] == "closed"
+
+
 def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monkeypatch):
     import Backend.presentation.api.modules_api as modules_api
 

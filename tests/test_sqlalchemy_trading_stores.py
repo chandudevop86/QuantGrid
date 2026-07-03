@@ -19,10 +19,20 @@ def reset_backend_modules() -> None:
 
 
 def configure_sqlalchemy_store(monkeypatch) -> None:
-    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_ENV", "ci")
     monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
     monkeypatch.setenv("DATABASE_URL", "sqlite://")
     reset_backend_modules()
+
+
+def test_test_environment_uses_file_backed_local_stores(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
+    reset_backend_modules()
+
+    from Backend.application.store_backend import use_legacy_sqlite_store
+
+    assert use_legacy_sqlite_store() is True
 
 
 def test_sqlalchemy_job_store_interface(monkeypatch):

@@ -36,10 +36,10 @@ services:
       - services/trading-service/.env
     environment:
       QUANTGRID_ENV: ${QUANTGRID_ENV:-local}
-      QUANTGRID_AUTH_SECRET: ${QUANTGRID_AUTH_SECRET:-local-dev-auth-secret-at-least-32-characters}
-      QUANTGRID_ALLOW_DEV_SEED_USERS: ${QUANTGRID_ALLOW_DEV_SEED_USERS:-true}
-      QUANTGRID_USERS: ${QUANTGRID_USERS:-admin:AdminPass1!:admin}
-      ALLOW_SAMPLE_MARKET_DATA: ${ALLOW_SAMPLE_MARKET_DATA:-true}
+      QUANTGRID_AUTH_SECRET: ${QUANTGRID_AUTH_SECRET:?Set QUANTGRID_AUTH_SECRET before starting the app stack}
+      QUANTGRID_ALLOW_DEV_SEED_USERS: ${QUANTGRID_ALLOW_DEV_SEED_USERS:-false}
+      QUANTGRID_USERS: ${QUANTGRID_USERS:-}
+      ALLOW_SAMPLE_MARKET_DATA: ${ALLOW_SAMPLE_MARKET_DATA:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
