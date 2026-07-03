@@ -5,6 +5,7 @@ from typing import Any
 
 from Backend.application.dto import serialize_signal
 from Backend.application.fno_narrative_service import run_fno_narrative
+from Backend.application.market_copilot import build_market_copilot
 from Backend.application.monitoring import observe_signal_generation
 from Backend.application.signal_validation import candle_freshness, diagnose_signal_run, validate_signals
 from Backend.application.trading_service import TradingService
@@ -157,3 +158,11 @@ def fno_market_narrative(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     return run_fno_narrative(symbol)
+
+
+@router.get("/copilot/market")
+def market_copilot(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    return build_market_copilot(symbol)

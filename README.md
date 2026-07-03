@@ -210,6 +210,17 @@ QUANTGRID_ATR_FALLBACK=25
 The risk dashboard is read-only. Execution remains protected by the existing
 paper/live separation, risk gate, kill switch, and broker guardrails.
 
+## AI Market Copilot
+
+Phase 4 adds an explanatory Market Copilot at `/copilot` backed by
+`GET /trading/copilot/market`. It summarizes the current F&O narrative, explains
+the scenario, lists bullish and bearish evidence, shows invalidation, confidence,
+market narrative, and what changed since the previous refresh.
+
+The Copilot is deterministic and guardrailed. It does not place trades, enable
+live execution, or issue blind buy/sell calls. Execution still requires strategy
+validation, risk approval, and the configured paper/live mode.
+
 The candle validator normalizes timestamps to `Asia/Kolkata`, understands the
 NSE regular session, and disables stale-candle rejection after close, on
 weekends, and on configured holidays. During live market hours, candles warn

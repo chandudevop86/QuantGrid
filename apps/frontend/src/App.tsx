@@ -11,6 +11,7 @@ import Execution from "./pages/Execution";
 import InstitutionalDashboard from "./pages/InstitutionalDashboard";
 import Investing from "./pages/Investing";
 import LiveAnalysis from "./pages/LiveAnalysis";
+import MarketCopilot from "./pages/MarketCopilot";
 import Jobs from "./pages/Jobs";
 import OptionChain from "./pages/OptionChain";
 import Operations from "./pages/Operations";
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/execution" element={protect("/execution", <Execution />)} />
           <Route path="/live" element={protect("/live", <LiveAnalysis />)} />
           <Route path="/analysis" element={protect("/analysis", <LiveAnalysis />)} />
+          <Route path="/copilot" element={protect("/copilot", <MarketCopilot />)} />
           <Route path="/option-chain" element={protect("/option-chain", <OptionChain />)} />
           <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />
           <Route path="/jobs" element={protect("/jobs", <Jobs />)} />

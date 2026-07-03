@@ -99,6 +99,8 @@ export const api = {
   modulesDashboard: () => API.get("/modules/dashboard").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
     API.post("/trading/signals", payload).then((res) => res.data),
+  marketCopilot: (symbol = "NIFTY") =>
+    API.get("/trading/copilot/market", { params: { symbol } }).then((res) => res.data),
   executeOrder: (payload: unknown) =>
     API.post("/execution/order", payload).then((res) => res.data),
   executeAutoPaper: (payload: unknown = {}) =>
