@@ -43,7 +43,7 @@ function decodeAuthClaims(): AuthClaims | null {
   const token = window.localStorage.getItem("quantgrid_token");
   if (!token) return null;
 
-  const [payload] = token.split(".");
+  const [, payload] = token.split(".");
   if (!payload) return null;
 
   try {

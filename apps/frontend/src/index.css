@@ -39,6 +39,61 @@ select {
   min-height: 100vh;
 }
 
+.fatal-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(20, 184, 166, 0.12), transparent 34rem),
+    #020617;
+}
+
+.fatal-card {
+  display: flex;
+  gap: 16px;
+  width: min(560px, 100%);
+  padding: 24px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  border-radius: 8px;
+  background: #0f172a;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
+}
+
+.fatal-card h1 {
+  margin: 4px 0 10px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.fatal-card p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.fatal-card pre {
+  max-height: 140px;
+  margin: 16px 0;
+  overflow: auto;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #020617;
+  color: #fecaca;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.fatal-card button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: #0f766e;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+}
+
 .app-shell {
   display: flex;
   min-height: 100vh;
