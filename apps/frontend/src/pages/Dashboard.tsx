@@ -41,6 +41,37 @@ function formatTime(value: unknown) {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleTimeString();
 }
 
+function formatDisplayValue(value: unknown, fallback = "-"): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.length ? value.map((item) => formatDisplayValue(item, "")).filter(Boolean).join(", ") : fallback;
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("generated" in record || "validated" in record) {
+      return `${formatDisplayValue(record.generated, "0")} generated / ${formatDisplayValue(record.validated, "0")} validated`;
+    }
+    if ("seconds" in record) {
+      return `${formatDisplayValue(record.seconds, "0")}s`;
+    }
+    if ("count" in record) {
+      return formatDisplayValue(record.count, fallback);
+    }
+    if ("message" in record) {
+      return formatDisplayValue(record.message, fallback);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 function friendlyMarketMessage(market: any) {
   if (market?.valid_for_execution) return "Market data is fresh enough for confirmation checks.";
   if (market?.state === "holiday") return "Market is closed for a holiday.";
@@ -411,7 +442,7 @@ export default function Dashboard() {
               <span className={!auditLoaded ? "health-warn" : (systemAudit?.trades_created ?? 0) > 0 ? "health-ok" : "health-warn"}>
                 <small>Trade Not Created Because...</small>
                 <strong>{!auditLoaded ? "WAITING" : (systemAudit?.trades_created ?? 0) > 0 ? "TRADE CREATED" : "BLOCKED"}</strong>
-                <em>{auditLoaded ? systemAudit?.trade_not_created_because ?? "No blocking reason returned." : systemAuditError ?? "Audit not loaded yet."}</em>
+                <em>{auditLoaded ? formatDisplayValue(systemAudit?.trade_not_created_because, "No blocking reason returned.") : systemAuditError ?? "Audit not loaded yet."}</em>
               </span>
             </div>
             {uiMode === "developer" && systemAudit && (
@@ -615,8 +646,8 @@ export default function Dashboard() {
               <span>{uiMode === "trader" ? "Trader mode" : "Developer mode"}</span>
             </div>
             <div className="diagnostic-list">
-              <span>{diagnostics.trader_message}</span>
-              <span>{diagnostics.validation_summary}</span>
+              <span>{formatDisplayValue(diagnostics.trader_message, "No trader diagnostics returned.")}</span>
+              <span>{formatDisplayValue(diagnostics.validation_summary, "No validation summary returned.")}</span>
             </div>
             {uiMode === "developer" && (
               <details className="technical-details" open>
@@ -634,9 +665,9 @@ export default function Dashboard() {
               </div>
               <div className="metric-grid observability-grid">
                 <MetricCard label="WebSocket Connections" value={observability?.websocket_connections ?? 0} helper="Connected dashboard clients" />
-                <MetricCard label="API Latency" value={observability?.api_latency_status ?? "tracked"} helper="Prometheus metric" />
-                <MetricCard label="Signals" value={observability?.signal_generation_metrics ?? "tracked"} helper="Generation metrics" />
-                <MetricCard label="Rejected Orders" value={observability?.rejected_order_metrics ?? "tracked"} helper="Safety rejection metric" />
+                <MetricCard label="API Latency" value={formatDisplayValue(observability?.api_latency_status, "tracked")} helper="Prometheus metric" />
+                <MetricCard label="Signals" value={formatDisplayValue(observability?.signal_generation_metrics, "tracked")} helper="Generation metrics" />
+                <MetricCard label="Rejected Orders" value={formatDisplayValue(observability?.rejected_order_metrics, "tracked")} helper="Safety rejection metric" />
                 <MetricCard label="Redis" value={observability?.redis_healthy ? "OK" : "Review"} helper="Pub/sub and cache" tone={observability?.redis_healthy ? "good" : "warn"} />
                 <MetricCard label="DB" value={observability?.db_healthy ? "OK" : "Review"} helper="Persistence health" tone={observability?.db_healthy ? "good" : "warn"} />
               </div>
