@@ -13,11 +13,11 @@ from Backend.application import quant_modules
 
 def test_trade_journal_summary_returns_decision_quality_metrics(monkeypatch):
     trades = [
-        {"status": "closed", "pnl": 1000, "strategy": "breakout"},
-        {"status": "closed", "pnl": -400, "strategy": "breakout"},
-        {"status": "completed", "pnl": 600, "strategy_name": "mean_reversion"},
-        {"status": "open", "pnl": 200, "strategy": "ignored"},
-        {"status": "exited", "pnl": -200, "strategy": "mean_reversion"},
+        {"status": "closed", "pnl": 1000, "strategy": "breakout", "entry": 100, "stop_loss": 95, "target": 110, "created_at": "2026-07-03T09:30:00+00:00"},
+        {"status": "closed", "pnl": -400, "strategy": "breakout", "entry": 100, "stop_loss": 96, "target": 108, "created_at": "2026-07-03T10:30:00+00:00"},
+        {"status": "completed", "pnl": 600, "strategy_name": "mean_reversion", "entry": 100, "stop_loss": 95, "target": 105, "created_at": "2026-07-04T09:30:00+00:00"},
+        {"status": "open", "pnl": 200, "strategy": "ignored", "created_at": "2026-07-04T10:30:00+00:00"},
+        {"status": "exited", "pnl": -200, "strategy": "mean_reversion", "entry": 100, "stop_loss": 98, "target": 104, "created_at": "2026-08-01T09:30:00+00:00"},
     ]
     monkeypatch.setattr(quant_modules, "list_paper_trades", lambda limit: trades)
 
@@ -30,5 +30,8 @@ def test_trade_journal_summary_returns_decision_quality_metrics(monkeypatch):
     assert summary["max_drawdown"] == 400.0
     assert summary["average_win"] == 800.0
     assert summary["average_loss"] == -300.0
+    assert summary["average_rr"] == 1.75
     assert summary["best_strategy"] == "breakout"
     assert summary["worst_strategy"] == "mean_reversion"
+    assert summary["day_wise_performance"]["2026-07-03"] == 600.0
+    assert summary["monthly_performance"]["2026-08"] == -200.0

@@ -26,6 +26,8 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert isinstance(decision["opposing_factors"], list)
     assert isinstance(decision["warnings"], list)
     assert decision["invalidation_level"]
+    assert isinstance(decision["score_breakdown"], list)
+    assert decision["score_reason"]
     assert "market_status" in payload
     assert "risk_summary" in payload
     assert "system_health" in payload

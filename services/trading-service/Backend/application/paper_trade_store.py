@@ -215,6 +215,74 @@ def update_paper_trade_status(
     return dict(row) if row else None
 
 
+def calculate_paper_trade_pnl(
+    *,
+    side: str,
+    entry: float,
+    exit_price: float,
+    quantity: int = 1,
+    partial_quantity: int | None = None,
+) -> float:
+    effective_quantity = int(partial_quantity if partial_quantity is not None else quantity)
+    direction = 1 if str(side).upper() in {"BUY", "CE", "CALL"} else -1
+    return round((float(exit_price) - float(entry)) * effective_quantity * direction, 2)
+
+
+def resolve_paper_trade_outcome(trade: dict[str, Any], market_price: float) -> dict[str, Any]:
+    side = str(trade.get("side") or trade.get("signal") or "BUY").upper()
+    entry = float(trade.get("entry") or trade.get("entry_price") or 0.0)
+    stop_loss = float(trade.get("stop_loss") or 0.0)
+    target = float(trade.get("target") or trade.get("target_price") or 0.0)
+    quantity = int(trade.get("quantity") or 1)
+    price = float(market_price)
+    is_long = side in {"BUY", "CE", "CALL"}
+
+    if is_long and stop_loss > 0 and price <= stop_loss:
+        status, result, reason = "closed", "loss", "stop_loss_hit"
+    elif is_long and target > 0 and price >= target:
+        status, result, reason = "closed", "win", "target_hit"
+    elif not is_long and stop_loss > 0 and price >= stop_loss:
+        status, result, reason = "closed", "loss", "stop_loss_hit"
+    elif not is_long and target > 0 and price <= target:
+        status, result, reason = "closed", "win", "target_hit"
+    else:
+        status, result, reason = str(trade.get("status") or "open"), "open", "still_open"
+
+    pnl = calculate_paper_trade_pnl(side=side, entry=entry, exit_price=price, quantity=quantity)
+    return {
+        **trade,
+        "status": status,
+        "result": result,
+        "exit_price": price if status == "closed" else trade.get("exit_price"),
+        "pnl": pnl if status == "closed" else float(trade.get("pnl") or 0.0),
+        "exit_reason": reason,
+    }
+
+
+def manual_exit_payload(trade: dict[str, Any], *, exit_price: float, quantity: int | None = None, reason: str = "manual_exit") -> dict[str, Any]:
+    trade_quantity = int(trade.get("quantity") or 1)
+    exit_quantity = int(quantity or trade_quantity)
+    partial = exit_quantity < trade_quantity
+    pnl = calculate_paper_trade_pnl(
+        side=str(trade.get("side") or trade.get("signal") or "BUY"),
+        entry=float(trade.get("entry") or trade.get("entry_price") or 0.0),
+        exit_price=float(exit_price),
+        quantity=trade_quantity,
+        partial_quantity=exit_quantity,
+    )
+    return {
+        **trade,
+        "status": "partially_exited" if partial else "closed",
+        "exit_price": float(exit_price),
+        "quantity": trade_quantity - exit_quantity if partial else trade_quantity,
+        "exit_quantity": exit_quantity,
+        "pnl": pnl,
+        "result": "win" if pnl > 0 else "loss" if pnl < 0 else "flat",
+        "exit_reason": reason,
+        "closed_at": utc_now() if not partial else trade.get("closed_at"),
+    }
+
+
 def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
     init_paper_trade_store()
     row = {

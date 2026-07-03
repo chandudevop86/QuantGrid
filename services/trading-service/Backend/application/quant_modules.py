@@ -599,9 +599,21 @@ def trade_journal_summary(limit: int = 100) -> dict[str, Any]:
     gross_loss = abs(sum(losses))
     expectancy = mean(pnl_values) if pnl_values else 0.0
     strategy_pnl: dict[str, float] = {}
+    day_performance: dict[str, float] = {}
+    monthly_performance: dict[str, float] = {}
+    rr_values: list[float] = []
     for trade in closed:
+        pnl = float(trade.get("pnl") or 0.0)
         strategy = str(trade.get("strategy") or trade.get("strategy_name") or "unknown")
-        strategy_pnl[strategy] = strategy_pnl.get(strategy, 0.0) + float(trade.get("pnl") or 0.0)
+        strategy_pnl[strategy] = strategy_pnl.get(strategy, 0.0) + pnl
+        created_at = str(trade.get("created_at") or trade.get("timestamp") or "")
+        day_key = created_at[:10] or "unknown"
+        month_key = created_at[:7] or "unknown"
+        day_performance[day_key] = day_performance.get(day_key, 0.0) + pnl
+        monthly_performance[month_key] = monthly_performance.get(month_key, 0.0) + pnl
+        rr = _trade_risk_reward(trade)
+        if rr is not None:
+            rr_values.append(rr)
     ranked_strategies = sorted(strategy_pnl.items(), key=lambda item: item[1], reverse=True)
     return {
         "module": "trade_journal",
@@ -616,8 +628,11 @@ def trade_journal_summary(limit: int = 100) -> dict[str, Any]:
         "avg_loss": round(mean(losses), 2) if losses else 0.0,
         "average_win": round(mean(wins), 2) if wins else 0.0,
         "average_loss": round(mean(losses), 2) if losses else 0.0,
+        "average_rr": round(mean(rr_values), 2) if rr_values else 0.0,
         "best_strategy": ranked_strategies[0][0] if ranked_strategies else None,
         "worst_strategy": ranked_strategies[-1][0] if ranked_strategies else None,
+        "day_wise_performance": {key: round(value, 2) for key, value in sorted(day_performance.items())},
+        "monthly_performance": {key: round(value, 2) for key, value in sorted(monthly_performance.items())},
         "recent_trades": trades[: min(limit, 20)],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -632,6 +647,19 @@ def _max_drawdown(pnl_values: list[float]) -> float:
         peak = max(peak, equity)
         max_drawdown = min(max_drawdown, equity - peak)
     return abs(max_drawdown)
+
+
+def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
+    try:
+        entry = float(trade.get("entry") or trade.get("entry_price"))
+        stop = float(trade.get("stop_loss"))
+        target = float(trade.get("target") or trade.get("target_price"))
+    except (TypeError, ValueError):
+        return None
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
+    return abs(target - entry) / risk
 
 
 def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:

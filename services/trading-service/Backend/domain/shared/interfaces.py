@@ -41,7 +41,28 @@ class IRiskManager(Protocol):
 
 @runtime_checkable
 class IBrokerAdapter(Protocol):
+    async def authenticate(self) -> dict[str, Any]:
+        ...
+
+    async def get_margin(self) -> dict[str, Any]:
+        ...
+
+    async def get_positions(self) -> list[dict[str, Any]]:
+        ...
+
     async def place_order(self, order: Order) -> Any:
+        ...
+
+    async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> Any:
+        ...
+
+    async def cancel_order(self, broker_order_id: str) -> Any:
+        ...
+
+    async def get_order_status(self, broker_order_id: str) -> Any:
+        ...
+
+    async def get_order_book(self) -> list[dict[str, Any]]:
         ...
 
     def status(self) -> dict[str, Any]:

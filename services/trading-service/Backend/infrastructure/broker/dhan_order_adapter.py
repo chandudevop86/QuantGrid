@@ -35,6 +35,16 @@ class DhanBrokerClient:
         if not self.client_id or not self.access_token:
             raise BrokerAdapterError("broker not configured")
 
+    async def authenticate(self) -> dict[str, Any]:
+        return {"authenticated": bool(self.client_id and self.access_token), "provider": "dhan", "live": True}
+
+    async def get_margin(self) -> dict[str, Any]:
+        try:
+            raw = await asyncio.to_thread(self._request, "GET", "/fundlimit")
+        except BrokerAdapterError:
+            raw = await asyncio.to_thread(self._request, "GET", "/margincalculator")
+        return {"provider": "dhan", "raw": _safe_raw(raw)}
+
     async def place_order(self, order: Order) -> BrokerOrderResult:
         security_id = str(order.metadata.get("security_id") or os.getenv(f"DHAN_SECURITY_ID_{order.symbol.upper()}", "")).strip()
         payload = {
@@ -78,6 +88,21 @@ class DhanBrokerClient:
             confirmed=False,
         )
 
+    async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
+        payload = {
+            key: value
+            for key, value in {
+                "quantity": updates.get("quantity"),
+                "price": updates.get("price"),
+                "triggerPrice": updates.get("trigger_price"),
+                "orderType": updates.get("order_type"),
+                "validity": updates.get("validity"),
+            }.items()
+            if value is not None
+        }
+        raw = await asyncio.to_thread(self._request, "PUT", f"/orders/{broker_order_id}", payload)
+        return _result_from_raw(broker_order_id, raw, message="Dhan modify request completed.")
+
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
         try:
             raw = await asyncio.to_thread(self._sdk_client().cancel_order, broker_order_id)
@@ -112,6 +137,15 @@ class DhanBrokerClient:
         except DhanSdkUnavailable:
             pass
         raw = await asyncio.to_thread(self._request, "GET", "/holdings")
+        return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
+
+    async def get_order_book(self) -> list[dict[str, Any]]:
+        try:
+            raw = await asyncio.to_thread(self._sdk_client().get_order_list)
+            return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
+        except DhanSdkUnavailable:
+            pass
+        raw = await asyncio.to_thread(self._request, "GET", "/orders")
         return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
 
     def status(self) -> dict[str, Any]:

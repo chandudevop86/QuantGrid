@@ -29,7 +29,16 @@ class BrokerOrderResult:
 
 
 class BrokerClient(IBrokerAdapter, Protocol):
+    async def authenticate(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    async def get_margin(self) -> dict[str, Any]:
+        raise NotImplementedError
+
     async def place_order(self, order: Order) -> BrokerOrderResult:
+        raise NotImplementedError
+
+    async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
         raise NotImplementedError
 
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
@@ -49,6 +58,12 @@ class PaperBrokerClient:
     def __init__(self) -> None:
         self.orders: dict[str, BrokerOrderResult] = {}
 
+    async def authenticate(self) -> dict[str, Any]:
+        return {"authenticated": True, "provider": "paper", "live": False}
+
+    async def get_margin(self) -> dict[str, Any]:
+        return {"available": 10_000_000.0, "used": 0.0, "currency": "INR", "provider": "paper"}
+
     async def place_order(self, order: Order) -> BrokerOrderResult:
         broker_order_id = f"PAPER-{uuid4().hex[:12]}"
         result = BrokerOrderResult(
@@ -64,6 +79,17 @@ class PaperBrokerClient:
         )
         self.orders[broker_order_id] = result
         return result
+
+    async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
+        order = await self.get_order_status(broker_order_id)
+        if order.status == "not_found":
+            return order
+        if "quantity" in updates and updates["quantity"] is not None:
+            order.quantity = int(updates["quantity"])
+        if "price" in updates:
+            order.price = float(updates["price"]) if updates["price"] is not None else None
+        order.message = "Paper order modified."
+        return order
 
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
         order = await self.get_order_status(broker_order_id)
@@ -103,6 +129,9 @@ class PaperBrokerClient:
     async def get_holdings(self) -> list[dict[str, Any]]:
         return []
 
+    async def get_order_book(self) -> list[dict[str, Any]]:
+        return [order.to_dict() for order in self.orders.values()]
+
     def status(self) -> dict[str, Any]:
         return {
             "provider": "paper",
@@ -114,8 +143,17 @@ class PaperBrokerClient:
 
 
 class LiveBrokerClient:
+    async def authenticate(self) -> dict[str, Any]:
+        raise RuntimeError("Live broker authentication is not implemented. Configure a concrete broker adapter first.")
+
+    async def get_margin(self) -> dict[str, Any]:
+        raise RuntimeError("Live broker margin is not implemented. Configure a concrete broker adapter first.")
+
     async def place_order(self, order: Order) -> BrokerOrderResult:
         raise RuntimeError("Live broker execution is not implemented. Configure a concrete broker adapter first.")
+
+    async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
+        raise RuntimeError("Live broker order modification is not implemented. Configure a concrete broker adapter first.")
 
     async def cancel_order(self, broker_order_id: str) -> BrokerOrderResult:
         raise RuntimeError("Live broker cancellation is not implemented. Configure a concrete broker adapter first.")
@@ -128,6 +166,9 @@ class LiveBrokerClient:
 
     async def get_holdings(self) -> list[dict[str, Any]]:
         raise RuntimeError("Live broker holdings are not implemented. Configure a concrete broker adapter first.")
+
+    async def get_order_book(self) -> list[dict[str, Any]]:
+        raise RuntimeError("Live broker order book is not implemented. Configure a concrete broker adapter first.")
 
     def status(self) -> dict[str, Any]:
         settings = get_settings()

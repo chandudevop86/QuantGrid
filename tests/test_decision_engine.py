@@ -27,6 +27,8 @@ def test_decision_engine_maps_bullish_bias_to_buy_ce():
     assert decision.confidence >= 70
     assert decision.data_status == "LIVE"
     assert decision.supporting_factors
+    assert decision.score_breakdown
+    assert "Confidence" in decision.score_reason
     assert "upside" in decision.simple_explanation
 
 
@@ -86,3 +88,4 @@ def test_decision_engine_blocks_low_confidence_mixed_setup():
     assert decision.data_status == "DEGRADED"
     assert decision.opposing_factors
     assert decision.warnings
+    assert any(item["weight"] < 0 for item in decision.score_breakdown)
