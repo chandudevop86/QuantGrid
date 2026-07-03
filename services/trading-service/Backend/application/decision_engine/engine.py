@@ -16,6 +16,7 @@ class DecisionInputs:
     warnings: list[str] = field(default_factory=list)
     market_bias: str = "NEUTRAL"
     market_trend: str | None = None
+    momentum: str | None = None
     price_action: str | None = None
     support: str = "Nearest confirmed demand zone"
     resistance: str = "Nearest confirmed supply zone"
@@ -26,6 +27,7 @@ class DecisionInputs:
     max_pain: str | None = None
     vwap_relation: str | None = None
     gift_nifty_bias: str | None = None
+    liquidity: str | None = None
     expiry_day: bool = False
     confidence_threshold: int = 70
 
@@ -198,6 +200,7 @@ class DecisionEngine:
 
         for label, value in (
             ("Trend", inputs.market_trend),
+            ("Momentum", inputs.momentum),
             ("Price action", inputs.price_action),
             ("OI", inputs.oi_bias),
             ("FII/DII", inputs.fii_dii_bias),
@@ -236,6 +239,9 @@ class DecisionEngine:
         if inputs.expiry_day:
             warnings.append("Expiry-day premium decay risk is elevated.")
             opposing.append("Expiry decay can hurt option buyers.")
+        if str(inputs.liquidity or "").upper() in {"LOW", "THIN", "WEAK"}:
+            warnings.append("Liquidity is thin; entries and exits may slip.")
+            opposing.append("Low liquidity reduces trade quality.")
         if float(inputs.feed_delay_seconds or 0) > 10:
             warnings.append("Market data is degraded.")
             opposing.append("Feed delay reduces confidence.")
@@ -257,6 +263,8 @@ class DecisionEngine:
             breakdown.append({"factor": "India VIX is high", "weight": -12, "effect": "penalty"})
         if inputs.expiry_day:
             breakdown.append({"factor": "Expiry-day premium decay risk", "weight": -8, "effect": "penalty"})
+        if str(inputs.liquidity or "").upper() in {"LOW", "THIN", "WEAK"}:
+            breakdown.append({"factor": "Low liquidity can increase slippage", "weight": -8, "effect": "penalty"})
         if str(inputs.market_trend or "").upper() == "WEAK":
             breakdown.append({"factor": "Trend is weak", "weight": -8, "effect": "penalty"})
         warning_penalty = min(10, len(warnings) * 2)

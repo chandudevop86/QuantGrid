@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from test_sqlalchemy_trading_stores import configure_sqlalchemy_store
@@ -27,7 +27,7 @@ def _signal(**overrides):
         "entry_price": 100.0,
         "stop_loss": 95.0,
         "target_price": 110.0,
-        "signal_time": datetime.utcnow(),
+        "signal_time": datetime.now(timezone.utc),
         "metadata": {"quantity": 1, "score": 20, "validation_passed": True},
     }
     values.update(overrides)
@@ -218,8 +218,8 @@ def test_execution_does_not_create_position_when_broker_not_confirmed(monkeypatc
                 _signal(),
                 engine=ExecutionEngine(),
                 execution_mode="paper",
-                candles_1m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
-                candles_15m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
+                candles_1m=[{"timestamp": datetime.now(timezone.utc).isoformat(), "close": 100}],
+                candles_15m=[{"timestamp": datetime.now(timezone.utc).isoformat(), "close": 100}],
                 broker_client=UnconfirmedBroker(),
                 db=db,
                 request=None,
@@ -296,8 +296,8 @@ def test_execution_creates_position_after_broker_confirmation_and_audits(monkeyp
                 _signal(),
                 engine=ExecutionEngine(),
                 execution_mode="paper",
-                candles_1m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
-                candles_15m=[{"timestamp": datetime.utcnow().isoformat(), "close": 100}],
+                candles_1m=[{"timestamp": datetime.now(timezone.utc).isoformat(), "close": 100}],
+                candles_15m=[{"timestamp": datetime.now(timezone.utc).isoformat(), "close": 100}],
                 broker_client=ConfirmingBroker(),
                 db=db,
                 request=request,

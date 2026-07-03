@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.broker import MockBroker
@@ -17,7 +17,7 @@ def _signal(**overrides):
         "entry_price": 100.0,
         "stop_loss": 95.0,
         "target_price": 110.0,
-        "signal_time": datetime.utcnow(),
+        "signal_time": datetime.now(timezone.utc),
         "metadata": {"score": 20, "risk_pct": 1.0},
     }
     values.update(overrides)
@@ -26,7 +26,7 @@ def _signal(**overrides):
 
 def test_central_risk_rejects_max_daily_loss_before_broker():
     manager = GlobalRiskManager(GlobalRiskConfig(max_daily_loss_pct=1.0))
-    manager.daily_pnl[datetime.utcnow().date()] = -2_000
+    manager.daily_pnl[datetime.now(timezone.utc).date()] = -2_000
     broker = MockBroker()
 
     result = asyncio.run(ExecutionEngine(broker=broker, risk_manager=manager).execute_signal(_signal(), market_price=100))
@@ -37,7 +37,7 @@ def test_central_risk_rejects_max_daily_loss_before_broker():
 
 def test_central_risk_rejects_max_trades_per_day_before_broker():
     manager = GlobalRiskManager(GlobalRiskConfig(max_trades_per_day=1))
-    manager.daily_trades[datetime.utcnow().date()] = 1
+    manager.daily_trades[datetime.now(timezone.utc).date()] = 1
     broker = MockBroker()
 
     result = asyncio.run(ExecutionEngine(broker=broker, risk_manager=manager).execute_signal(_signal(), market_price=100))
@@ -52,7 +52,7 @@ def test_central_risk_rejects_stale_signal_before_broker():
 
     result = asyncio.run(
         ExecutionEngine(broker=broker, risk_manager=manager).execute_signal(
-            _signal(signal_time=datetime.utcnow() - timedelta(seconds=120)),
+            _signal(signal_time=datetime.now(timezone.utc) - timedelta(seconds=120)),
             market_price=100,
         )
     )

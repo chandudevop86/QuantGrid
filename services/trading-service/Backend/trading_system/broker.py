@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -16,8 +16,8 @@ class BrokerOrder:
     price: float
     status: str = "pending"
     filled_price: float | None = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -59,7 +59,7 @@ class MockBroker:
         order = self.orders[order_id]
         if order.status == "pending":
             order.status = "cancelled"
-            order.updated_at = datetime.utcnow()
+            order.updated_at = datetime.now(timezone.utc)
         return order
 
     async def get_order_status(self, order_id: str) -> BrokerOrder:

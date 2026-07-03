@@ -24,7 +24,7 @@ def _signal(**overrides):
         "entry_price": 100.0,
         "stop_loss": 95.0,
         "target_price": 110.0,
-        "signal_time": datetime.utcnow(),
+        "signal_time": datetime.now(timezone.utc),
         "metadata": {"quantity": 1, "score": 20, "validation_passed": True},
     }
     values.update(overrides)

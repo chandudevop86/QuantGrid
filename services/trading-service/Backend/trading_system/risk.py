@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from math import floor
 from typing import Any
 
@@ -77,7 +77,7 @@ class GlobalRiskManager:
         now: datetime | None = None,
         capital: float | None = None,
     ) -> RiskDecision:
-        now = now or datetime.utcnow()
+        now = now or datetime.now(timezone.utc)
         if self.kill_switch_active:
             return self._reject("kill_switch_active")
         levels_valid, levels_reason = self._valid_levels(signal)
@@ -149,11 +149,11 @@ class GlobalRiskManager:
         return int(quantity), float(risk_amount), float(risk_per_unit)
 
     def record_trade_opened(self, when: datetime | None = None) -> None:
-        trade_date = (when or datetime.utcnow()).date()
+        trade_date = (when or datetime.now(timezone.utc)).date()
         self.daily_trades[trade_date] = self.daily_trades.get(trade_date, 0) + 1
 
     def record_realized_pnl(self, pnl: float, when: datetime | None = None) -> RiskSnapshot:
-        trade_date = (when or datetime.utcnow()).date()
+        trade_date = (when or datetime.now(timezone.utc)).date()
         self.equity += float(pnl)
         self.peak_equity = max(self.peak_equity, self.equity)
         self.daily_pnl[trade_date] = self.daily_pnl.get(trade_date, 0.0) + float(pnl)
@@ -164,7 +164,7 @@ class GlobalRiskManager:
         return self.snapshot(trade_date)
 
     def snapshot(self, trade_date: date | None = None) -> RiskSnapshot:
-        trade_date = trade_date or datetime.utcnow().date()
+        trade_date = trade_date or datetime.now(timezone.utc).date()
         return RiskSnapshot(
             equity=self.equity,
             peak_equity=self.peak_equity,

@@ -3,6 +3,7 @@ import asyncio
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,9 +65,32 @@ def _allow_anonymous_websocket() -> bool:
     return False
 
 
+async def _startup() -> None:
+    validate_security_config()
+    redis_service.configure()
+    init_auth_store()
+    with SessionLocal() as db:
+        seed_bootstrap_users(db)
+    init_job_store()
+    init_market_data_store()
+    init_order_store()
+    init_paper_trade_store()
+    init_position_store()
+    init_kill_switch_store()
+    init_investment_research_store()
+    manager.set_loop(asyncio.get_running_loop())
+    start_market_data_stream()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await _startup()
+    yield
+
+
 def create_app():
     configure_logging(os.getenv("LOG_LEVEL", "INFO"))
-    app = FastAPI(title="QuantGrid API")
+    app = FastAPI(title="QuantGrid API", lifespan=lifespan)
     logger = logging.getLogger("quantgrid.api")
 
     app.add_middleware(
@@ -125,23 +149,6 @@ def create_app():
             )
             if "response" in locals():
                 response.headers["X-Request-ID"] = request_id
-
-    @app.on_event("startup")
-    def startup():
-        validate_security_config()
-        redis_service.configure()
-        init_auth_store()
-        with SessionLocal() as db:
-            seed_bootstrap_users(db)
-        init_job_store()
-        init_market_data_store()
-        init_order_store()
-        init_paper_trade_store()
-        init_position_store()
-        init_kill_switch_store()
-        init_investment_research_store()
-        manager.set_loop(asyncio.get_running_loop())
-        start_market_data_stream()
 
     @app.get("/health")
     @app.get("/api/health")

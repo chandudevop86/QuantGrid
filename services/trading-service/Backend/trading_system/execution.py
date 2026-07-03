@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from Backend.domain.engine.execution_engine import ExecutionEngine as OrderFactory
@@ -20,7 +20,7 @@ PriceProvider = Callable[[str], float]
 class ExecutionRequest:
     signal: StrategySignal
     market_price: float | None = None
-    received_at: datetime = field(default_factory=datetime.utcnow)
+    received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(slots=True)
@@ -56,7 +56,7 @@ class ExecutionEngine:
         self.logger = get_logger(__name__)
 
     async def execute_signal(self, signal: StrategySignal, *, market_price: float | None = None) -> ExecutionResult:
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         risk_decision = self.risk_manager.validate_order(signal, now=started_at)
         if not risk_decision.accepted:
             reason = risk_decision.reason
@@ -80,7 +80,7 @@ class ExecutionEngine:
 
         order = self.order_factory.order_from_signal(signal, quantity=risk_decision.quantity)
         broker_order = await self.broker.place_order(order.symbol, order.side, int(order.quantity), slipped_price)
-        latency_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+        latency_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
 
         if broker_order.status == "filled":
             self.risk_manager.record_trade_opened(started_at)

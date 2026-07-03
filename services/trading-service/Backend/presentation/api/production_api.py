@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,7 +29,7 @@ class SignalPayload(BaseModel):
     entry_price: float
     stop_loss: float
     target_price: float
-    signal_time: datetime = Field(default_factory=datetime.utcnow)
+    signal_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_signal(self) -> StrategySignal:

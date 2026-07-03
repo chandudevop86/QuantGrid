@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
@@ -18,7 +18,7 @@ class ExecutionEngine(IOrderManager):
             target_price=signal.target_price, 
             trailing_stop_loss=signal.trailing_stop_loss,
             trailing_stop_pct=signal.trailing_stop_pct,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             metadata={
                 "strategy_name": signal.strategy_name,
                 "source": "signal_based",

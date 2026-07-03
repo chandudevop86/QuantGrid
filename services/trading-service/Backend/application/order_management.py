@@ -46,22 +46,39 @@ class OrderManagementService:
         self._active_order_keys: set[str] = set()
 
     async def submit_signal(self, signal: StrategySignal, context: dict[str, Any] | None = None) -> OMSResult:
+        return await self.submit_order(self._order_from_signal(signal), signal, context)
+
+    async def submit_order(
+        self,
+        order: Order,
+        signal: StrategySignal,
+        context: dict[str, Any] | None = None,
+    ) -> OMSResult:
         context = dict(context or {})
         local_order_id = str(context.get("local_order_id") or f"OMS-{uuid4().hex[:12]}")
         audit: list[dict[str, Any]] = []
         order_key = self._order_key(signal)
-        risk = self.risk_engine.validate(
-            signal,
-            {
-                **context,
-                "active_trade_keys": [*context.get("active_trade_keys", []), *self._active_order_keys],
-            },
-        )
+        risk = context.get("prevalidated_risk")
+        if isinstance(risk, dict):
+            risk = RiskValidationResult(
+                allowed=bool(risk.get("allowed")),
+                reasons=list(risk.get("reasons") or ([risk.get("reason")] if risk.get("reason") else ["OK"])),
+                risk_score=int(risk.get("risk_score") or 100),
+                blocked_by=list(risk.get("blocked_by") or []),
+                warnings=list(risk.get("warnings") or []),
+            )
+        if risk is None:
+            risk = self.risk_engine.validate(
+                signal,
+                {
+                    **context,
+                    "active_trade_keys": [*context.get("active_trade_keys", []), *self._active_order_keys],
+                },
+            )
         self._audit(audit, "risk_checked", local_order_id, {"allowed": risk.allowed, "blocked_by": risk.blocked_by})
         if not risk.allowed:
             return self._result(local_order_id, "rejected", None, risk, 0, risk.reasons, risk.warnings, audit)
 
-        order = self._order_from_signal(signal)
         self._active_order_keys.add(order_key)
         try:
             return await self._place_with_retry(local_order_id, order, risk, audit)

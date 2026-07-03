@@ -12,6 +12,7 @@ from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
+from Backend.application.order_management import OrderManagementService
 from Backend.application.order_store import (
     broker_status_to_order_status,
     create_order,
@@ -718,7 +719,43 @@ async def _submit_paper_signal(
             actor=actor,
             reason="Submitted to broker adapter.",
         )
-        broker_order = await broker_client.place_order(order)
+        oms_result = await OrderManagementService(broker_client).submit_order(
+            order,
+            signal,
+            {
+                "local_order_id": lifecycle_order["local_order_id"] if lifecycle_order else None,
+                "prevalidated_risk": {
+                    "allowed": risk_decision.allowed,
+                    "reasons": [risk_decision.reason],
+                    "risk_score": risk_decision.details.get("risk_engine", {}).get("risk_score", 100),
+                    "blocked_by": risk_decision.details.get("risk_engine", {}).get("blocked_by", []),
+                    "warnings": risk_decision.details.get("risk_engine", {}).get("warnings", []),
+                },
+            },
+        )
+        if not oms_result.accepted:
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "rejected" if oms_result.status == "rejected" else "failed",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"OMS_{oms_result.status.upper()}: {'; '.join(oms_result.reasons)}",
+                broker_order_id=oms_result.broker_order_id,
+                broker_status=oms_result.status,
+                broker_response=oms_result.to_dict(),
+            )
+            observe_rejected_order(f"oms_{oms_result.status}", execution_mode)
+            return _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"OMS_{oms_result.status.upper()}: {'; '.join(oms_result.reasons)}",
+                execution_mode=execution_mode,
+                strategy_diagnostics=strategy_diagnostics,
+                extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
+            )
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "broker_submitted",
@@ -726,12 +763,11 @@ async def _submit_paper_signal(
             request=request,
             actor=actor,
             reason="Broker accepted submission.",
-            broker_order_id=broker_order.broker_order_id,
-            broker_status=broker_order.status,
-            entry_price=broker_order.price,
-            broker_response=broker_order.to_dict(),
+            broker_order_id=oms_result.broker_order_id,
+            broker_status=oms_result.status,
+            broker_response=oms_result.to_dict(),
         )
-        broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
+        broker_status = await broker_client.get_order_status(str(oms_result.broker_order_id))
     except Exception as exc:
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,

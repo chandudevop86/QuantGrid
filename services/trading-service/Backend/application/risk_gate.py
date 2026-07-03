@@ -163,9 +163,9 @@ def validate_order_risk(
 
 
 def datetime_utc_date():
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    return datetime.utcnow().date()
+    return datetime.now(timezone.utc).date()
 
 
 def _risk_amount(signal: StrategySignal, quantity: int) -> float:

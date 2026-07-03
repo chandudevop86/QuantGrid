@@ -92,5 +92,14 @@ class ITradeRepository(Protocol):
 
 @runtime_checkable
 class IDecisionEngine(Protocol):
-    def decide(self, inputs: dict[str, Any]) -> dict[str, Any]:
+    def decide(self, inputs: Any) -> Any:
+        ...
+
+
+@runtime_checkable
+class IAnalyticsService(Protocol):
+    def trade_journal_summary(self, limit: int = 100) -> dict[str, Any]:
+        ...
+
+    def strategy_ranking(self, limit: int = 500) -> dict[str, Any]:
         ...

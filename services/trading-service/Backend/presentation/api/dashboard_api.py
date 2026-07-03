@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -29,6 +30,7 @@ from Backend.presentation.api.websocket_manager import manager
 
 router = APIRouter()
 compatibility_router = APIRouter()
+logger = logging.getLogger("quantgrid.dashboard")
 
 
 def _present_job(job: dict) -> dict:
@@ -129,6 +131,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             warnings=validation.warnings,
             market_bias=os.getenv("MARKET_BIAS", "NEUTRAL"),
             market_trend=os.getenv("MARKET_TREND"),
+            momentum=os.getenv("MOMENTUM_BIAS"),
             price_action=os.getenv("PRICE_ACTION"),
             support=os.getenv("SUPPORT_LEVEL", "Nearest confirmed demand zone"),
             resistance=os.getenv("RESISTANCE_LEVEL", "Nearest confirmed supply zone"),
@@ -139,9 +142,20 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             max_pain=os.getenv("MAX_PAIN"),
             vwap_relation=os.getenv("VWAP_RELATION"),
             gift_nifty_bias=os.getenv("GIFT_NIFTY_BIAS"),
+            liquidity=os.getenv("LIQUIDITY_STATUS"),
             expiry_day=_bool_env("EXPIRY_DAY"),
             confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
         )
+    )
+    logger.info(
+        "dashboard_decision",
+        extra={
+            "market_bias": decision.market_bias,
+            "recommendation": decision.trade_recommendation,
+            "confidence": decision.confidence,
+            "data_status": decision.data_status,
+            "blocked": decision.blocked,
+        },
     )
 
     return {

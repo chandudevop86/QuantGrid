@@ -89,3 +89,21 @@ def test_decision_engine_blocks_low_confidence_mixed_setup():
     assert decision.opposing_factors
     assert decision.warnings
     assert any(item["weight"] < 0 for item in decision.score_breakdown)
+
+
+def test_decision_engine_penalizes_low_liquidity_and_weak_momentum():
+    decision = DecisionEngine().decide(
+        DecisionInputs(
+            market_live=True,
+            valid_for_execution=True,
+            risk_blocked=False,
+            feed_delay_seconds=2,
+            market_bias="BULLISH",
+            momentum="BEARISH",
+            liquidity="LOW",
+        )
+    )
+
+    assert decision.trade_recommendation == "No Trade"
+    assert any("Momentum" in factor for factor in decision.opposing_factors)
+    assert any("Liquidity" in warning for warning in decision.warnings)
