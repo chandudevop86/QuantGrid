@@ -33,6 +33,21 @@ export default function Operations() {
 
   const observability = operations?.observability;
   const health = operations?.system_health;
+  const metricValue = (...values: any[]) => {
+    const value = values.find((item) => item !== undefined && item !== null && item !== "");
+    if (value && typeof value === "object") {
+      if ("validated" in value) return value.validated;
+      if ("generated" in value) return value.generated;
+      if ("count" in value) return value.count;
+      if ("total" in value) return value.total;
+      return "-";
+    }
+    return value ?? 0;
+  };
+  const formatMs = (value: any) => {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) ? `${numeric}ms` : "-";
+  };
   const formatMetadata = (metadata: any) => {
     if (!metadata || Object.keys(metadata).length === 0) return "-";
     return JSON.stringify(metadata);
@@ -53,47 +68,47 @@ export default function Operations() {
         <div className="metric-grid observability-grid">
           <div className="metric-card">
             <span className="metric-label">WebSocket Connections</span>
-            <strong className="metric-value">{observability?.websocket_connections ?? 0}</strong>
+            <strong className="metric-value">{metricValue(observability?.websocket_connection_count, observability?.websocket_connections)}</strong>
             <span className="metric-helper">Active realtime clients</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">API Latency</span>
-            <strong className="metric-value">{observability?.api_latency_status ?? "tracked"}</strong>
-            <span className="metric-helper">Prometheus histogram: api_request_latency_seconds</span>
+            <strong className="metric-value">{formatMs(metricValue(observability?.api_latency_ms, observability?.api_latency_status))}</strong>
+            <span className="metric-helper">Latest request latency</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Signal Generation</span>
-            <strong className="metric-value">{observability?.signal_generation_metrics}</strong>
-            <span className="metric-helper">Prometheus counter</span>
+            <strong className="metric-value">{metricValue(observability?.signal_generation_metrics?.generated, observability?.signal_generation_metrics)}</strong>
+            <span className="metric-helper">Generated signals</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Strategy Executions</span>
-            <strong className="metric-value">{observability?.strategy_execution_metrics}</strong>
-            <span className="metric-helper">Prometheus counter</span>
+            <strong className="metric-value">{metricValue(observability?.strategy_execution_count, observability?.strategy_execution_metrics)}</strong>
+            <span className="metric-helper">Strategy runs</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Signal Count</span>
-            <strong className="metric-value">{observability?.signal_count_metrics}</strong>
-            <span className="metric-helper">Prometheus counter</span>
+            <strong className="metric-value">{metricValue(observability?.signal_generation_metrics?.validated, observability?.signal_count_metrics)}</strong>
+            <span className="metric-helper">Validated signals</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Failed Executions</span>
-            <strong className="metric-value">{observability?.failed_strategy_execution_metrics}</strong>
+            <strong className="metric-value">{metricValue(observability?.failed_strategy_execution_count, observability?.failed_strategy_execution_metrics)}</strong>
             <span className="metric-helper">Strategy error counter</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Option Chain Failures</span>
-            <strong className="metric-value">{observability?.option_chain_failure_metrics}</strong>
+            <strong className="metric-value">{metricValue(observability?.option_chain_failure_count, observability?.option_chain_failure_metrics)}</strong>
             <span className="metric-helper">Provider fallback counter</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Rejected Orders</span>
-            <strong className="metric-value">{observability?.rejected_order_metrics}</strong>
+            <strong className="metric-value">{metricValue(observability?.rejected_order_count, observability?.rejected_order_metrics)}</strong>
             <span className="metric-helper">Safety gate counter</span>
           </div>
           <div className="metric-card">
             <span className="metric-label">Feed Delay</span>
-            <strong className="metric-value">{observability?.feed_delay_seconds ?? "-"}s</strong>
+            <strong className="metric-value">{metricValue(observability?.feed_delay_metrics?.seconds, observability?.feed_delay_seconds)}s</strong>
             <span className="metric-helper">Latest NIFTY 1m candle</span>
           </div>
           <div className="metric-card">
