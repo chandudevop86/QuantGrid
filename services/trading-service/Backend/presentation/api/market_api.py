@@ -35,6 +35,13 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
 
+DHAN_UNDERLYING_DEFAULTS: dict[str, tuple[int, str]] = {
+    "NIFTY": (13, "IDX_I"),
+    "BANKNIFTY": (25, "IDX_I"),
+    "FINNIFTY": (27, "IDX_I"),
+}
+
+
 def _allow_sample_market_data() -> bool:
     return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
 
@@ -224,9 +231,11 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
     if not access_token or not client_id:
         raise RuntimeError("Dhan client ID or access token is not configured. Open Dhan Login and save valid credentials.")
 
+    payload = dict(body)
+    payload.setdefault("dhanClientId", client_id)
     request = Request(
         f"https://api.dhan.co/v2/{path}",
-        data=json.dumps(body).encode("utf-8"),
+        data=json.dumps(payload).encode("utf-8"),
         headers={
             "access-token": access_token,
             "client-id": client_id,
@@ -246,41 +255,137 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
         raise
 
 
+def _first_present(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in payload and payload[key] is not None:
+            return payload[key]
+    return None
+
+
+def _dhan_response_data(payload: dict[str, Any] | list[Any]) -> Any:
+    if isinstance(payload, dict) and "data" in payload:
+        return payload["data"]
+    return payload
+
+
+def _dhan_underlying(symbol: str) -> tuple[int, str]:
+    normalized = symbol.upper()
+    default_security_id, default_segment = DHAN_UNDERLYING_DEFAULTS.get(normalized, (0, ""))
+    security_id = (
+        os.getenv(f"DHAN_SECURITY_ID_{normalized}")
+        or os.getenv(f"QUANTGRID_DHAN_SECURITY_ID_{normalized}")
+        or (str(default_security_id) if default_security_id else None)
+    )
+    exchange_segment = (
+        os.getenv(f"DHAN_EXCHANGE_SEGMENT_{normalized}")
+        or os.getenv(f"QUANTGRID_DHAN_EXCHANGE_SEGMENT_{normalized}")
+        or os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT")
+        or default_segment
+    )
+    if not security_id or not exchange_segment:
+        raise RuntimeError(f"Dhan option-chain underlying is not configured for {normalized}.")
+    return int(security_id), exchange_segment
+
+
+def _dhan_expiry_values(payload: dict[str, Any] | list[Any]) -> list[Any]:
+    data = _dhan_response_data(payload)
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        nested = data.get("data")
+        if isinstance(nested, list):
+            return nested
+        for key in ("expiry", "expiryList", "expiry_list", "expiryDates"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _dhan_option_chain(payload: dict[str, Any]) -> dict[str, Any]:
+    data = _dhan_response_data(payload)
+    if not isinstance(data, dict):
+        return {}
+    nested = data.get("data")
+    if isinstance(nested, dict) and isinstance(nested.get("oc"), dict):
+        return nested["oc"]
+    option_chain = data.get("oc") or data.get("optionChain") or data.get("option_chain")
+    return option_chain if isinstance(option_chain, dict) else {}
+
+
+def _dhan_strike_payload(option_chain: dict[str, Any], strike: int) -> dict[str, Any]:
+    candidates = {
+        str(strike),
+        str(float(strike)),
+        f"{float(strike):.1f}",
+        f"{float(strike):.2f}",
+        f"{float(strike):.6f}",
+    }
+    for key in candidates:
+        value = option_chain.get(key)
+        if isinstance(value, dict):
+            return value
+    for key, value in option_chain.items():
+        try:
+            if int(round(float(key))) == strike and isinstance(value, dict):
+                return value
+        except (TypeError, ValueError):
+            continue
+    return {}
+
+
+def _dhan_leg_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    greeks = payload.get("greeks") if isinstance(payload.get("greeks"), dict) else None
+    if greeks is None:
+        greeks = {
+            key: payload[key]
+            for key in ("delta", "gamma", "theta", "vega", "rho")
+            if key in payload and payload[key] is not None
+        } or None
+    bid = {
+        "price": _first_present(payload, "top_bid_price", "topBidPrice", "bid_price", "bidPrice"),
+        "quantity": _first_present(payload, "top_bid_quantity", "topBidQuantity", "bid_quantity", "bidQuantity"),
+    }
+    ask = {
+        "price": _first_present(payload, "top_ask_price", "topAskPrice", "ask_price", "askPrice"),
+        "quantity": _first_present(payload, "top_ask_quantity", "topAskQuantity", "ask_quantity", "askQuantity"),
+    }
+    return {
+        "ltp": _first_present(payload, "last_price", "lastPrice", "ltp"),
+        "change": _first_present(payload, "change", "net_change", "netChange"),
+        "volume": _first_present(payload, "volume", "totalTradedVolume"),
+        "oi": _first_present(payload, "oi", "open_interest", "openInterest"),
+        "iv": _first_present(payload, "implied_volatility", "impliedVolatility", "iv"),
+        "oi_change": _first_present(payload, "oi_change", "change_oi", "changeinOpenInterest", "oiChange"),
+        "previous_oi": _first_present(payload, "previous_oi", "previousOpenInterest"),
+        "greeks": greeks,
+        "bid": bid if bid["price"] is not None or bid["quantity"] is not None else None,
+        "ask": ask if ask["price"] is not None or ask["quantity"] is not None else None,
+    }
+
+
 def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
-    security_id = int(os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}", "13"))
-    exchange_segment = os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "IDX_I")
+    security_id, exchange_segment = _dhan_underlying(symbol)
     base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
 
     expiry_payload = _dhan_option_payload("optionchain/expirylist", base_body)
-    expiry_values = expiry_payload.get("data") or expiry_payload.get("expiry") or expiry_payload.get("expiryList") or []
+    expiry_values = _dhan_expiry_values(expiry_payload)
     expiry = next((str(item) for item in expiry_values if item), None)
     if not expiry:
         raise RuntimeError("Dhan did not return an option-chain expiry.")
 
     chain_payload = _dhan_option_payload("optionchain", base_body | {"Expiry": expiry})
-    option_chain = chain_payload.get("data", {}).get("oc") or chain_payload.get("oc") or {}
+    option_chain = _dhan_option_chain(chain_payload)
 
     rows = []
     for strike in strikes:
-        strike_payload = option_chain.get(str(strike)) or option_chain.get(f"{float(strike):.6f}") or {}
+        strike_payload = _dhan_strike_payload(option_chain, strike)
         call = strike_payload.get("ce") or strike_payload.get("CE") or {}
         put = strike_payload.get("pe") or strike_payload.get("PE") or {}
         rows.append({
             "strike": strike,
-            "ce": {
-                "ltp": call.get("last_price") or call.get("ltp"),
-                "change": call.get("change") or call.get("net_change"),
-                "volume": call.get("volume"),
-                "oi": call.get("oi") or call.get("open_interest"),
-                "iv": call.get("implied_volatility") or call.get("iv"),
-            },
-            "pe": {
-                "ltp": put.get("last_price") or put.get("ltp"),
-                "change": put.get("change") or put.get("net_change"),
-                "volume": put.get("volume"),
-                "oi": put.get("oi") or put.get("open_interest"),
-                "iv": put.get("implied_volatility") or put.get("iv"),
-            },
+            "ce": _dhan_leg_payload(call) if isinstance(call, dict) else {},
+            "pe": _dhan_leg_payload(put) if isinstance(put, dict) else {},
         })
     return rows, expiry
 

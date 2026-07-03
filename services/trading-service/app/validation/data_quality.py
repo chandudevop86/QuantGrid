@@ -48,9 +48,13 @@ class OptionChainLeg(BaseModel):
     oi: float | None = Field(default=None, ge=0)
     iv: float | None = Field(default=None, ge=0)
     oi_change: float | None = None
+    previous_oi: float | None = None
     change_oi: float | None = None
     changeinOpenInterest: float | None = None
     oiChange: float | None = None
+    greeks: dict[str, Any] | None = None
+    bid: dict[str, Any] | None = None
+    ask: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod

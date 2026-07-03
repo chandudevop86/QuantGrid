@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -242,13 +243,32 @@ def test_option_chain_prefers_dhan_provider(monkeypatch):
 
     def fake_dhan_payload(path, body):
         if path == "optionchain/expirylist":
-            return {"data": ["2026-06-25"]}
+            return {"status": "success", "data": {"data": ["2026-06-25"]}}
         return {
+            "status": "success",
             "data": {
-                "oc": {
-                    "23400.000000": {
-                        "ce": {"last_price": 101.5, "oi": 1000, "volume": 50},
-                        "pe": {"last_price": 88.25, "oi": 900, "volume": 45},
+                "data": {
+                    "oc": {
+                        "23400.000000": {
+                            "ce": {
+                                "last_price": 101.5,
+                                "oi": 1000,
+                                "volume": 50,
+                                "implied_volatility": 14.2,
+                                "greeks": {"delta": 0.52, "theta": -4.1},
+                                "top_bid_price": 101.0,
+                                "top_bid_quantity": 75,
+                                "top_ask_price": 102.0,
+                                "top_ask_quantity": 80,
+                            },
+                            "pe": {
+                                "last_price": 88.25,
+                                "oi": 900,
+                                "volume": 45,
+                                "implied_volatility": 15.1,
+                                "greeks": {"delta": -0.48, "theta": -3.9},
+                            },
+                        }
                     }
                 }
             }
@@ -265,6 +285,58 @@ def test_option_chain_prefers_dhan_provider(monkeypatch):
     atm_row = next(row for row in result["rows"] if row["strike"] == 23400)
     assert atm_row["ce"]["ltp"] == 101.5
     assert atm_row["pe"]["oi"] == 900
+    assert atm_row["ce"]["greeks"]["delta"] == 0.52
+    assert atm_row["pe"]["greeks"]["delta"] == -0.48
+    assert atm_row["ce"]["bid"]["price"] == 101.0
+
+
+def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client-123")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-456")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"data": ["2026-06-25"]}'
+
+    def fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        captured["headers"] = dict(request.header_items())
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(market_api, "urlopen", fake_urlopen)
+
+    payload = market_api._dhan_option_payload(
+        "optionchain/expirylist",
+        {"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
+    )
+
+    assert payload == {"data": ["2026-06-25"]}
+    assert captured["url"] == "https://api.dhan.co/v2/optionchain/expirylist"
+    assert captured["payload"] == {
+        "UnderlyingScrip": 13,
+        "UnderlyingSeg": "IDX_I",
+        "dhanClientId": "client-123",
+    }
+    assert captured["headers"]["Access-token"] == "token-456"
+    assert captured["headers"]["Client-id"] == "client-123"
 
 
 def test_option_chain_reports_dhan_token_rejected(monkeypatch):
