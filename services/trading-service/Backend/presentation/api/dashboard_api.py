@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.job_queue import enqueue_job
+from Backend.application.worker import process_next_job
 from Backend.application.job_store import count_jobs, list_jobs, utc_now
 from Backend.application.live_analysis_worker import LiveAnalysisPayload
 from Backend.application.market_data_store import latest_candles, market_data_summary
@@ -210,7 +211,8 @@ def create_live_analysis_job(
         metadata={"symbol": metadata["symbol"], "strategy": metadata["strategy"], "status": "queued"},
     )
     alert_job_created(created)
-    return created
+    processed = process_next_job()
+    return processed if processed and processed.get("job_id") == created["job_id"] else created
 
 
 @router.get("/live-analysis/jobs")

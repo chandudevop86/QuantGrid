@@ -22,6 +22,34 @@ def test_valid_login_returns_token_and_dashboard_loads(app_client):
     assert dashboard.json()["status"] == "ready"
 
 
+def test_live_analysis_job_completes_without_external_worker(app_client, monkeypatch):
+    from Backend.application import worker
+
+    monkeypatch.setattr(worker, "run_live_analysis", lambda payload: {"symbol": payload.symbol, "signals": []})
+    headers = admin_headers(app_client)
+
+    response = app_client.post(
+        "/dashboard/live-analysis/jobs",
+        headers=headers,
+        json={
+            "symbol": "NIFTY",
+            "interval": "1m",
+            "period": "1d",
+            "strategy": "breakout",
+            "capital": 100000,
+            "risk_pct": 1,
+            "rr_ratio": 2,
+            "auto_trade": False,
+            "execution_mode": "paper",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["result"]["symbol"] == "NIFTY"
+
+
 def test_websocket_requires_authentication_in_production(app_client, monkeypatch):
     monkeypatch.setenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET", "false")
     with pytest.raises(WebSocketDisconnect) as exc_info:
