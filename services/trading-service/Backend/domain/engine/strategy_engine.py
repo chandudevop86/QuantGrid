@@ -4,8 +4,8 @@ from typing import Any
 
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
+from Backend.domain.shared import IStrategy
 from Backend.domain.strategies.amd import AMDStrategy
-from Backend.domain.strategies.base import BaseStrategy
 from Backend.domain.strategies.breakout import BreakoutStrategy
 from Backend.domain.strategies.btst import BTSTStrategy
 from Backend.domain.strategies.crt_tbs import CRTTBSStrategy
@@ -16,8 +16,8 @@ from Backend.domain.strategies.supply_demand import SupplyDemandStrategy
 
 
 class StrategyEngine:
-    def __init__(self, strategies: dict[str, BaseStrategy] | None = None) -> None:
-        self._strategies: dict[str, BaseStrategy] = strategies or {}
+    def __init__(self, strategies: dict[str, IStrategy] | None = None) -> None:
+        self._strategies: dict[str, IStrategy] = strategies or {}
         if not strategies:
             self.register("amd", AMDStrategy())
             self.register("breakout", BreakoutStrategy())
@@ -29,7 +29,7 @@ class StrategyEngine:
             self.register("cbt", CRTTBSStrategy())
             self.register("crt_tbs", CRTTBSStrategy())
 
-    def register(self, name: str, strategy: BaseStrategy) -> None:
+    def register(self, name: str, strategy: IStrategy) -> None:
         self._strategies[self._normalize(name)] = strategy
 
     def available(self) -> list[str]:

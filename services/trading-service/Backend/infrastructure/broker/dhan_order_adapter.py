@@ -114,6 +114,14 @@ class DhanBrokerClient:
         raw = await asyncio.to_thread(self._request, "GET", "/holdings")
         return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
 
+    def status(self) -> dict[str, Any]:
+        return {
+            "provider": "dhan",
+            "configured": bool(self.client_id and self.access_token),
+            "connected": bool(self.client_id and self.access_token),
+            "live": True,
+        }
+
     def _sdk_client(self) -> Any:
         return dhan_sdk_client()
 

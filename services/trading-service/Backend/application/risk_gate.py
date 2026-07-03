@@ -6,6 +6,7 @@ from typing import Any
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.paper_trade_store import risk_status
+from Backend.application.risk_engine import RiskEngine, RiskLimits
 from Backend.application.signal_quality import SignalDecision
 from Backend.domain.execution_constraints import requested_quantity
 from Backend.domain.models.signal import StrategySignal
@@ -39,18 +40,14 @@ def evaluate_risk_gate(decision: SignalDecision) -> RiskGateResult:
         return RiskGateResult(False, decision.reason, decision.to_dict())
 
     kill_switch = kill_switch_status()
-    if kill_switch["active"]:
-        return RiskGateResult(False, "KILL_SWITCH_ACTIVE", kill_switch)
-
     status = risk_status()
-    if abs(min(0.0, float(status["daily_pnl"]))) >= float(status["max_daily_loss"]):
-        return RiskGateResult(False, "DAILY_LOSS_LIMIT", status)
-    if int(status["trades_today"]) >= int(status["max_trades_per_day"]):
-        return RiskGateResult(False, "MAX_TRADES_PER_DAY", status)
-    if int(status["consecutive_losses"]) >= int(status["max_consecutive_losses"]):
-        return RiskGateResult(False, "MAX_CONSECUTIVE_LOSSES", status)
+    risk_result = RiskEngine().validate_account(status | {"kill_switch_active": kill_switch["active"]})
+    if not risk_result.allowed:
+        reason = risk_result.blocked_by[0]
+        details = status | {"kill_switch": kill_switch, "risk_engine": risk_result.to_dict()}
+        return RiskGateResult(False, reason, details)
 
-    return RiskGateResult(True, "OK", status)
+    return RiskGateResult(True, "OK", status | {"risk_engine": risk_result.to_dict()})
 
 
 def validate_order_risk(
@@ -81,6 +78,27 @@ def validate_order_risk(
     risk_amount = _risk_amount(signal, quantity)
     max_allowed_risk = round(float(status["risk_per_trade_amount"]), 2)
 
+    validation = validate_live_candle(candles_1m or [], interval="1m", mode=execution_mode)
+    risk_engine_result = RiskEngine(
+        RiskLimits(
+            max_trades_per_day=int(status["max_trades_per_day"]),
+            max_daily_loss=float(status["max_daily_loss"]),
+            max_capital_per_trade=float(status.get("risk_per_trade_amount", 0.0) or 0.0),
+            max_open_positions=int(status["max_open_positions"]),
+        )
+    ).validate(
+        signal,
+        {
+            "kill_switch_active": kill_switch["active"],
+            "trades_today": status["trades_today"],
+            "daily_pnl": status["daily_pnl"],
+            "capital_per_trade": risk_amount,
+            "open_positions": status["open_positions"],
+            "market_data_age_seconds": getattr(validation, "delay_seconds", 0) or 0,
+            "vix": signal.metadata.get("vix", 0),
+        },
+    )
+
     def decision(allowed: bool, reason: str, extra: dict[str, Any] | None = None) -> OrderRiskDecision:
         details = {
             "execution_mode": execution_mode,
@@ -93,6 +111,7 @@ def validate_order_risk(
             "risk_configured": status["risk_configured"],
             "kill_switch_active": kill_switch["active"],
             "central_risk_decision": central_decision.to_dict(),
+            "risk_engine": risk_engine_result.to_dict(),
         }
         if extra:
             details.update(extra)
@@ -133,7 +152,6 @@ def validate_order_risk(
     if not central_decision.accepted:
         return decision(False, central_decision.reason)
 
-    validation = validate_live_candle(candles_1m or [], interval="1m", mode=execution_mode)
     if execution_mode == "live" and not validation.valid_for_execution:
         return decision(
             False,

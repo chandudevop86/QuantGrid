@@ -4,12 +4,14 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from Backend.domain.shared import IMarketDataProvider
+
 
 class MarketDataProviderError(RuntimeError):
     pass
 
 
-class MarketDataProvider(ABC):
+class MarketDataProvider(IMarketDataProvider, ABC):
     provider_name: str
     live_suitable: bool = False
     paper_suitable: bool = True
@@ -41,6 +43,16 @@ class MarketDataProvider(ABC):
 
     def get_market_status(self, symbol: str) -> dict[str, Any]:
         return self.health_check() | {"symbol": symbol.upper()}
+
+    def candles(self, symbol: str, interval: str, limit: int = 100) -> list[dict[str, Any]]:
+        return self.get_candles(symbol=symbol, interval=interval, period="1d", limit=limit)
+
+    def status(self, symbol: str, interval: str) -> dict[str, Any]:
+        return self.health_check() | {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "latest_fetch_at": self.latest_fetch_at,
+        }
 
     def mark_fetch(self) -> str:
         self.latest_fetch_at = datetime.now(timezone.utc).isoformat()

@@ -4,9 +4,10 @@ from datetime import datetime
 
 from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
+from Backend.domain.shared import IOrderManager
 
 
-class ExecutionEngine:
+class ExecutionEngine(IOrderManager):
     def order_from_signal(self, signal: StrategySignal, *, quantity: int | None = None) -> Order:
         return Order(
             symbol=signal.symbol, 

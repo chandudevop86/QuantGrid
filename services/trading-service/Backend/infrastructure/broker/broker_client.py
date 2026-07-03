@@ -8,6 +8,7 @@ from uuid import uuid4
 from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.domain.models.order import Order
+from Backend.domain.shared import IBrokerAdapter
 
 
 @dataclass(slots=True)
@@ -27,7 +28,7 @@ class BrokerOrderResult:
         return asdict(self)
 
 
-class BrokerClient(Protocol):
+class BrokerClient(IBrokerAdapter, Protocol):
     async def place_order(self, order: Order) -> BrokerOrderResult:
         raise NotImplementedError
 
@@ -102,6 +103,15 @@ class PaperBrokerClient:
     async def get_holdings(self) -> list[dict[str, Any]]:
         return []
 
+    def status(self) -> dict[str, Any]:
+        return {
+            "provider": "paper",
+            "configured": True,
+            "connected": True,
+            "live": False,
+            "orders": len(self.orders),
+        }
+
 
 class LiveBrokerClient:
     async def place_order(self, order: Order) -> BrokerOrderResult:
@@ -118,6 +128,16 @@ class LiveBrokerClient:
 
     async def get_holdings(self) -> list[dict[str, Any]]:
         raise RuntimeError("Live broker holdings are not implemented. Configure a concrete broker adapter first.")
+
+    def status(self) -> dict[str, Any]:
+        settings = get_settings()
+        return {
+            "provider": settings.broker_provider or "live",
+            "configured": settings.broker_configured,
+            "connected": False,
+            "live": True,
+            "message": "Concrete live broker adapter is not configured.",
+        }
 
 
 _PAPER_BROKER = PaperBrokerClient()

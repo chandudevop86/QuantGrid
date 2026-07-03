@@ -29,7 +29,25 @@ class BaseStrategy(ABC):
         candles = self.prepare_data(data)
         if candles.empty:
             return []
+        self.validate_inputs(candles, context)
         return self.generate_signals(candles, context)
+
+    def generate_signal(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
+        return self.generate_signals(candles, context)
+
+    def validate_inputs(self, candles: pd.DataFrame, context: StrategyContext) -> None:
+        required = {"open", "high", "low", "close"}
+        missing = required.difference(set(candles.columns))
+        if missing:
+            raise ValueError(f"Missing required candle columns: {', '.join(sorted(missing))}")
+        if not context.symbol:
+            raise ValueError("Strategy context requires a symbol")
+
+    def explain_signal(self, signal: StrategySignal) -> str:
+        reason = signal.metadata.get("reason") or signal.metadata.get("validation_reason")
+        if reason:
+            return str(reason)
+        return f"{signal.strategy_name} generated a {signal.side} signal for {signal.symbol}."
 
     def prepare_data(self, data: Any) -> pd.DataFrame:
         return self.indicators.prepare(data)
