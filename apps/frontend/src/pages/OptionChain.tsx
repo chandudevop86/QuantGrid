@@ -90,7 +90,14 @@ export default function OptionChain() {
     : "Auto refresh every 15s";
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
   const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
-  const chainUnavailable = chain?.source === "option-chain-unavailable" || chain?.provider_available === false;
+  const providerWarning = String(chain?.warning ?? chain?.provider_warning ?? chain?.fallback_detail ?? "");
+  const chainUnavailable =
+    chain?.source === "option-chain-unavailable"
+    || chain?.provider_available === false
+    || (
+      !isProviderBacked
+      && /token|rejected|unavailable|fresh token|option-chain provider/i.test(providerWarning)
+    );
   const historyIsSynthetic = String(history?.source ?? "").includes("synthetic");
   const visibleRows = usingSynthetic || chainUnavailable ? [] : chain?.rows ?? [];
   const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
@@ -117,6 +124,11 @@ export default function OptionChain() {
       {usingSynthetic && (
         <div className="alert alert-warning" role="status">
           Synthetic option-chain fallback was returned by the backend, so rows are hidden to avoid showing wrong live data.
+        </div>
+      )}
+      {chainUnavailable && (
+        <div className="alert alert-warning" role="status">
+          Live option-chain rows are unavailable. Dhan login may be valid for profile, but option-chain access is not returning live rows.
         </div>
       )}
       {chain && !isProviderBacked && !usingSynthetic && !chainUnavailable && (
