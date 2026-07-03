@@ -538,12 +538,14 @@ def get_option_chain(
     source = "derived-from-underlying"
     expiry = None
     warning = "Live option-chain provider unavailable; showing ATM strike ladder from current NIFTY price."
+    provider_available = False
 
     try:
         rows, expiry = _dhan_option_rows(symbol, strikes)
         if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
             source = "dhan-option-chain"
             warning = None
+            provider_available = True
         else:
             rows = _derived_option_rows(strikes)
             warning = "Dhan option-chain returned no matching strikes; showing ATM strike ladder from current NIFTY price."
@@ -561,18 +563,23 @@ def get_option_chain(
             if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
                 source = "yahoo-finance-options"
                 warning = f"Dhan option-chain unavailable: {dhan_exc}. Showing Yahoo option-chain data."
+                provider_available = True
             else:
                 rows = _derived_option_rows(strikes)
                 warning = f"Live option-chain provider unavailable: {dhan_exc}. Showing ATM strike ladder from current NIFTY price."
 
+    if not provider_available:
+        source = "option-chain-unavailable"
+        rows = []
+
     rows, data_quality = validate_option_chain_rows(rows, source=source)
     call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
     put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
-    pcr = round(put_oi / call_oi, 3) if call_oi else 0.0
+    pcr = round(put_oi / call_oi, 3) if call_oi else None
     support_rows = [row for row in rows if row["strike"] < atm]
     resistance_rows = [row for row in rows if row["strike"] > atm]
-    support = max(support_rows, key=lambda row: float(row["pe"].get("oi") or 0))["strike"] if support_rows else atm
-    resistance = max(resistance_rows, key=lambda row: float(row["ce"].get("oi") or 0))["strike"] if resistance_rows else atm
+    support = max(support_rows, key=lambda row: float(row["pe"].get("oi") or 0))["strike"] if support_rows else None
+    resistance = max(resistance_rows, key=lambda row: float(row["ce"].get("oi") or 0))["strike"] if resistance_rows else None
     return {
         "symbol": symbol.upper(),
         "underlying_price": round(price, 2),
@@ -589,9 +596,10 @@ def get_option_chain(
         "data_quality": data_quality.model_dump(),
         "pcr": pcr,
         "PCR": pcr,
-        "max_pain": atm,
+        "max_pain": atm if provider_available else None,
         "support": support,
         "resistance": resistance,
+        "provider_available": provider_available,
     }
 
 

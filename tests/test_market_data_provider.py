@@ -363,7 +363,11 @@ def test_option_chain_reports_dhan_token_rejected(monkeypatch):
 
     result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
 
-    assert result["source"] == "derived-from-underlying"
+    assert result["source"] == "option-chain-unavailable"
+    assert result["provider_available"] is False
+    assert result["rows"] == []
+    assert result["pcr"] is None
+    assert result["max_pain"] is None
     assert "save a fresh token" in result["warning"]
     assert "HTTP Error 401" not in result["warning"]
 

@@ -90,8 +90,9 @@ export default function OptionChain() {
     : "Auto refresh every 15s";
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
   const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
+  const chainUnavailable = chain?.source === "option-chain-unavailable" || chain?.provider_available === false;
   const historyIsSynthetic = String(history?.source ?? "").includes("synthetic");
-  const visibleRows = usingSynthetic ? [] : chain?.rows ?? [];
+  const visibleRows = usingSynthetic || chainUnavailable ? [] : chain?.rows ?? [];
   const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
 
   return (
@@ -118,7 +119,7 @@ export default function OptionChain() {
           Synthetic option-chain fallback was returned by the backend, so rows are hidden to avoid showing wrong live data.
         </div>
       )}
-      {chain && !isProviderBacked && !usingSynthetic && (
+      {chain && !isProviderBacked && !usingSynthetic && !chainUnavailable && (
         <div className="alert alert-warning" role="status">
           Live Dhan option-chain data is not available; showing derived strike ladder only.
         </div>
@@ -138,37 +139,37 @@ export default function OptionChain() {
         </div>
         <div className="metric-card">
           <span className="metric-label">ATM Strike</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
           <span className="metric-helper">Step {chain?.step ?? 50}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Expiry</span>
-          <strong className="metric-value">{chain?.expiry ?? "Demo"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.expiry ?? "-"}</strong>
           <span className="metric-helper">{isProviderBacked ? "Provider chain" : chain ? "Fallback ladder" : "No chain loaded"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">PCR</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : formatNumber(chain?.pcr)}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.pcr)}</strong>
           <span className="metric-helper">Put/call open interest</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Max Pain</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : chain?.max_pain ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.max_pain ?? "-"}</strong>
           <span className="metric-helper">{chain?.greek_model ?? "Greeks unavailable"}</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Support</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : chain?.support ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.support ?? "-"}</strong>
           <span className="metric-helper">Highest put OI below ATM</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Resistance</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : chain?.resistance ?? "-"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.resistance ?? "-"}</strong>
           <span className="metric-helper">Highest call OI above ATM</span>
         </div>
         <div className="metric-card">
           <span className="metric-label">Real Signal</span>
-          <strong className="metric-value">{usingSynthetic ? "NO_LIVE_DATA" : chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
+          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "NO_LIVE_DATA" : chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
           <span className="metric-helper">{chain?.signals?.reason ?? "PCR / OI / max pain"}</span>
         </div>
       </div>
@@ -252,7 +253,11 @@ export default function OptionChain() {
               {visibleRows.length === 0 && (
                 <tr>
                   <td colSpan={9}>
-                    {usingSynthetic ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data." : "Option chain data is not available yet."}
+                    {usingSynthetic
+                      ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data."
+                      : chainUnavailable
+                        ? "Live option-chain rows unavailable. Refresh Dhan token to load real chain data."
+                        : "Option chain data is not available yet."}
                   </td>
                 </tr>
               )}
