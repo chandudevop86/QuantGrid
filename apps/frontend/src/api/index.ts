@@ -105,6 +105,11 @@ export const api = {
     API.post("/execution/order", payload).then((res) => res.data),
   executeAutoPaper: (payload: unknown = {}) =>
     API.post("/execution/auto-paper", payload).then((res) => res.data),
+  tradingEngineDashboard: () => API.get("/execution/trading-engine/dashboard").then((res) => res.data),
+  paperBasketOrder: (payload: unknown) =>
+    API.post("/execution/trading-engine/basket", payload).then((res) => res.data),
+  scalePosition: (positionId: number, payload: unknown) =>
+    API.post(`/execution/trading-engine/positions/${positionId}/scale`, payload).then((res) => res.data),
   execution: (payload: unknown) =>
     API.post("/execution/order", payload).then((res) => res.data),
   runAnalysis: (payload: unknown) =>

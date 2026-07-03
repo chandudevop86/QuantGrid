@@ -25,6 +25,11 @@ from Backend.application.signal_quality import decide_signal
 from Backend.application.signal_validation import diagnose_signal_run, validate_signals
 from Backend.application.trade_qualification_engine import TradeQualificationEngine, TradeQualification
 from Backend.application.trading_service import TradingService
+from Backend.application.trading_engine_upgrade import (
+    scale_position,
+    submit_paper_basket,
+    trading_engine_dashboard,
+)
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.execution_constraints import (
     apply_order_constraints,
@@ -40,7 +45,7 @@ from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.application.market_data_store import latest_candles
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
-from Backend.presentation.api.roles import require_roles, require_trade_execute
+from Backend.presentation.api.roles import current_user, require_trade_execute
 
 router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
@@ -60,6 +65,14 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
     if mode not in {"paper", "live"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
     return mode
+
+
+def _require_trading_engine_role(actor: User) -> None:
+    if actor.role not in {"admin", "developer", "trader"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This role is not allowed to perform this action.",
+        )
 
 
 def _request_is_https(request: Request) -> bool:
@@ -173,6 +186,33 @@ class AutoPaperExecutionRequest(BaseModel):
     risk_pct: float = Field(default=1, gt=0)
     rr_ratio: float = Field(default=2, gt=0)
     strategies: list[str] | None = None
+
+
+class TradingEngineBasketLeg(BaseModel):
+    strategy: str = "manual_basket"
+    symbol: str = "NIFTY"
+    side: str = "BUY"
+    quantity: int = Field(default=1, gt=0)
+    entry: float = Field(gt=0)
+    stop_loss: float = Field(gt=0)
+    target: float = Field(gt=0)
+    trailing_stop_loss: float | None = None
+    trailing_stop_pct: float | None = None
+    score: float = 0
+
+
+class TradingEngineBasketRequest(BaseModel):
+    execution_mode: str = "paper"
+    reason: str | None = None
+    legs: list[TradingEngineBasketLeg] = Field(default_factory=list)
+
+
+class TradingEngineScaleRequest(BaseModel):
+    execution_mode: str = "paper"
+    action: str
+    quantity: int = Field(gt=0)
+    price: float | None = Field(default=None, gt=0)
+    reason: str | None = None
 
 
 def _paper_response(
@@ -822,6 +862,112 @@ async def _submit_paper_signal(
         )
     observe_paper_order("paper_order_submitted", signal.strategy_name, signal.symbol)
     return result
+
+
+@router.get("/trading-engine/dashboard")
+async def get_trading_engine_dashboard(
+    actor: User = Depends(current_user),
+):
+    _require_trading_engine_role(actor)
+    return trading_engine_dashboard()
+
+
+@router.post("/trading-engine/basket")
+async def submit_trading_engine_basket(
+    payload: TradingEngineBasketRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_trading_engine_role(actor)
+    try:
+        result = submit_paper_basket(
+            legs=[_model_to_dict(leg) for leg in payload.legs],
+            execution_mode=payload.execution_mode.strip().lower(),
+            reason=payload.reason,
+        )
+    except ValueError as exc:
+        write_audit_log(
+            db,
+            action="paper_basket_blocked",
+            actor=actor,
+            target_type="basket",
+            target_id="paper",
+            request=request,
+            metadata={"reason": str(exc), "execution_mode": payload.execution_mode},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    write_audit_log(
+        db,
+        action="paper_basket_submitted",
+        actor=actor,
+        target_type="basket",
+        target_id=result["basket_id"],
+        request=request,
+        metadata={
+            "status": result["status"],
+            "created_count": result["created_count"],
+            "error_count": result["error_count"],
+            "execution_mode": result["execution_mode"],
+        },
+    )
+    return result
+
+
+@router.post("/trading-engine/positions/{position_id}/scale")
+async def submit_trading_engine_scale(
+    position_id: int,
+    payload: TradingEngineScaleRequest,
+    request: Request,
+    actor: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_trading_engine_role(actor)
+    try:
+        result = scale_position(
+            position_id,
+            action=payload.action,
+            quantity=payload.quantity,
+            price=payload.price,
+            reason=payload.reason,
+            execution_mode=payload.execution_mode.strip().lower(),
+        )
+    except ValueError as exc:
+        write_audit_log(
+            db,
+            action="position_scale_blocked",
+            actor=actor,
+            target_type="position",
+            target_id=position_id,
+            request=request,
+            metadata={"reason": str(exc), "execution_mode": payload.execution_mode, "action": payload.action},
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    write_audit_log(
+        db,
+        action="position_scaled",
+        actor=actor,
+        target_type="position",
+        target_id=position_id,
+        request=request,
+        metadata={
+            "action": result["status"],
+            "old_quantity": result["old_quantity"],
+            "new_quantity": result["new_quantity"],
+            "price": result["price"],
+            "realized_pnl": result["realized_pnl"],
+            "execution_mode": result["execution_mode"],
+        },
+    )
+    return result
+
+
+def _model_to_dict(model: BaseModel) -> dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
 
 @router.post("/auto-paper")

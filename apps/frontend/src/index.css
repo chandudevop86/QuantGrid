@@ -1294,6 +1294,53 @@ select {
   color: #ccfbf1;
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.form-grid input,
+.form-grid select {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.55);
+  color: var(--text);
+  padding: 0 12px;
+  font: inherit;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.table-actions button {
+  min-height: 32px;
+  border: 1px solid rgba(45, 212, 191, 0.42);
+  border-radius: 8px;
+  background: rgba(13, 148, 136, 0.15);
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.table-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .alert-warning {
   border: 1px solid rgba(251, 191, 36, 0.42);
   background: rgba(120, 53, 15, 0.24);

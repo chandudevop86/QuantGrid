@@ -22,6 +22,7 @@ export default function Sidebar() {
     { to: "/security", label: "Security" },
     { to: "/strategies", label: "Strategies" },
     { to: "/trade-journal", label: "Trade Journal" },
+    { to: "/trading-engine", label: "Trading Engine" },
     { to: "/execution", label: "Execution" },
     { to: "/trade", label: "Trade" },
     { to: "/admin/users", label: "Users" },

@@ -21,6 +21,7 @@ import Security from "./pages/Security";
 import Strategies from "./pages/Strategies";
 import Trade from "./pages/Trade";
 import TradeJournal from "./pages/TradeJournal";
+import TradingEngine from "./pages/TradingEngine";
 import RequireRole from "./components/RequireRole";
 
 function protect(path: string, page: React.ReactNode) {
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/security" element={protect("/security", <Security />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />
+          <Route path="/trading-engine" element={protect("/trading-engine", <TradingEngine />)} />
           <Route path="/trade" element={protect("/trade", <Trade />)} />
           <Route path="/admin/users" element={protect("/admin/users", <AdminUsers />)} />
           <Route path="/admin/notifications" element={protect("/admin/notifications", <AdminNotifications />)} />
