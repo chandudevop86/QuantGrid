@@ -26,6 +26,7 @@ from Backend.application.decision_pipeline import (
     analyze_volume,
 )
 from Backend.application.recommendation_store import record_recommendation_outcome, recommendation_metrics
+from Backend.domain.engine.strategy_engine import StrategyEngine
 
 
 def _bullish_candles() -> list[dict]:
@@ -201,6 +202,66 @@ def test_decision_pipeline_prefers_no_trade_when_votes_conflict(monkeypatch):
     no_trade = result.factors["final_decision"]["no_trade_intelligence"]
     assert no_trade["suggested_action"]
     assert no_trade["next_review_condition"]
+
+
+def test_strategy_selection_uses_registry_metadata():
+    engine = StrategyEngine()
+    engine.configure_strategy("breakout", version="2.4.0")
+
+    result = DecisionPipelineService(strategy_engine=engine).run(
+        MarketDataInputs(
+            market_live=True,
+            valid_for_execution=True,
+            feed_delay_seconds=2,
+            candles=_bullish_candles(),
+            candles_1m=_bullish_candles(),
+            candles_5m=_bullish_candles(),
+            candles_15m=_bullish_candles(),
+            candles_1h=_bullish_candles(),
+            oi_bias="BULLISH",
+            pcr=1.1,
+            put_oi=1200,
+            call_oi=900,
+            fii_cash=100,
+            gift_nifty_bias="BULLISH",
+        ),
+        risk_blocked=False,
+        persist=False,
+    )
+
+    selection = result.factors["strategy_selection"]
+    assert selection["selected_strategy"] == "breakout"
+    assert selection["strategy_version"] == "2.4.0"
+    assert selection["scorecard"][0]["registry"]["supported_regimes"]
+
+
+def test_strategy_selection_ignores_disabled_registry_strategy():
+    engine = StrategyEngine()
+    engine.configure_strategy("breakout", enabled=False, rollout_pct=0)
+
+    result = DecisionPipelineService(strategy_engine=engine).run(
+        MarketDataInputs(
+            market_live=True,
+            valid_for_execution=True,
+            feed_delay_seconds=2,
+            candles=_bullish_candles(),
+            candles_1m=_bullish_candles(),
+            candles_5m=_bullish_candles(),
+            candles_15m=_bullish_candles(),
+            candles_1h=_bullish_candles(),
+            oi_bias="BULLISH",
+            pcr=1.1,
+            put_oi=1200,
+            call_oi=900,
+            fii_cash=100,
+            gift_nifty_bias="BULLISH",
+        ),
+        risk_blocked=False,
+        persist=False,
+    )
+
+    assert result.factors["strategy_selection"]["selected_strategy"] != "breakout"
+    assert all(item["strategy"] != "breakout" for item in result.factors["strategy_selection"]["scorecard"])
 
 
 def test_market_regime_returns_allowed_and_blocked_strategies():

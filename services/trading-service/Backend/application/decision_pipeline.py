@@ -6,6 +6,7 @@ from typing import Any
 
 from Backend.application.decision_engine import DecisionEngine, DecisionInputs, TradingDecision
 from Backend.application.recommendation_store import recommendation_metrics, record_recommendation
+from Backend.domain.engine.strategy_engine import StrategyEngine
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,8 +161,9 @@ class DecisionPipelineResult:
 
 
 class DecisionPipelineService:
-    def __init__(self, decision_engine: DecisionEngine | None = None) -> None:
+    def __init__(self, decision_engine: DecisionEngine | None = None, strategy_engine: StrategyEngine | None = None) -> None:
         self.decision_engine = decision_engine or DecisionEngine()
+        self.strategy_engine = strategy_engine or StrategyEngine()
 
     def run(
         self,
@@ -314,7 +316,7 @@ class DecisionPipelineService:
             risk_reward,
             discipline,
         )
-        strategy_selection = _strategy_selection_engine(regime, market_structure, price_action, volume_analysis, risk_reward, confluence)
+        strategy_selection = _strategy_selection_engine(regime, market_structure, price_action, volume_analysis, risk_reward, confluence, self.strategy_engine.registry())
         probability = _probability_engine(confluence, regime, options_flow, institutional, risk_reward)
         checklist_score = confluence["confluence_score"]
         checklist = _technical_checklist(
@@ -879,52 +881,72 @@ def _strategy_selection_engine(
     volume: VolumeAnalysis,
     risk: RiskRewardAnalysis,
     confluence: dict[str, Any],
+    registry: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    strategy_versions = {
-        "breakout": "1.0.0",
-        "pullback": "1.0.0",
-        "trend": "1.0.0",
-        "reversal": "1.0.0",
-        "range": "1.0.0",
-        "momentum": "1.0.0",
-        "opening_range": "1.0.0",
-        "vwap": "1.0.0",
-    }
-    candidates = list(strategy_versions)
+    registry_rows = registry or []
+    candidates = [
+        row for row in registry_rows
+        if bool(row.get("enabled", True)) and int(row.get("rollout_pct") or 0) > 0
+    ]
+    if not candidates:
+        candidates = [{"name": "none", "version": "0.0.0", "supported_regimes": [], "enabled": False, "rollout_pct": 0}]
     allowed = set(regime.get("allowed_strategies") or [])
     blocked = set(regime.get("blocked_strategies") or [])
+    current_regime = str(regime.get("market_regime") or regime.get("regime") or "Unknown")
     base = int(confluence.get("confluence_score") or 0)
     scorecard: list[dict[str, Any]] = []
-    for strategy in candidates:
+    for metadata in candidates:
+        strategy = str(metadata.get("name") or "unknown")
+        version = str(metadata.get("version") or "0.0.0")
+        supported_regimes = [str(item) for item in (metadata.get("supported_regimes") or ["Any"])]
+        regime_match = "Any" in supported_regimes or current_regime in supported_regimes
         score = base
         reasons: list[str] = []
-        if strategy in allowed:
+        if not regime_match:
+            score -= 40
+            reasons.append(f"Registry does not support {current_regime} regime.")
+        if strategy in allowed or _strategy_family(strategy) in allowed:
             score += 12
             reasons.append("Allowed by market regime.")
-        if strategy in blocked:
+        if strategy in blocked or _strategy_family(strategy) in blocked:
             score -= 35
             reasons.append("Blocked by market regime.")
-        if strategy in {"breakout", "momentum", "opening_range"} and volume.supports_trade:
+        if _strategy_family(strategy) in {"breakout", "momentum", "opening_range", "trend"} and volume.supports_trade:
             score += 8
             reasons.append("Volume supports directional continuation.")
-        if strategy in {"pullback", "vwap"} and risk.allowed:
+        if _strategy_family(strategy) in {"pullback", "vwap", "supply_demand"} and risk.allowed:
             score += 6
             reasons.append("Risk/reward supports controlled entry.")
-        if strategy == "range" and structure.get("structure_bias") == "Neutral":
+        if _strategy_family(strategy) == "range" and structure.get("structure_bias") == "Neutral":
             score += 10
             reasons.append("Sideways structure favors range logic.")
-        if strategy == "trend" and structure.get("structure_bias") in {"Bullish", "Bearish"}:
+        if _strategy_family(strategy) in {"trend", "breakout"} and structure.get("structure_bias") in {"Bullish", "Bearish"}:
             score += 10
             reasons.append("Directional structure favors trend logic.")
-        if strategy == "reversal" and structure.get("events", {}).get("choch_or_mss"):
+        if _strategy_family(strategy) == "reversal" and structure.get("events", {}).get("choch_or_mss"):
             score += 10
             reasons.append("CHoCH/MSS supports reversal watch.")
         if price_action.get("confirmed"):
             score += 5
             reasons.append("Price action confirms setup.")
+        rank_score = score
         score = max(0, min(100, score))
-        scorecard.append({"strategy": strategy, "version": strategy_versions[strategy], "score": score, "valid": strategy not in blocked and score >= 60, "reasons": reasons or ["No edge over current best setup."]})
-    ranked = sorted(scorecard, key=lambda item: item["score"], reverse=True)
+        scorecard.append(
+            {
+                "strategy": strategy,
+                "version": version,
+                "score": score,
+                "rank_score": rank_score,
+                "valid": regime_match and strategy not in blocked and _strategy_family(strategy) not in blocked and score >= 60,
+                "reasons": reasons or ["No edge over current best setup."],
+                "registry": {
+                    "enabled": bool(metadata.get("enabled", True)),
+                    "rollout_pct": int(metadata.get("rollout_pct") or 0),
+                    "supported_regimes": supported_regimes,
+                },
+            }
+        )
+    ranked = sorted(scorecard, key=lambda item: (item["rank_score"], item["score"]), reverse=True)
     best = next((item for item in ranked if item["valid"]), ranked[0] if ranked else {"strategy": "none", "score": 0, "valid": False, "reasons": ["No strategy evaluated."]})
     return {
         "selected_strategy": best["strategy"] if best.get("valid") else "none",
@@ -945,6 +967,17 @@ def _strategy_selection_engine(
             if item["strategy"] != best.get("strategy")
         ],
     }
+
+
+def _strategy_family(strategy: str) -> str:
+    normalized = str(strategy or "").strip().lower()
+    if normalized in {"mtf", "mtfa", "btst"}:
+        return "trend"
+    if normalized in {"amd", "supply_demand"}:
+        return "supply_demand"
+    if normalized in {"mean_reversion", "cbt", "crt_tbs"}:
+        return "range"
+    return normalized
 
 
 def _probability_engine(

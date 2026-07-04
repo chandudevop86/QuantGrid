@@ -68,3 +68,4 @@ Every decision includes:
 - Use the backend `explainability.plain_english` text as the dashboard reason.
 - Use `No Trade` when probability, confluence, or risk validation is not good enough.
 - Use `no_trade_intelligence.suggested_action` and `next_review_condition` to guide the next review.
+- Source selected strategy name/version from the strategy registry metadata.

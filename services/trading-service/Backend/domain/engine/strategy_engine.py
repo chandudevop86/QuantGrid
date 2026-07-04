@@ -23,6 +23,7 @@ class StrategyGovernance:
     version: str = "1.0.0"
     enabled: bool = True
     rollout_pct: int = 100
+    supported_regimes: list[str] = field(default_factory=lambda: ["Any"])
     owner: str = "quantgrid"
     notes: str = "Default MVP strategy."
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -59,6 +60,7 @@ class StrategyEngine:
         version: str = "1.0.0",
         enabled: bool = True,
         rollout_pct: int = 100,
+        supported_regimes: list[str] | None = None,
     ) -> None:
         normalized = self._normalize(name)
         self._strategies[normalized] = strategy
@@ -67,6 +69,7 @@ class StrategyEngine:
             version=version,
             enabled=enabled,
             rollout_pct=max(0, min(100, int(rollout_pct))),
+            supported_regimes=supported_regimes or self._default_supported_regimes(normalized),
         )
         self._audit("registered", normalized, self._governance[normalized].to_dict())
 
@@ -119,6 +122,21 @@ class StrategyEngine:
 
     def _normalize(self, name: str) -> str:
         return str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    @staticmethod
+    def _default_supported_regimes(name: str) -> list[str]:
+        mapping = {
+            "breakout": ["Trending", "Gap Up", "Gap Down"],
+            "amd": ["Trending", "Range"],
+            "mean_reversion": ["Range", "Low Volatility", "Holiday Effect"],
+            "supply_demand": ["Trending", "Range", "Gap Up", "Gap Down"],
+            "mtf": ["Trending"],
+            "mtfa": ["Trending"],
+            "btst": ["Trending", "Expiry Day"],
+            "cbt": ["Range", "Volatile"],
+            "crt_tbs": ["Range", "Volatile"],
+        }
+        return mapping.get(name, ["Any"])
 
     def _audit(self, event: str, strategy: str, details: dict[str, Any]) -> None:
         self._audit_trail.append(

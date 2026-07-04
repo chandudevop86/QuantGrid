@@ -25,7 +25,7 @@ Existing reusable modules:
 | Trade quality | Present | `Backend/application/decision_pipeline.py` | Classifies Excellent, Good, Average, Poor, or Skip. | Keep hard blocks mapped to Skip. |
 | Probability/confidence | Present | `Backend/application/decision_pipeline.py` | Exposes confidence/probability score without black-box AI. | Calibrate against persisted outcomes. |
 | Strategy registry | Present | `Backend/domain/engine/strategy_engine.py` | Registry includes version, enabled state, rollout percentage, and audit trail. | Persist governance externally before multi-user rollout. |
-| Strategy selection | Present | `Backend/application/decision_pipeline.py` | Scores enabled-style strategy candidates and records why alternatives lost. | Connect selected candidates to plugin metadata in the registry. |
+| Strategy selection | Present | `Backend/application/decision_pipeline.py`, `Backend/domain/engine/strategy_engine.py` | Scores enabled registry strategies, uses registry versions/regimes, and records why alternatives lost. | Persist registry governance outside process memory. |
 | No Trade logic | Present | `Backend/application/decision_pipeline.py` | Explains why weak or unsafe trades are blocked. | Add more outcome-tagged block reason analytics over time. |
 | Outcome analytics | Present | `Backend/application/recommendation_store.py` | Tracks precision, recall, false positives/negatives, expectancy, PF, drawdown, counts, block reasons, setup/quality win rate. | Improve only after more closed paper trades. |
 | Trade review | Present | `Backend/application/recommendation_store.py` | Produces entry, stop, target, skip, and improvement review after outcome recording. | Surface review in journal UI later. |
@@ -131,6 +131,7 @@ Gaps fixed:
 - Advanced routes are now Developer Mode only; trader navigation stays focused on the six core decision surfaces.
 - Final decision response now exposes selected strategy, strategy version, confidence label, probability evidence, and No Trade next-review guidance directly.
 - Outcome analytics now include strategy vs outcome, regime vs outcome, best strategy, and worst strategy.
+- Strategy selection now consumes registry plugin metadata instead of hardcoded selector versions.
 - Tests use mock candles only; no broker login or live market dependency is required.
 
 New modules/APIs:

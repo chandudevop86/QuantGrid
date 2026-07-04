@@ -10,5 +10,6 @@ Each registered strategy has:
 - `rollout_pct`
 - `audit_trail`
 
-The decision pipeline adds a deterministic strategy selection scorecard so the dashboard can show the selected strategy and why alternatives lost.
+The decision pipeline consumes registry metadata directly for strategy selection. It uses `name`, `version`, `enabled`, `rollout_pct`, and `supported_regimes` without executing strategy code during selection.
 
+Disabled strategies and strategies with `rollout_pct` set to zero are ignored by the selector.

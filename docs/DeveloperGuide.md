@@ -11,3 +11,4 @@ Rules for QuantGrid development:
 - Every decision change needs mock-data tests and documentation.
 - Trader-facing navigation stays limited to Dashboard, Market, Signals, Paper Trading, History, and Settings.
 - Advanced pages remain available through Developer Mode route permissions for admin/developer users.
+- Strategy selection must read plugin metadata from `StrategyEngine.registry()` instead of maintaining duplicate version maps.
