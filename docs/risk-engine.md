@@ -52,3 +52,7 @@ By default, LOW, THIN, WEAK, and ILLIQUID option liquidity block new entries. Th
 ## Live Trading Position
 
 Live trading remains disabled by default. Risk checks are necessary but not sufficient for live trading; broker configuration, HTTPS readiness, audit logging, and explicit live flags must also pass.
+
+## Paper Trade Gate
+
+Paper trades are allowed only when confluence is at least 70, trade quality is Good or Excellent, risk passes, discipline passes, data is fresh, and risk/reward is at least 1.5.

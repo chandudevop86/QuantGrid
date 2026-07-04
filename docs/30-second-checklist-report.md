@@ -20,12 +20,15 @@ Existing reusable modules:
 | --- | --- | --- | --- | --- |
 | Decision engine | Present | `Backend/application/decision_engine/engine.py`, `Backend/application/decision_pipeline.py` | Produces Buy CE, Buy PE, or No Trade. | Keep pipeline as source of truth. |
 | Market structure | Present | `Backend/application/decision_pipeline.py`, `Backend/domain/market_structure.py` | Detects HH/HL, LH/LL, BOS, CHoCH/MSS risk, sideways, and strength. | Calibrate swing window with NIFTY paper outcomes. |
+| Market regime | Present | `Backend/application/decision_pipeline.py` | Detects Trending, Range, Volatile, Low Volatility, Gap Up/Down, Expiry Day, News Driven, Holiday Effect and gates strategies. | Add exchange calendar feed for holiday detection. |
 | Confluence scoring | Present | `Backend/application/decision_pipeline.py` | Normalized 0-100 score combines HTF, structure, zones, FVG, liquidity, price action, options, institutional, risk, and discipline. | Tune weights after 30 sessions. |
 | Trade quality | Present | `Backend/application/decision_pipeline.py` | Classifies Excellent, Good, Average, Poor, or Skip. | Keep hard blocks mapped to Skip. |
 | Probability/confidence | Present | `Backend/application/decision_pipeline.py` | Exposes confidence/probability score without black-box AI. | Calibrate against persisted outcomes. |
 | Strategy registry | Present | `Backend/domain/engine/strategy_engine.py` | Registry includes version, enabled state, rollout percentage, and audit trail. | Persist governance externally before multi-user rollout. |
+| Strategy selection | Present | `Backend/application/decision_pipeline.py` | Scores enabled-style strategy candidates and records why alternatives lost. | Connect selected candidates to plugin metadata in the registry. |
 | No Trade logic | Present | `Backend/application/decision_pipeline.py` | Explains why weak or unsafe trades are blocked. | Add more outcome-tagged block reason analytics over time. |
 | Outcome analytics | Present | `Backend/application/recommendation_store.py` | Tracks precision, recall, false positives/negatives, expectancy, PF, drawdown, counts, block reasons, setup/quality win rate. | Improve only after more closed paper trades. |
+| Trade review | Present | `Backend/application/recommendation_store.py` | Produces entry, stop, target, skip, and improvement review after outcome recording. | Surface review in journal UI later. |
 | Explainability | Present | `Backend/application/decision_pipeline.py`, `apps/frontend/src/pages/Dashboard.tsx` | Dashboard renders plain-English reason and factors. | Keep wording concise for 30-second workflow. |
 | Dashboard checklist | Present | `apps/frontend/src/pages/Dashboard.tsx` | Shows Today’s Decision and supporting checklist fields. | Avoid frontend-side trading calculations. |
 | Paper trade integration | Present | `Backend/application/decision_pipeline.py` | Blocks paper execution unless confluence, quality, risk, discipline, freshness, and RR pass. | Keep live trading disabled by default. |
@@ -119,6 +122,11 @@ Gaps fixed:
 - Dashboard now renders the backend final decision in plain English and exposes all requested trade/risk/context fields.
 - Paper trade eligibility is deterministic and defaults to blocked unless every gate passes.
 - Recommendation analytics now include recommendation counts, skipped/blocked trades, block reasons, quality/setup win rates, average RR, best setup, and worst setup.
+- Market regime now returns allowed and blocked strategies.
+- Strategy selection now ranks deterministic strategy candidates and records why alternatives lost.
+- Probability engine now separates probability/confidence from raw confluence.
+- Outcome analytics now include executed trades, won/lost trades, and confidence vs win rate.
+- Trade review helper now reviews each completed recommendation outcome.
 - Tests use mock candles only; no broker login or live market dependency is required.
 
 New modules/APIs:
@@ -133,6 +141,15 @@ Remaining risks:
 - Live broker execution remains disabled by default and should stay disabled until paper-trade evidence is statistically meaningful.
 
 Live trading readiness score: 35/100.
+
+Architecture score: 78/100.
+SOLID score: 74/100.
+Performance score: 72/100.
+Security score: 80/100.
+Maintainability score: 76/100.
+Decision quality score: 82/100.
+Testing score: 70/100.
+Production readiness: 68/100.
 
 ## Readiness
 

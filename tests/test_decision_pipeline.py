@@ -15,6 +15,7 @@ from Backend.application.decision_pipeline import (
     analyze_fvg,
     analyze_higher_timeframe,
     analyze_liquidity,
+    analyze_market_regime,
     analyze_market_structure,
     analyze_price_action,
     analyze_ema,
@@ -102,6 +103,7 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "liquidity",
         "price_action",
         "market_regime",
+        "strategy_selection",
         "options_flow",
         "institutional",
         "discipline",
@@ -126,6 +128,7 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert set(final_decision) == {
         "market_bias",
         "trade_decision",
+        "strategy",
         "trade_quality",
         "confidence_score",
         "probability_score",
@@ -139,6 +142,8 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "explanation",
         "supporting_factors",
         "opposing_factors",
+        "strategy_selection",
+        "probability_engine",
         "block_reasons",
         "no_trade_intelligence",
         "explainability",
@@ -146,7 +151,10 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "system_status",
     }
     assert final_decision["trade_decision"] == "Buy CE"
+    assert final_decision["strategy"] != "none"
     assert final_decision["trade_quality"] in {"Excellent", "Good"}
+    assert result.factors["strategy_selection"]["selected_strategy"] == final_decision["strategy"]
+    assert 0 <= result.factors["probability_engine"]["probability_score"] <= 100
     assert result.decision_id
 
     record_recommendation_outcome(result.decision_id, outcome="WIN", pnl=500, actual_direction="BULLISH")
@@ -178,6 +186,20 @@ def test_decision_pipeline_prefers_no_trade_when_votes_conflict(monkeypatch):
 
     assert result.decision.trade_recommendation == "No Trade"
     assert result.factors["market_bias"] == "NEUTRAL"
+
+
+def test_market_regime_returns_allowed_and_blocked_strategies():
+    trend = analyze_trend(_bullish_candles())
+    volume = analyze_volume(_bullish_candles())
+    trending = analyze_market_regime(MarketDataInputs(candles=_bullish_candles()), volume, trend)
+    volatile = analyze_market_regime(MarketDataInputs(candles=_bullish_candles(), india_vix=25), volume, trend)
+    holiday = analyze_market_regime(MarketDataInputs(candles=_bullish_candles(), holiday_effect=True), volume, trend)
+
+    assert trending["market_regime"] == "Trending"
+    assert "breakout" in trending["allowed_strategies"]
+    assert volatile["market_regime"] == "Volatile"
+    assert "momentum" in volatile["blocked_strategies"]
+    assert holiday["market_regime"] == "Holiday Effect"
 
 
 def test_trend_analyzer_detects_uptrend_downtrend_and_sideways():

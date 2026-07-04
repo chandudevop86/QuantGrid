@@ -133,7 +133,30 @@ def record_recommendation_outcome(
             (outcome, float(pnl), actual_direction, utc_now(), decision_id),
         )
         row = connection.execute("SELECT * FROM recommendations WHERE decision_id = ?", (decision_id,)).fetchone()
-    return dict(row) if row else {}
+    result = dict(row) if row else {}
+    if result:
+        result["trade_review"] = review_recommendation_outcome(result)
+    return result
+
+
+def review_recommendation_outcome(row: dict[str, Any]) -> dict[str, Any]:
+    payload = _payload_from_row(row)
+    final_decision = _final_decision_from_payload(payload)
+    pnl = float(row.get("pnl") or 0.0)
+    outcome = str(row.get("outcome") or "").upper()
+    rr = float(final_decision.get("risk_reward_ratio") or 0.0)
+    recommendation = str(row.get("recommendation") or "")
+    won = outcome in {"WIN", "TARGET", "PROFIT"} or pnl > 0
+    lost = outcome in {"LOSS", "STOP", "FAILED"} or pnl < 0
+    should_have_skipped = bool(lost and (rr < 1.5 or final_decision.get("trade_quality") in {"Poor", "Skip", "Average"}))
+    return {
+        "entry_review": "Good" if won else "Needs review" if recommendation in {"Buy CE", "Buy PE"} else "Skipped",
+        "stop_review": "Correct" if lost and rr >= 1.5 else "Review stop distance" if lost else "Not tested",
+        "target_review": "Realistic" if won and rr >= 1.5 else "Review target realism" if lost else "Not tested",
+        "exit_review": "Outcome recorded; compare exit timing with target/stop in journal.",
+        "should_have_been_skipped": should_have_skipped,
+        "improvement": "Skip similar setups until confluence and RR improve." if should_have_skipped else "Keep collecting paper outcomes for this setup.",
+    }
 
 
 def list_recommendations(limit: int = 500) -> list[dict[str, Any]]:
@@ -182,6 +205,7 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
     rr_values: list[float] = []
     quality_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     setup_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    confidence_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for row, payload, final_decision in zip(rows, payloads, final_decisions, strict=False):
         gate = ((payload.get("factors") or {}).get("high_probability_trade_engine") or {}).get("paper_trade_gate") or {}
@@ -196,6 +220,7 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
         if row.get("outcome"):
             quality_rows[quality].append(row)
             setup_rows[setup].append(row)
+            confidence_rows[_confidence_bucket(int(row.get("confidence") or final_decision.get("confidence_score") or 0))].append(row)
 
     blocked_trades = sum(1 for payload, final_decision in zip(payloads, final_decisions, strict=False) if _is_blocked(payload, final_decision))
     setup_pnl = {setup: sum(float(row.get("pnl") or 0.0) for row in setup_group) for setup, setup_group in setup_rows.items()}
@@ -206,7 +231,11 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
             "no_trade_count": recommendations.count("No Trade"),
             "skipped_trades": recommendations.count("No Trade"),
             "blocked_trades": blocked_trades,
+            "executed_trades": len(trade_rows),
+            "won_trades": len(wins),
+            "lost_trades": len(losses),
             "block_reason_frequency": dict(block_reason_frequency),
+            "confidence_vs_win_rate": {bucket: _win_rate(group) for bucket, group in confidence_rows.items()},
             "win_rate_by_trade_quality": {quality: _win_rate(group) for quality, group in quality_rows.items()},
             "win_rate_by_setup_type": {setup: _win_rate(group) for setup, group in setup_rows.items()},
             "average_rr": round(sum(rr_values) / max(len(rr_values), 1), 2),
@@ -251,6 +280,16 @@ def _win_rate(rows: list[dict[str, Any]]) -> float:
         if str(row.get("outcome")).upper() in {"WIN", "TARGET", "PROFIT"} or float(row.get("pnl") or 0.0) > 0
     ]
     return round(len(wins) / max(len(trade_rows), 1), 4)
+
+
+def _confidence_bucket(confidence: int) -> str:
+    if confidence >= 85:
+        return "85-100"
+    if confidence >= 70:
+        return "70-84"
+    if confidence >= 55:
+        return "55-69"
+    return "0-54"
 
 
 def _max_drawdown(pnls: list[float]) -> float:

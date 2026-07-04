@@ -28,6 +28,7 @@ type Decision = {
   factor_snapshot?: {
     final_decision?: {
       trade_decision?: string;
+      strategy?: string;
       trade_quality?: string;
       confidence_score?: number;
       probability_score?: number;
@@ -42,6 +43,8 @@ type Decision = {
       invalidation_level?: string;
       system_status?: string;
       block_reasons?: string[];
+      strategy_selection?: { selected_strategy?: string; selected_score?: number; reason?: string };
+      probability_engine?: { probability_score?: number; confidence_score?: number; reason?: string };
       no_trade_intelligence?: { primary_reason?: string; block_reasons?: string[]; wait_for?: string[] };
       explainability?: { plain_english?: string; score_reason?: string; warnings?: string[] };
     };
@@ -64,6 +67,8 @@ type Decision = {
       options_flow?: { bias?: string; passed?: boolean; reason?: string };
       institutional?: { bias?: string; institutional_score?: number; passed?: boolean; reason?: string };
       discipline?: { passed?: boolean; discipline_passed?: boolean; reason?: string; blocked_reasons?: string[] };
+      market_regime?: { regime?: string; market_regime?: string; regime_risk?: string; allowed_strategy_type?: string; warning?: string };
+      strategy_selection?: { selected_strategy?: string; selected_score?: number; reason?: string };
       confidence_engine?: { confidence_score?: number };
       confluence_engine?: { confluence_score?: number; trade_quality?: string };
     };
@@ -270,6 +275,8 @@ export default function Dashboard() {
 
           <div className="decision-grid">
             <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
+            <span><small>Strategy</small><strong>{finalDecision?.strategy ?? finalDecision?.strategy_selection?.selected_strategy ?? "none"}</strong></span>
+            <span><small>Market Regime</small><strong>{checklist?.market_regime?.market_regime ?? checklist?.market_regime?.regime ?? "Unknown"}</strong></span>
             <span><small>Probability</small><strong>{Number(finalDecision?.probability_score ?? finalDecision?.confidence_score ?? confidence)}%</strong></span>
             <span><small>Confluence Score</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
             <span><small>Entry</small><strong>{finalDecision?.entry_zone ?? decision.entry_zone}</strong></span>

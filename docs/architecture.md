@@ -37,6 +37,26 @@ Placeholder microservices live in `experimental/` and are non-production.
 - Postgres stores users, audit logs, and persistent application state in production.
 - Redis carries websocket/job update events.
 
+## Decision Intelligence Pipeline
+
+```mermaid
+flowchart TD
+  A["Market Data"] --> B["Market Validation"]
+  B --> C["Market Regime Engine"]
+  C --> D["Market Structure Engine"]
+  D --> E["Strategy Registry"]
+  E --> F["Strategy Selection Engine"]
+  F --> G["Confluence Engine"]
+  G --> H["Risk Engine"]
+  H --> I["Trade Quality / Probability"]
+  I --> J["Decision Engine"]
+  J --> K["Paper Trade Gate"]
+  K --> L["Outcome Analytics"]
+  L --> M["Trade Review"]
+```
+
+Primary implementation: `services/trading-service/Backend/application/decision_pipeline.py`.
+
 ## AWS Deployment Shape
 
 The Terraform baseline in `infra/terraform/aws` maps the modular monolith onto a 3-tier AWS network:

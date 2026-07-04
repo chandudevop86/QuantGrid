@@ -51,6 +51,11 @@ Every decision includes:
 - Warnings
 - Data status: LIVE, DEGRADED, STALE, CLOSED
 - Score reason
+- Probability score
+- Trade quality
+- Strategy selection
+- No Trade intelligence
+- Explainability payload
 
 ## Operating Rules
 
@@ -58,3 +63,5 @@ Every decision includes:
 - Prefer No Trade when directional factors conflict.
 - Keep live trading disabled unless all live safety gates are explicitly configured.
 - Treat elevated VIX, expiry risk, and low liquidity as quality reducers or blockers.
+- Use the backend `explainability.plain_english` text as the dashboard reason.
+- Use `No Trade` when probability, confluence, or risk validation is not good enough.

@@ -49,6 +49,8 @@ class MarketDataInputs:
     crude_bias: str | None = None
     global_markets_bias: str | None = None
     gap_pct: float = 0.0
+    news_driven: bool = False
+    holiday_effect: bool = False
     trades_today: int = 0
     max_trades_per_day: int = 3
     consecutive_losses: int = 0
@@ -277,7 +279,7 @@ class DecisionPipelineService:
         fvg_analysis = analyze_fvg(base_candles, trend_analysis, key_levels)
         liquidity = analyze_liquidity(base_candles, sr_analysis)
         price_action = analyze_price_action(base_candles)
-        regime = analyze_market_regime(market, volume_analysis)
+        regime = analyze_market_regime(market, volume_analysis, trend_analysis)
         options_flow = analyze_options_flow(market)
         institutional = analyze_institutional_filter(market)
         discipline = analyze_discipline(market, trend_analysis, sr_analysis, price_action, ema_analysis)
@@ -312,6 +314,8 @@ class DecisionPipelineService:
             risk_reward,
             discipline,
         )
+        strategy_selection = _strategy_selection_engine(regime, market_structure, price_action, volume_analysis, risk_reward, confluence)
+        probability = _probability_engine(confluence, regime, options_flow, institutional, risk_reward)
         checklist_score = confluence["confluence_score"]
         checklist = _technical_checklist(
             market,
@@ -333,6 +337,7 @@ class DecisionPipelineService:
                 "liquidity": liquidity,
                 "price_action": price_action,
                 "market_regime": regime,
+                "strategy_selection": strategy_selection,
                 "options_flow": options_flow,
                 "institutional": institutional,
                 "discipline": discipline,
@@ -353,6 +358,8 @@ class DecisionPipelineService:
             risk_reward,
             sr_analysis,
             confluence,
+            strategy_selection,
+            probability,
         )
         paper_trade_gate = _paper_trade_gate(market, final_decision, risk_reward, discipline, confluence, risk_blocked)
         return {
@@ -376,6 +383,8 @@ class DecisionPipelineService:
             "checklist_score": checklist_score,
             "checklist_blockers": blockers,
             "confluence_engine": confluence,
+            "probability_engine": probability,
+            "strategy_selection": strategy_selection,
             "final_decision": final_decision,
             "high_probability_trade_engine": {
                 "layers": {
@@ -388,6 +397,7 @@ class DecisionPipelineService:
                     "liquidity": liquidity,
                     "price_action": price_action,
                     "market_regime": regime,
+                    "strategy_selection": strategy_selection,
                     "options_flow": options_flow,
                     "institutional": institutional,
                     "risk_management": risk_reward.to_dict(),
@@ -790,35 +800,157 @@ def analyze_price_action(candles: list[dict[str, Any]]) -> dict[str, Any]:
     return {"pattern": pattern, "pattern_bias": "NEUTRAL", "pattern_strength": 20, "direction": "NEUTRAL", "confirmed": False, "confirmation": False, "reason": "No price action confirmation."}
 
 
-def analyze_market_regime(market: MarketDataInputs, volume: VolumeAnalysis) -> dict[str, Any]:
+def analyze_market_regime(market: MarketDataInputs, volume: VolumeAnalysis, trend: TrendAnalysis | None = None) -> dict[str, Any]:
     warning = None
-    regime = "Trending"
+    regime = "Trending" if not trend or trend.trend_direction != "SIDEWAYS" else "Range"
     regime_risk = "Low"
-    allowed_strategy_type = "breakout_or_pullback"
+    allowed_strategy_type = "breakout_or_pullback" if regime == "Trending" else "range_or_reversal"
     confidence_impact = 5
+    allowed_strategies = ["breakout", "pullback", "trend", "momentum", "vwap"] if regime == "Trending" else ["range", "reversal", "vwap"]
+    blocked_strategies = ["range"] if regime == "Trending" else ["breakout", "momentum"]
+    regime_strength = "Strong" if trend and trend.trend_strength >= 80 else "Medium" if trend and trend.trend_strength >= 55 else "Weak"
     if not volume.supports_trade:
-        regime = "Low volume"
+        regime = "Low Volatility"
         regime_risk = "Medium"
         allowed_strategy_type = "wait"
+        allowed_strategies = ["vwap"]
+        blocked_strategies = ["breakout", "momentum", "opening_range"]
+        regime_strength = "Weak"
         confidence_impact = -5
         warning = "Low volume reduces confidence."
     if market.expiry_day:
-        regime = "Expiry day"
+        regime = "Expiry Day"
         regime_risk = "High"
+        allowed_strategies = ["vwap", "range"]
+        blocked_strategies = ["breakout", "momentum", "opening_range"]
         confidence_impact = -8
         warning = "Expiry day increases option decay risk."
     if abs(float(market.gap_pct or 0)) >= 1.0:
-        regime = "Gap up" if market.gap_pct > 0 else "Gap down"
+        regime = "Gap Up" if market.gap_pct > 0 else "Gap Down"
         regime_risk = "High"
         allowed_strategy_type = "retest_only"
+        allowed_strategies = ["pullback", "vwap"]
+        blocked_strategies = ["breakout", "momentum", "opening_range"]
         confidence_impact = -10
         warning = "Big gap needs retest before entry."
     if market.india_vix is not None and market.india_vix >= 22:
         regime = "Volatile"
         regime_risk = "High"
+        allowed_strategies = ["vwap", "range"]
+        blocked_strategies = ["breakout", "momentum", "opening_range"]
         confidence_impact = -10
         warning = "Volatile market reduces position size."
-    return {"regime": regime, "regime_risk": regime_risk, "allowed_strategy_type": allowed_strategy_type, "confidence_impact": confidence_impact, "warning": warning, "passed": regime_risk != "High"}
+    if market.news_driven:
+        regime = "News Driven"
+        regime_risk = "High"
+        allowed_strategies = ["vwap"]
+        blocked_strategies = ["breakout", "momentum", "opening_range", "range"]
+        confidence_impact = -12
+        warning = "News-driven move requires confirmation after volatility settles."
+    if market.holiday_effect:
+        regime = "Holiday Effect"
+        regime_risk = "Medium"
+        allowed_strategies = ["vwap", "range"]
+        blocked_strategies = ["breakout", "momentum"]
+        confidence_impact = -6
+        warning = "Holiday session can reduce liquidity and follow-through."
+    return {
+        "market_regime": regime,
+        "regime": regime,
+        "regime_strength": regime_strength,
+        "regime_risk": regime_risk,
+        "allowed_strategy_type": allowed_strategy_type,
+        "allowed_strategies": allowed_strategies,
+        "blocked_strategies": blocked_strategies,
+        "confidence_impact": confidence_impact,
+        "warning": warning,
+        "passed": regime_risk != "High",
+    }
+
+
+def _strategy_selection_engine(
+    regime: dict[str, Any],
+    structure: dict[str, Any],
+    price_action: dict[str, Any],
+    volume: VolumeAnalysis,
+    risk: RiskRewardAnalysis,
+    confluence: dict[str, Any],
+) -> dict[str, Any]:
+    candidates = ["breakout", "pullback", "trend", "reversal", "range", "momentum", "opening_range", "vwap"]
+    allowed = set(regime.get("allowed_strategies") or [])
+    blocked = set(regime.get("blocked_strategies") or [])
+    base = int(confluence.get("confluence_score") or 0)
+    scorecard: list[dict[str, Any]] = []
+    for strategy in candidates:
+        score = base
+        reasons: list[str] = []
+        if strategy in allowed:
+            score += 12
+            reasons.append("Allowed by market regime.")
+        if strategy in blocked:
+            score -= 35
+            reasons.append("Blocked by market regime.")
+        if strategy in {"breakout", "momentum", "opening_range"} and volume.supports_trade:
+            score += 8
+            reasons.append("Volume supports directional continuation.")
+        if strategy in {"pullback", "vwap"} and risk.allowed:
+            score += 6
+            reasons.append("Risk/reward supports controlled entry.")
+        if strategy == "range" and structure.get("structure_bias") == "Neutral":
+            score += 10
+            reasons.append("Sideways structure favors range logic.")
+        if strategy == "trend" and structure.get("structure_bias") in {"Bullish", "Bearish"}:
+            score += 10
+            reasons.append("Directional structure favors trend logic.")
+        if strategy == "reversal" and structure.get("events", {}).get("choch_or_mss"):
+            score += 10
+            reasons.append("CHoCH/MSS supports reversal watch.")
+        if price_action.get("confirmed"):
+            score += 5
+            reasons.append("Price action confirms setup.")
+        score = max(0, min(100, score))
+        scorecard.append({"strategy": strategy, "score": score, "valid": strategy not in blocked and score >= 60, "reasons": reasons or ["No edge over current best setup."]})
+    ranked = sorted(scorecard, key=lambda item: item["score"], reverse=True)
+    best = next((item for item in ranked if item["valid"]), ranked[0] if ranked else {"strategy": "none", "score": 0, "valid": False, "reasons": ["No strategy evaluated."]})
+    return {
+        "selected_strategy": best["strategy"] if best.get("valid") else "none",
+        "selected_score": best["score"],
+        "scorecard": ranked,
+        "rejected_strategies": [
+            {"strategy": item["strategy"], "score": item["score"], "why_lost": item["reasons"]}
+            for item in ranked
+            if item["strategy"] != best.get("strategy")
+        ],
+        "reason": "; ".join(best.get("reasons") or []),
+    }
+
+
+def _probability_engine(
+    confluence: dict[str, Any],
+    regime: dict[str, Any],
+    options_flow: dict[str, Any],
+    institutional: dict[str, Any],
+    risk: RiskRewardAnalysis,
+) -> dict[str, Any]:
+    score = float(confluence.get("confluence_score") or 0)
+    score += float(regime.get("confidence_impact") or 0)
+    score += 5 if options_flow.get("passed") else -8
+    score += (float(institutional.get("institutional_score") or 0) - 50) * 0.15
+    score += 4 if risk.allowed else -15
+    probability = int(max(0, min(100, round(score))))
+    confidence = int(max(0, min(100, round((probability + float(confluence.get("confluence_score") or 0)) / 2))))
+    return {
+        "probability_score": probability,
+        "confidence_score": confidence,
+        "inputs": {
+            "confluence_score": confluence.get("confluence_score"),
+            "market_regime": regime.get("market_regime"),
+            "options_passed": options_flow.get("passed"),
+            "institutional_score": institutional.get("institutional_score"),
+            "risk_reward_allowed": risk.allowed,
+        },
+        "reason": f"Probability {probability}% from confluence, regime, options, institutional context, and risk.",
+    }
 
 
 def analyze_options_flow(market: MarketDataInputs) -> dict[str, Any]:
@@ -1031,6 +1163,8 @@ def _final_decision_payload(
     risk_reward: RiskRewardAnalysis,
     sr: SupportResistanceAnalysis,
     confluence: dict[str, Any],
+    strategy_selection: dict[str, Any],
+    probability: dict[str, Any],
 ) -> dict[str, Any]:
     system_status = "CLOSED" if not market.market_live else "STALE" if not market.valid_for_execution else "DEGRADED" if float(market.feed_delay_seconds or 0) > 10 else "LIVE"
     bullish = market_bias == "BULLISH"
@@ -1048,9 +1182,10 @@ def _final_decision_payload(
     return {
         "market_bias": normalized_bias,
         "trade_decision": trade_decision,
+        "strategy": strategy_selection.get("selected_strategy", "none"),
         "trade_quality": confluence["trade_quality"],
-        "confidence_score": confluence["confluence_score"],
-        "probability_score": confluence["confluence_score"],
+        "confidence_score": probability["confidence_score"],
+        "probability_score": probability["probability_score"],
         "confluence_score": confluence["confluence_score"],
         "entry_zone": sr.entry_zone,
         "stop_loss": risk_reward.stop_loss,
@@ -1061,6 +1196,8 @@ def _final_decision_payload(
         "explanation": explanation,
         "supporting_factors": checklist["passed"],
         "opposing_factors": checklist["failed"],
+        "strategy_selection": strategy_selection,
+        "probability_engine": probability,
         "block_reasons": blockers,
         "no_trade_intelligence": no_trade_intelligence,
         "explainability": explainability,
