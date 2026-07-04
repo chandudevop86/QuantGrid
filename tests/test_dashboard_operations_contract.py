@@ -74,10 +74,13 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert set(final_decision) == {
         "market_bias",
         "trade_decision",
+        "selected_strategy",
+        "strategy_version",
         "strategy",
         "trade_quality",
         "confidence_score",
         "probability_score",
+        "confidence_label",
         "confluence_score",
         "entry_zone",
         "stop_loss",
@@ -98,7 +101,12 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     }
     assert final_decision["trade_decision"] in {"Buy CE", "Buy PE", "No Trade"}
     assert final_decision["trade_quality"] in {"Excellent", "Good", "Average", "Poor", "Skip"}
+    assert isinstance(final_decision["selected_strategy"], str)
+    assert isinstance(final_decision["strategy_version"], str)
+    assert final_decision["confidence_label"] in {"High", "Medium", "Low", "Blocked"}
     assert isinstance(final_decision["no_trade_intelligence"], dict)
+    assert "suggested_action" in final_decision["no_trade_intelligence"]
+    assert "next_review_condition" in final_decision["no_trade_intelligence"]
     assert isinstance(final_decision["explainability"], dict)
     assert final_decision["explainability"]["plain_english"]
     assert isinstance(final_decision["strategy_selection"], dict)

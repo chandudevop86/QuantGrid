@@ -28,10 +28,13 @@ type Decision = {
   factor_snapshot?: {
     final_decision?: {
       trade_decision?: string;
+      selected_strategy?: string;
+      strategy_version?: string;
       strategy?: string;
       trade_quality?: string;
       confidence_score?: number;
       probability_score?: number;
+      confidence_label?: string;
       confluence_score?: number;
       entry_zone?: string;
       stop_loss?: string;

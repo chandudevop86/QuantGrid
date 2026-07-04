@@ -206,6 +206,8 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
     quality_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     setup_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     confidence_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    strategy_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    regime_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for row, payload, final_decision in zip(rows, payloads, final_decisions, strict=False):
         gate = ((payload.get("factors") or {}).get("high_probability_trade_engine") or {}).get("paper_trade_gate") or {}
@@ -221,6 +223,8 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
             quality_rows[quality].append(row)
             setup_rows[setup].append(row)
             confidence_rows[_confidence_bucket(int(row.get("confidence") or final_decision.get("confidence_score") or 0))].append(row)
+            strategy_rows[_strategy_type(payload, final_decision)].append(row)
+            regime_rows[_regime_type(payload)].append(row)
 
     blocked_trades = sum(1 for payload, final_decision in zip(payloads, final_decisions, strict=False) if _is_blocked(payload, final_decision))
     setup_pnl = {setup: sum(float(row.get("pnl") or 0.0) for row in setup_group) for setup, setup_group in setup_rows.items()}
@@ -238,9 +242,13 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
             "confidence_vs_win_rate": {bucket: _win_rate(group) for bucket, group in confidence_rows.items()},
             "win_rate_by_trade_quality": {quality: _win_rate(group) for quality, group in quality_rows.items()},
             "win_rate_by_setup_type": {setup: _win_rate(group) for setup, group in setup_rows.items()},
+            "strategy_vs_outcome": {strategy: _win_rate(group) for strategy, group in strategy_rows.items()},
+            "regime_vs_outcome": {regime: _win_rate(group) for regime, group in regime_rows.items()},
             "average_rr": round(sum(rr_values) / max(len(rr_values), 1), 2),
             "best_setup": max(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
             "worst_setup": min(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
+            "best_strategy": max({strategy: sum(float(row.get("pnl") or 0.0) for row in group) for strategy, group in strategy_rows.items()}, key=lambda key: sum(float(row.get("pnl") or 0.0) for row in strategy_rows[key])) if strategy_rows else None,
+            "worst_strategy": min({strategy: sum(float(row.get("pnl") or 0.0) for row in group) for strategy, group in strategy_rows.items()}, key=lambda key: sum(float(row.get("pnl") or 0.0) for row in strategy_rows[key])) if strategy_rows else None,
         }
     )
     return metrics
@@ -271,6 +279,19 @@ def _setup_type(payload: dict[str, Any], final_decision: dict[str, Any], row: di
     checklist = (payload.get("factors") or {}).get("checklist") or {}
     price_action = checklist.get("price_action") or {}
     return str(price_action.get("pattern") or final_decision.get("trade_decision") or row.get("recommendation") or "Unknown")
+
+
+def _strategy_type(payload: dict[str, Any], final_decision: dict[str, Any]) -> str:
+    factors = payload.get("factors") or {}
+    selection = factors.get("strategy_selection") or final_decision.get("strategy_selection") or {}
+    return str(final_decision.get("selected_strategy") or final_decision.get("strategy") or selection.get("selected_strategy") or "unknown")
+
+
+def _regime_type(payload: dict[str, Any]) -> str:
+    factors = payload.get("factors") or {}
+    checklist = factors.get("checklist") or {}
+    regime = checklist.get("market_regime") or factors.get("market_regime") or {}
+    return str(regime.get("market_regime") or regime.get("regime") or "unknown")
 
 
 def _win_rate(rows: list[dict[str, Any]]) -> float:

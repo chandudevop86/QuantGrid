@@ -119,6 +119,7 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert checklist["risk_reward"]["allowed"] is True
     assert checklist["htf"]["passed"] is True
     assert checklist["market_structure"]["latest_structure_event"] in {"BOS", "HH_HL"}
+    assert 0 <= checklist["market_structure"]["structure_score"] <= 100
     assert checklist["price_action"]["confirmed"] is True
     assert checklist["options_flow"]["passed"] is True
     assert checklist["institutional"]["passed"] is True
@@ -128,10 +129,13 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert set(final_decision) == {
         "market_bias",
         "trade_decision",
+        "selected_strategy",
+        "strategy_version",
         "strategy",
         "trade_quality",
         "confidence_score",
         "probability_score",
+        "confidence_label",
         "confluence_score",
         "entry_zone",
         "stop_loss",
@@ -151,10 +155,16 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "system_status",
     }
     assert final_decision["trade_decision"] == "Buy CE"
+    assert final_decision["selected_strategy"] != "none"
+    assert final_decision["strategy_version"] != "0.0.0"
     assert final_decision["strategy"] != "none"
     assert final_decision["trade_quality"] in {"Excellent", "Good"}
+    assert final_decision["confidence_label"] in {"High", "Medium", "Low", "Blocked"}
     assert result.factors["strategy_selection"]["selected_strategy"] == final_decision["strategy"]
+    assert result.factors["strategy_selection"]["reason_selected"]
+    assert isinstance(result.factors["strategy_selection"]["why_others_rejected"], list)
     assert 0 <= result.factors["probability_engine"]["probability_score"] <= 100
+    assert result.factors["probability_engine"]["evidence"]
     assert result.decision_id
 
     record_recommendation_outcome(result.decision_id, outcome="WIN", pnl=500, actual_direction="BULLISH")
@@ -164,6 +174,8 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert metrics["buy_ce_count"] == 1
     assert metrics["no_trade_count"] == 0
     assert metrics["average_rr"] >= 1.5
+    assert metrics["strategy_vs_outcome"]
+    assert metrics["regime_vs_outcome"]
     assert metrics["precision"] == 1
     assert metrics["false_positives"] == 0
 
@@ -186,6 +198,9 @@ def test_decision_pipeline_prefers_no_trade_when_votes_conflict(monkeypatch):
 
     assert result.decision.trade_recommendation == "No Trade"
     assert result.factors["market_bias"] == "NEUTRAL"
+    no_trade = result.factors["final_decision"]["no_trade_intelligence"]
+    assert no_trade["suggested_action"]
+    assert no_trade["next_review_condition"]
 
 
 def test_market_regime_returns_allowed_and_blocked_strategies():

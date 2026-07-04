@@ -637,6 +637,7 @@ def analyze_market_structure(candles: list[dict[str, Any]], volume: VolumeAnalys
     elif bearish:
         latest_event = "LH_LL"
     strength_score = trend.trend_strength + (10 if bos and volume_confirmed else 0) - (20 if reversal_warning else 0)
+    structure_score = max(0, min(100, int(strength_score)))
     structure_strength = "Strong" if strength_score >= 80 else "Medium" if strength_score >= 55 else "Weak"
     evidence = [
         *trend.supporting_evidence,
@@ -647,6 +648,8 @@ def analyze_market_structure(candles: list[dict[str, Any]], volume: VolumeAnalys
     return {
         "structure_bias": structure_bias,
         "structure_strength": structure_strength,
+        "structure_score": structure_score,
+        "score": structure_score,
         "latest_event": latest_event,
         "latest_structure_event": latest_event,
         "swing_highs": swing_highs[-5:],
@@ -864,6 +867,7 @@ def analyze_market_regime(market: MarketDataInputs, volume: VolumeAnalysis, tren
         "blocked_strategies": blocked_strategies,
         "confidence_impact": confidence_impact,
         "warning": warning,
+        "reason": warning or f"{regime} regime detected from trend, volume, VIX, gap, expiry, news, and holiday inputs.",
         "passed": regime_risk != "High",
     }
 
@@ -876,7 +880,17 @@ def _strategy_selection_engine(
     risk: RiskRewardAnalysis,
     confluence: dict[str, Any],
 ) -> dict[str, Any]:
-    candidates = ["breakout", "pullback", "trend", "reversal", "range", "momentum", "opening_range", "vwap"]
+    strategy_versions = {
+        "breakout": "1.0.0",
+        "pullback": "1.0.0",
+        "trend": "1.0.0",
+        "reversal": "1.0.0",
+        "range": "1.0.0",
+        "momentum": "1.0.0",
+        "opening_range": "1.0.0",
+        "vwap": "1.0.0",
+    }
+    candidates = list(strategy_versions)
     allowed = set(regime.get("allowed_strategies") or [])
     blocked = set(regime.get("blocked_strategies") or [])
     base = int(confluence.get("confluence_score") or 0)
@@ -909,19 +923,27 @@ def _strategy_selection_engine(
             score += 5
             reasons.append("Price action confirms setup.")
         score = max(0, min(100, score))
-        scorecard.append({"strategy": strategy, "score": score, "valid": strategy not in blocked and score >= 60, "reasons": reasons or ["No edge over current best setup."]})
+        scorecard.append({"strategy": strategy, "version": strategy_versions[strategy], "score": score, "valid": strategy not in blocked and score >= 60, "reasons": reasons or ["No edge over current best setup."]})
     ranked = sorted(scorecard, key=lambda item: item["score"], reverse=True)
     best = next((item for item in ranked if item["valid"]), ranked[0] if ranked else {"strategy": "none", "score": 0, "valid": False, "reasons": ["No strategy evaluated."]})
     return {
         "selected_strategy": best["strategy"] if best.get("valid") else "none",
+        "strategy_version": best.get("version", "0.0.0") if best.get("valid") else "0.0.0",
+        "strategy_score": best["score"],
         "selected_score": best["score"],
         "scorecard": ranked,
         "rejected_strategies": [
-            {"strategy": item["strategy"], "score": item["score"], "why_lost": item["reasons"]}
+            {"strategy": item["strategy"], "version": item.get("version", "0.0.0"), "score": item["score"], "why_lost": item["reasons"]}
             for item in ranked
             if item["strategy"] != best.get("strategy")
         ],
         "reason": "; ".join(best.get("reasons") or []),
+        "reason_selected": "; ".join(best.get("reasons") or []),
+        "why_others_rejected": [
+            {"strategy": item["strategy"], "why": item["reasons"]}
+            for item in ranked
+            if item["strategy"] != best.get("strategy")
+        ],
     }
 
 
@@ -939,9 +961,27 @@ def _probability_engine(
     score += 4 if risk.allowed else -15
     probability = int(max(0, min(100, round(score))))
     confidence = int(max(0, min(100, round((probability + float(confluence.get("confluence_score") or 0)) / 2))))
+    evidence = [
+        f"Confluence score {confluence.get('confluence_score', 0)}.",
+        f"Market regime {regime.get('market_regime', 'Unknown')}.",
+        "Options flow supports the setup." if options_flow.get("passed") else "Options flow does not confirm.",
+        f"Institutional score {institutional.get('institutional_score', 0)}.",
+        "Risk/reward passes." if risk.allowed else "Risk/reward blocks or weakens confidence.",
+    ]
+    penalties = []
+    if regime.get("regime_risk") == "High":
+        penalties.append("High-risk market regime.")
+    if not options_flow.get("passed"):
+        penalties.append("Options flow not aligned.")
+    if not risk.allowed:
+        penalties.append("Risk validation failed.")
     return {
         "probability_score": probability,
         "confidence_score": confidence,
+        "confidence_label": "High" if confidence >= 85 else "Medium" if confidence >= 70 else "Low" if confidence >= 55 else "Blocked",
+        "evidence": evidence,
+        "penalties": penalties,
+        "explanation": f"Confidence {confidence}% and probability {probability}% from deterministic evidence.",
         "inputs": {
             "confluence_score": confluence.get("confluence_score"),
             "market_regime": regime.get("market_regime"),
@@ -1182,10 +1222,13 @@ def _final_decision_payload(
     return {
         "market_bias": normalized_bias,
         "trade_decision": trade_decision,
+        "selected_strategy": strategy_selection.get("selected_strategy", "none"),
+        "strategy_version": strategy_selection.get("strategy_version", "0.0.0"),
         "strategy": strategy_selection.get("selected_strategy", "none"),
         "trade_quality": confluence["trade_quality"],
         "confidence_score": probability["confidence_score"],
         "probability_score": probability["probability_score"],
+        "confidence_label": probability["confidence_label"],
         "confluence_score": confluence["confluence_score"],
         "entry_zone": sr.entry_zone,
         "stop_loss": risk_reward.stop_loss,
@@ -1226,12 +1269,28 @@ def _no_trade_intelligence(
     primary = _dedupe(reasons)
     return {
         "active": trade_decision == "No Trade",
+        "trade_decision": "No Trade",
         "primary_reason": primary[0] if primary else "",
         "block_reasons": primary,
         "missing_confirmations": list(confluence.get("failed_factors") or []),
+        "suggested_action": "Wait. Do not enter until the listed confirmations appear." if primary else "Wait for a clean pullback inside the entry zone.",
+        "next_review_condition": _next_review_condition(primary, checklist, risk_reward),
         "wait_for": _wait_for(checklist, risk_reward),
         "policy": "Prefer missing a trade over taking a poor NIFTY options trade.",
     }
+
+
+def _next_review_condition(reasons: list[str], checklist: dict[str, Any], risk_reward: RiskRewardAnalysis) -> str:
+    reason_text = " ".join(reasons).lower()
+    if "higher timeframe" in reason_text:
+        return "Review again when 15m and 1h trend align."
+    if "price action" in reason_text or not (checklist.get("price_action") or {}).get("confirmed"):
+        return "Review after a confirmed rejection or engulfing candle."
+    if "risk/reward" in reason_text or not risk_reward.allowed:
+        return "Review when RR is at least 1:1.5 from the entry zone."
+    if "stale" in reason_text:
+        return "Review when market data is fresh again."
+    return "Review on the next clean pullback or breakout with volume."
 
 
 def _wait_for(checklist: dict[str, Any], risk_reward: RiskRewardAnalysis) -> list[str]:

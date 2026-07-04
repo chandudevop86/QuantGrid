@@ -56,6 +56,8 @@ Every decision includes:
 - Strategy selection
 - No Trade intelligence
 - Explainability payload
+- Confidence label
+- Selected strategy version
 
 ## Operating Rules
 
@@ -65,3 +67,4 @@ Every decision includes:
 - Treat elevated VIX, expiry risk, and low liquidity as quality reducers or blockers.
 - Use the backend `explainability.plain_english` text as the dashboard reason.
 - Use `No Trade` when probability, confluence, or risk validation is not good enough.
+- Use `no_trade_intelligence.suggested_action` and `next_review_condition` to guide the next review.

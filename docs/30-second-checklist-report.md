@@ -129,6 +129,8 @@ Gaps fixed:
 - Outcome analytics now include executed trades, won/lost trades, and confidence vs win rate.
 - Trade review helper now reviews each completed recommendation outcome.
 - Advanced routes are now Developer Mode only; trader navigation stays focused on the six core decision surfaces.
+- Final decision response now exposes selected strategy, strategy version, confidence label, probability evidence, and No Trade next-review guidance directly.
+- Outcome analytics now include strategy vs outcome, regime vs outcome, best strategy, and worst strategy.
 - Tests use mock candles only; no broker login or live market dependency is required.
 
 New modules/APIs:
