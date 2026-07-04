@@ -128,6 +128,7 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "trade_decision",
         "trade_quality",
         "confidence_score",
+        "probability_score",
         "confluence_score",
         "entry_zone",
         "stop_loss",
@@ -139,6 +140,8 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "supporting_factors",
         "opposing_factors",
         "block_reasons",
+        "no_trade_intelligence",
+        "explainability",
         "invalidation_level",
         "system_status",
     }
@@ -348,10 +351,16 @@ def test_higher_timeframe_allows_ce_and_pe_direction():
 
 
 def test_market_structure_detects_hh_hl_lh_ll_and_sideways():
-    assert analyze_market_structure(_bullish_candles())["latest_structure_event"] == "HH_HL"
-    assert analyze_market_structure(_bearish_candles())["latest_structure_event"] == "LH_LL"
+    bullish = analyze_market_structure(_bullish_candles())
+    bearish = analyze_market_structure(_bearish_candles())
+    assert bullish["structure_bias"] == "Bullish"
+    assert bullish["latest_event"] in {"HH_HL", "BOS"}
+    assert bullish["swing_highs"]
+    assert bullish["swing_lows"]
+    assert bearish["structure_bias"] == "Bearish"
+    assert bearish["latest_event"] in {"LH_LL", "BOS"}
     sideways = analyze_market_structure(_sideways_candles())
-    assert sideways["latest_structure_event"] == "SIDEWAYS"
+    assert sideways["latest_event"] == "Sideways"
     assert sideways["warning"]
 
 

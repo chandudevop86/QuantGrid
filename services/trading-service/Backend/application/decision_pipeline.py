@@ -214,8 +214,11 @@ class DecisionPipelineService:
         rr = factors["risk_reward"]
         checklist = f"Checklist score {factors['checklist_score']}/100."
         blockers = factors["checklist_blockers"]
+        final_decision = factors.get("final_decision") or {}
         explanation = decision.simple_explanation
-        if blockers:
+        if (final_decision.get("explainability") or {}).get("plain_english"):
+            explanation = final_decision["explainability"]["plain_english"]
+        elif blockers:
             explanation = f"No Trade because {blockers[0]}"
         elif decision.trade_recommendation == "Buy CE":
             explanation = f"Trend supports CE. {factors['ema_analysis']['reason']} {factors['volume_analysis']['reason']} Risk reward is acceptable."
@@ -588,21 +591,92 @@ def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
 
 def analyze_market_structure(candles: list[dict[str, Any]], volume: VolumeAnalysis | None = None) -> dict[str, Any]:
     trend = analyze_trend(candles)
-    evidence = trend.supporting_evidence
-    latest_event = "SIDEWAYS"
-    if trend.trend_direction == "UPTREND":
-        latest_event = "BOS" if volume and volume.supports_trade else "HH_HL"
-    elif trend.trend_direction == "DOWNTREND":
-        latest_event = "BOS" if volume and volume.supports_trade else "LH_LL"
-    warning = "CHoCH/MSS reversal risk: mixed structure." if trend.trend_direction == "SIDEWAYS" else None
+    swings = _swing_points(candles)
+    swing_highs = swings["swing_highs"]
+    swing_lows = swings["swing_lows"]
+    has_hh = len(swing_highs) >= 2 and swing_highs[-1]["price"] > swing_highs[-2]["price"]
+    has_hl = len(swing_lows) >= 2 and swing_lows[-1]["price"] > swing_lows[-2]["price"]
+    has_lh = len(swing_highs) >= 2 and swing_highs[-1]["price"] < swing_highs[-2]["price"]
+    has_ll = len(swing_lows) >= 2 and swing_lows[-1]["price"] < swing_lows[-2]["price"]
+    if trend.trend_direction == "UPTREND" and (len(swing_highs) < 2 or len(swing_lows) < 2):
+        has_hh = True
+        has_hl = True
+        has_lh = False
+        has_ll = False
+    if trend.trend_direction == "DOWNTREND" and (len(swing_highs) < 2 or len(swing_lows) < 2):
+        has_hh = False
+        has_hl = False
+        has_lh = True
+        has_ll = True
+    bullish = has_hh and has_hl
+    bearish = has_lh and has_ll
+    structure_bias = "Bullish" if bullish else "Bearish" if bearish else "Neutral"
+    volume_confirmed = bool(volume and volume.supports_trade)
+    latest_close = _num(candles[-1].get("close")) if candles else 0.0
+    previous_high = swing_highs[-2]["price"] if len(swing_highs) >= 2 else None
+    previous_low = swing_lows[-2]["price"] if len(swing_lows) >= 2 else None
+    bos = bool((bullish and previous_high is not None and latest_close > previous_high) or (bearish and previous_low is not None and latest_close < previous_low))
+    reversal_warning = bool((trend.trend_direction == "UPTREND" and has_ll) or (trend.trend_direction == "DOWNTREND" and has_hh))
+    latest_event = "Sideways"
+    if bos and volume_confirmed:
+        latest_event = "BOS"
+    elif reversal_warning:
+        latest_event = "CHoCH" if volume_confirmed else "MSS"
+    elif bullish:
+        latest_event = "HH_HL"
+    elif bearish:
+        latest_event = "LH_LL"
+    strength_score = trend.trend_strength + (10 if bos and volume_confirmed else 0) - (20 if reversal_warning else 0)
+    structure_strength = "Strong" if strength_score >= 80 else "Medium" if strength_score >= 55 else "Weak"
+    evidence = [
+        *trend.supporting_evidence,
+        f"Latest swing high is {'higher' if has_hh else 'lower' if has_lh else 'flat or unavailable'}.",
+        f"Latest swing low is {'higher' if has_hl else 'lower' if has_ll else 'flat or unavailable'}.",
+    ]
+    warning = "CHoCH/MSS reversal risk: mixed structure." if reversal_warning or structure_bias == "Neutral" else ""
     return {
-        "structure_bias": _bias_from_direction(trend.trend_direction),
-        "structure_strength": trend.trend_strength,
+        "structure_bias": structure_bias,
+        "structure_strength": structure_strength,
+        "latest_event": latest_event,
         "latest_structure_event": latest_event,
+        "swing_highs": swing_highs[-5:],
+        "swing_lows": swing_lows[-5:],
+        "events": {
+            "higher_high": has_hh,
+            "higher_low": has_hl,
+            "lower_high": has_lh,
+            "lower_low": has_ll,
+            "bos": bos,
+            "choch_or_mss": reversal_warning,
+        },
         "market_structure": evidence,
         "reason": "; ".join(evidence),
         "warning": warning,
     }
+
+
+def _swing_points(candles: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    if len(candles) < 3:
+        return {"swing_highs": [], "swing_lows": []}
+    swing_highs: list[dict[str, Any]] = []
+    swing_lows: list[dict[str, Any]] = []
+    for index in range(1, len(candles) - 1):
+        prev = candles[index - 1]
+        cur = candles[index]
+        nxt = candles[index + 1]
+        high = _num(cur.get("high", cur.get("close")))
+        low = _num(cur.get("low", cur.get("close")))
+        if high >= _num(prev.get("high", prev.get("close"))) and high >= _num(nxt.get("high", nxt.get("close"))):
+            swing_highs.append({"index": index, "price": round(high, 2)})
+        if low <= _num(prev.get("low", prev.get("close"))) and low <= _num(nxt.get("low", nxt.get("close"))):
+            swing_lows.append({"index": index, "price": round(low, 2)})
+    if not swing_highs and candles:
+        highs = [_num(candle.get("high", candle.get("close"))) for candle in candles]
+        swing_highs = [{"index": highs.index(max(highs)), "price": round(max(highs), 2)}]
+    if not swing_lows and candles:
+        lows = [_num(candle.get("low", candle.get("close"))) for candle in candles]
+        swing_lows = [{"index": lows.index(min(lows)), "price": round(min(lows), 2)}]
+    return {"swing_highs": swing_highs, "swing_lows": swing_lows}
 
 
 def analyze_key_levels(candles: list[dict[str, Any]]) -> dict[str, Any]:
@@ -969,11 +1043,14 @@ def _final_decision_payload(
         explanation.append(f"No Trade because {blockers[0]}" if blockers else "No Trade because confluence is not strong enough.")
     else:
         explanation.append(f"{trade_decision}: confluence score {confluence['confluence_score']}/100 with {confluence['trade_quality']} quality.")
+    no_trade_intelligence = _no_trade_intelligence(trade_decision, blockers, confluence, checklist, risk_reward, market)
+    explainability = _explainability_layer(trade_decision, normalized_bias, checklist, confluence, no_trade_intelligence)
     return {
         "market_bias": normalized_bias,
         "trade_decision": trade_decision,
         "trade_quality": confluence["trade_quality"],
         "confidence_score": confluence["confluence_score"],
+        "probability_score": confluence["confluence_score"],
         "confluence_score": confluence["confluence_score"],
         "entry_zone": sr.entry_zone,
         "stop_loss": risk_reward.stop_loss,
@@ -985,8 +1062,88 @@ def _final_decision_payload(
         "supporting_factors": checklist["passed"],
         "opposing_factors": checklist["failed"],
         "block_reasons": blockers,
+        "no_trade_intelligence": no_trade_intelligence,
+        "explainability": explainability,
         "invalidation_level": sr.invalidation_level,
         "system_status": system_status,
+    }
+
+
+def _no_trade_intelligence(
+    trade_decision: str,
+    blockers: list[str],
+    confluence: dict[str, Any],
+    checklist: dict[str, Any],
+    risk_reward: RiskRewardAnalysis,
+    market: MarketDataInputs,
+) -> dict[str, Any]:
+    reasons = list(blockers)
+    if confluence.get("trade_quality") in {"Poor", "Skip"}:
+        reasons.extend(confluence.get("hard_blocks") or ["Trade quality is not acceptable."])
+    if confluence.get("confluence_score", 0) < 70:
+        reasons.append("Confluence score is below the paper-trade threshold.")
+    if risk_reward.risk_reward_ratio < 1.5:
+        reasons.append("Risk/reward is below 1.5.")
+    if not market.valid_for_execution:
+        reasons.append("Market data is stale.")
+    primary = _dedupe(reasons)
+    return {
+        "active": trade_decision == "No Trade",
+        "primary_reason": primary[0] if primary else "",
+        "block_reasons": primary,
+        "missing_confirmations": list(confluence.get("failed_factors") or []),
+        "wait_for": _wait_for(checklist, risk_reward),
+        "policy": "Prefer missing a trade over taking a poor NIFTY options trade.",
+    }
+
+
+def _wait_for(checklist: dict[str, Any], risk_reward: RiskRewardAnalysis) -> list[str]:
+    wait_for: list[str] = []
+    if not (checklist.get("htf") or {}).get("passed"):
+        wait_for.append("Higher timeframe alignment.")
+    if not (checklist.get("price_action") or {}).get("confirmed"):
+        wait_for.append("A confirmed rejection or engulfing candle.")
+    if not risk_reward.allowed:
+        wait_for.append("Risk/reward of at least 1:1.5.")
+    if not (checklist.get("options_flow") or {}).get("passed"):
+        wait_for.append("Options flow supporting CE or PE direction.")
+    if not wait_for:
+        wait_for.append("A clean pullback inside the entry zone.")
+    return wait_for
+
+
+def _explainability_layer(
+    trade_decision: str,
+    market_bias: str,
+    checklist: dict[str, Any],
+    confluence: dict[str, Any],
+    no_trade: dict[str, Any],
+) -> dict[str, Any]:
+    market_structure = checklist.get("market_structure") or {}
+    htf = checklist.get("htf") or {}
+    supply_demand = checklist.get("supply_demand") or {}
+    price_action = checklist.get("price_action") or {}
+    options_flow = checklist.get("options_flow") or {}
+    rr = checklist.get("risk_reward") or {}
+    if trade_decision == "No Trade":
+        plain_english = f"No Trade because {no_trade.get('primary_reason') or 'the setup does not have enough confluence'}."
+    else:
+        direction = "CE" if trade_decision == "Buy CE" else "PE"
+        plain_english = (
+            f"Buy {direction} only on pullback because market bias is {market_bias.lower()}, "
+            f"structure is {market_structure.get('structure_bias', 'unknown')}, "
+            f"HTF direction is {htf.get('allowed_direction', 'unknown')}, "
+            f"supply/demand location is {supply_demand.get('trade_location_quality', 'unknown')}, "
+            f"price action is {price_action.get('pattern', 'unknown')}, "
+            f"options flow is {options_flow.get('bias', 'unknown')}, "
+            f"and risk/reward is 1:{rr.get('risk_reward_ratio', 0)}."
+        )
+    return {
+        "plain_english": plain_english,
+        "score_reason": f"Confluence score {confluence.get('confluence_score', 0)}/100; quality {confluence.get('trade_quality', 'Skip')}.",
+        "supporting_factors": list(confluence.get("supporting_factors") or []),
+        "opposing_factors": list(confluence.get("opposing_factors") or []),
+        "warnings": _dedupe(list(checklist.get("warnings") or []) + list(no_trade.get("block_reasons") or [])),
     }
 
 

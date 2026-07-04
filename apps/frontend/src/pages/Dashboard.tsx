@@ -30,6 +30,7 @@ type Decision = {
       trade_decision?: string;
       trade_quality?: string;
       confidence_score?: number;
+      probability_score?: number;
       confluence_score?: number;
       entry_zone?: string;
       stop_loss?: string;
@@ -41,6 +42,8 @@ type Decision = {
       invalidation_level?: string;
       system_status?: string;
       block_reasons?: string[];
+      no_trade_intelligence?: { primary_reason?: string; block_reasons?: string[]; wait_for?: string[] };
+      explainability?: { plain_english?: string; score_reason?: string; warnings?: string[] };
     };
     checklist_score?: number;
     checklist?: {
@@ -221,7 +224,7 @@ export default function Dashboard() {
   const finalDecision = decision.factor_snapshot?.final_decision;
   const paperGate = decision.factor_snapshot?.high_probability_trade_engine?.paper_trade_gate;
   const disciplinePass = checklist?.discipline?.discipline_passed ?? checklist?.discipline?.passed;
-  const plainReason = finalDecision?.explanation?.[0] ?? decision.simple_explanation;
+  const plainReason = finalDecision?.explainability?.plain_english ?? finalDecision?.explanation?.[0] ?? decision.simple_explanation;
   const supplyDemandText = checklist?.supply_demand?.trade_location_quality
     ? `${checklist.supply_demand.trade_location_quality} location`
     : "Unknown";
@@ -267,6 +270,7 @@ export default function Dashboard() {
 
           <div className="decision-grid">
             <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
+            <span><small>Probability</small><strong>{Number(finalDecision?.probability_score ?? finalDecision?.confidence_score ?? confidence)}%</strong></span>
             <span><small>Confluence Score</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
             <span><small>Entry</small><strong>{finalDecision?.entry_zone ?? decision.entry_zone}</strong></span>
             <span><small>Stop Loss</small><strong>{finalDecision?.stop_loss ?? decision.stop_loss}</strong></span>

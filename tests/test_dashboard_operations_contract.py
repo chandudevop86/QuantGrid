@@ -75,6 +75,7 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "trade_decision",
         "trade_quality",
         "confidence_score",
+        "probability_score",
         "confluence_score",
         "entry_zone",
         "stop_loss",
@@ -86,11 +87,16 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "supporting_factors",
         "opposing_factors",
         "block_reasons",
+        "no_trade_intelligence",
+        "explainability",
         "invalidation_level",
         "system_status",
     }
     assert final_decision["trade_decision"] in {"Buy CE", "Buy PE", "No Trade"}
     assert final_decision["trade_quality"] in {"Excellent", "Good", "Average", "Poor", "Skip"}
+    assert isinstance(final_decision["no_trade_intelligence"], dict)
+    assert isinstance(final_decision["explainability"], dict)
+    assert final_decision["explainability"]["plain_english"]
     assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload

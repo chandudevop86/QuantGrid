@@ -14,6 +14,23 @@ Existing reusable modules:
 - Backtesting: `Backend/application/quant_modules.py`, `Backend/trading_system/backtesting.py`.
 - Paper trading: `Backend/application/paper_trade_store.py`, `Backend/application/order_management.py`.
 
+## MVP Brain Gap Audit
+
+| Area | Status | Files affected | Business impact | Recommended fix |
+| --- | --- | --- | --- | --- |
+| Decision engine | Present | `Backend/application/decision_engine/engine.py`, `Backend/application/decision_pipeline.py` | Produces Buy CE, Buy PE, or No Trade. | Keep pipeline as source of truth. |
+| Market structure | Present | `Backend/application/decision_pipeline.py`, `Backend/domain/market_structure.py` | Detects HH/HL, LH/LL, BOS, CHoCH/MSS risk, sideways, and strength. | Calibrate swing window with NIFTY paper outcomes. |
+| Confluence scoring | Present | `Backend/application/decision_pipeline.py` | Normalized 0-100 score combines HTF, structure, zones, FVG, liquidity, price action, options, institutional, risk, and discipline. | Tune weights after 30 sessions. |
+| Trade quality | Present | `Backend/application/decision_pipeline.py` | Classifies Excellent, Good, Average, Poor, or Skip. | Keep hard blocks mapped to Skip. |
+| Probability/confidence | Present | `Backend/application/decision_pipeline.py` | Exposes confidence/probability score without black-box AI. | Calibrate against persisted outcomes. |
+| Strategy registry | Present | `Backend/domain/engine/strategy_engine.py` | Registry includes version, enabled state, rollout percentage, and audit trail. | Persist governance externally before multi-user rollout. |
+| No Trade logic | Present | `Backend/application/decision_pipeline.py` | Explains why weak or unsafe trades are blocked. | Add more outcome-tagged block reason analytics over time. |
+| Outcome analytics | Present | `Backend/application/recommendation_store.py` | Tracks precision, recall, false positives/negatives, expectancy, PF, drawdown, counts, block reasons, setup/quality win rate. | Improve only after more closed paper trades. |
+| Explainability | Present | `Backend/application/decision_pipeline.py`, `apps/frontend/src/pages/Dashboard.tsx` | Dashboard renders plain-English reason and factors. | Keep wording concise for 30-second workflow. |
+| Dashboard checklist | Present | `apps/frontend/src/pages/Dashboard.tsx` | Shows Today’s Decision and supporting checklist fields. | Avoid frontend-side trading calculations. |
+| Paper trade integration | Present | `Backend/application/decision_pipeline.py` | Blocks paper execution unless confluence, quality, risk, discipline, freshness, and RR pass. | Keep live trading disabled by default. |
+| Tests | Present | `tests/test_decision_pipeline.py`, `tests/test_dashboard_operations_contract.py` | Mock-data tests cover core decision paths. | Add regression cases when new blockers are introduced. |
+
 What was missing:
 
 - A single technical checklist payload with `checklist_score`, `passed`, `failed`, `warnings`, `trend`, `ema`, `volume`, `support_resistance`, and `risk_reward`.
