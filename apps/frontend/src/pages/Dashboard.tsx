@@ -67,7 +67,7 @@ type Decision = {
       options_flow?: { bias?: string; passed?: boolean; reason?: string };
       institutional?: { bias?: string; institutional_score?: number; passed?: boolean; reason?: string };
       discipline?: { passed?: boolean; discipline_passed?: boolean; reason?: string; blocked_reasons?: string[] };
-      market_regime?: { regime?: string; market_regime?: string; regime_risk?: string; allowed_strategy_type?: string; warning?: string };
+      market_regime?: { regime?: string; market_regime?: string; regime_risk?: string; regime_strength?: string; allowed_strategy_type?: string; allowed_strategies?: string[]; warning?: string };
       strategy_selection?: { selected_strategy?: string; selected_score?: number; reason?: string };
       confidence_engine?: { confidence_score?: number };
       confluence_engine?: { confluence_score?: number; trade_quality?: string };
@@ -110,6 +110,26 @@ function optionsRead(bias: string) {
   if (bias === "Bullish") return "Options positioning supports bulls.";
   if (bias === "Bearish") return "Options positioning supports bears.";
   return "Options positioning does not justify a trade.";
+}
+
+function valueOrWaiting(value: unknown) {
+  if (value === null || value === undefined || value === "") return "Waiting";
+  return String(value);
+}
+
+function badgeTone(value: unknown) {
+  const text = String(value ?? "").toLowerCase();
+  if (text.includes("bull") || text.includes("buy") || text.includes("live") || text.includes("pass") || text.includes("good") || text.includes("excellent")) return "good";
+  if (text.includes("bear") || text.includes("fail") || text.includes("block") || text.includes("poor") || text.includes("risk")) return "danger";
+  if (text.includes("stale") || text.includes("closed") || text.includes("wait") || text.includes("average") || text.includes("warning")) return "warn";
+  return "muted";
+}
+
+function checklistStatus(passed?: boolean, warning?: string | null) {
+  if (warning) return "Warning";
+  if (passed === true) return "Pass";
+  if (passed === false) return "Fail";
+  return "Warning";
 }
 
 function fallbackDecision(): Decision {
@@ -234,6 +254,38 @@ export default function Dashboard() {
     ? `${checklist.supply_demand.trade_location_quality} location`
     : "Unknown";
   const riskStatus = paperGate?.allowed ? "Paper trade allowed" : paperGate?.status ? `Paper trade ${paperGate.status.toLowerCase()}` : finalDecision?.risk_level ?? decision.risk_level;
+  const marketSnapshot = [
+    { label: "NIFTY", value: finalDecision?.trade_decision ?? decision.trade_recommendation, tone: badgeTone(finalDecision?.trade_decision ?? decision.trade_recommendation) },
+    { label: "BANK NIFTY", value: "Waiting", tone: "muted" },
+    { label: "FIN NIFTY", value: "Waiting", tone: "muted" },
+    { label: "GIFT NIFTY", value: valueOrWaiting(decision.factor_snapshot?.gift_nifty_bias), tone: badgeTone(decision.factor_snapshot?.gift_nifty_bias) },
+    { label: "India VIX", value: valueOrWaiting(decision.factor_snapshot?.india_vix), tone: Number(decision.factor_snapshot?.india_vix ?? 0) >= 22 ? "danger" : "good" },
+    { label: "USDINR", value: "Waiting", tone: "muted" },
+    { label: "Crude", value: "Waiting", tone: "muted" },
+    { label: "US Futures", value: "Waiting", tone: "muted" },
+    { label: "Market", value: marketStatusLabel, tone: badgeTone(marketStatusLabel) },
+  ];
+  const checklistRows = [
+    { label: "Trend", status: checklistStatus(checklistTrend?.trend_direction !== "SIDEWAYS", checklistTrend?.warning_if_sideways), reason: checklistTrend?.supporting_evidence?.[0] ?? "Trend read unavailable.", weight: "15" },
+    { label: "Higher Timeframe", status: checklistStatus(checklist?.htf?.passed), reason: checklist?.htf?.reason ?? "HTF read unavailable.", weight: "15" },
+    { label: "Market Structure", status: checklistStatus(checklist?.market_structure?.structure_bias !== "Neutral", checklist?.market_structure?.warning), reason: checklist?.market_structure?.reason ?? "Structure read unavailable.", weight: "15" },
+    { label: "Support / Resistance", status: checklistStatus(!checklistSr?.warning, checklistSr?.warning), reason: checklistSr?.warning ?? "Support and resistance are usable.", weight: "10" },
+    { label: "Price Action", status: checklistStatus(checklist?.price_action?.confirmed), reason: checklist?.price_action?.reason ?? "Price action read unavailable.", weight: "10" },
+    { label: "Volume", status: checklistStatus(checklistVolume?.supports_trade), reason: checklistVolume?.reason ?? "Volume read unavailable.", weight: "10" },
+    { label: "Options Flow", status: checklistStatus(checklist?.options_flow?.passed, checklist?.options_flow?.warning), reason: checklist?.options_flow?.reason ?? "Options read unavailable.", weight: "10" },
+    { label: "Institutional Flow", status: checklistStatus(checklist?.institutional?.passed, checklist?.institutional?.warning), reason: checklist?.institutional?.reason ?? "Institutional read unavailable.", weight: "10" },
+    { label: "Risk", status: checklistStatus(checklistRr?.allowed), reason: checklistRr?.allowed ? "Risk reward is acceptable." : "Risk reward needs review.", weight: "10" },
+    { label: "Discipline", status: checklistStatus(Boolean(disciplinePass), checklist?.discipline?.blocked_reasons?.[0]), reason: checklist?.discipline?.reason ?? "Discipline read unavailable.", weight: "10" },
+  ];
+  const regimeRows = ["NIFTY", "BANK NIFTY", "FIN NIFTY"].map((instrument, index) => ({
+    instrument,
+    regime: index === 0 ? checklist?.market_regime?.market_regime ?? checklist?.market_regime?.regime ?? "Unknown" : "Waiting",
+    bias: index === 0 ? decision.market_bias : "Waiting",
+    strength: index === 0 ? checklist?.market_regime?.regime_strength ?? "Unknown" : "Waiting",
+    strategy: index === 0 ? checklist?.market_regime?.allowed_strategy_type ?? "Wait" : "Waiting",
+    warning: index === 0 ? checklist?.market_regime?.warning : "Awaiting backend snapshot.",
+  }));
+  const whatWouldChange = finalDecision?.no_trade_intelligence?.wait_for ?? ["A clean pullback inside the entry zone."];
 
   return (
     <section className="dashboard-page decision-dashboard">
@@ -254,11 +306,27 @@ export default function Dashboard() {
       )}
 
       {isAuthenticated && loading && <Loader label="Reading market..." />}
+      {isAuthenticated && loading && (
+        <div className="skeleton-grid" aria-hidden="true">
+          <div className="skeleton-card" />
+          <div className="skeleton-card" />
+          <div className="skeleton-card" />
+        </div>
+      )}
       {error && <p className="error-text">{error}</p>}
 
       {isAuthenticated && !loading && !error && (
         <>
-          <article className="decision-card">
+          <div className="market-snapshot-bar" aria-label="Market overview">
+            {marketSnapshot.map((item) => (
+              <span className={`market-snapshot-item market-snapshot-${item.tone}`} key={item.label}>
+                <small>{item.label}</small>
+                <strong>{item.value}</strong>
+              </span>
+            ))}
+          </div>
+
+          <article className={`decision-card decision-card-${badgeTone(finalDecision?.trade_decision ?? decision.trade_recommendation)}`}>
             <div className="decision-copy">
               <span className="decision-kicker">Today&apos;s Decision</span>
               <strong>{finalDecision?.trade_decision ?? decision.trade_recommendation}</strong>
@@ -346,41 +414,61 @@ export default function Dashboard() {
             </div>
           </div>
 
+          <div className="dashboard-section narrative-section">
+            <div className="section-header">
+              <h2>Market Narrative</h2>
+              <span>{finalDecision?.explainability?.score_reason ?? decision.score_reason}</span>
+            </div>
+            <div className="narrative-card">
+              <p>{plainReason}</p>
+              <div className="narrative-columns">
+                <div>
+                  <strong>Supporting Factors</strong>
+                  {(decision.supporting_factors?.length ? decision.supporting_factors : ["No strong supporting factors yet."]).slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+                </div>
+                <div>
+                  <strong>Counter Reasons</strong>
+                  {(decision.opposing_factors?.length ? decision.opposing_factors : ["No major opposing factor."]).slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+                </div>
+                <div>
+                  <strong>What Changes The View</strong>
+                  {whatWouldChange.slice(0, 4).map((item) => <span key={item}>{item}</span>)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="status-panel-grid regime-grid">
+            {regimeRows.map((row) => (
+              <div className="status-panel regime-card" key={row.instrument}>
+                <div className="status-panel-header">
+                  <span>{row.instrument}</span>
+                  <strong>{row.regime}</strong>
+                </div>
+                <div className="status-panel-body">
+                  <span>Bias: {row.bias}</span>
+                  <span>Strength: {row.strength}</span>
+                  <span>Allowed strategy: {row.strategy}</span>
+                  <span>{row.warning || "No active regime warning."}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <div className="dashboard-section">
             <div className="section-header">
               <h2>30-Second Checklist</h2>
               <span>Checklist Score: {Number(checklist?.checklist_score ?? decision.factor_snapshot?.checklist_score ?? 0)}%</span>
             </div>
-            <div className="execution-safety-grid">
-              <span><small>Trend</small><strong>{checklistTrend?.trend_direction ?? "Unknown"}</strong></span>
-              <span><small>Market Structure</small><strong>{checklist?.market_structure?.latest_structure_event ?? "Unknown"}</strong></span>
-              <span><small>HTF</small><strong>{checklist?.htf?.allowed_direction ?? "Unknown"}</strong></span>
-              <span><small>Supply/Demand</small><strong>{supplyDemandText}</strong></span>
-              <span><small>EMA</small><strong>{checklistEma?.ema_bias ?? "Unknown"}</strong></span>
-              <span><small>Volume</small><strong>{checklistVolume?.volume_status ?? "Unknown"}</strong></span>
-              <span><small>FVG</small><strong>{checklist?.fvg?.type ?? "Unknown"}</strong></span>
-              <span><small>Price Action</small><strong>{checklist?.price_action?.pattern ?? "Unknown"}</strong></span>
-              <span><small>Options</small><strong>{checklist?.options_flow?.bias ?? "Unknown"}</strong></span>
-              <span><small>Institutional Score</small><strong>{Number(checklist?.institutional?.institutional_score ?? 0)}%</strong></span>
-              <span><small>Risk Reward</small><strong>{Number(checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
-              <span><small>Discipline Status</small><strong>{disciplinePass ? "Pass" : "Block"}</strong></span>
-            </div>
-            <div className="status-panel-body">
-              <span>{plainReason}</span>
-              <span>{checklist?.market_structure?.reason ?? "Market structure read unavailable."}</span>
-              <span>{checklist?.supply_demand?.warning ?? `Supply and demand: ${supplyDemandText}.`}</span>
-              <span>{checklist?.htf?.reason ?? "HTF read unavailable."}</span>
-              <span>{checklistEma?.reason ?? "EMA read unavailable."}</span>
-              <span>{checklistVolume?.reason ?? "Volume read unavailable."}</span>
-              <span>{checklist?.price_action?.reason ?? "Price action read unavailable."}</span>
-              <span>{checklist?.options_flow?.reason ?? "Options flow read unavailable."}</span>
-              <span>{checklist?.institutional?.reason ?? "Institutional read unavailable."}</span>
-              <span>{checklist?.discipline?.reason ?? "Discipline read unavailable."}</span>
-              <span>{checklistSr?.warning ?? "Support and resistance are acceptable."}</span>
-              <span>{checklistRr?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
-              {(checklist?.passed ?? []).slice(0, 2).map((item) => <span key={item}>{item}</span>)}
-              {(checklist?.failed ?? []).slice(0, 2).map((item) => <span key={item}>No Trade: {item}</span>)}
-              {(paperGate?.reasons ?? []).slice(0, 2).map((item) => <span key={item}>Paper trade blocked: {item}</span>)}
+            <div className="checklist-panel">
+              {checklistRows.map((row) => (
+                <div className="checklist-row" key={row.label}>
+                  <span className={`status-pill status-pill-${badgeTone(row.status)}`}>{row.status}</span>
+                  <strong>{row.label}</strong>
+                  <p>{row.reason}</p>
+                  <small>{row.weight} pts</small>
+                </div>
+              ))}
             </div>
           </div>
 

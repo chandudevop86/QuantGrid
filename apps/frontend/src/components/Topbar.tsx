@@ -19,6 +19,7 @@ export default function Topbar() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
+  const [operations, setOperations] = useState<any>(null);
 
   useEffect(() => {
     const syncRole = () => {
@@ -44,7 +45,10 @@ export default function Topbar() {
     const loadMarketStatus = async () => {
       try {
         const response = await api.operationsStatus();
-        if (active) setMarketStatus(getMarketStatusLabel(response?.market_status));
+        if (active) {
+          setOperations(response);
+          setMarketStatus(getMarketStatusLabel(response?.market_status));
+        }
       } catch {
         if (active) setMarketStatus("CLOSED");
       }
@@ -87,6 +91,8 @@ export default function Topbar() {
     setRole("viewer");
     setIsAuthenticated(false);
   };
+  const brokerConnected = Boolean(operations?.system_health?.broker?.connected);
+  const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
 
   return (
     <header className={`topbar ${isAuthenticated ? "topbar-authenticated" : "topbar-guest"}`}>
@@ -95,9 +101,22 @@ export default function Topbar() {
         <span>Buy CE, Buy PE, or No Trade</span>
       </div>
       <div className="topbar-actions">
+        <label className="topbar-search">
+          <span className="sr-only">Search QuantGrid</span>
+          <input type="search" placeholder="Search NIFTY, signal, setup" aria-label="Search QuantGrid" />
+        </label>
         <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
           {marketStatus}
         </div>
+        <div className={`terminal-pill ${brokerConnected ? "terminal-pill-good" : "terminal-pill-muted"}`} title="Broker status">
+          Broker {brokerConnected ? "Connected" : "Paper"}
+        </div>
+        <div className={`terminal-pill ${systemReady ? "terminal-pill-good" : "terminal-pill-warn"}`} title="System health">
+          System {systemReady ? "Ready" : "Review"}
+        </div>
+        <button className="notification-button" type="button" aria-label="Notifications">
+          Alerts
+        </button>
         {isAuthenticated ? (
           <div className="auth-status">
             <span>{roleLabels[role]}</span>
