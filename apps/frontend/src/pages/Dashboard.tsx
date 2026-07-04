@@ -24,8 +24,24 @@ type Decision = {
   warnings?: string[];
   score_reason?: string;
   data_status?: string;
-  recommendation_metrics?: Record<string, number>;
+  recommendation_metrics?: Record<string, any>;
   factor_snapshot?: {
+    final_decision?: {
+      trade_decision?: string;
+      trade_quality?: string;
+      confidence_score?: number;
+      confluence_score?: number;
+      entry_zone?: string;
+      stop_loss?: string;
+      target?: string;
+      risk_reward_ratio?: number | null;
+      position_size?: number | null;
+      risk_level?: string;
+      explanation?: string[];
+      invalidation_level?: string;
+      system_status?: string;
+      block_reasons?: string[];
+    };
     checklist_score?: number;
     checklist?: {
       checklist_score?: number;
@@ -38,18 +54,26 @@ type Decision = {
       support_resistance?: { support?: number; resistance?: number; entry_zone?: string; invalidation_level?: string; warning?: string };
       risk_reward?: { risk_reward_ratio?: number; position_size?: number; allowed?: boolean; warnings?: string[] };
       htf?: { allowed_direction?: string; passed?: boolean; reason?: string };
+      market_structure?: { structure_bias?: string; latest_structure_event?: string; reason?: string };
+      supply_demand?: { trade_location_quality?: string; nearest_demand?: number; nearest_supply?: number; warning?: string };
       fvg?: { type?: string; passed?: boolean; reason?: string };
       price_action?: { pattern?: string; confirmed?: boolean; reason?: string };
       options_flow?: { bias?: string; passed?: boolean; reason?: string };
-      institutional?: { bias?: string; passed?: boolean; reason?: string };
-      discipline?: { passed?: boolean; reason?: string; blocked_reasons?: string[] };
+      institutional?: { bias?: string; institutional_score?: number; passed?: boolean; reason?: string };
+      discipline?: { passed?: boolean; discipline_passed?: boolean; reason?: string; blocked_reasons?: string[] };
       confidence_engine?: { confidence_score?: number };
+      confluence_engine?: { confluence_score?: number; trade_quality?: string };
     };
     trend_analysis?: { trend_direction?: string; trend_strength?: number; warning_if_sideways?: string };
     ema_analysis?: { ema_bias?: string; ema_strength?: number; reason?: string; warning?: string };
     volume_analysis?: { volume_status?: string; volume_strength?: number; supports_trade?: boolean; reason?: string };
     support_resistance?: { support?: number; resistance?: number; entry_zone?: string; invalidation_level?: string; warning?: string };
     risk_reward?: { risk_reward_ratio?: number; position_size?: number; allowed?: boolean; warnings?: string[] };
+    high_probability_trade_engine?: {
+      paper_trade_allowed?: boolean;
+      paper_trade_gate?: { allowed?: boolean; status?: string; reasons?: string[] };
+      layers?: Record<string, any>;
+    };
   };
 };
 
@@ -194,6 +218,14 @@ export default function Dashboard() {
   const checklistVolume = checklist?.volume ?? decision.factor_snapshot?.volume_analysis;
   const checklistSr = checklist?.support_resistance ?? decision.factor_snapshot?.support_resistance;
   const checklistRr = checklist?.risk_reward ?? decision.factor_snapshot?.risk_reward;
+  const finalDecision = decision.factor_snapshot?.final_decision;
+  const paperGate = decision.factor_snapshot?.high_probability_trade_engine?.paper_trade_gate;
+  const disciplinePass = checklist?.discipline?.discipline_passed ?? checklist?.discipline?.passed;
+  const plainReason = finalDecision?.explanation?.[0] ?? decision.simple_explanation;
+  const supplyDemandText = checklist?.supply_demand?.trade_location_quality
+    ? `${checklist.supply_demand.trade_location_quality} location`
+    : "Unknown";
+  const riskStatus = paperGate?.allowed ? "Paper trade allowed" : paperGate?.status ? `Paper trade ${paperGate.status.toLowerCase()}` : finalDecision?.risk_level ?? decision.risk_level;
 
   return (
     <section className="dashboard-page decision-dashboard">
@@ -220,9 +252,9 @@ export default function Dashboard() {
         <>
           <article className="decision-card">
             <div className="decision-copy">
-              <span className="decision-kicker">{decision.market_bias} Bias</span>
-              <strong>{decision.trade_recommendation}</strong>
-              <p>{decision.simple_explanation}</p>
+              <span className="decision-kicker">Today&apos;s Decision</span>
+              <strong>{finalDecision?.trade_decision ?? decision.trade_recommendation}</strong>
+              <p>{plainReason}</p>
             </div>
             <div className={`confidence-card confidence-${confidenceTone(confidence)}`}>
               <span>Confidence</span>
@@ -234,14 +266,18 @@ export default function Dashboard() {
           </article>
 
           <div className="decision-grid">
-            <span><small>Entry Zone</small><strong>{decision.entry_zone}</strong></span>
-            <span><small>Stop Loss</small><strong>{decision.stop_loss}</strong></span>
-            <span><small>Target</small><strong>{decision.target}</strong></span>
-            <span><small>Risk Level</small><strong>{decision.risk_level}</strong></span>
+            <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
+            <span><small>Confluence Score</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
+            <span><small>Entry</small><strong>{finalDecision?.entry_zone ?? decision.entry_zone}</strong></span>
+            <span><small>Stop Loss</small><strong>{finalDecision?.stop_loss ?? decision.stop_loss}</strong></span>
+            <span><small>Target</small><strong>{finalDecision?.target ?? decision.target}</strong></span>
+            <span><small>Risk/Reward</small><strong>{Number(finalDecision?.risk_reward_ratio ?? checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
+            <span><small>Position Size</small><strong>{finalDecision?.position_size ?? checklistRr?.position_size ?? 0}</strong></span>
+            <span><small>Risk Status</small><strong>{riskStatus}</strong></span>
             <span><small>Support</small><strong>{decision.support}</strong></span>
             <span><small>Resistance</small><strong>{decision.resistance}</strong></span>
-            <span><small>Invalidation</small><strong>{decision.invalidation_level}</strong></span>
-            <span><small>Data</small><strong>{decision.data_status}</strong></span>
+            <span><small>Invalidation Level</small><strong>{finalDecision?.invalidation_level ?? decision.invalidation_level}</strong></span>
+            <span><small>System Status</small><strong>{finalDecision?.system_status ?? decision.data_status}</strong></span>
           </div>
 
           <div className="status-panel-grid compact-status-grid">
@@ -290,6 +326,10 @@ export default function Dashboard() {
             <div className="execution-safety-grid">
               <span><small>Precision</small><strong>{Math.round(Number(decision.recommendation_metrics?.precision ?? 0) * 100)}%</strong></span>
               <span><small>Recall</small><strong>{Math.round(Number(decision.recommendation_metrics?.recall ?? 0) * 100)}%</strong></span>
+              <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
+              <span><small>Confluence</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
+              <span><small>Skipped Trades</small><strong>{Number(decision.recommendation_metrics?.skipped_trades ?? 0)}</strong></span>
+              <span><small>Blocked Trades</small><strong>{Number(decision.recommendation_metrics?.blocked_trades ?? 0)}</strong></span>
               <span><small>Profit Factor</small><strong>{Number(decision.recommendation_metrics?.profit_factor ?? 0).toFixed(2)}</strong></span>
               <span><small>Max Drawdown</small><strong>{formatMoney(decision.recommendation_metrics?.max_drawdown)}</strong></span>
             </div>
@@ -302,17 +342,22 @@ export default function Dashboard() {
             </div>
             <div className="execution-safety-grid">
               <span><small>Trend</small><strong>{checklistTrend?.trend_direction ?? "Unknown"}</strong></span>
+              <span><small>Market Structure</small><strong>{checklist?.market_structure?.latest_structure_event ?? "Unknown"}</strong></span>
               <span><small>HTF</small><strong>{checklist?.htf?.allowed_direction ?? "Unknown"}</strong></span>
+              <span><small>Supply/Demand</small><strong>{supplyDemandText}</strong></span>
               <span><small>EMA</small><strong>{checklistEma?.ema_bias ?? "Unknown"}</strong></span>
               <span><small>Volume</small><strong>{checklistVolume?.volume_status ?? "Unknown"}</strong></span>
               <span><small>FVG</small><strong>{checklist?.fvg?.type ?? "Unknown"}</strong></span>
               <span><small>Price Action</small><strong>{checklist?.price_action?.pattern ?? "Unknown"}</strong></span>
               <span><small>Options</small><strong>{checklist?.options_flow?.bias ?? "Unknown"}</strong></span>
-              <span><small>Institutional</small><strong>{checklist?.institutional?.bias ?? "Unknown"}</strong></span>
+              <span><small>Institutional Score</small><strong>{Number(checklist?.institutional?.institutional_score ?? 0)}%</strong></span>
               <span><small>Risk Reward</small><strong>{Number(checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
-              <span><small>Discipline</small><strong>{checklist?.discipline?.passed ? "Pass" : "Block"}</strong></span>
+              <span><small>Discipline Status</small><strong>{disciplinePass ? "Pass" : "Block"}</strong></span>
             </div>
             <div className="status-panel-body">
+              <span>{plainReason}</span>
+              <span>{checklist?.market_structure?.reason ?? "Market structure read unavailable."}</span>
+              <span>{checklist?.supply_demand?.warning ?? `Supply and demand: ${supplyDemandText}.`}</span>
               <span>{checklist?.htf?.reason ?? "HTF read unavailable."}</span>
               <span>{checklistEma?.reason ?? "EMA read unavailable."}</span>
               <span>{checklistVolume?.reason ?? "Volume read unavailable."}</span>
@@ -324,6 +369,7 @@ export default function Dashboard() {
               <span>{checklistRr?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
               {(checklist?.passed ?? []).slice(0, 2).map((item) => <span key={item}>{item}</span>)}
               {(checklist?.failed ?? []).slice(0, 2).map((item) => <span key={item}>No Trade: {item}</span>)}
+              {(paperGate?.reasons ?? []).slice(0, 2).map((item) => <span key={item}>Paper trade blocked: {item}</span>)}
             </div>
           </div>
 

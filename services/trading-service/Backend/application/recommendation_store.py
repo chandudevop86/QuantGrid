@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,7 +163,7 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
     gross_profit = sum(max(0.0, float(row.get("pnl") or 0.0)) for row in trade_rows)
     gross_loss = abs(sum(min(0.0, float(row.get("pnl") or 0.0)) for row in trade_rows))
     pnls = [float(row.get("pnl") or 0.0) for row in trade_rows]
-    metrics = RecommendationMetrics(
+    base_metrics = RecommendationMetrics(
         total_recommendations=len(rows),
         precision=round(len(wins) / max(len(trade_rows), 1), 4),
         recall=round(len(wins) / max(len(wins) + len(missed), 1), 4),
@@ -173,7 +174,83 @@ def recommendation_metrics(limit: int = 500) -> dict[str, Any]:
         expectancy=round(sum(pnls) / max(len(pnls), 1), 2),
         max_drawdown=_max_drawdown(pnls),
     )
-    return metrics.to_dict()
+    metrics = base_metrics.to_dict()
+    payloads = [_payload_from_row(row) for row in rows]
+    final_decisions = [_final_decision_from_payload(payload) for payload in payloads]
+    recommendations = [str(row.get("recommendation") or "") for row in rows]
+    block_reason_frequency: Counter[str] = Counter()
+    rr_values: list[float] = []
+    quality_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    setup_rows: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    for row, payload, final_decision in zip(rows, payloads, final_decisions, strict=False):
+        gate = ((payload.get("factors") or {}).get("high_probability_trade_engine") or {}).get("paper_trade_gate") or {}
+        block_reasons = list(final_decision.get("block_reasons") or [])
+        block_reasons.extend(gate.get("reasons") or [])
+        block_reason_frequency.update(_clean_reasons(block_reasons))
+        rr = final_decision.get("risk_reward_ratio")
+        if rr is not None:
+            rr_values.append(float(rr or 0.0))
+        quality = str(final_decision.get("trade_quality") or "Unknown")
+        setup = _setup_type(payload, final_decision, row)
+        if row.get("outcome"):
+            quality_rows[quality].append(row)
+            setup_rows[setup].append(row)
+
+    blocked_trades = sum(1 for payload, final_decision in zip(payloads, final_decisions, strict=False) if _is_blocked(payload, final_decision))
+    setup_pnl = {setup: sum(float(row.get("pnl") or 0.0) for row in setup_group) for setup, setup_group in setup_rows.items()}
+    metrics.update(
+        {
+            "buy_ce_count": recommendations.count("Buy CE"),
+            "buy_pe_count": recommendations.count("Buy PE"),
+            "no_trade_count": recommendations.count("No Trade"),
+            "skipped_trades": recommendations.count("No Trade"),
+            "blocked_trades": blocked_trades,
+            "block_reason_frequency": dict(block_reason_frequency),
+            "win_rate_by_trade_quality": {quality: _win_rate(group) for quality, group in quality_rows.items()},
+            "win_rate_by_setup_type": {setup: _win_rate(group) for setup, group in setup_rows.items()},
+            "average_rr": round(sum(rr_values) / max(len(rr_values), 1), 2),
+            "best_setup": max(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
+            "worst_setup": min(setup_pnl, key=setup_pnl.get) if setup_pnl else None,
+        }
+    )
+    return metrics
+
+
+def _payload_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return json.loads(str(row.get("payload_json") or "{}"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _final_decision_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    factors = payload.get("factors") or {}
+    return factors.get("final_decision") or payload.get("final_decision") or {}
+
+
+def _clean_reasons(reasons: list[Any]) -> list[str]:
+    return [str(reason).strip() for reason in reasons if str(reason or "").strip()]
+
+
+def _is_blocked(payload: dict[str, Any], final_decision: dict[str, Any]) -> bool:
+    gate = ((payload.get("factors") or {}).get("high_probability_trade_engine") or {}).get("paper_trade_gate") or {}
+    return bool(final_decision.get("block_reasons") or gate.get("allowed") is False)
+
+
+def _setup_type(payload: dict[str, Any], final_decision: dict[str, Any], row: dict[str, Any]) -> str:
+    checklist = (payload.get("factors") or {}).get("checklist") or {}
+    price_action = checklist.get("price_action") or {}
+    return str(price_action.get("pattern") or final_decision.get("trade_decision") or row.get("recommendation") or "Unknown")
+
+
+def _win_rate(rows: list[dict[str, Any]]) -> float:
+    trade_rows = [row for row in rows if row.get("recommendation") in {"Buy CE", "Buy PE"}]
+    wins = [
+        row for row in trade_rows
+        if str(row.get("outcome")).upper() in {"WIN", "TARGET", "PROFIT"} or float(row.get("pnl") or 0.0) > 0
+    ]
+    return round(len(wins) / max(len(trade_rows), 1), 4)
 
 
 def _max_drawdown(pnls: list[float]) -> float:

@@ -43,13 +43,18 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "support_resistance",
         "risk_reward",
         "htf",
+        "market_structure",
         "key_levels",
         "fvg",
         "price_action",
         "options_flow",
         "institutional",
         "discipline",
+        "confluence_engine",
         "confidence_engine",
+        "market_regime",
+        "supply_demand",
+        "liquidity",
     }
     assert isinstance(checklist["passed"], list)
     assert isinstance(checklist["failed"], list)
@@ -60,6 +65,32 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert "support_resistance" in decision["factor_snapshot"]
     assert "risk_reward" in decision["factor_snapshot"]
     assert "high_probability_trade_engine" in decision["factor_snapshot"]
+    gate = decision["factor_snapshot"]["high_probability_trade_engine"]["paper_trade_gate"]
+    assert isinstance(gate["allowed"], bool)
+    assert gate["status"] in {"Allowed", "Blocked"}
+    assert isinstance(gate["reasons"], list)
+    final_decision = decision["factor_snapshot"]["final_decision"]
+    assert set(final_decision) == {
+        "market_bias",
+        "trade_decision",
+        "trade_quality",
+        "confidence_score",
+        "confluence_score",
+        "entry_zone",
+        "stop_loss",
+        "target",
+        "risk_reward_ratio",
+        "position_size",
+        "risk_level",
+        "explanation",
+        "supporting_factors",
+        "opposing_factors",
+        "block_reasons",
+        "invalidation_level",
+        "system_status",
+    }
+    assert final_decision["trade_decision"] in {"Buy CE", "Buy PE", "No Trade"}
+    assert final_decision["trade_quality"] in {"Excellent", "Good", "Average", "Poor", "Skip"}
     assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload

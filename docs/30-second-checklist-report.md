@@ -48,9 +48,12 @@ Files modified:
 - Risk-reward analyzer: risk amount, reward amount, RR, position size, allowed flag, warnings.
 - Checklist score and blockers inside the decision pipeline.
 - High Probability Trade Engine payload with market structure, HTF, key levels, FVG, price action, options flow, institutional, risk, discipline, and confidence layers.
+- Professional confluence engine with normalized 0-100 score, trade quality classification, passed/failed factors, supporting/opposing factors, and hard blocks.
+- Exact final decision payload with market bias, trade decision, trade quality, confidence, confluence, entry, stop, target, RR, position size, risk level, explanations, block reasons, invalidation, and system status.
 - Discipline Engine blockers for sideways trading, late/chasing entries, big gaps, over-trading, consecutive-loss/revenge risk, duplicate signal, and missing price action confirmation.
-- Paper-trade gate: paper trade is allowed only when checklist is at least 80, confidence is at least 75, risk passes, and discipline passes.
-- Dashboard section for Trend, EMA, Volume, Support/Resistance, Risk-Reward, Confidence, Entry, SL, Target, Reason, Invalidation, System Status.
+- Paper-trade gate: paper trade is allowed only when confluence score is at least 70, trade quality is Good or Excellent, risk passes, discipline passes, data is fresh, and RR is at least 1.5.
+- Dashboard section for Today's Decision, Buy CE/Buy PE/No Trade, Trade Quality, Confidence, Confluence, Entry, SL, Target, RR, Position Size, Market Structure, HTF Alignment, Supply/Demand, Price Action, Options Flow, Institutional Score, Risk Status, Discipline Status, Reason, Invalidation, and System Status.
+- Recommendation analytics for Buy CE/Buy PE/No Trade counts, skipped trades, blocked trades, block reason frequency, win rate by trade quality, win rate by setup type, profit factor, expectancy, max drawdown, average RR, best setup, and worst setup.
 
 ## No Trade Logic
 
@@ -83,6 +86,36 @@ The pipeline returns No Trade when:
 - Higher timeframe conflict blocking.
 - Price action confirmation blocking.
 - Full high-probability checklist schema.
+- Final decision schema and confluence/trade quality fields.
+- HTF bullish CE allowance and bearish PE allowance.
+- HTF conflict blocking.
+- HH/HL bullish structure, LH/LL bearish structure, and sideways structure.
+- Demand zone, supply zone, bullish FVG, bearish FVG, and liquidity sweep detection.
+- Bullish engulfing and bearish engulfing confirmation.
+- Poor RR, stale data, and FOMO/chasing paper-trade blocking.
+- Final Buy CE, Buy PE, and No Trade decisions.
+
+## Loop 14-18 Delivery
+
+Gaps fixed:
+
+- Dashboard now renders the backend final decision in plain English and exposes all requested trade/risk/context fields.
+- Paper trade eligibility is deterministic and defaults to blocked unless every gate passes.
+- Recommendation analytics now include recommendation counts, skipped/blocked trades, block reasons, quality/setup win rates, average RR, best setup, and worst setup.
+- Tests use mock candles only; no broker login or live market dependency is required.
+
+New modules/APIs:
+
+- No unrelated modules were added. The existing `DecisionPipelineService` and recommendation store APIs were expanded.
+- `factor_snapshot.high_probability_trade_engine.paper_trade_gate` is the backend paper-trade source of truth.
+
+Remaining risks:
+
+- Deterministic zone/FVG/liquidity logic is intentionally simple and needs calibration with paper-trade history.
+- Outcome analytics are only as useful as the recorded trade outcomes.
+- Live broker execution remains disabled by default and should stay disabled until paper-trade evidence is statistically meaningful.
+
+Live trading readiness score: 35/100.
 
 ## Readiness
 
@@ -105,3 +138,4 @@ Remaining risks:
 4. Backtest checklist blockers against historical NIFTY option entries.
 5. Attach paper-trade outcomes automatically to persisted recommendations.
 6. Add dashboard replay for the exact checklist state behind each recommendation.
+7. Calibrate confluence weights with at least 30 paper-trade sessions before considering live execution.

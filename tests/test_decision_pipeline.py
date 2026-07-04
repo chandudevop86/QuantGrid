@@ -12,10 +12,14 @@ import Backend.application.recommendation_store as recommendation_store
 from Backend.application.decision_pipeline import (
     DecisionPipelineService,
     MarketDataInputs,
+    analyze_fvg,
     analyze_higher_timeframe,
+    analyze_liquidity,
+    analyze_market_structure,
     analyze_price_action,
     analyze_ema,
     analyze_risk_reward,
+    analyze_supply_demand,
     analyze_support_resistance,
     analyze_trend,
     analyze_volume,
@@ -91,12 +95,17 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "support_resistance",
         "risk_reward",
         "htf",
+        "market_structure",
         "key_levels",
+        "supply_demand",
         "fvg",
+        "liquidity",
         "price_action",
+        "market_regime",
         "options_flow",
         "institutional",
         "discipline",
+        "confluence_engine",
         "confidence_engine",
     }
     assert checklist["checklist_score"] > 0
@@ -107,16 +116,43 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert checklist["volume"]["supports_trade"] is True
     assert checklist["risk_reward"]["allowed"] is True
     assert checklist["htf"]["passed"] is True
+    assert checklist["market_structure"]["latest_structure_event"] in {"BOS", "HH_HL"}
     assert checklist["price_action"]["confirmed"] is True
     assert checklist["options_flow"]["passed"] is True
     assert checklist["institutional"]["passed"] is True
     assert result.factors["high_probability_trade_engine"]["paper_trade_allowed"] is True
+    assert result.factors["high_probability_trade_engine"]["paper_trade_gate"]["allowed"] is True
+    final_decision = result.factors["final_decision"]
+    assert set(final_decision) == {
+        "market_bias",
+        "trade_decision",
+        "trade_quality",
+        "confidence_score",
+        "confluence_score",
+        "entry_zone",
+        "stop_loss",
+        "target",
+        "risk_reward_ratio",
+        "position_size",
+        "risk_level",
+        "explanation",
+        "supporting_factors",
+        "opposing_factors",
+        "block_reasons",
+        "invalidation_level",
+        "system_status",
+    }
+    assert final_decision["trade_decision"] == "Buy CE"
+    assert final_decision["trade_quality"] in {"Excellent", "Good"}
     assert result.decision_id
 
     record_recommendation_outcome(result.decision_id, outcome="WIN", pnl=500, actual_direction="BULLISH")
     metrics = recommendation_metrics()
 
     assert metrics["total_recommendations"] == 1
+    assert metrics["buy_ce_count"] == 1
+    assert metrics["no_trade_count"] == 0
+    assert metrics["average_rr"] >= 1.5
     assert metrics["precision"] == 1
     assert metrics["false_positives"] == 0
 
@@ -234,6 +270,10 @@ def test_decision_pipeline_buy_ce_buy_pe_and_blocks_poor_rr(monkeypatch):
     assert bullish.decision.trade_recommendation == "Buy CE"
     assert bearish.decision.trade_recommendation == "Buy PE"
     assert blocked.decision.trade_recommendation == "No Trade"
+    assert bullish.factors["final_decision"]["trade_decision"] == "Buy CE"
+    assert bearish.factors["final_decision"]["trade_decision"] == "Buy PE"
+    assert blocked.factors["final_decision"]["trade_decision"] == "No Trade"
+    assert blocked.factors["high_probability_trade_engine"]["paper_trade_gate"]["allowed"] is False
     assert "risk reward is poor" in blocked.factors["checklist_blockers"] or blocked.factors["support_resistance"]["warning"]
 
 
@@ -247,6 +287,35 @@ def test_decision_pipeline_blocks_stale_data():
     assert result.decision.trade_recommendation == "No Trade"
     assert "data is stale" in result.factors["checklist_blockers"]
     assert "data is stale" in result.factors["checklist"]["failed"]
+    assert result.factors["high_probability_trade_engine"]["paper_trade_gate"]["allowed"] is False
+    assert "Data is stale." in result.factors["high_probability_trade_engine"]["paper_trade_gate"]["reasons"]
+
+
+def test_paper_trade_gate_requires_risk_engine_pass():
+    result = DecisionPipelineService().run(
+        MarketDataInputs(
+            market_live=True,
+            valid_for_execution=True,
+            feed_delay_seconds=2,
+            candles=_bullish_candles(),
+            candles_1m=_bullish_candles(),
+            candles_5m=_bullish_candles(),
+            candles_15m=_bullish_candles(),
+            candles_1h=_bullish_candles(),
+            oi_bias="BULLISH",
+            pcr=1.1,
+            put_oi=1200,
+            call_oi=900,
+            fii_cash=100,
+            gift_nifty_bias="BULLISH",
+        ),
+        risk_blocked=True,
+        persist=False,
+    )
+
+    gate = result.factors["high_probability_trade_engine"]["paper_trade_gate"]
+    assert gate["allowed"] is False
+    assert "Risk engine blocked the trade." in gate["reasons"]
 
 
 def test_higher_timeframe_filter_blocks_conflict():
@@ -264,8 +333,63 @@ def test_higher_timeframe_filter_blocks_conflict():
     assert result["passed"] is False
 
 
+def test_higher_timeframe_allows_ce_and_pe_direction():
+    bullish = analyze_higher_timeframe(
+        MarketDataInputs(candles_1m=_bullish_candles(), candles_5m=_bullish_candles(), candles_15m=_bullish_candles(), candles_1h=_bullish_candles())
+    )
+    bearish = analyze_higher_timeframe(
+        MarketDataInputs(candles_1m=_bearish_candles(), candles_5m=_bearish_candles(), candles_15m=_bearish_candles(), candles_1h=_bearish_candles())
+    )
+
+    assert bullish["passed"] is True
+    assert bullish["allowed_direction"] == "CE"
+    assert bearish["passed"] is True
+    assert bearish["allowed_direction"] == "PE"
+
+
+def test_market_structure_detects_hh_hl_lh_ll_and_sideways():
+    assert analyze_market_structure(_bullish_candles())["latest_structure_event"] == "HH_HL"
+    assert analyze_market_structure(_bearish_candles())["latest_structure_event"] == "LH_LL"
+    sideways = analyze_market_structure(_sideways_candles())
+    assert sideways["latest_structure_event"] == "SIDEWAYS"
+    assert sideways["warning"]
+
+
+def test_supply_demand_and_fvg_and_liquidity_detection():
+    bullish = _bullish_candles()
+    bearish = _bearish_candles()
+    bullish_fvg = _bullish_candles()
+    bullish_fvg[-3] = {"open": 108, "high": 110, "low": 106, "close": 109, "volume": 1200}
+    bullish_fvg[-2] = {"open": 111, "high": 114, "low": 110, "close": 113, "volume": 1300}
+    bullish_fvg[-1] = {"open": 121, "high": 128, "low": 120, "close": 126, "volume": 3000}
+    bearish_fvg = _bearish_candles()
+    bearish_fvg[-3] = {"open": 112, "high": 114, "low": 110, "close": 111, "volume": 1200}
+    bearish_fvg[-2] = {"open": 108, "high": 109, "low": 104, "close": 105, "volume": 1300}
+    bearish_fvg[-1] = {"open": 96, "high": 99, "low": 90, "close": 92, "volume": 3000}
+    bullish_trend = analyze_trend(bullish)
+    bearish_trend = analyze_trend(bearish)
+    bullish_levels = analyze_support_resistance(bullish)
+    liquidity_candles = _bullish_candles()
+    liquidity_levels = analyze_support_resistance(liquidity_candles[:-1])
+    liquidity_candles[-1] = {
+        "open": float(liquidity_levels.support or 120) + 1,
+        "high": float(liquidity_levels.support or 120) + 5,
+        "low": float(liquidity_levels.support or 120) - 1,
+        "close": float(liquidity_levels.support or 120) + 2,
+        "volume": 3000,
+    }
+
+    assert analyze_supply_demand(bullish)["nearest_demand"] is not None
+    assert analyze_supply_demand(bearish)["nearest_supply"] is not None
+    assert analyze_fvg(bullish_fvg, bullish_trend, {"demand_zone": bullish_levels.support})["type"] == "BULLISH_FVG"
+    assert analyze_fvg(bearish_fvg, bearish_trend, {"supply_zone": analyze_support_resistance(bearish).resistance})["type"] == "BEARISH_FVG"
+    assert analyze_liquidity(liquidity_candles, liquidity_levels)["liquidity_event"] == "LIQUIDITY_SWEEP_BELOW_SUPPORT"
+
+
 def test_price_action_requires_confirmation_for_trade():
     assert analyze_price_action(_bullish_candles())["confirmed"] is True
+    assert analyze_price_action(_bullish_candles())["pattern"] == "BULLISH_ENGULFING"
+    assert analyze_price_action(_bearish_candles())["pattern"] == "BEARISH_ENGULFING"
     result = DecisionPipelineService().run(
         MarketDataInputs(
             market_live=True,
@@ -288,3 +412,17 @@ def test_price_action_requires_confirmation_for_trade():
 
     assert result.decision.trade_recommendation == "No Trade"
     assert "no price action confirmation" in result.factors["checklist_blockers"]
+
+
+def test_discipline_blocks_fomo_chasing_and_average_quality_blocks_paper_trade():
+    chasing = _bullish_candles()
+    chasing[-1] = {"open": 120, "high": 160, "low": 119, "close": 159, "volume": 3000, "vwap": 125}
+    result = DecisionPipelineService().run(
+        MarketDataInputs(market_live=True, valid_for_execution=True, feed_delay_seconds=2, candles=chasing),
+        risk_blocked=False,
+        persist=False,
+    )
+
+    assert result.decision.trade_recommendation == "No Trade"
+    assert any("chasing" in reason.lower() or "late entry" in reason.lower() for reason in result.factors["high_probability_trade_engine"]["paper_trade_gate"]["reasons"])
+    assert result.factors["high_probability_trade_engine"]["paper_trade_gate"]["allowed"] is False
