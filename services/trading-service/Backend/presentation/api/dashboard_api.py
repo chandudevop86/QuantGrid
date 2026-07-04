@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -9,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from Backend.application.candle_validation import validate_live_candle
-from Backend.application.decision_engine import DecisionEngine, DecisionInputs
+from Backend.application.decision_pipeline import DecisionPipelineService
 from Backend.application.job_queue import enqueue_job
 from Backend.application.worker import process_job
 from Backend.application.job_store import count_jobs, list_jobs, utc_now
@@ -18,7 +19,7 @@ from Backend.application.market_data_store import latest_candles, market_data_su
 from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
 from Backend.application.redis_service import redis_service
-from Backend.application.monitoring import observe_market_data_age
+from Backend.application.monitoring import observe_api_request, observe_market_data_age, observe_risk_block, observe_trading_decision
 from Backend.core.config import get_settings
 from Backend.core.database import SessionLocal, get_db
 from Backend.domain.engine.strategy_engine import StrategyEngine
@@ -89,6 +90,7 @@ def _int_env(name: str, default: int) -> int:
 
 @router.get("/operations")
 def operations(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
+    started_at = perf_counter()
     settings = get_settings()
     candles = latest_candles("NIFTY", "1m", 100)
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
@@ -122,31 +124,18 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         if validation.valid_for_execution
         else "Current market conditions do not meet confirmation criteria."
     )
-    decision = DecisionEngine().decide(
-        DecisionInputs(
-            market_live=validation.market_live,
-            valid_for_execution=validation.valid_for_execution,
-            risk_blocked=risk_blocked,
-            feed_delay_seconds=validation.delay_seconds,
-            warnings=validation.warnings,
-            market_bias=os.getenv("MARKET_BIAS", "NEUTRAL"),
-            market_trend=os.getenv("MARKET_TREND"),
-            momentum=os.getenv("MOMENTUM_BIAS"),
-            price_action=os.getenv("PRICE_ACTION"),
-            support=os.getenv("SUPPORT_LEVEL", "Nearest confirmed demand zone"),
-            resistance=os.getenv("RESISTANCE_LEVEL", "Nearest confirmed supply zone"),
-            oi_bias=os.getenv("OI_BIAS"),
-            pcr=_float_env("PCR"),
-            vix=_float_env("INDIA_VIX"),
-            fii_dii_bias=os.getenv("FII_DII_BIAS"),
-            max_pain=os.getenv("MAX_PAIN"),
-            vwap_relation=os.getenv("VWAP_RELATION"),
-            gift_nifty_bias=os.getenv("GIFT_NIFTY_BIAS"),
-            liquidity=os.getenv("LIQUIDITY_STATUS"),
-            expiry_day=_bool_env("EXPIRY_DAY"),
-            confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
-        )
+    pipeline = DecisionPipelineService()
+    pipeline_result = pipeline.run(
+        pipeline.from_environment(validation=validation, candles=candles, symbol="NIFTY"),
+        risk_blocked=risk_blocked,
+        confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
     )
+    decision = pipeline_result.decision
+    latency_ms = round((perf_counter() - started_at) * 1000, 2)
+    observe_api_request("GET", "/dashboard/operations", 200, latency_ms / 1000)
+    observe_trading_decision(decision.trade_recommendation, decision.data_status, decision.blocked)
+    if risk_blocked:
+        observe_risk_block("DASHBOARD_RISK_BLOCKED")
     logger.info(
         "dashboard_decision",
         extra={
@@ -160,7 +149,11 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
 
     return {
         "updated_at": utc_now(),
-        "decision": decision.to_dict(),
+        "decision": decision.to_dict() | {
+            "decision_id": pipeline_result.decision_id,
+            "factor_snapshot": pipeline_result.factors,
+            "recommendation_metrics": pipeline_result.analytics,
+        },
         "market_status": {
             "label": validation.ui_status,
             "state": validation.market_status,
@@ -208,8 +201,8 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         },
         "observability": {
             "websocket_connections": len(manager.active_connections),
-            "api_latency_ms": 0,
-            "api_latency_status": 0,
+            "api_latency_ms": latency_ms,
+            "api_latency_status": "OK" if latency_ms < 500 else "SLOW",
             "signal_generation_metrics": {"generated": 0, "validated": 0},
             "strategy_execution_metrics": 0,
             "signal_count_metrics": 0,
@@ -221,6 +214,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "redis_healthy": redis["connected"],
             "db_healthy": db_status["healthy"],
             "stored_live_candles": market_store["candles"],
+            "decision_metrics": pipeline_result.analytics,
         },
         "diagnostics": {
             "trader_message": trader_message,

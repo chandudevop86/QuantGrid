@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from Backend.app.backtesting.metrics import calculate_metrics
 from Backend.app.backtesting.models import BacktestTrade
+from Backend.application.quant_modules import backtesting_module
 
 
 def _trade(pnl: float, outcome: str) -> BacktestTrade:
@@ -36,3 +37,15 @@ def test_backtest_metrics_calculation():
     assert metrics["average_latency_ms"] == 25
     assert metrics["winning_streak"] == 1
     assert metrics["losing_streak"] == 1
+
+
+def test_backtesting_module_returns_cost_model_assumptions():
+    result = backtesting_module({"symbol": "NIFTY", "brokerage_per_order": 15, "slippage_bps": 3})
+
+    cost_model = result["cost_model"]
+    assert cost_model["brokerage_per_order"] == 15
+    assert cost_model["slippage_bps"] == 3
+    assert "spread_bps" in cost_model
+    assert "entry_delay_seconds" in cost_model
+    assert "liquidity_filter" in cost_model
+    assert "expiry_behavior" in cost_model

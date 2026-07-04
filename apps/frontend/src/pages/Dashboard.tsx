@@ -18,6 +18,13 @@ type Decision = {
   resistance?: string;
   simple_explanation?: string;
   system_status?: string;
+  invalidation_level?: string;
+  supporting_factors?: string[];
+  opposing_factors?: string[];
+  warnings?: string[];
+  score_reason?: string;
+  data_status?: string;
+  recommendation_metrics?: Record<string, number>;
 };
 
 function formatMoney(value: unknown) {
@@ -60,6 +67,12 @@ function fallbackDecision(): Decision {
     resistance: "Nearest confirmed supply zone",
     simple_explanation: "Login and wait for a clean market read.",
     system_status: "Checking",
+    invalidation_level: "No active view",
+    supporting_factors: [],
+    opposing_factors: [],
+    warnings: [],
+    score_reason: "Waiting for the decision pipeline.",
+    data_status: "Checking",
   };
 }
 
@@ -195,6 +208,59 @@ export default function Dashboard() {
             <span><small>Risk Level</small><strong>{decision.risk_level}</strong></span>
             <span><small>Support</small><strong>{decision.support}</strong></span>
             <span><small>Resistance</small><strong>{decision.resistance}</strong></span>
+            <span><small>Invalidation</small><strong>{decision.invalidation_level}</strong></span>
+            <span><small>Data</small><strong>{decision.data_status}</strong></span>
+          </div>
+
+          <div className="status-panel-grid compact-status-grid">
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>Supporting</span>
+                <strong>{decision.supporting_factors?.length ?? 0}</strong>
+              </div>
+              <div className="status-panel-body">
+                {(decision.supporting_factors?.length ? decision.supporting_factors : ["No strong supporting factors yet."]).slice(0, 4).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>Opposing</span>
+                <strong>{decision.opposing_factors?.length ?? 0}</strong>
+              </div>
+              <div className="status-panel-body">
+                {(decision.opposing_factors?.length ? decision.opposing_factors : ["No major opposing factor."]).slice(0, 4).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="status-panel">
+              <div className="status-panel-header">
+                <span>Warnings</span>
+                <strong>{decision.warnings?.length ?? 0}</strong>
+              </div>
+              <div className="status-panel-body">
+                {(decision.warnings?.length ? decision.warnings : ["No active warning."]).slice(0, 4).map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>Decision Quality</h2>
+              <span>{decision.score_reason}</span>
+            </div>
+            <div className="execution-safety-grid">
+              <span><small>Precision</small><strong>{Math.round(Number(decision.recommendation_metrics?.precision ?? 0) * 100)}%</strong></span>
+              <span><small>Recall</small><strong>{Math.round(Number(decision.recommendation_metrics?.recall ?? 0) * 100)}%</strong></span>
+              <span><small>Profit Factor</small><strong>{Number(decision.recommendation_metrics?.profit_factor ?? 0).toFixed(2)}</strong></span>
+              <span><small>Max Drawdown</small><strong>{formatMoney(decision.recommendation_metrics?.max_drawdown)}</strong></span>
+            </div>
           </div>
 
           <div className="status-panel-grid compact-status-grid">

@@ -106,6 +106,16 @@ if Counter and Gauge and Histogram:
         "Market data cache misses.",
         ("provider", "kind"),
     )
+    trading_decisions_total = Counter(
+        "trading_decisions_total",
+        "Dashboard trading decisions.",
+        ("recommendation", "data_status", "blocked"),
+    )
+    risk_blocks_total = Counter(
+        "risk_blocks_total",
+        "Risk blocks by reason.",
+        ("reason",),
+    )
 else:
     candle_validation_total = None
     candle_feed_delay_seconds = None
@@ -126,6 +136,8 @@ else:
     rejected_signals_total = None
     websocket_disconnect_total = None
     market_data_age_seconds = None
+    trading_decisions_total = None
+    risk_blocks_total = None
 
 
 def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
@@ -206,3 +218,17 @@ def observe_market_data_cache(provider: str, kind: str, hit: bool) -> None:
     metric = market_data_cache_hits_total if hit else market_data_cache_misses_total
     if metric is not None:
         metric.labels(provider=provider, kind=kind).inc()
+
+
+def observe_trading_decision(recommendation: str, data_status: str, blocked: bool) -> None:
+    if trading_decisions_total is not None:
+        trading_decisions_total.labels(
+            recommendation=recommendation or "unknown",
+            data_status=data_status or "unknown",
+            blocked=str(bool(blocked)).lower(),
+        ).inc()
+
+
+def observe_risk_block(reason: str | None) -> None:
+    if risk_blocks_total is not None:
+        risk_blocks_total.labels(reason=reason or "unknown").inc()

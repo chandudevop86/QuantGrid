@@ -30,3 +30,19 @@ def test_registered_strategies_implement_strategy_contract():
         assert callable(strategy.generate_signal)
         assert callable(strategy.validate_inputs)
         assert callable(strategy.explain_signal)
+
+
+def test_strategy_engine_exposes_governance_and_audit_trail():
+    engine = StrategyEngine()
+
+    registry = engine.registry()
+    assert registry
+    assert {"name", "version", "enabled", "rollout_pct"}.issubset(registry[0])
+
+    updated = engine.configure_strategy("amd", enabled=False, rollout_pct=0, version="1.0.1", notes="pause rollout")
+
+    assert updated["enabled"] is False
+    assert updated["rollout_pct"] == 0
+    assert updated["version"] == "1.0.1"
+    assert "amd" not in engine.available()
+    assert any(item["event"] == "configured" and item["strategy"] == "amd" for item in engine.audit_trail())

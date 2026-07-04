@@ -28,6 +28,12 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert decision["invalidation_level"]
     assert isinstance(decision["score_breakdown"], list)
     assert decision["score_reason"]
+    assert "decision_id" in decision
+    assert isinstance(decision["factor_snapshot"], dict)
+    assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload
     assert "system_health" in payload
+    assert payload["observability"]["api_latency_ms"] >= 0
+    assert payload["observability"]["api_latency_status"] in {"OK", "SLOW"}
+    assert isinstance(payload["observability"]["decision_metrics"], dict)

@@ -425,6 +425,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     symbol = str(payload.get("symbol") or "NIFTY").upper()
     capital = float(payload.get("capital") or 100000)
     candles = payload.get("candles") or _sample_candles(symbol)
+    cost_model = _backtest_cost_model(payload)
     engine = BacktestEngine(risk_manager=GlobalRiskManager())
     result = engine.run(
         candles=candles,
@@ -463,6 +464,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "symbol": symbol,
         "payload": {key: value for key, value in payload.items() if key != "candles"} | {"candles": len(candles)},
         "metrics": metrics,
+        "cost_model": cost_model,
         "equity_curve": curve,
         "recent_outcomes": trades[-10:],
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -485,6 +487,7 @@ def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, A
             "strategy": strategy,
             "symbol": result.get("symbol"),
             "metrics": metrics,
+            "cost_model": result.get("cost_model", {}),
             "equity_curve": result.get("equity_curve", []),
             "recent_outcomes": result.get("recent_outcomes", []),
         })
@@ -534,6 +537,20 @@ def _professional_backtest_metrics(
         "period_years": round(period_years, 4),
         "starting_equity": round(capital, 2),
         "ending_equity": round(final_equity, 2),
+    }
+
+
+def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
+        "slippage_bps": float(payload.get("slippage_bps", 5.0)),
+        "spread_bps": float(payload.get("spread_bps", 8.0)),
+        "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
+        "candle_confirmation": bool(payload.get("candle_confirmation", True)),
+        "gap_opening_policy": str(payload.get("gap_opening_policy") or "skip first candle after large gap"),
+        "liquidity_filter": str(payload.get("liquidity_filter") or "block LOW/THIN/WEAK option liquidity"),
+        "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
+        "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
     }
 
 
