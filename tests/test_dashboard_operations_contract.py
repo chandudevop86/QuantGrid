@@ -42,6 +42,14 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "volume",
         "support_resistance",
         "risk_reward",
+        "htf",
+        "key_levels",
+        "fvg",
+        "price_action",
+        "options_flow",
+        "institutional",
+        "discipline",
+        "confidence_engine",
     }
     assert isinstance(checklist["passed"], list)
     assert isinstance(checklist["failed"], list)
@@ -51,6 +59,7 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert "volume_analysis" in decision["factor_snapshot"]
     assert "support_resistance" in decision["factor_snapshot"]
     assert "risk_reward" in decision["factor_snapshot"]
+    assert "high_probability_trade_engine" in decision["factor_snapshot"]
     assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload

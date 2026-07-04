@@ -18,6 +18,7 @@ What was missing:
 
 - A single technical checklist payload with `checklist_score`, `passed`, `failed`, `warnings`, `trend`, `ema`, `volume`, `support_resistance`, and `risk_reward`.
 - Dashboard rendering for passed/failed checklist items.
+- High-probability trade layers for HTF alignment, key levels, FVG, price action, options flow, institutional filter, discipline, and weighted confidence.
 
 Files modified:
 
@@ -46,6 +47,9 @@ Files modified:
 - Support/resistance analyzer: nearest support, nearest resistance, entry zone, invalidation, chasing warning.
 - Risk-reward analyzer: risk amount, reward amount, RR, position size, allowed flag, warnings.
 - Checklist score and blockers inside the decision pipeline.
+- High Probability Trade Engine payload with market structure, HTF, key levels, FVG, price action, options flow, institutional, risk, discipline, and confidence layers.
+- Discipline Engine blockers for sideways trading, late/chasing entries, big gaps, over-trading, consecutive-loss/revenge risk, duplicate signal, and missing price action confirmation.
+- Paper-trade gate: paper trade is allowed only when checklist is at least 80, confidence is at least 75, risk passes, and discipline passes.
 - Dashboard section for Trend, EMA, Volume, Support/Resistance, Risk-Reward, Confidence, Entry, SL, Target, Reason, Invalidation, System Status.
 
 ## No Trade Logic
@@ -61,6 +65,10 @@ The pipeline returns No Trade when:
 - VIX is elevated.
 - OI conflicts with checklist direction.
 - Confidence is below threshold.
+- Higher timeframes conflict.
+- Price action has no confirmation candle.
+- Options flow or institutional context is neutral/risky.
+- Discipline checks fail.
 
 ## Tests Added
 
@@ -72,6 +80,9 @@ The pipeline returns No Trade when:
 - Support/resistance calculation.
 - Risk-reward validation.
 - Buy CE, Buy PE, No Trade, stale-data blocking, poor-RR blocking.
+- Higher timeframe conflict blocking.
+- Price action confirmation blocking.
+- Full high-probability checklist schema.
 
 ## Readiness
 
@@ -83,6 +94,8 @@ Remaining risks:
 - Volume thresholds are generic and may need NIFTY-specific tuning.
 - 200 EMA is not yet exposed as a formal optional filter.
 - Recommendation outcome metrics need more live paper-trade history before confidence is statistically meaningful.
+- FVG and key-zone detection are intentionally simple deterministic rules and should be calibrated before production live trading.
+- Institutional/global inputs depend on configured data feeds; absent data correctly causes No Trade rather than a random recommendation.
 
 ## Next 30-Day Roadmap
 

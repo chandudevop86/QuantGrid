@@ -16,6 +16,10 @@ class MarketDataInputs:
     feed_delay_seconds: int | float = 0
     warnings: list[str] = field(default_factory=list)
     candles: list[dict[str, Any]] = field(default_factory=list)
+    candles_1m: list[dict[str, Any]] = field(default_factory=list)
+    candles_5m: list[dict[str, Any]] = field(default_factory=list)
+    candles_15m: list[dict[str, Any]] = field(default_factory=list)
+    candles_1h: list[dict[str, Any]] = field(default_factory=list)
     trend: str | None = None
     momentum: str | None = None
     price_action: str | None = None
@@ -33,6 +37,22 @@ class MarketDataInputs:
     capital: float = 100000.0
     risk_per_trade: float = 1500.0
     lot_size: int = 50
+    call_oi: float | None = None
+    put_oi: float | None = None
+    oi_change: str | None = None
+    iv: float | None = None
+    fii_cash: float | None = None
+    dii_cash: float | None = None
+    fii_futures: float | None = None
+    usdinr_bias: str | None = None
+    crude_bias: str | None = None
+    global_markets_bias: str | None = None
+    gap_pct: float = 0.0
+    trades_today: int = 0
+    max_trades_per_day: int = 3
+    consecutive_losses: int = 0
+    max_consecutive_losses: int = 3
+    duplicate_signal: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,13 +232,18 @@ class DecisionPipelineService:
         )
 
     def from_environment(self, *, validation: Any, candles: list[dict[str, Any]] | None = None, symbol: str = "NIFTY") -> MarketDataInputs:
+        candles = candles or []
         return MarketDataInputs(
             symbol=symbol,
             market_live=bool(getattr(validation, "market_live", False)),
             valid_for_execution=bool(getattr(validation, "valid_for_execution", False)),
             feed_delay_seconds=getattr(validation, "delay_seconds", 0) or 0,
             warnings=list(getattr(validation, "warnings", []) or []),
-            candles=candles or [],
+            candles=candles,
+            candles_1m=candles,
+            candles_5m=candles,
+            candles_15m=candles,
+            candles_1h=candles,
             trend=os.getenv("MARKET_TREND"),
             momentum=os.getenv("MOMENTUM_BIAS"),
             price_action=os.getenv("PRICE_ACTION"),
@@ -236,13 +261,21 @@ class DecisionPipelineService:
         )
 
     def _map_factors(self, market: MarketDataInputs) -> dict[str, Any]:
-        trend_analysis = analyze_trend(market.candles)
-        ema_analysis = analyze_ema(market.candles)
-        volume_analysis = analyze_volume(market.candles)
-        sr_analysis = analyze_support_resistance(market.candles)
+        base_candles = market.candles or market.candles_1m
+        trend_analysis = analyze_trend(base_candles)
+        ema_analysis = analyze_ema(base_candles)
+        volume_analysis = analyze_volume(base_candles)
+        sr_analysis = analyze_support_resistance(base_candles)
+        htf_analysis = analyze_higher_timeframe(market)
+        key_levels = analyze_key_levels(base_candles)
+        fvg_analysis = analyze_fvg(base_candles, trend_analysis, key_levels)
+        price_action = analyze_price_action(base_candles)
+        options_flow = analyze_options_flow(market)
+        institutional = analyze_institutional_filter(market)
+        discipline = analyze_discipline(market, trend_analysis, sr_analysis, price_action)
         trend = _normalize_bias(market.trend) or _bias_from_direction(trend_analysis.trend_direction)
-        momentum = _normalize_bias(market.momentum) or self._momentum_from_candles(market.candles)
-        vwap_relation = market.vwap_relation or self._vwap_relation(market.candles)
+        momentum = _normalize_bias(market.momentum) or self._momentum_from_candles(base_candles)
+        vwap_relation = market.vwap_relation or self._vwap_relation(base_candles)
         risk_reward = analyze_risk_reward(market, trend or "NEUTRAL", sr_analysis)
         directional_votes = [
             trend,
@@ -255,9 +288,22 @@ class DecisionPipelineService:
         ]
         market_bias = _majority_bias(directional_votes)
         blockers = _checklist_blockers(market, trend_analysis, ema_analysis, volume_analysis, sr_analysis, risk_reward)
+        blockers.extend(_high_probability_blockers(htf_analysis, price_action, discipline, options_flow, institutional))
         if blockers:
             market_bias = "NEUTRAL"
-        checklist_score = _checklist_score(trend_analysis, ema_analysis, volume_analysis, sr_analysis, risk_reward, blockers)
+        confidence = _confidence_engine(
+            trend_analysis,
+            htf_analysis,
+            sr_analysis,
+            fvg_analysis,
+            price_action,
+            volume_analysis,
+            options_flow,
+            institutional,
+            risk_reward,
+            discipline,
+        )
+        checklist_score = confidence["confidence_score"]
         checklist = _technical_checklist(
             market,
             checklist_score,
@@ -267,6 +313,18 @@ class DecisionPipelineService:
             volume_analysis,
             sr_analysis,
             risk_reward,
+        )
+        checklist.update(
+            {
+                "htf": htf_analysis,
+                "key_levels": key_levels,
+                "fvg": fvg_analysis,
+                "price_action": price_action,
+                "options_flow": options_flow,
+                "institutional": institutional,
+                "discipline": discipline,
+                "confidence_engine": confidence,
+            }
         )
         return {
             "market_bias": market_bias,
@@ -288,6 +346,21 @@ class DecisionPipelineService:
             "checklist": checklist,
             "checklist_score": checklist_score,
             "checklist_blockers": blockers,
+            "high_probability_trade_engine": {
+                "layers": {
+                    "market_structure": trend_analysis.to_dict(),
+                    "higher_timeframe": htf_analysis,
+                    "key_levels": key_levels,
+                    "fvg": fvg_analysis,
+                    "price_action": price_action,
+                    "options_flow": options_flow,
+                    "institutional": institutional,
+                    "risk_management": risk_reward.to_dict(),
+                    "discipline": discipline,
+                    "confidence": confidence,
+                },
+                "paper_trade_allowed": checklist_score >= 80 and confidence["confidence_score"] >= 75 and risk_reward.allowed and discipline["passed"],
+            },
             "trend_analysis": trend_analysis.to_dict(),
             "ema_analysis": ema_analysis.to_dict(),
             "volume_analysis": volume_analysis.to_dict(),
@@ -453,6 +526,154 @@ def analyze_risk_reward(market: MarketDataInputs, bias: str, sr: SupportResistan
     )
 
 
+def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
+    reads = {
+        "1m": analyze_trend(market.candles_1m or market.candles).trend_direction,
+        "5m": analyze_trend(market.candles_5m or market.candles).trend_direction,
+        "15m": analyze_trend(market.candles_15m or market.candles).trend_direction,
+        "1h": analyze_trend(market.candles_1h or market.candles).trend_direction,
+    }
+    h1_bias = _bias_from_direction(reads["1h"])
+    directional = {_bias_from_direction(value) for value in reads.values() if _bias_from_direction(value) != "NEUTRAL"}
+    conflict = len(directional) > 1
+    allowed_direction = "CE" if h1_bias == "BULLISH" else "PE" if h1_bias == "BEARISH" else "NONE"
+    return {
+        "timeframes": reads,
+        "h1_bias": h1_bias,
+        "allowed_direction": allowed_direction,
+        "conflict": conflict,
+        "passed": bool(h1_bias in {"BULLISH", "BEARISH"} and not conflict),
+        "reason": "Higher timeframes align." if h1_bias in {"BULLISH", "BEARISH"} and not conflict else "Higher timeframes conflict or H1 is neutral.",
+    }
+
+
+def analyze_key_levels(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    sr = analyze_support_resistance(candles)
+    if not candles:
+        return {"nearest_support": None, "nearest_resistance": None, "zone_strength": 0, "distance_from_zone": None}
+    current = _num(candles[-1].get("close"))
+    highs = [_num(candle.get("high", candle.get("close"))) for candle in candles]
+    lows = [_num(candle.get("low", candle.get("close"))) for candle in candles]
+    round_number = round(current / 50) * 50
+    vwap = candles[-1].get("vwap")
+    distance = min(abs(current - float(sr.support or current)), abs(float(sr.resistance or current) - current))
+    return {
+        "nearest_support": sr.support,
+        "nearest_resistance": sr.resistance,
+        "demand_zone": sr.support,
+        "supply_zone": sr.resistance,
+        "previous_day_high": round(max(highs), 2),
+        "previous_day_low": round(min(lows), 2),
+        "weekly_high": round(max(highs), 2),
+        "weekly_low": round(min(lows), 2),
+        "round_number": round_number,
+        "vwap": float(vwap) if vwap is not None else None,
+        "zone_strength": 80 if sr.warning is None else 45,
+        "distance_from_zone": round(distance, 2),
+    }
+
+
+def analyze_fvg(candles: list[dict[str, Any]], trend: TrendAnalysis, levels: dict[str, Any]) -> dict[str, Any]:
+    if len(candles) < 3:
+        return {"type": "NONE", "state": "missing", "passed": False, "reason": "Need three candles for FVG."}
+    c1, _c2, c3 = candles[-3], candles[-2], candles[-1]
+    bullish_gap = _num(c3.get("low")) > _num(c1.get("high"))
+    bearish_gap = _num(c3.get("high")) < _num(c1.get("low"))
+    if bullish_gap:
+        near_demand = levels.get("demand_zone") is not None
+        return {"type": "BULLISH_FVG", "state": "unfilled", "mitigated": False, "passed": trend.trend_direction == "UPTREND" and near_demand, "reason": "Bullish FVG near demand zone."}
+    if bearish_gap:
+        near_supply = levels.get("supply_zone") is not None
+        return {"type": "BEARISH_FVG", "state": "unfilled", "mitigated": False, "passed": trend.trend_direction == "DOWNTREND" and near_supply, "reason": "Bearish FVG near supply zone."}
+    return {"type": "NONE", "state": "filled_or_absent", "mitigated": True, "passed": True, "reason": "No active FVG filter."}
+
+
+def analyze_price_action(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    if len(candles) < 2:
+        return {"pattern": "NONE", "direction": "NEUTRAL", "confirmed": False, "reason": "Need two candles for price action."}
+    prev, cur = candles[-2], candles[-1]
+    po, pc = _num(prev.get("open")), _num(prev.get("close"))
+    co, cc = _num(cur.get("open")), _num(cur.get("close"))
+    high, low = _num(cur.get("high", cc)), _num(cur.get("low", cc))
+    body = abs(cc - co)
+    candle_range = max(high - low, 0.01)
+    upper_wick = high - max(co, cc)
+    lower_wick = min(co, cc) - low
+    if cc > co and co <= pc and cc >= po:
+        return {"pattern": "BULLISH_ENGULFING", "direction": "BULLISH", "confirmed": True, "reason": "Bullish engulfing confirms buyers."}
+    if cc < co and co >= pc and cc <= po:
+        return {"pattern": "BEARISH_ENGULFING", "direction": "BEARISH", "confirmed": True, "reason": "Bearish engulfing confirms sellers."}
+    if body / candle_range >= 0.15 and lower_wick > body * 2 and cc >= co:
+        return {"pattern": "HAMMER", "direction": "BULLISH", "confirmed": True, "reason": "Hammer shows lower-level rejection."}
+    if body / candle_range >= 0.15 and upper_wick > body * 2 and cc <= co:
+        return {"pattern": "SHOOTING_STAR", "direction": "BEARISH", "confirmed": True, "reason": "Shooting star shows upper-level rejection."}
+    if body / candle_range >= 0.65:
+        direction = "BULLISH" if cc > co else "BEARISH"
+        return {"pattern": "STRONG_REJECTION_CANDLE", "direction": direction, "confirmed": True, "reason": "Strong rejection candle confirms direction."}
+    return {"pattern": "INSIDE_BAR" if high <= _num(prev.get("high", pc)) and low >= _num(prev.get("low", pc)) else "NONE", "direction": "NEUTRAL", "confirmed": False, "reason": "No price action confirmation."}
+
+
+def analyze_options_flow(market: MarketDataInputs) -> dict[str, Any]:
+    bias = "NEUTRAL"
+    reasons: list[str] = []
+    if market.pcr is not None:
+        if market.pcr >= 1.05:
+            bias = "BULLISH"
+            reasons.append("PCR supports bulls.")
+        elif market.pcr <= 0.95:
+            bias = "BEARISH"
+            reasons.append("PCR supports bears.")
+    if market.put_oi and market.call_oi:
+        if market.put_oi > market.call_oi:
+            bias = "BULLISH"
+            reasons.append("Put OI is stronger than Call OI.")
+        elif market.call_oi > market.put_oi:
+            bias = "BEARISH"
+            reasons.append("Call OI is stronger than Put OI.")
+    buildup = str(market.oi_change or "").strip().upper()
+    if buildup:
+        reasons.append(f"OI build up: {buildup}.")
+    return {"bias": bias, "passed": bias != "NEUTRAL", "pcr": market.pcr, "call_oi": market.call_oi, "put_oi": market.put_oi, "max_pain": market.max_pain, "iv": market.iv, "reason": " ".join(reasons) or "Options flow is neutral."}
+
+
+def analyze_institutional_filter(market: MarketDataInputs) -> dict[str, Any]:
+    votes: list[str] = []
+    if market.fii_cash is not None:
+        votes.append("BULLISH" if market.fii_cash > 0 else "BEARISH")
+    if market.dii_cash is not None:
+        votes.append("BULLISH" if market.dii_cash > 0 else "BEARISH")
+    if market.fii_futures is not None:
+        votes.append("BULLISH" if market.fii_futures > 0 else "BEARISH")
+    for value in (market.gift_nifty_bias, market.usdinr_bias, market.crude_bias, market.global_markets_bias):
+        normalized = _normalize_bias(value)
+        if normalized:
+            votes.append(normalized)
+    bullish = votes.count("BULLISH")
+    bearish = votes.count("BEARISH")
+    bias = "BULLISH" if bullish > bearish else "BEARISH" if bearish > bullish else "NEUTRAL"
+    vix_ok = market.india_vix is None or market.india_vix < 22
+    return {"bias": bias, "passed": vix_ok and bias != "NEUTRAL", "vix_ok": vix_ok, "india_vix": market.india_vix, "reason": "Institutional context supports direction." if bias != "NEUTRAL" and vix_ok else "Institutional context is neutral or volatility is elevated."}
+
+
+def analyze_discipline(market: MarketDataInputs, trend: TrendAnalysis, sr: SupportResistanceAnalysis, price_action: dict[str, Any]) -> dict[str, Any]:
+    blocks: list[str] = []
+    if trend.trend_direction == "SIDEWAYS":
+        blocks.append("Trading during sideways market.")
+    if sr.warning:
+        blocks.append("Late entry / chasing candle.")
+    if abs(float(market.gap_pct or 0.0)) >= 1.0:
+        blocks.append("Trading after big gap.")
+    if market.trades_today >= market.max_trades_per_day:
+        blocks.append("Over trading.")
+    if market.consecutive_losses >= market.max_consecutive_losses:
+        blocks.append("Revenge trading risk after consecutive losses.")
+    if market.duplicate_signal:
+        blocks.append("Duplicate signal.")
+    if not price_action.get("confirmed"):
+        blocks.append("No price action confirmation.")
+    return {"passed": not blocks, "blocked_reasons": blocks, "reason": "Discipline checks passed." if not blocks else blocks[0]}
+
+
 def _checklist_blockers(
     market: MarketDataInputs,
     trend: TrendAnalysis,
@@ -479,6 +700,66 @@ def _checklist_blockers(
     if _normalize_bias(market.oi_bias) and _normalize_bias(market.oi_bias) not in {ema.ema_bias, "NEUTRAL"}:
         blockers.append("OI is conflicting")
     return blockers
+
+
+def _high_probability_blockers(
+    htf: dict[str, Any],
+    price_action: dict[str, Any],
+    discipline: dict[str, Any],
+    options_flow: dict[str, Any],
+    institutional: dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    if not htf["passed"]:
+        blockers.append("higher timeframes conflict")
+    if not price_action["confirmed"]:
+        blockers.append("no price action confirmation")
+    if not discipline["passed"]:
+        blockers.extend(discipline["blocked_reasons"])
+    if not options_flow["passed"]:
+        blockers.append("options flow is neutral")
+    if not institutional["passed"]:
+        blockers.append("institutional filter is neutral or risky")
+    return _dedupe(blockers)
+
+
+def _confidence_engine(
+    trend: TrendAnalysis,
+    htf: dict[str, Any],
+    sr: SupportResistanceAnalysis,
+    fvg: dict[str, Any],
+    price_action: dict[str, Any],
+    volume: VolumeAnalysis,
+    options_flow: dict[str, Any],
+    institutional: dict[str, Any],
+    risk: RiskRewardAnalysis,
+    discipline: dict[str, Any],
+) -> dict[str, Any]:
+    weights = {
+        "trend": 15,
+        "higher_timeframe": 15,
+        "support_resistance": 10,
+        "fvg": 10,
+        "price_action": 10,
+        "volume": 10,
+        "options_flow": 10,
+        "institutional": 10,
+        "risk_management": 5,
+        "discipline": 5,
+    }
+    breakdown = {
+        "trend": weights["trend"] if trend.trend_direction != "SIDEWAYS" else 0,
+        "higher_timeframe": weights["higher_timeframe"] if htf["passed"] else 0,
+        "support_resistance": weights["support_resistance"] if sr.support is not None and sr.resistance is not None and not sr.warning else 0,
+        "fvg": weights["fvg"] if fvg["passed"] else 0,
+        "price_action": weights["price_action"] if price_action["confirmed"] else 0,
+        "volume": weights["volume"] if volume.supports_trade else 0,
+        "options_flow": weights["options_flow"] if options_flow["passed"] else 0,
+        "institutional": weights["institutional"] if institutional["passed"] else 0,
+        "risk_management": weights["risk_management"] if risk.allowed else 0,
+        "discipline": weights["discipline"] if discipline["passed"] else 0,
+    }
+    return {"confidence_score": sum(breakdown.values()), "weights": weights, "breakdown": breakdown}
 
 
 def _checklist_score(

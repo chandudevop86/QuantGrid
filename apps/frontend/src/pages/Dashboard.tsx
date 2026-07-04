@@ -37,6 +37,13 @@ type Decision = {
       volume?: { volume_status?: string; volume_strength?: number; supports_trade?: boolean; reason?: string };
       support_resistance?: { support?: number; resistance?: number; entry_zone?: string; invalidation_level?: string; warning?: string };
       risk_reward?: { risk_reward_ratio?: number; position_size?: number; allowed?: boolean; warnings?: string[] };
+      htf?: { allowed_direction?: string; passed?: boolean; reason?: string };
+      fvg?: { type?: string; passed?: boolean; reason?: string };
+      price_action?: { pattern?: string; confirmed?: boolean; reason?: string };
+      options_flow?: { bias?: string; passed?: boolean; reason?: string };
+      institutional?: { bias?: string; passed?: boolean; reason?: string };
+      discipline?: { passed?: boolean; reason?: string; blocked_reasons?: string[] };
+      confidence_engine?: { confidence_score?: number };
     };
     trend_analysis?: { trend_direction?: string; trend_strength?: number; warning_if_sideways?: string };
     ema_analysis?: { ema_bias?: string; ema_strength?: number; reason?: string; warning?: string };
@@ -295,13 +302,24 @@ export default function Dashboard() {
             </div>
             <div className="execution-safety-grid">
               <span><small>Trend</small><strong>{checklistTrend?.trend_direction ?? "Unknown"}</strong></span>
+              <span><small>HTF</small><strong>{checklist?.htf?.allowed_direction ?? "Unknown"}</strong></span>
               <span><small>EMA</small><strong>{checklistEma?.ema_bias ?? "Unknown"}</strong></span>
               <span><small>Volume</small><strong>{checklistVolume?.volume_status ?? "Unknown"}</strong></span>
+              <span><small>FVG</small><strong>{checklist?.fvg?.type ?? "Unknown"}</strong></span>
+              <span><small>Price Action</small><strong>{checklist?.price_action?.pattern ?? "Unknown"}</strong></span>
+              <span><small>Options</small><strong>{checklist?.options_flow?.bias ?? "Unknown"}</strong></span>
+              <span><small>Institutional</small><strong>{checklist?.institutional?.bias ?? "Unknown"}</strong></span>
               <span><small>Risk Reward</small><strong>{Number(checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
+              <span><small>Discipline</small><strong>{checklist?.discipline?.passed ? "Pass" : "Block"}</strong></span>
             </div>
             <div className="status-panel-body">
+              <span>{checklist?.htf?.reason ?? "HTF read unavailable."}</span>
               <span>{checklistEma?.reason ?? "EMA read unavailable."}</span>
               <span>{checklistVolume?.reason ?? "Volume read unavailable."}</span>
+              <span>{checklist?.price_action?.reason ?? "Price action read unavailable."}</span>
+              <span>{checklist?.options_flow?.reason ?? "Options flow read unavailable."}</span>
+              <span>{checklist?.institutional?.reason ?? "Institutional read unavailable."}</span>
+              <span>{checklist?.discipline?.reason ?? "Discipline read unavailable."}</span>
               <span>{checklistSr?.warning ?? "Support and resistance are acceptable."}</span>
               <span>{checklistRr?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
               {(checklist?.passed ?? []).slice(0, 2).map((item) => <span key={item}>{item}</span>)}
