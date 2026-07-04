@@ -109,3 +109,44 @@ def test_risk_engine_warns_on_expiry_and_volatility_zone():
     assert result.blocked_by == []
     assert len(result.warnings) == 3
     assert result.risk_score < 100
+
+
+def test_risk_engine_blocks_low_liquidity_options_entry():
+    result = RiskEngine().validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "liquidity_status": "LOW",
+        },
+    )
+
+    assert result.allowed is False
+    assert "LOW_LIQUIDITY" in result.blocked_by
+    assert any("Liquidity" in reason for reason in result.reasons)
+    assert any("liquidity" in warning.lower() for warning in result.warnings)
+
+
+def test_risk_engine_can_warn_without_blocking_low_liquidity():
+    result = RiskEngine(RiskLimits(block_low_liquidity=False)).validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "option_liquidity": "THIN",
+        },
+    )
+
+    assert result.allowed is True
+    assert result.blocked_by == []
+    assert any("liquidity" in warning.lower() for warning in result.warnings)

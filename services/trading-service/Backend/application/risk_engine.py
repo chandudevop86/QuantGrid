@@ -28,6 +28,7 @@ class RiskLimits:
     high_vix: float = 22.0
     volatility_warning_vix: float = 18.0
     min_risk_reward: float = 1.5
+    block_low_liquidity: bool = True
 
 
 class RiskEngine:
@@ -48,6 +49,7 @@ class RiskEngine:
         self._block_if(float(signal.target_price or 0) <= 0, "TARGET_REQUIRED", "Target is required.", reasons, blocked_by)
         self._block_if(float(context.get("market_data_age_seconds", 0)) > self.limits.stale_market_data_seconds, "STALE_MARKET_DATA", "Market data is stale.", reasons, blocked_by)
         self._block_if(float(context.get("vix", 0.0)) >= self.limits.high_vix, "HIGH_VOLATILITY", "Volatility is elevated.", reasons, blocked_by)
+        self._block_if(self.limits.block_low_liquidity and self._is_low_liquidity(context), "LOW_LIQUIDITY", "Liquidity is too thin for a reliable options entry.", reasons, blocked_by)
         self._block_if(self._is_duplicate_trade(signal, context), "DUPLICATE_TRADE", "A similar trade is already active.", reasons, blocked_by)
         self._block_if(self._risk_reward(signal) < self.limits.min_risk_reward, "RISK_REWARD_TOO_LOW", "Risk-reward is below the minimum threshold.", reasons, blocked_by)
 
@@ -57,6 +59,8 @@ class RiskEngine:
             warnings.append("Expiry-day option decay risk is elevated.")
         if float(context.get("market_data_age_seconds", 0)) > self.limits.stale_market_data_seconds / 2:
             warnings.append("Market data is aging; confirm freshness before entry.")
+        if self._is_low_liquidity(context):
+            warnings.append("Option liquidity is thin; spreads and exits can slip.")
 
         risk_score = max(0, 100 - len(blocked_by) * 15 - len(warnings) * 5)
         return RiskValidationResult(
@@ -115,3 +119,13 @@ class RiskEngine:
         symbol = str(signal.symbol).upper()
         side = str(signal.side).upper()
         return f"{symbol}:{side}:{strategy}" in active_keys or f"{symbol}:{side}" in active_keys
+
+    @staticmethod
+    def _is_low_liquidity(context: dict[str, Any]) -> bool:
+        liquidity = str(
+            context.get("liquidity")
+            or context.get("liquidity_status")
+            or context.get("option_liquidity")
+            or ""
+        ).strip().upper()
+        return liquidity in {"LOW", "THIN", "WEAK", "ILLIQUID"}

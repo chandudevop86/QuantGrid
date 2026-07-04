@@ -96,6 +96,8 @@ def validate_order_risk(
             "open_positions": status["open_positions"],
             "market_data_age_seconds": getattr(validation, "delay_seconds", 0) or 0,
             "vix": signal.metadata.get("vix", 0),
+            "liquidity": signal.metadata.get("liquidity") or signal.metadata.get("liquidity_status"),
+            "expiry_day": signal.metadata.get("expiry_day", False),
         },
     )
 
