@@ -9,4 +9,5 @@ Rules for QuantGrid development:
 - Prefer `No Trade` when uncertainty is high.
 - No real broker orders from decision tests.
 - Every decision change needs mock-data tests and documentation.
-
+- Trader-facing navigation stays limited to Dashboard, Market, Signals, Paper Trading, History, and Settings.
+- Advanced pages remain available through Developer Mode route permissions for admin/developer users.

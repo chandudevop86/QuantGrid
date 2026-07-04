@@ -11,33 +11,41 @@ export const roleLabels: Record<Role, string> = {
   ops: "Ops",
 };
 
-export const routeRoles: Record<string, Role[]> = {
+const traderRoutes: Record<string, Role[]> = {
   "/": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/market": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/signals": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/paper-trades": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/history": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/settings": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
-  "/candles": ["admin", "trader", "viewer"],
-  "/backtesting": ["admin", "developer", "trader", "analyst"],
-  "/option-chain": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
-  "/copilot": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+};
+
+const developerModeRoutes: Record<string, Role[]> = {
+  "/candles": ["admin", "developer"],
+  "/backtesting": ["admin", "developer"],
+  "/option-chain": ["admin", "developer"],
+  "/copilot": ["admin", "developer"],
   "/dhan-login": ["admin"],
-  "/execution": ["admin", "trader"],
-  "/live": ["admin"],
-  "/analysis": ["admin"],
+  "/execution": ["admin", "developer"],
+  "/live": ["admin", "developer"],
+  "/analysis": ["admin", "developer"],
   "/jobs": ["admin", "developer"],
   "/operations": ["admin", "developer"],
-  "/institutional": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
-  "/investing": ["admin", "developer", "trader", "analyst", "viewer"],
-  "/risk": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
-  "/security": ["admin", "developer", "ops"],
-  "/strategies": ["admin", "developer", "trader", "viewer"],
-  "/trade-journal": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
-  "/trading-engine": ["admin", "developer", "trader"],
-  "/trade": ["admin", "trader"],
+  "/institutional": ["admin", "developer"],
+  "/investing": ["admin", "developer"],
+  "/risk": ["admin", "developer"],
+  "/security": ["admin", "developer"],
+  "/strategies": ["admin", "developer"],
+  "/trade-journal": ["admin", "developer"],
+  "/trading-engine": ["admin", "developer"],
+  "/trade": ["admin", "developer"],
   "/admin/users": ["admin"],
   "/admin/notifications": ["admin", "developer"],
+};
+
+export const routeRoles: Record<string, Role[]> = {
+  ...traderRoutes,
+  ...developerModeRoutes,
 };
 
 type AuthClaims = {
@@ -103,4 +111,8 @@ export function hasAuthToken() {
 export function canAccessRoute(role: Role, path: string) {
   if (role === "admin") return true;
   return routeRoles[path]?.includes(role) ?? false;
+}
+
+export function isDeveloperModeRoute(path: string) {
+  return path in developerModeRoutes;
 }

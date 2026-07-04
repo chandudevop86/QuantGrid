@@ -72,3 +72,4 @@ The Terraform baseline in `infra/terraform/aws` maps the modular monolith onto a
 - Market data is validated before execution.
 - Admin and execution actions write audit logs.
 - Production rejects SQLite.
+- Trader UI stays focused on decision workflow; advanced tools are Developer Mode routes.

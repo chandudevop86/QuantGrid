@@ -31,6 +31,7 @@ Existing reusable modules:
 | Trade review | Present | `Backend/application/recommendation_store.py` | Produces entry, stop, target, skip, and improvement review after outcome recording. | Surface review in journal UI later. |
 | Explainability | Present | `Backend/application/decision_pipeline.py`, `apps/frontend/src/pages/Dashboard.tsx` | Dashboard renders plain-English reason and factors. | Keep wording concise for 30-second workflow. |
 | Dashboard checklist | Present | `apps/frontend/src/pages/Dashboard.tsx` | Shows Today’s Decision and supporting checklist fields. | Avoid frontend-side trading calculations. |
+| Trader UI focus | Present | `apps/frontend/src/components/Sidebar.tsx`, `apps/frontend/src/roles.ts` | Keeps daily trader workflow limited to Dashboard, Market, Signals, Paper Trading, History, Settings. | Keep advanced tools behind Developer Mode routes. |
 | Paper trade integration | Present | `Backend/application/decision_pipeline.py` | Blocks paper execution unless confluence, quality, risk, discipline, freshness, and RR pass. | Keep live trading disabled by default. |
 | Tests | Present | `tests/test_decision_pipeline.py`, `tests/test_dashboard_operations_contract.py` | Mock-data tests cover core decision paths. | Add regression cases when new blockers are introduced. |
 
@@ -127,6 +128,7 @@ Gaps fixed:
 - Probability engine now separates probability/confidence from raw confluence.
 - Outcome analytics now include executed trades, won/lost trades, and confidence vs win rate.
 - Trade review helper now reviews each completed recommendation outcome.
+- Advanced routes are now Developer Mode only; trader navigation stays focused on the six core decision surfaces.
 - Tests use mock candles only; no broker login or live market dependency is required.
 
 New modules/APIs:
@@ -173,3 +175,4 @@ Remaining risks:
 5. Attach paper-trade outcomes automatically to persisted recommendations.
 6. Add dashboard replay for the exact checklist state behind each recommendation.
 7. Calibrate confluence weights with at least 30 paper-trade sessions before considering live execution.
+8. Persist Developer Mode preferences and strategy governance in the backend.
