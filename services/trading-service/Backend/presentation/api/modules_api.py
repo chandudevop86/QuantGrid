@@ -31,6 +31,7 @@ class BacktestModuleRequest(BaseModel):
     risk_pct: float = 1.0
     rr_ratio: float = 2.0
     min_score: float = 0.0
+    max_candles: int | None = None
     candles: list[dict[str, Any]] | None = Field(default=None)
 
 

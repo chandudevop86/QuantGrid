@@ -27,6 +27,17 @@ type Decision = {
   recommendation_metrics?: Record<string, number>;
   factor_snapshot?: {
     checklist_score?: number;
+    checklist?: {
+      checklist_score?: number;
+      passed?: string[];
+      failed?: string[];
+      warnings?: string[];
+      trend?: { trend_direction?: string; trend_strength?: number; warning_if_sideways?: string };
+      ema?: { ema_bias?: string; ema_strength?: number; reason?: string; warning?: string };
+      volume?: { volume_status?: string; volume_strength?: number; supports_trade?: boolean; reason?: string };
+      support_resistance?: { support?: number; resistance?: number; entry_zone?: string; invalidation_level?: string; warning?: string };
+      risk_reward?: { risk_reward_ratio?: number; position_size?: number; allowed?: boolean; warnings?: string[] };
+    };
     trend_analysis?: { trend_direction?: string; trend_strength?: number; warning_if_sideways?: string };
     ema_analysis?: { ema_bias?: string; ema_strength?: number; reason?: string; warning?: string };
     volume_analysis?: { volume_status?: string; volume_strength?: number; supports_trade?: boolean; reason?: string };
@@ -170,7 +181,12 @@ export default function Dashboard() {
   const risk = operations?.risk_summary;
   const health = operations?.system_health;
   const marketStatusLabel = getMarketStatusLabel(market);
-  const checklist = decision.factor_snapshot;
+  const checklist = decision.factor_snapshot?.checklist;
+  const checklistTrend = checklist?.trend ?? decision.factor_snapshot?.trend_analysis;
+  const checklistEma = checklist?.ema ?? decision.factor_snapshot?.ema_analysis;
+  const checklistVolume = checklist?.volume ?? decision.factor_snapshot?.volume_analysis;
+  const checklistSr = checklist?.support_resistance ?? decision.factor_snapshot?.support_resistance;
+  const checklistRr = checklist?.risk_reward ?? decision.factor_snapshot?.risk_reward;
 
   return (
     <section className="dashboard-page decision-dashboard">
@@ -275,19 +291,21 @@ export default function Dashboard() {
           <div className="dashboard-section">
             <div className="section-header">
               <h2>30-Second Checklist</h2>
-              <span>Checklist Score: {Number(checklist?.checklist_score ?? 0)}%</span>
+              <span>Checklist Score: {Number(checklist?.checklist_score ?? decision.factor_snapshot?.checklist_score ?? 0)}%</span>
             </div>
             <div className="execution-safety-grid">
-              <span><small>Trend</small><strong>{checklist?.trend_analysis?.trend_direction ?? "Unknown"}</strong></span>
-              <span><small>EMA</small><strong>{checklist?.ema_analysis?.ema_bias ?? "Unknown"}</strong></span>
-              <span><small>Volume</small><strong>{checklist?.volume_analysis?.volume_status ?? "Unknown"}</strong></span>
-              <span><small>Risk Reward</small><strong>{Number(checklist?.risk_reward?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
+              <span><small>Trend</small><strong>{checklistTrend?.trend_direction ?? "Unknown"}</strong></span>
+              <span><small>EMA</small><strong>{checklistEma?.ema_bias ?? "Unknown"}</strong></span>
+              <span><small>Volume</small><strong>{checklistVolume?.volume_status ?? "Unknown"}</strong></span>
+              <span><small>Risk Reward</small><strong>{Number(checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
             </div>
             <div className="status-panel-body">
-              <span>{checklist?.ema_analysis?.reason ?? "EMA read unavailable."}</span>
-              <span>{checklist?.volume_analysis?.reason ?? "Volume read unavailable."}</span>
-              <span>{checklist?.support_resistance?.warning ?? "Support and resistance are acceptable."}</span>
-              <span>{checklist?.risk_reward?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
+              <span>{checklistEma?.reason ?? "EMA read unavailable."}</span>
+              <span>{checklistVolume?.reason ?? "Volume read unavailable."}</span>
+              <span>{checklistSr?.warning ?? "Support and resistance are acceptable."}</span>
+              <span>{checklistRr?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
+              {(checklist?.passed ?? []).slice(0, 2).map((item) => <span key={item}>{item}</span>)}
+              {(checklist?.failed ?? []).slice(0, 2).map((item) => <span key={item}>No Trade: {item}</span>)}
             </div>
           </div>
 

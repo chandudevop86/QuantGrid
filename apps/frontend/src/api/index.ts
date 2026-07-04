@@ -75,9 +75,9 @@ export const api = {
   historicalOptionChain: (symbol = "NIFTY") =>
     API.get(`/modules/option-chain/${symbol}/historical`).then((res) => res.data),
   runBacktestingModule: (payload: unknown = {}) =>
-    API.post("/modules/backtesting", payload).then((res) => res.data),
+    API.post("/modules/backtesting", payload, { timeout: 45000 }).then((res) => res.data),
   backtestingComparison: (payload: unknown = {}) =>
-    API.post("/modules/backtesting/comparison", payload).then((res) => res.data),
+    API.post("/modules/backtesting/comparison", payload, { timeout: 45000 }).then((res) => res.data),
   riskEngine: () => API.get("/modules/risk-engine").then((res) => res.data),
   tradeJournal: () => API.get("/modules/trade-journal").then((res) => res.data),
   tradeJournalRows: (params: Record<string, string> = {}) =>

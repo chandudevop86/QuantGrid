@@ -425,6 +425,9 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     symbol = str(payload.get("symbol") or "NIFTY").upper()
     capital = float(payload.get("capital") or 100000)
     candles = payload.get("candles") or _sample_candles(symbol)
+    max_candles = int(payload.get("max_candles") or 0)
+    if max_candles > 0 and len(candles) > max_candles:
+        candles = candles[-max_candles:]
     cost_model = _backtest_cost_model(payload)
     engine = BacktestEngine(risk_manager=GlobalRiskManager())
     result = engine.run(

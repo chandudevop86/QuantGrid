@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
 const defaultStrategies = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"];
+const quickStrategies = ["amd", "breakout", "mean_reversion", "supply_demand"];
 
 type BacktestRun = {
   strategy: string;
@@ -54,15 +55,19 @@ export default function Backtesting() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => {
+  const load = (mode: "quick" | "full" = "quick") => {
     setLoading(true);
-    api.backtestingComparison({ symbol: "NIFTY", strategies: defaultStrategies, min_score: 0 })
+    const strategies = mode === "full" ? defaultStrategies : quickStrategies;
+    api.backtestingComparison({ symbol: "NIFTY", strategies, min_score: 0, max_candles: mode === "full" ? 120 : 80 })
       .then((data) => {
         setPayload(data);
         setSelected(data?.best_strategy ?? "amd");
         setError(null);
       })
-      .catch((err) => setError(err?.message ?? "Backtesting engine is unavailable."))
+      .catch((err) => {
+        const timedOut = String(err?.message ?? "").toLowerCase().includes("timeout");
+        setError(timedOut ? "Backtesting is taking longer than expected. Try Run again or reduce the strategy set." : err?.message ?? "Backtesting engine is unavailable.");
+      })
       .finally(() => setLoading(false));
   };
 
@@ -86,7 +91,7 @@ export default function Backtesting() {
         </div>
         <div className="dashboard-actions">
           <span className="status-pill">{payload?.best_strategy ? `Best: ${titleCase(payload.best_strategy)}` : "Ready"}</span>
-          <button className="refresh-button" type="button" onClick={load} disabled={loading}>
+          <button className="refresh-button" type="button" onClick={() => load("full")} disabled={loading}>
             Run
           </button>
         </div>

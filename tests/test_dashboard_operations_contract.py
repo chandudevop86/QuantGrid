@@ -31,6 +31,21 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert "decision_id" in decision
     assert isinstance(decision["factor_snapshot"], dict)
     assert "checklist_score" in decision["factor_snapshot"]
+    checklist = decision["factor_snapshot"]["checklist"]
+    assert set(checklist) == {
+        "checklist_score",
+        "passed",
+        "failed",
+        "warnings",
+        "trend",
+        "ema",
+        "volume",
+        "support_resistance",
+        "risk_reward",
+    }
+    assert isinstance(checklist["passed"], list)
+    assert isinstance(checklist["failed"], list)
+    assert isinstance(checklist["warnings"], list)
     assert "trend_analysis" in decision["factor_snapshot"]
     assert "ema_analysis" in decision["factor_snapshot"]
     assert "volume_analysis" in decision["factor_snapshot"]

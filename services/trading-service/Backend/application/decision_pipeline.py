@@ -258,6 +258,16 @@ class DecisionPipelineService:
         if blockers:
             market_bias = "NEUTRAL"
         checklist_score = _checklist_score(trend_analysis, ema_analysis, volume_analysis, sr_analysis, risk_reward, blockers)
+        checklist = _technical_checklist(
+            market,
+            checklist_score,
+            blockers,
+            trend_analysis,
+            ema_analysis,
+            volume_analysis,
+            sr_analysis,
+            risk_reward,
+        )
         return {
             "market_bias": market_bias,
             "trend": trend,
@@ -275,6 +285,7 @@ class DecisionPipelineService:
             "liquidity": market.liquidity,
             "expiry_day": market.expiry_day,
             "data_freshness_seconds": market.feed_delay_seconds,
+            "checklist": checklist,
             "checklist_score": checklist_score,
             "checklist_blockers": blockers,
             "trend_analysis": trend_analysis.to_dict(),
@@ -485,6 +496,67 @@ def _checklist_score(
     score += 20 if not sr.warning and sr.support is not None and sr.resistance is not None else 8
     score += 20 if rr.allowed else 5
     return max(0, min(100, score - min(25, len(blockers) * 5)))
+
+
+def _technical_checklist(
+    market: MarketDataInputs,
+    checklist_score: int,
+    blockers: list[str],
+    trend: TrendAnalysis,
+    ema: EMAAnalysis,
+    volume: VolumeAnalysis,
+    sr: SupportResistanceAnalysis,
+    rr: RiskRewardAnalysis,
+) -> dict[str, Any]:
+    passed: list[str] = []
+    failed: list[str] = list(blockers)
+    warnings: list[str] = list(market.warnings)
+
+    if trend.trend_direction != "SIDEWAYS":
+        passed.append(f"Trend supports {'CE' if trend.trend_direction == 'UPTREND' else 'PE'}.")
+    if ema.ema_bias != "NEUTRAL":
+        passed.append(ema.reason)
+    if volume.supports_trade:
+        passed.append(volume.reason)
+    if sr.support is not None and sr.resistance is not None and not sr.warning:
+        passed.append("Support and resistance are usable.")
+    if rr.allowed:
+        passed.append("Risk reward is acceptable.")
+    if market.valid_for_execution:
+        passed.append("Data is fresh enough for execution checks.")
+    if market.india_vix is None or market.india_vix < 22:
+        passed.append("VIX is inside risk limits.")
+
+    if trend.warning_if_sideways:
+        warnings.append(trend.warning_if_sideways)
+    if ema.warning:
+        warnings.append(ema.warning)
+    if sr.warning:
+        warnings.append(sr.warning)
+    warnings.extend(rr.warnings)
+
+    return {
+        "checklist_score": checklist_score,
+        "passed": _dedupe(passed),
+        "failed": _dedupe(failed),
+        "warnings": _dedupe(warnings),
+        "trend": trend.to_dict(),
+        "ema": ema.to_dict(),
+        "volume": volume.to_dict(),
+        "support_resistance": sr.to_dict(),
+        "risk_reward": rr.to_dict(),
+    }
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        value = str(item or "").strip()
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def _bias_from_direction(direction: str) -> str:

@@ -68,6 +68,25 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert result.decision.trade_recommendation == "Buy CE"
     assert result.factors["trend"] == "BULLISH"
     assert result.factors["vwap_relation"] == "above VWAP"
+    checklist = result.factors["checklist"]
+    assert set(checklist) == {
+        "checklist_score",
+        "passed",
+        "failed",
+        "warnings",
+        "trend",
+        "ema",
+        "volume",
+        "support_resistance",
+        "risk_reward",
+    }
+    assert checklist["checklist_score"] > 0
+    assert checklist["passed"]
+    assert checklist["failed"] == []
+    assert checklist["trend"]["trend_direction"] == "UPTREND"
+    assert checklist["ema"]["ema_bias"] == "BULLISH"
+    assert checklist["volume"]["supports_trade"] is True
+    assert checklist["risk_reward"]["allowed"] is True
     assert result.decision_id
 
     record_recommendation_outcome(result.decision_id, outcome="WIN", pnl=500, actual_direction="BULLISH")
@@ -187,3 +206,4 @@ def test_decision_pipeline_blocks_stale_data():
 
     assert result.decision.trade_recommendation == "No Trade"
     assert "data is stale" in result.factors["checklist_blockers"]
+    assert "data is stale" in result.factors["checklist"]["failed"]

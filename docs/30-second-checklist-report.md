@@ -4,6 +4,29 @@ Date: 2026-07-04
 
 ## Audit
 
+Existing reusable modules:
+
+- Market data and candles: `Backend/application/market_data_service.py`, `Backend/application/market_data_store.py`, `Backend/application/candle_validation.py`.
+- Strategies and signals: `Backend/domain/engine/strategy_engine.py`, `Backend/application/signal_validation.py`, `Backend/application/signal_quality.py`.
+- Risk engine: `Backend/application/risk_engine.py`, `Backend/application/risk_gate.py`.
+- Dashboard: `Backend/presentation/api/dashboard_api.py`, `apps/frontend/src/pages/Dashboard.tsx`.
+- Institutional dashboard and copilot: `Backend/application/institutional_dashboard.py`, `Backend/application/market_copilot.py`.
+- Backtesting: `Backend/application/quant_modules.py`, `Backend/trading_system/backtesting.py`.
+- Paper trading: `Backend/application/paper_trade_store.py`, `Backend/application/order_management.py`.
+
+What was missing:
+
+- A single technical checklist payload with `checklist_score`, `passed`, `failed`, `warnings`, `trend`, `ema`, `volume`, `support_resistance`, and `risk_reward`.
+- Dashboard rendering for passed/failed checklist items.
+
+Files modified:
+
+- `Backend/application/decision_pipeline.py`
+- `apps/frontend/src/pages/Dashboard.tsx`
+- `tests/test_decision_pipeline.py`
+- `tests/test_dashboard_operations_contract.py`
+- `docs/30-second-checklist-report.md`
+
 | Checklist item | Status | Affected files | Business impact | Recommended fix |
 | --- | --- | --- | --- | --- |
 | Trend analysis | Present | `Backend/application/decision_pipeline.py` | Identifies CE/PE direction from market structure. | Continue improving with multi-timeframe confirmation. |

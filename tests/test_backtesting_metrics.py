@@ -49,3 +49,14 @@ def test_backtesting_module_returns_cost_model_assumptions():
     assert "entry_delay_seconds" in cost_model
     assert "liquidity_filter" in cost_model
     assert "expiry_behavior" in cost_model
+
+
+def test_backtesting_module_honors_max_candles_cap():
+    candles = [
+        {"timestamp": f"2026-07-04T09:{index:02d}:00+00:00", "open": 100 + index, "high": 102 + index, "low": 98 + index, "close": 101 + index, "volume": 1000}
+        for index in range(20)
+    ]
+
+    result = backtesting_module({"symbol": "NIFTY", "candles": candles, "max_candles": 5})
+
+    assert result["payload"]["candles"] == 5
