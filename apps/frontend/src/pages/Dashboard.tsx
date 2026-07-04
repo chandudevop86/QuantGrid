@@ -25,6 +25,14 @@ type Decision = {
   score_reason?: string;
   data_status?: string;
   recommendation_metrics?: Record<string, number>;
+  factor_snapshot?: {
+    checklist_score?: number;
+    trend_analysis?: { trend_direction?: string; trend_strength?: number; warning_if_sideways?: string };
+    ema_analysis?: { ema_bias?: string; ema_strength?: number; reason?: string; warning?: string };
+    volume_analysis?: { volume_status?: string; volume_strength?: number; supports_trade?: boolean; reason?: string };
+    support_resistance?: { support?: number; resistance?: number; entry_zone?: string; invalidation_level?: string; warning?: string };
+    risk_reward?: { risk_reward_ratio?: number; position_size?: number; allowed?: boolean; warnings?: string[] };
+  };
 };
 
 function formatMoney(value: unknown) {
@@ -162,6 +170,7 @@ export default function Dashboard() {
   const risk = operations?.risk_summary;
   const health = operations?.system_health;
   const marketStatusLabel = getMarketStatusLabel(market);
+  const checklist = decision.factor_snapshot;
 
   return (
     <section className="dashboard-page decision-dashboard">
@@ -260,6 +269,25 @@ export default function Dashboard() {
               <span><small>Recall</small><strong>{Math.round(Number(decision.recommendation_metrics?.recall ?? 0) * 100)}%</strong></span>
               <span><small>Profit Factor</small><strong>{Number(decision.recommendation_metrics?.profit_factor ?? 0).toFixed(2)}</strong></span>
               <span><small>Max Drawdown</small><strong>{formatMoney(decision.recommendation_metrics?.max_drawdown)}</strong></span>
+            </div>
+          </div>
+
+          <div className="dashboard-section">
+            <div className="section-header">
+              <h2>30-Second Checklist</h2>
+              <span>Checklist Score: {Number(checklist?.checklist_score ?? 0)}%</span>
+            </div>
+            <div className="execution-safety-grid">
+              <span><small>Trend</small><strong>{checklist?.trend_analysis?.trend_direction ?? "Unknown"}</strong></span>
+              <span><small>EMA</small><strong>{checklist?.ema_analysis?.ema_bias ?? "Unknown"}</strong></span>
+              <span><small>Volume</small><strong>{checklist?.volume_analysis?.volume_status ?? "Unknown"}</strong></span>
+              <span><small>Risk Reward</small><strong>{Number(checklist?.risk_reward?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
+            </div>
+            <div className="status-panel-body">
+              <span>{checklist?.ema_analysis?.reason ?? "EMA read unavailable."}</span>
+              <span>{checklist?.volume_analysis?.reason ?? "Volume read unavailable."}</span>
+              <span>{checklist?.support_resistance?.warning ?? "Support and resistance are acceptable."}</span>
+              <span>{checklist?.risk_reward?.allowed ? "Risk reward is acceptable." : "Risk reward needs review."}</span>
             </div>
           </div>
 

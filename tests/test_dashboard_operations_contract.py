@@ -30,6 +30,12 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert decision["score_reason"]
     assert "decision_id" in decision
     assert isinstance(decision["factor_snapshot"], dict)
+    assert "checklist_score" in decision["factor_snapshot"]
+    assert "trend_analysis" in decision["factor_snapshot"]
+    assert "ema_analysis" in decision["factor_snapshot"]
+    assert "volume_analysis" in decision["factor_snapshot"]
+    assert "support_resistance" in decision["factor_snapshot"]
+    assert "risk_reward" in decision["factor_snapshot"]
     assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload
