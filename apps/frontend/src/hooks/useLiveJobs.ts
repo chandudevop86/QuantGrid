@@ -34,6 +34,14 @@ export function useLiveJobs() {
     let socket: WebSocket | null = null;
     let pollId: number | null = null;
     let reconnectId: number | null = null;
+    let reconnectAttempts = 0;
+    // Once the socket has failed this many times in a row, stop trying every few seconds and
+    // fall back to a slow, steady retry cadence instead -- this used to retry every 3s
+    // forever with no backoff, which (combined with the 3s polling fallback running at the
+    // same time) meant a persistently-down socket endpoint produced constant double-traffic
+    // (a new WS handshake attempt AND a poll request every 3 seconds) for as long as the
+    // Jobs page stayed open.
+    const maxFastReconnectAttempts = 5;
 
     const fetchJobs = async () => {
       try {
@@ -66,6 +74,7 @@ export function useLiveJobs() {
 
       socket.onopen = () => {
         if (!active) return;
+        reconnectAttempts = 0;
         setSocketConnected(true);
         stopPolling();
         void fetchJobs();
@@ -88,7 +97,12 @@ export function useLiveJobs() {
         if (!active) return;
         setSocketConnected(false);
         startPolling();
-        reconnectId = window.setTimeout(connect, 3000);
+        reconnectAttempts += 1;
+        const delay =
+          reconnectAttempts <= maxFastReconnectAttempts
+            ? Math.min(30000, 1000 * 2 ** (reconnectAttempts - 1))
+            : 30000;
+        reconnectId = window.setTimeout(connect, delay);
       };
     };
 

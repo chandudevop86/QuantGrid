@@ -11,7 +11,6 @@ from Backend.application.dto import serialize_signal
 from Backend.application.trading_service import TradingService
 from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.backtesting import BacktestEngine
-from Backend.trading_system.execution import ExecutionEngine
 from Backend.trading_system.risk import GlobalRiskManager
 from Backend.presentation.api.roles import require_roles, require_trade_execute
 
@@ -19,7 +18,13 @@ from Backend.presentation.api.roles import require_roles, require_trade_execute
 router = APIRouter(tags=["production-trading"])
 service = TradingService()
 risk_manager = GlobalRiskManager()
-execution_engine = ExecutionEngine(risk_manager=risk_manager)
+# NOTE: a `Backend.trading_system.execution.ExecutionEngine` instance used to be built here
+# too. It is dead code: the only route that would have used it, `/execute-trade` below,
+# unconditionally returns 410 Gone. Live/paper order execution goes through
+# `Backend.application.order_management.OrderManagementService` via `/execution/order` and
+# `/execution/auto-paper` instead (see presentation/api/execution.py). Keeping an unused
+# ExecutionEngine + its own in-memory GlobalRiskManager constructed here was a trap for a
+# future change that might get wired to it by mistake, thinking it was the live path.
 
 
 class SignalPayload(BaseModel):

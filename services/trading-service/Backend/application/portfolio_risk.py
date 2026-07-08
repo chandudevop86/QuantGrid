@@ -54,12 +54,26 @@ def build_portfolio_risk_dashboard(
         "risk_per_trade_pct": risk.get("risk_per_trade_pct"),
         "risk_per_trade_amount": risk.get("risk_per_trade_amount"),
     }
+    risk_configured_keys = ["QUANTGRID_CAPITAL", "QUANTGRID_RISK_PER_TRADE_PCT", "QUANTGRID_MAX_DAILY_LOSS"]
+    missing_risk_env_keys = [key for key in risk_configured_keys if os.getenv(key) in {None, ""}]
     checks = {
         "daily_loss": float(risk.get("daily_pnl") or 0.0) > -float(risk.get("max_daily_loss") or 0.0),
         "max_open_trades": int(risk.get("open_positions") or 0) < int(risk.get("max_open_positions") or 0),
         "max_trades_per_day": int(risk.get("trades_today") or 0) < int(risk.get("max_trades_per_day") or 0),
         "exposure_limit": current_exposure <= max_exposure if max_exposure > 0 else True,
         "risk_configured": bool(risk.get("risk_configured")),
+    }
+    check_details = {
+        "risk_configured": (
+            "All risk env vars are explicitly set."
+            if not missing_risk_env_keys
+            else (
+                "Missing required env var(s): " + ", ".join(missing_risk_env_keys) + ". "
+                "The app is currently running on defaults for these (not necessarily wrong, "
+                "but live trading refuses to start until they're set explicitly) -- "
+                "set them in your deployment environment and restart."
+            )
+        ),
     }
     return {
         "module": "portfolio_risk",
@@ -70,6 +84,7 @@ def build_portfolio_risk_dashboard(
         "limits": limits,
         "exposure": exposure,
         "checks": checks,
+        "check_details": check_details,
         "positions": {
             **positions,
             "open": open_positions,

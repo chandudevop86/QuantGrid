@@ -137,6 +137,8 @@ class PositionRecord(Base):
     opened_at: Mapped[str] = mapped_column(String(40), nullable=False)
     closed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     updated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    pending_exit_correlation_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    pending_exit_broker_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class RiskStateRecord(Base):

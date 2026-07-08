@@ -13,6 +13,19 @@ COPY services/trading-service /app/services/trading-service
 
 WORKDIR /app/services/trading-service
 
+# Run as a dedicated unprivileged user rather than root. The container previously ran the
+# whole process tree as root by default (the python:3.12-slim base doesn't set a USER, so
+# nothing here overrode it) -- standard hardening practice for any container is to drop to a
+# non-root user unless there's a specific reason to bind a privileged port (this service binds
+# 8000, which needs no special privilege). This limits the blast radius if the app is ever
+# compromised via a dependency vulnerability or unsanitized input reaching a filesystem
+# operation: a non-root user can't write outside paths explicitly granted to it, whereas root
+# can write anywhere in the container filesystem.
+RUN useradd --system --create-home --uid 1000 --shell /usr/sbin/nologin quantgrid \
+    && mkdir -p /app/data \
+    && chown -R quantgrid:quantgrid /app
+USER quantgrid
+
 EXPOSE 8000
 
 CMD ["uvicorn", "Backend.presentation.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

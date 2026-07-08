@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,23 @@ from Backend.application.paper_trade_store import DATA_DIR, utc_now
 
 
 DB_FILE = Path(os.getenv("KILL_SWITCH_DB_FILE", DATA_DIR / "risk_state.sqlite3"))
+
+# A single order submission currently calls kill_switch_status() twice in a row
+# (once from evaluate_risk_gate, once from validate_order_risk in risk_gate.py), each of
+# which used to do its own blocking sqlite read. Kill-switch state doesn't change fast enough
+# for sub-second staleness to matter, so a short cache removes the redundant disk I/O on the
+# hot per-order path without meaningfully delaying reactivity to an activation.
+_CACHE_TTL_SECONDS = float(os.getenv("KILL_SWITCH_CACHE_TTL_SECONDS", "0.5"))
+_cache_lock = threading.Lock()
+_cached_status: dict[str, Any] | None = None
+_cached_at: float = 0.0
+
+
+def _invalidate_cache() -> None:
+    global _cached_status, _cached_at
+    with _cache_lock:
+        _cached_status = None
+        _cached_at = 0.0
 
 
 def _connect() -> sqlite3.Connection:
@@ -47,19 +66,33 @@ def init_kill_switch_store() -> None:
         )
 
 
-def kill_switch_status() -> dict[str, Any]:
+def kill_switch_status(*, fresh: bool = False) -> dict[str, Any]:
+    global _cached_status, _cached_at
+    if not fresh:
+        with _cache_lock:
+            if _cached_status is not None and (time.monotonic() - _cached_at) < _CACHE_TTL_SECONDS:
+                return dict(_cached_status)
+
     init_kill_switch_store()
     if not _use_sqlite():
-        return _db_kill_switch_status()
-    with _connect() as connection:
-        row = connection.execute("SELECT * FROM kill_switch WHERE id = 1").fetchone()
-    return _present(row)
+        result = _db_kill_switch_status()
+    else:
+        with _connect() as connection:
+            row = connection.execute("SELECT * FROM kill_switch WHERE id = 1").fetchone()
+        result = _present(row)
+
+    with _cache_lock:
+        _cached_status = dict(result)
+        _cached_at = time.monotonic()
+    return result
 
 
 def activate_kill_switch(*, reason: str | None, actor: str | None) -> dict[str, Any]:
     init_kill_switch_store()
     if not _use_sqlite():
-        return _db_activate_kill_switch(reason=reason, actor=actor)
+        result = _db_activate_kill_switch(reason=reason, actor=actor)
+        _invalidate_cache()
+        return result
     now = utc_now()
     with _connect() as connection:
         connection.execute(
@@ -76,13 +109,16 @@ def activate_kill_switch(*, reason: str | None, actor: str | None) -> dict[str, 
             """,
             (reason or "Manual kill switch activation", actor, now, now),
         )
-    return kill_switch_status()
+    _invalidate_cache()
+    return kill_switch_status(fresh=True)
 
 
 def deactivate_kill_switch(*, actor: str | None) -> dict[str, Any]:
     init_kill_switch_store()
     if not _use_sqlite():
-        return _db_deactivate_kill_switch(actor=actor)
+        result = _db_deactivate_kill_switch(actor=actor)
+        _invalidate_cache()
+        return result
     now = utc_now()
     with _connect() as connection:
         connection.execute(
@@ -96,7 +132,8 @@ def deactivate_kill_switch(*, actor: str | None) -> dict[str, Any]:
             """,
             (actor, now, now),
         )
-    return kill_switch_status()
+    _invalidate_cache()
+    return kill_switch_status(fresh=True)
 
 
 def _present(row: sqlite3.Row | None) -> dict[str, Any]:

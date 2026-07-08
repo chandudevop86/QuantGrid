@@ -1,0 +1,21 @@
+--- deploy/kubernetes/quantgrid.yaml
++++ deploy/kubernetes/quantgrid.yaml
+@@ -24,7 +24,17 @@
+       containers:
+         - name: backend
+           image: quantgrid/backend:beta
+-          imagePullPolicy: IfNotPresent
++          # NOTE: this repo's CI (.github/workflows/ci.yml, security.yml) never actually
++          # builds or pushes a tagged image -- "beta" is presumably built/pushed by some
++          # process outside this repo. Combined with a mutable tag, `imagePullPolicy:
++          # IfNotPresent` means different nodes can end up running DIFFERENT actual image
++          # content under the identical tag "beta" -- whichever version each node happened to
++          # have cached locally the last time it pulled -- causing silent version skew across
++          # replicas, and there's no way to roll back to a specific known-good version since
++          # "beta" always means "whatever was last pushed." `imagePullPolicy: Always` is the
++          # safe minimum fix given a mutable tag; the real fix is having CI build and push an
++          # immutable tag (e.g. the git commit SHA) and referencing that here instead.
++          imagePullPolicy: Always
+           ports:
+             - containerPort: 8000
+               name: http

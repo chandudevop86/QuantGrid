@@ -10,7 +10,12 @@ from sqlalchemy.orm import Session
 
 from Backend.application.candle_validation import get_market_session
 from Backend.application.market_data_store import latest_candles
-from Backend.application.position_store import close_open_position, get_position, list_open_positions
+from Backend.application.position_store import (
+    close_open_position,
+    get_position,
+    list_open_positions,
+    update_open_position,
+)
 from Backend.domain.models.order import Order
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -24,6 +29,14 @@ EXIT_REASONS = {
     "trailing_stop_loss",
     "market_close",
 }
+
+# Statuses that mean the exit order has genuinely EXECUTED at the broker. This is
+# deliberately narrower than the adapter's own "confirmed" flag, which also treats a merely
+# accepted-but-not-yet-filled order (pending/open/transit) as "confirmed". Closing a position
+# locally on that weaker signal means the position can be marked closed while the real order
+# is still sitting open at the broker (and could still be rejected).
+EXIT_FILLED_STATUSES = {"filled", "traded", "complete", "completed"}
+EXIT_REJECTED_STATUSES = {"rejected", "failed", "not_found", "cancelled", "canceled", "expired"}
 
 
 @dataclass(slots=True)
@@ -133,11 +146,53 @@ async def exit_position(
     broker_payload: dict[str, Any] | None = None
     if execution_mode == "live":
         client = broker_client or broker_client_for_mode("live")
-        order = _exit_order(position, price)
-        placed = await client.place_order(order)
-        confirmed = await client.get_order_status(placed.broker_order_id)
-        if not confirmed.confirmed or confirmed.status in {"rejected", "failed", "not_found"}:
+
+        # Idempotency: if a previous call already placed an exit order for this position
+        # (e.g. the last attempt timed out on the response, or a background monitor loop is
+        # re-evaluating a position that's still pending), check on THAT order instead of
+        # blindly submitting a brand-new one. Without this, every retry/re-check of a still-
+        # open position places another real exit order at the broker.
+        pending_broker_order_id = position.get("pending_exit_broker_order_id")
+        if pending_broker_order_id:
+            confirmed = await client.get_order_status(str(pending_broker_order_id))
+        else:
+            order = _exit_order(position, price)
+            correlation_id = str(order.metadata["correlation_id"])
+            placed = await client.place_order(order)
+            # Persist the broker order id immediately, before we know the fill outcome, so a
+            # crash/timeout right after this point still leaves a durable trail: the next
+            # attempt will find `pending_exit_broker_order_id` and poll it above rather than
+            # placing a second order.
+            update_open_position(
+                position_id,
+                {
+                    "pending_exit_correlation_id": correlation_id,
+                    "pending_exit_broker_order_id": placed.broker_order_id,
+                },
+            )
+            confirmed = await client.get_order_status(placed.broker_order_id)
+
+        if confirmed.status in EXIT_REJECTED_STATUSES:
+            # The exit attempt did not go through. Clear the pending markers so the position
+            # is eligible for a fresh exit attempt (a new broker order) on the next
+            # evaluation, instead of getting stuck forever polling a dead order id.
+            update_open_position(position_id, {"pending_exit_correlation_id": None, "pending_exit_broker_order_id": None})
             raise RuntimeError(f"broker exit not confirmed: {confirmed.status}")
+
+        if confirmed.status not in EXIT_FILLED_STATUSES:
+            # Order is accepted but not yet filled (pending/open/transit). This is NOT an
+            # error -- do not close the position locally. Closing here would desync local
+            # state from the broker: the position would show as closed while a real order is
+            # still working, and it would also drop out of `list_open_positions()`, which is
+            # exactly what `broker_reconciliation.py` scans -- so a later rejection of this
+            # order would never be caught by reconciliation either.
+            return {
+                "position": position,
+                "exit_reason": normalized_reason,
+                "broker": confirmed.to_dict(),
+                "status": "exit_pending",
+            }
+
         price = float(confirmed.price or price)
         broker_payload = confirmed.to_dict()
 
@@ -207,7 +262,11 @@ def _exit_order(position: dict[str, Any], price: float) -> Order:
         metadata={
             "position_id": position.get("id"),
             "exit_for_broker_order_id": position.get("broker_order_id"),
-            "correlation_id": f"EXIT-{position.get('id')}-{int(datetime.now(timezone.utc).timestamp())}",
+            # Stable per-position id (no timestamp) so repeated exit attempts for the same
+            # position are recognizable as the same logical exit rather than a fresh one
+            # each time. Combined with `pending_exit_broker_order_id` on the position row,
+            # this is what makes exits idempotent across retries / monitor-loop re-checks.
+            "correlation_id": f"EXIT-{position.get('id')}",
         },
     )
 

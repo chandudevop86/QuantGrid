@@ -273,7 +273,11 @@ def latest_signals(
     except Exception as exc:
         logger.exception("latest_signals_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         return _empty_signals(symbol, reason="Market candles are unavailable; no signals generated.")
-    service = TradingService()
+    try:
+        service = TradingService()
+    except Exception as exc:
+        logger.exception("latest_signals_service_init_failed", extra={"error_type": exc.__class__.__name__})
+        return _empty_signals(symbol, reason=f"Trading service is unavailable ({exc.__class__.__name__}); no signals generated.")
     strategies = [strategy] if strategy else service.trading_engine.strategy_engine.available()
 
     active = []
@@ -437,7 +441,18 @@ def _build_signal_audit(symbol: str = "NIFTY") -> dict:
         candles_response, confirmation_response, trend_response = {}, {}, {}
         one_minute, five_minute, fifteen_minute = [], [], []
 
-    service = TradingService()
+    try:
+        service = TradingService()
+    except Exception as exc:
+        logger.exception("signal_audit_service_init_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
+        return {
+            "symbol": symbol.upper(),
+            "latest_candle_time": one_minute[-1]["timestamp"] if one_minute else None,
+            "data": {"candle_source": candles_response.get("source")},
+            "strategies": [],
+            "lifecycle_totals": {},
+            "error": f"Trading service is unavailable ({exc.__class__.__name__}); signal audit could not run.",
+        }
     paper_trades = list_paper_trades(500)
     candle_source = candles_response.get("source")
     candle_validation = validate_live_candle(

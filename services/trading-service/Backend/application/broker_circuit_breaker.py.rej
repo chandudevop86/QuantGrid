@@ -1,0 +1,151 @@
+--- services/trading-service/Backend/application/broker_circuit_breaker.py
++++ services/trading-service/Backend/application/broker_circuit_breaker.py
+@@ -1,10 +1,12 @@
+ from __future__ import annotations
+ 
++import contextlib
+ import json
+ import os
++import tempfile
+ from datetime import datetime, timedelta, timezone
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Iterator
+ 
+ from fastapi import Request
+ from sqlalchemy.orm import Session
+@@ -14,24 +16,54 @@
+ from Backend.domain.security.audit import write_audit_log
+ from Backend.domain.security.models import User
+ 
++try:
++    import fcntl
++except ImportError:  # pragma: no cover - fcntl is POSIX-only
++    fcntl = None  # type: ignore[assignment]
++
+ 
+ STATUS_FILE = Path(DATA_DIR) / "broker_circuit_breaker.json"
++LOCK_FILE = STATUS_FILE.with_suffix(".lock")
+ DEFAULT_WINDOW_SECONDS = 120
+ DEFAULT_THRESHOLD = 5
+ DEFAULT_COOLDOWN_SECONDS = 300
+ 
+ 
++@contextlib.contextmanager
++def _state_lock() -> Iterator[None]:
++    """Serialize read-modify-write access to the circuit breaker state file.
++
++    Without this, concurrent broker failures -- exactly the scenario this module exists to
++    detect -- can race: two requests both read the same failure list, each appends its own
++    entry, and whichever writes last wins, silently dropping the other failure and delaying
++    (or preventing) circuit-breaker activation right when it matters most. Uses a plain
++    POSIX advisory lock (fcntl) rather than a new dependency; falls back to no locking on
++    platforms without fcntl (e.g. Windows dev machines), which is a degradation, not a crash.
++    """
++    if fcntl is None:
++        yield
++        return
++    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
++    with open(LOCK_FILE, "a+") as lock_handle:
++        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
++        try:
++            yield
++        finally:
++            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
++
++
+ def broker_circuit_status(*, now: datetime | None = None) -> dict[str, Any]:
+-    state = _load_state()
+     current = now or _utc_now()
+     config = _config()
+-    failures = _recent_failures(state.get("failures", []), current, config["window_seconds"])
+-    active = _is_active(state, current)
+-    if state.get("active") and not active:
+-        state["active"] = False
+-        state["deactivated_at"] = current.isoformat()
+-        state["failures"] = failures
+-        _save_state(state)
++    with _state_lock():
++        state = _load_state()
++        failures = _recent_failures(state.get("failures", []), current, config["window_seconds"])
++        active = _is_active(state, current)
++        if state.get("active") and not active:
++            state["active"] = False
++            state["deactivated_at"] = current.isoformat()
++            state["failures"] = failures
++            _save_state(state)
+ 
+     return {
+         "active": active,
+@@ -61,22 +93,25 @@
+ ) -> dict[str, Any]:
+     current = _utc_now()
+     config = _config()
+-    state = _load_state()
+-    failures = _recent_failures(state.get("failures", []), current, config["window_seconds"])
+-    failures.append({"at": current.isoformat(), "reason": str(reason)})
+-    state["failures"] = failures
+-    state["updated_at"] = current.isoformat()
+-
+     activated = False
+-    if len(failures) >= config["threshold"] and not _is_active(state, current):
+-        activated = True
+-        state["active"] = True
+-        state["reason"] = f"Broker failure threshold reached: {len(failures)} failures in {config['window_seconds']}s."
+-        state["activated_at"] = current.isoformat()
+-        state["cooldown_until"] = (current + timedelta(seconds=config["cooldown_seconds"])).isoformat()
+-        _notify_activation(state)
++    with _state_lock():
++        state = _load_state()
++        failures = _recent_failures(state.get("failures", []), current, config["window_seconds"])
++        failures.append({"at": current.isoformat(), "reason": str(reason)})
++        state["failures"] = failures
++        state["updated_at"] = current.isoformat()
++
++        if len(failures) >= config["threshold"] and not _is_active(state, current):
++            activated = True
++            state["active"] = True
++            state["reason"] = f"Broker failure threshold reached: {len(failures)} failures in {config['window_seconds']}s."
++            state["activated_at"] = current.isoformat()
++            state["cooldown_until"] = (current + timedelta(seconds=config["cooldown_seconds"])).isoformat()
++
++        _save_state(state)
+ 
+-    _save_state(state)
++    if activated:
++        _notify_activation(state)
+     status = broker_circuit_status(now=current)
+     if db is not None:
+         write_audit_log(
+@@ -110,7 +145,8 @@
+         "deactivated_by": actor,
+         "updated_at": current.isoformat(),
+     }
+-    _save_state(state)
++    with _state_lock():
++        _save_state(state)
+     return broker_circuit_status(now=current)
+ 
+ 
+@@ -141,7 +177,20 @@
+ 
+ def _save_state(state: dict[str, Any]) -> None:
+     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+-    STATUS_FILE.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
++    # Write to a temp file in the same directory and atomically rename over the target, so a
++    # crash/kill mid-write can't leave behind a truncated/corrupt JSON file that _load_state
++    # would then have to silently discard (masking whatever state we were about to record).
++    fd, tmp_path = tempfile.mkstemp(dir=str(STATUS_FILE.parent), prefix=".tmp-circuit-", suffix=".json")
++    try:
++        with os.fdopen(fd, "w", encoding="utf-8") as handle:
++            handle.write(json.dumps(state, indent=2, sort_keys=True))
++            handle.flush()
++            os.fsync(handle.fileno())
++        os.replace(tmp_path, STATUS_FILE)
++    except BaseException:
++        with contextlib.suppress(OSError):
++            os.remove(tmp_path)
++        raise
+ 
+ 
+ def _empty_state() -> dict[str, Any]:

@@ -1,0 +1,30 @@
+--- apps/frontend/src/pages/RiskDashboard.tsx
++++ apps/frontend/src/pages/RiskDashboard.tsx
+@@ -15,6 +15,7 @@
+   limits?: Record<string, number | string | null>;
+   exposure?: { current?: number; limit?: number; available?: number; utilization_pct?: number };
+   checks?: Record<string, boolean>;
++  check_details?: Record<string, string>;
+   positions?: {
+     open_positions?: number;
+     current_exposure?: number;
+@@ -62,6 +63,7 @@
+   }, []);
+ 
+   const checks = payload?.checks ?? {};
++  const checkDetails = payload?.check_details ?? {};
+   const sizing = payload?.position_sizing;
+ 
+   return (
+@@ -151,9 +153,9 @@
+           <section className="dashboard-section">
+             <div className="health-dot-grid">
+               {Object.entries(checks).map(([key, value]) => (
+-                <span key={key} className={checkClass(value)}>
++                <span key={key} className={checkClass(value)} title={!value ? checkDetails[key] : undefined}>
+                   <strong>{key.replace(/_/g, " ")}</strong>
+-                  <small>{value ? "OK" : "Blocked"}</small>
++                  <small>{value ? "OK" : checkDetails[key] ? "Blocked - hover for why" : "Blocked"}</small>
+                 </span>
+               ))}
+             </div>

@@ -1,0 +1,129 @@
+--- services/trading-service/Backend/presentation/api/market_api.py
++++ services/trading-service/Backend/presentation/api/market_api.py
+@@ -225,6 +225,29 @@
+     return rows, expiry
+ 
+ 
++def _dhan_profile_client_id(access_token: str, timeout: float = 8.0) -> str | None:
++    """Fetch the dhanClientId Dhan's own /v2/profile reports for this access token.
++
++    Used only to cross-check against the locally configured client_id (see
++    _dhan_option_payload) -- profile itself never sends a client-id header, so it can
++    succeed even when the configured DHAN_CLIENT_ID/QUANTGRID_BROKER_CLIENT_ID is stale or
++    belongs to a different account than the token. Option-chain DOES send client-id (both as
++    a header and in the body), so that mismatch surfaces there as a 401 even though profile
++    looked fine.
++    """
++    request = Request(
++        "https://api.dhan.co/v2/profile",
++        headers={"access-token": access_token, "Accept": "application/json", "User-Agent": "QuantGrid/1.0"},
++    )
++    try:
++        with urlopen(request, timeout=timeout) as response:
++            payload = json.loads(response.read().decode("utf-8"))
++    except Exception:
++        return None
++    client_id = payload.get("dhanClientId")
++    return str(client_id) if client_id else None
++
++
+ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
+     credentials = dhan_credentials()
+     access_token = credentials["access_token"]
+@@ -232,6 +255,16 @@
+     if not access_token or not client_id:
+         raise RuntimeError("Dhan client ID or access token is not configured. Open Dhan Login and save valid credentials.")
+ 
++    profile_client_id = _dhan_profile_client_id(access_token)
++    if profile_client_id and profile_client_id != str(client_id):
++        raise RuntimeError(
++            f"Configured Dhan client ID ({client_id}) does not match the account this access "
++            f"token actually belongs to (Dhan reports dhanClientId={profile_client_id}). This "
++            "is why profile can succeed (it doesn't check client-id) while option-chain fails "
++            "with 401 (it does). Update DHAN_CLIENT_ID / QUANTGRID_BROKER_CLIENT_ID to "
++            f"{profile_client_id} and retry."
++        )
++
+     payload = dict(body)
+     payload.setdefault("dhanClientId", client_id)
+     request = Request(
+@@ -253,16 +286,53 @@
+     except HTTPError as exc:
+         detail = _dhan_http_error_detail(exc)
+         if exc.code in {401, 403}:
+-            raise RuntimeError(detail or "Dhan rejected the saved access token. Open Dhan Login and save a fresh token.") from exc
++            # A valid, non-expired access token can still get 401/403 specifically on Option
++            # Chain: Dhan splits "Trading APIs" (free, what /v2/profile uses) from "Data APIs"
++            # (paid add-on subscription, required for Option Chain) -- so "profile works but
++            # option-chain doesn't" is consistent with the account simply not having an
++            # active Data API subscription, not necessarily a bad/expired token. A newer,
++            # separate cause (SEBI-mandated static IP whitelisting, enforced from April 2026)
++            # can also 401 requests from an unregistered server IP. The client-id mismatch
++            # check above already ruled out the third common cause. Surface all of them
++            # rather than just telling the operator to regenerate a token that may be fine.
++            hint = (
++                "Dhan rejected this request (HTTP {code}). The configured client ID matches "
++                "this token's account (ruled out via profile cross-check), so if your Dhan "
++                "login/profile check succeeds but this still fails, the most likely causes "
++                "are: (a) your account does not have an active Data API subscription (Option "
++                "Chain is a paid Data API, separate from free Trading APIs -- check "
++                "web.dhan.co > Profile > DhanHQ Trading APIs > Data APIs tab, and note a "
++                "just-activated subscription can take a short time to propagate), or "
++                "(b) this server's outbound IP is not whitelisted with Dhan (required since "
++                "the SEBI static-IP mandate). Dhan's response: {detail}"
++            ).format(code=exc.code, detail=detail or "(no additional detail returned)")
++            raise RuntimeError(hint) from exc
+         raise RuntimeError(detail or f"Dhan option-chain API failed with HTTP {exc.code}.") from exc
+ 
+ 
+ def _dhan_http_error_detail(exc: HTTPError) -> str | None:
+     try:
+-        payload = json.loads(exc.read().decode("utf-8"))
++        raw_body = exc.read().decode("utf-8", errors="replace")
+     except Exception:
+         return None
+-    return _dhan_failure_message(payload) or f"Dhan option-chain API failed with HTTP {exc.code}."
++    try:
++        payload = json.loads(raw_body)
++    except (ValueError, json.JSONDecodeError):
++        # Not JSON -- still surface whatever Dhan actually sent instead of discarding it.
++        # A generic "HTTP 401" with no body tells the operator nothing about WHICH of
++        # several distinct 401 causes this is (expired token vs missing Data API
++        # subscription vs IP not whitelisted vs wrong client-id) -- the raw body is the only
++        # diagnostic signal available at this point.
++        snippet = raw_body.strip()[:300]
++        return f"Dhan option-chain API failed with HTTP {exc.code}: {snippet}" if snippet else None
++
++    message = _dhan_failure_message(payload)
++    if message:
++        return message
++    # Parsed as JSON but didn't match any known error shape -- still better to show the raw
++    # payload than to hide it behind a generic "HTTP 401" message.
++    snippet = json.dumps(payload)[:300]
++    return f"Dhan option-chain API failed with HTTP {exc.code}: {snippet}"
+ 
+ 
+ def _dhan_failure_message(payload: Any) -> str | None:
+@@ -284,12 +354,21 @@
+         return f"Dhan option-chain API rejected the request ({code}): {message}"
+     if message:
+         return f"Dhan option-chain API rejected the request: {message}"
++    # None of the known key shapes matched -- rather than silently discarding the payload
++    # (which is exactly what produced the unhelpful "rejected the request." generic message
++    # before), show the raw payload so the actual reason is visible.
++    other_keys = {k: v for k, v in payload.items() if k not in {"status", "data"}}
++    if other_keys:
++        return f"Dhan option-chain API rejected the request: {json.dumps(other_keys)[:300]}"
+     return None
+ 
+ 
+ def _ensure_dhan_success(payload: dict[str, Any]) -> dict[str, Any]:
+     if str(payload.get("status") or "").lower() == "failure":
+-        raise RuntimeError(_dhan_failure_message(payload) or "Dhan option-chain API rejected the request.")
++        raise RuntimeError(
++            _dhan_failure_message(payload)
++            or f"Dhan option-chain API rejected the request. Full response: {json.dumps(payload)[:400]}"
++        )
+     return payload
+ 
+ 

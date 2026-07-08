@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import secrets
@@ -111,6 +112,33 @@ def ensure_env_loaded() -> None:
 
 
 def get_settings() -> Settings:
+    return _cached_settings()
+
+
+def reload_settings() -> Settings:
+    """Force settings to be rebuilt from the current environment.
+
+    Only needed by tests (or anything that mutates env vars at runtime and needs the change
+    to take effect immediately) -- normal request handling should just call get_settings().
+    """
+    _cached_settings.cache_clear()
+    return _cached_settings()
+
+
+@functools.lru_cache(maxsize=1)
+def _cached_settings() -> Settings:
+    # BUG FIX: this used to be un-cached, i.e. every call to get_settings() re-executed the
+    # whole function body. That's harmless when QUANTGRID_AUTH_SECRET is set (os.getenv keeps
+    # returning the same value), but when it's NOT set and environment == "local", the
+    # fallback below generates a brand-new `secrets.token_urlsafe(48)` on EVERY call. Since
+    # `_sign()` in presentation/api/auth.py calls `get_settings().auth_secret` fresh each
+    # time it signs or verifies a token, this meant a token signed during login would almost
+    # certainly fail signature verification on the very next request (a different random
+    # secret was used to check it) -- effectively breaking authentication entirely for any
+    # local/dev run that didn't explicitly set the env var. Caching makes the generated
+    # secret stable for the lifetime of the process, matching the comment's own intent
+    # ("temporary local-only secret" implies "stable for this run", not "different every
+    # single call").
     ensure_env_loaded()
     environment = os.getenv("QUANTGRID_ENV", "local").strip().lower()
     auth_secret = os.getenv("QUANTGRID_AUTH_SECRET")

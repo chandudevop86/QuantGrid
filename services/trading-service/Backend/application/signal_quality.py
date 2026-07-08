@@ -138,7 +138,14 @@ def decide_signal(
     score = _score(signal)
     regime = detect_market_regime(candles_1m)
     bias = mtf_bias(candles_15m)
-    candle_validation = validate_live_candle(candles_1m, mode="paper", now=latest)
+    # BUG FIX: this used to pass `now=latest` -- the LATEST CANDLE'S OWN TIMESTAMP -- as the
+    # reference "current time" for freshness validation. That makes the check tautological: a
+    # candle is always "fresh" relative to itself, no matter how many hours old it actually is
+    # in the real world. This is why a data feed that silently stopped updating hours ago could
+    # still produce signals that pass every staleness check -- the check was never comparing
+    # candle time to *actual* wall-clock time. Omitting `now` lets validate_live_candle use its
+    # own correct default (real current time), which is what actually catches a stale feed.
+    candle_validation = validate_live_candle(candles_1m, mode="paper")
 
     if age is None or age > max_signal_age_minutes():
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
