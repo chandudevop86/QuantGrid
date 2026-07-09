@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 
 const defaultStrategies = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"];
@@ -19,6 +19,22 @@ type BacktestComparison = {
   ranked?: BacktestRun[];
   best_strategy?: string | null;
   updated_at?: string;
+};
+
+type BacktestJob = {
+  job_id: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED" | "TIMEOUT";
+  message?: string;
+  updated_at?: string;
+  current_strategy?: string | null;
+  completed_strategies: number;
+  total_strategies: number;
+  progress_pct: number;
+  elapsed_seconds: number;
+  estimated_remaining_seconds?: number | null;
+  partial_results?: BacktestRun[];
+  result?: BacktestComparison | null;
+  error?: string | null;
 };
 
 function titleCase(value: string) {
@@ -49,31 +65,108 @@ function bestRun(payload: BacktestComparison | null) {
   return payload?.ranked?.[0] ?? payload?.runs?.[0] ?? null;
 }
 
+function formatDuration(seconds: unknown) {
+  const parsed = Number(seconds);
+  if (!Number.isFinite(parsed)) return "calculating";
+  const total = Math.max(0, Math.round(parsed));
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
+
+function jobPayload(job: BacktestJob | null): BacktestComparison | null {
+  if (!job) return null;
+  if (job.result) return job.result;
+  const runs = job.partial_results ?? [];
+  if (!runs.length) return null;
+  const ranked = [...runs].sort((left, right) => {
+    const leftScore = number(left.metrics?.sharpe_ratio) * 100000 + number(left.metrics?.net_pnl ?? left.metrics?.pnl) - number(left.metrics?.max_drawdown) * 1000;
+    const rightScore = number(right.metrics?.sharpe_ratio) * 100000 + number(right.metrics?.net_pnl ?? right.metrics?.pnl) - number(right.metrics?.max_drawdown) * 1000;
+    return rightScore - leftScore;
+  });
+  return {
+    module: "backtesting_comparison",
+    symbol: "NIFTY",
+    runs,
+    ranked,
+    best_strategy: ranked[0]?.strategy ?? null,
+    updated_at: job.updated_at,
+  } as BacktestComparison;
+}
+
 export default function Backtesting() {
   const [payload, setPayload] = useState<BacktestComparison | null>(null);
+  const [job, setJob] = useState<BacktestJob | null>(null);
   const [selected, setSelected] = useState("amd");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
 
   const load = (mode: "quick" | "full" = "quick") => {
     setLoading(true);
+    setError(null);
     const strategies = mode === "full" ? defaultStrategies : quickStrategies;
-    api.backtestingComparison({ symbol: "NIFTY", strategies, min_score: 0, max_candles: mode === "full" ? 120 : 80 })
-      .then((data) => {
-        setPayload(data);
-        setSelected(data?.best_strategy ?? "amd");
+    api.startBacktest({ symbol: "NIFTY", strategies, min_score: 0, max_candles: mode === "full" ? 120 : 80 })
+      .then((data: BacktestJob) => {
+        setJob(data);
+        setPayload(jobPayload(data));
+        setSelected("amd");
         setError(null);
       })
       .catch((err) => {
-        const timedOut = String(err?.message ?? "").toLowerCase().includes("timeout");
-        setError(timedOut ? "Backtesting is taking longer than expected. Try Run again or reduce the strategy set." : err?.message ?? "Backtesting engine is unavailable.");
+        setError(err?.response?.data?.detail ?? err?.message ?? "Backtesting engine is unavailable.");
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     load();
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!job?.job_id || ["COMPLETED", "FAILED", "CANCELLED"].includes(job.status)) {
+      if (pollRef.current) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      return;
+    }
+    if (pollRef.current) return;
+    pollRef.current = window.setInterval(() => {
+      api.backtestJob(job.job_id)
+        .then((data: BacktestJob) => {
+          setJob(data);
+          const nextPayload = jobPayload(data);
+          if (nextPayload) {
+            setPayload(nextPayload);
+            setSelected((current) => nextPayload.runs?.some((run) => run.strategy === current) ? current : nextPayload.best_strategy ?? nextPayload.runs?.[0]?.strategy ?? "amd");
+          }
+          if (data.status === "FAILED") {
+            setError(data.message ?? "Backtest failed.");
+          }
+        })
+        .catch((err: any) => {
+          setError(err?.response?.data?.detail ?? err?.message ?? "Backtest status is unavailable.");
+        });
+    }, 1500);
+  }, [job?.job_id, job?.status]);
+
+  const cancelJob = () => {
+    if (!job?.job_id) return;
+    api.cancelBacktest(job.job_id).then((data: BacktestJob) => setJob(data));
+  };
+
+  const refreshJob = () => {
+    if (!job?.job_id) return;
+    api.backtestJob(job.job_id).then((data: BacktestJob) => {
+      setJob(data);
+      const nextPayload = jobPayload(data);
+      if (nextPayload) setPayload(nextPayload);
+    });
+  };
 
   const selectedRun = useMemo(() => {
     return payload?.runs?.find((run) => run.strategy === selected) ?? bestRun(payload);
@@ -81,6 +174,9 @@ export default function Backtesting() {
   const metrics = selectedRun?.metrics ?? {};
   const ranked = payload?.ranked ?? [];
   const curve = selectedRun?.equity_curve ?? [];
+  const active = job && ["QUEUED", "RUNNING", "TIMEOUT"].includes(job.status);
+  const progress = Math.max(0, Math.min(100, Number(job?.progress_pct ?? 0)));
+  const currentStrategy = job?.current_strategy ? titleCase(job.current_strategy) : "Waiting";
 
   return (
     <section className="dashboard-page">
@@ -90,17 +186,66 @@ export default function Backtesting() {
           <p>Strategy replay, performance metrics, equity curve, and comparison ranking.</p>
         </div>
         <div className="dashboard-actions">
-          <span className="status-pill">{payload?.best_strategy ? `Best: ${titleCase(payload.best_strategy)}` : "Ready"}</span>
-          <button className="refresh-button" type="button" onClick={() => load("full")} disabled={loading}>
+          <span className={`status-pill ${job?.status === "FAILED" ? "error" : job?.status === "TIMEOUT" ? "stale" : ""}`}>
+            {job?.status ?? (payload?.best_strategy ? `Best: ${titleCase(payload.best_strategy)}` : "Ready")}
+          </span>
+          <button className="refresh-button" type="button" onClick={() => load("full")} disabled={loading || Boolean(active)}>
             Run
           </button>
         </div>
       </div>
 
-      {loading && <div className="alert" role="status">Running strategy comparison...</div>}
+      {loading && <div className="alert" role="status">Backtest has been queued and will start shortly.</div>}
       {error && <div className="alert alert-error" role="alert">{error}</div>}
+      {job && !error && (
+        <div className={job.status === "TIMEOUT" ? "alert alert-warning" : job.status === "COMPLETED" ? "alert alert-success" : "alert"} role="status">
+          {job.message}
+        </div>
+      )}
 
-      {!loading && !error && (
+      {job && (
+        <section className="dashboard-section">
+          <div className="form-panel">
+            <div className="form-panel-header">
+              <div>
+                <h2>Backtest Progress</h2>
+                <p>{currentStrategy} ({job.completed_strategies}/{job.total_strategies})</p>
+              </div>
+              <div className="dashboard-actions">
+                <button className="refresh-button" type="button" onClick={refreshJob}>Refresh results</button>
+                <button className="refresh-button" type="button" onClick={cancelJob} disabled={!active}>Cancel</button>
+              </div>
+            </div>
+            <div className="backtest-progress-track" aria-label={`Backtest progress ${progress}%`}>
+              <span style={{ width: `${progress}%` }} />
+            </div>
+            <div className="signal-trade-grid">
+              <span>
+                <small>Running</small>
+                <strong>{formatNumber(progress, 0)}%</strong>
+                <small>{job.status}</small>
+              </span>
+              <span>
+                <small>Strategy</small>
+                <strong>{currentStrategy}</strong>
+                <small>{job.completed_strategies}/{job.total_strategies}</small>
+              </span>
+              <span>
+                <small>Elapsed</small>
+                <strong>{formatDuration(job.elapsed_seconds)}</strong>
+                <small>Background job</small>
+              </span>
+              <span>
+                <small>Remaining</small>
+                <strong>{formatDuration(job.estimated_remaining_seconds)}</strong>
+                <small>Estimated</small>
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!loading && !error && payload && (
         <>
           <div className="metric-grid">
             <article className="metric-card">

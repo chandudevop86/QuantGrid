@@ -296,6 +296,9 @@ def create_app():
     from Backend.presentation.api.modules_api import router as modules_router
     app.include_router(modules_router)
 
+    from Backend.presentation.api.backtest_api import router as backtest_router
+    app.include_router(backtest_router)
+
     from Backend.presentation.api.investing_api import router as investing_router
     app.include_router(investing_router)
 

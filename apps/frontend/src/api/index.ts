@@ -78,6 +78,14 @@ export const api = {
     API.post("/modules/backtesting", payload, { timeout: 45000 }).then((res) => res.data),
   backtestingComparison: (payload: unknown = {}) =>
     API.post("/modules/backtesting/comparison", payload, { timeout: 45000 }).then((res) => res.data),
+  startBacktest: (payload: unknown = {}) =>
+    API.post("/backtest/start", payload).then((res) => res.data),
+  backtestJob: (jobId: string) =>
+    API.get(`/backtest/${jobId}`).then((res) => res.data),
+  cancelBacktest: (jobId: string) =>
+    API.post(`/backtest/${jobId}/cancel`).then((res) => res.data),
+  backtestHistory: () =>
+    API.get("/backtest/history").then((res) => res.data),
   riskEngine: () => API.get("/modules/risk-engine").then((res) => res.data),
   tradeJournal: () => API.get("/modules/trade-journal").then((res) => res.data),
   tradeJournalRows: (params: Record<string, string> = {}) =>
