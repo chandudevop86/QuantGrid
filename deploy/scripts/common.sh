@@ -84,3 +84,21 @@ health_check() {
 systemctl_run() {
   run sudo systemctl "$@"
 }
+
+systemd_unit_exists() {
+  local service="$1"
+  sudo systemctl list-unit-files "${service}.service" --no-legend 2>/dev/null | grep -q "^${service}.service"
+}
+
+ensure_systemd_service() {
+  local service="$1"
+  local service_file="$2"
+  require_file "${service_file}"
+  if systemd_unit_exists "${service}"; then
+    return 0
+  fi
+  log "Installing missing systemd unit: ${service}.service"
+  run sudo cp "${service_file}" "/etc/systemd/system/${service}.service"
+  systemctl_run daemon-reload
+  systemctl_run enable "${service}"
+}

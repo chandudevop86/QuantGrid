@@ -11,15 +11,14 @@ ENV_FILE="${TRADING_SERVICE_DIR}/.env"
 case "${ACTION}" in
   install)
     require_file "${ENV_FILE}"
-    require_file "${SERVICE_FILE}"
     check_database
-    run sudo cp "${SERVICE_FILE}" "/etc/systemd/system/${SERVICE_NAME}.service"
-    systemctl_run daemon-reload
-    systemctl_run enable "${SERVICE_NAME}"
+    ensure_systemd_service "${SERVICE_NAME}" "${SERVICE_FILE}"
     systemctl_run restart "${SERVICE_NAME}"
     systemctl_run status "${SERVICE_NAME}" --no-pager
     ;;
   restart)
+    require_file "${ENV_FILE}"
+    ensure_systemd_service "${SERVICE_NAME}" "${SERVICE_FILE}"
     check_database
     systemctl_run restart "${SERVICE_NAME}"
     health_check "${BASE_URL}/health"

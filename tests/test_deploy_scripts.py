@@ -60,6 +60,19 @@ def test_health_check_waits_and_prints_backend_diagnostics():
     assert 'journalctl -u "${SERVICE_NAME}"' in common
 
 
+def test_restart_installs_missing_systemd_units_before_restart():
+    common = _text("common.sh")
+    backend = _text("backend.sh")
+    scheduler = _text("scheduler.sh")
+
+    assert "ensure_systemd_service()" in common
+    assert "systemctl list-unit-files" in common
+    assert 'ensure_systemd_service "${SERVICE_NAME}" "${SERVICE_FILE}"' in backend
+    assert 'ensure_systemd_service "${WORKER_SERVICE_NAME}" "${SERVICE_FILE}"' in scheduler
+    assert backend.index('ensure_systemd_service "${SERVICE_NAME}" "${SERVICE_FILE}"') < backend.index('systemctl_run restart "${SERVICE_NAME}"')
+    assert scheduler.index('ensure_systemd_service "${WORKER_SERVICE_NAME}" "${SERVICE_FILE}"') < scheduler.index('systemctl_run restart "${WORKER_SERVICE_NAME}"')
+
+
 def test_production_frontend_guard_blocks_vite_and_requires_static_bundle():
     deploy = _text("deploy.sh")
     restart = _text("restart.sh")
