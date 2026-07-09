@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "deploy" / "scripts"
+
+
+REQUIRED_SCRIPTS = {
+    "common.sh",
+    "backend.sh",
+    "frontend.sh",
+    "postgres.sh",
+    "redis.sh",
+    "nginx.sh",
+    "scheduler.sh",
+    "deploy.sh",
+    "restart.sh",
+    "logs.sh",
+}
+
+
+def _text(name: str) -> str:
+    return (SCRIPTS / name).read_text(encoding="utf-8")
+
+
+def test_devops_automation_scripts_exist_and_use_safe_shell_mode():
+    existing = {path.name for path in SCRIPTS.glob("*.sh")}
+
+    assert REQUIRED_SCRIPTS <= existing
+    for name in REQUIRED_SCRIPTS:
+        text = _text(name)
+        assert text.startswith("#!/usr/bin/env bash")
+        assert "set -euo pipefail" in text
+
+
+def test_service_scripts_source_common_helpers():
+    for name in REQUIRED_SCRIPTS - {"common.sh"}:
+        text = _text(name)
+        assert 'source "${SCRIPT_DIR}/common.sh"' in text
+
+
+def test_deploy_and_restart_validate_database_before_backend_restart():
+    deploy = _text("deploy.sh")
+    restart = _text("restart.sh")
+
+    assert deploy.index("check_database") < deploy.index('bash "${SCRIPT_DIR}/backend.sh" restart')
+    assert restart.index("check_database") < restart.index('bash "${SCRIPT_DIR}/backend.sh" restart')
+
+
+def test_scripts_do_not_hardcode_secrets_or_live_trading_enablement():
+    combined = "\n".join(_text(name) for name in REQUIRED_SCRIPTS)
+
+    forbidden = [
+        "BROKER_LIVE_ENABLED=true",
+        "QUANTGRID_ENABLE_LIVE_TRADING=true",
+        "access-token:",
+        "password=",
+        "secret=",
+    ]
+    for marker in forbidden:
+        assert marker not in combined

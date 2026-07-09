@@ -48,20 +48,22 @@ Do not commit `terraform.tfvars`. Supply `db_password`, AMI IDs, and environment
 ## Systemd
 
 ```bash
-bash deploy/scripts/install_backend_service.sh
+bash deploy/scripts/backend.sh install
+bash deploy/scripts/scheduler.sh install
 sudo systemctl status quantgrid-backend --no-pager
+sudo systemctl status quantgrid-worker --no-pager
 sudo journalctl -u quantgrid-backend -n 200 --no-pager
 ```
 
 ## Nginx
 
 ```bash
-bash deploy/scripts/deploy_frontend.sh
+bash deploy/scripts/frontend.sh deploy
 sudo apt-get update
 sudo apt-get install -y nginx certbot python3-certbot-nginx
-bash deploy/scripts/install_nginx.sh http
+bash deploy/scripts/nginx.sh install http
 sudo certbot certonly --webroot -w /var/www/certbot -d your-domain.example -d www.your-domain.example
-bash deploy/scripts/install_nginx.sh https
+bash deploy/scripts/nginx.sh install https
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -77,6 +79,20 @@ being blocked as mixed content.
 cd services/trading-service
 python -m Backend.tools.check_database
 ```
+
+The deployment scripts run the same database/schema check before backend or worker restart.
+
+## Automated Deploy Scripts
+
+```bash
+DRY_RUN=1 bash deploy/scripts/deploy.sh
+bash deploy/scripts/deploy.sh
+bash deploy/scripts/restart.sh
+bash deploy/scripts/logs.sh backend
+bash deploy/scripts/logs.sh scheduler
+```
+
+`deploy/scripts/common.sh` centralizes paths, database checks, health checks, and dry-run behavior. Keep live trading disabled by default; these scripts do not enable broker-live mode.
 
 ## Smoke Tests
 

@@ -105,3 +105,46 @@ def test_broker_status_keeps_real_money_orders_disabled(monkeypatch):
     assert status["paper_mode"] is True
     assert status["live_trading_enabled"] is False
     assert status["real_money_orders_enabled"] is False
+
+
+def test_dhan_option_chain_status_reports_data_api_failure(monkeypatch):
+    from Backend.presentation.api import broker_api, market_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "dhan")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-123456789")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "1234567890")
+    monkeypatch.setattr(broker_api, "check_dhan_profile", lambda: {"connected": True, "error": None})
+    monkeypatch.setattr(market_api, "_dhan_underlying", lambda symbol: (13, "IDX_I"))
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_provider_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Dhan option-chain API rejected the request without an error message.")),
+    )
+
+    status = broker_api._dhan_option_chain_readiness("NIFTY")
+
+    assert status["profile_connected"] is True
+    assert status["option_chain_access"] is False
+    assert status["data_api_connected"] is False
+    assert "Data APIs" in status["suggested_actions"][0]
+    assert "without an error message" in status["message"]
+
+
+def test_dhan_option_chain_status_reports_expiry_success(monkeypatch):
+    from Backend.presentation.api import broker_api, market_api
+
+    monkeypatch.setattr(broker_api, "check_dhan_profile", lambda: {"connected": True, "error": None})
+    monkeypatch.setattr(market_api, "_dhan_underlying", lambda symbol: (13, "IDX_I"))
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_provider_payload",
+        lambda path, body: {"status": "success", "data": {"data": ["2026-07-30"]}},
+    )
+
+    status = broker_api._dhan_option_chain_readiness("NIFTY")
+
+    assert status["profile_connected"] is True
+    assert status["option_chain_access"] is True
+    assert status["data_api_connected"] is True
+    assert status["expiry_available"] is True
+    assert status["expiry"] == "2026-07-30"

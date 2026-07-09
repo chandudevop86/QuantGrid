@@ -74,6 +74,66 @@ def _live_readiness(settings) -> dict[str, object]:
     }
 
 
+def _dhan_option_chain_readiness(symbol: str = "NIFTY") -> dict[str, object]:
+    profile = check_dhan_profile()
+    normalized = symbol.upper()
+    base = {
+        "provider": "dhan",
+        "symbol": normalized,
+        "profile_connected": bool(profile.get("connected")),
+        "profile_error": profile.get("error"),
+        "option_chain_access": False,
+        "data_api_connected": False,
+        "expiry_available": False,
+        "expiry": None,
+        "message": "",
+        "suggested_actions": [],
+    }
+    if not profile.get("connected"):
+        return base | {
+            "message": "Dhan profile check is not connected; fix client ID/access token first.",
+            "suggested_actions": ["Open Dhan Login and save a valid access token.", "Confirm QUANTGRID_BROKER_CLIENT_ID matches the token account."],
+        }
+
+    try:
+        from Backend.presentation.api import market_api
+
+        security_id, exchange_segment = market_api._dhan_underlying(normalized)
+        expiry_payload = market_api._dhan_option_provider_payload(
+            "optionchain/expirylist",
+            {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment},
+        )
+        expiries = market_api._dhan_expiry_values(expiry_payload)
+        expiry = next((str(item) for item in expiries if item), None)
+        if not expiry:
+            return base | {
+                "profile_connected": True,
+                "data_api_connected": True,
+                "message": "Dhan Data API responded, but no option-chain expiry was returned.",
+                "suggested_actions": ["Verify NIFTY underlying security ID and exchange segment configuration.", "Retry during market hours."],
+            }
+        return base | {
+            "profile_connected": True,
+            "option_chain_access": True,
+            "data_api_connected": True,
+            "expiry_available": True,
+            "expiry": expiry,
+            "message": "Dhan profile and option-chain Data API checks passed.",
+            "suggested_actions": [],
+        }
+    except Exception as exc:
+        return base | {
+            "profile_connected": True,
+            "message": str(exc),
+            "suggested_actions": [
+                "Verify Dhan Data APIs / Option Chain are enabled for this account.",
+                "Verify this server's outbound static IP is whitelisted with Dhan.",
+                "Confirm QUANTGRID_BROKER_CLIENT_ID matches the profile dhanClientId.",
+                "Refresh the Dhan access token after entitlement or IP whitelist changes.",
+            ],
+        }
+
+
 def _env_file_path() -> Path:
     return Path(__file__).resolve().parents[3] / ".env"
 
@@ -143,6 +203,14 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
         and not status["circuit_breaker"].get("active")
     )
     return status
+
+
+@router.get("/dhan/option-chain/status")
+def dhan_option_chain_status(
+    symbol: str = "NIFTY",
+    _role: str = Depends(require_roles("admin", "developer", "trader", "ops")),
+):
+    return _dhan_option_chain_readiness(symbol)
 
 
 @router.post("/dhan/login")
