@@ -4,10 +4,21 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_backtest_store(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKTEST_JOB_STORE_DB_FILE", str(tmp_path / "backtest_jobs.sqlite3"))
+    from Backend.application import backtest_job_store
+
+    backtest_job_store.DB_FILE = tmp_path / "backtest_jobs.sqlite3"
+    yield
 
 
 def _fake_result(strategy: str) -> dict:
@@ -55,6 +66,25 @@ def test_backtest_job_completes_with_ranked_partial_results(monkeypatch):
     assert finished["result"]["best_strategy"] == "breakout"
     assert len(finished["partial_results"]) == 2
     assert finished["message"] == "Backtest completed successfully."
+
+
+def test_backtest_job_can_be_read_after_memory_cache_is_cleared(monkeypatch):
+    from Backend.application import backtest_jobs
+
+    backtest_jobs.reset_backtest_jobs_for_tests()
+    monkeypatch.setattr(backtest_jobs, "backtesting_module", lambda payload: _fake_result(payload["strategy_name"]))
+
+    started = backtest_jobs.start_backtest_job({"symbol": "NIFTY", "strategies": ["amd"], "expected_seconds": 5})
+    finished = _wait_for(lambda: backtest_jobs.get_backtest_job(started["job_id"]) if backtest_jobs.get_backtest_job(started["job_id"])["status"] == "COMPLETED" else None)
+
+    with backtest_jobs._LOCK:
+        backtest_jobs._JOBS.clear()
+
+    reloaded = backtest_jobs.get_backtest_job(finished["job_id"])
+
+    assert reloaded["status"] == "COMPLETED"
+    assert reloaded["result"]["best_strategy"] == "amd"
+    assert reloaded["partial_results"] == finished["partial_results"]
 
 
 def test_backtest_job_reports_timeout_without_losing_partial_results(monkeypatch):

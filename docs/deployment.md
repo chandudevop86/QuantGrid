@@ -59,6 +59,7 @@ sudo journalctl -u quantgrid-backend -n 200 --no-pager
 
 ```bash
 bash deploy/scripts/frontend.sh deploy
+bash deploy/scripts/production_frontend.sh stop-vite
 sudo apt-get update
 sudo apt-get install -y nginx certbot python3-certbot-nginx
 bash deploy/scripts/nginx.sh install http
@@ -66,12 +67,15 @@ sudo certbot certonly --webroot -w /var/www/certbot -d your-domain.example -d ww
 bash deploy/scripts/nginx.sh install https
 sudo nginx -t
 sudo systemctl reload nginx
+bash deploy/scripts/production_frontend.sh check
 ```
 
 The HTTPS config redirects all HTTP traffic to HTTPS after ACME challenges and sets HSTS, X-Frame-Options,
 X-Content-Type-Options, and Referrer-Policy headers. Production browsers should show a secure lock icon.
 Do not point a production browser session at `http://<server-ip>:8000`; HTTPS frontends cannot call HTTP APIs without
 being blocked as mixed content.
+Do not run Vite (`npm run dev`) as the public production frontend. Production must serve the built `apps/frontend/dist`
+bundle from Nginx at `/var/www/quantgrid`.
 
 ## Database Check
 
@@ -93,6 +97,8 @@ bash deploy/scripts/logs.sh scheduler
 ```
 
 `deploy/scripts/common.sh` centralizes paths, database checks, health checks, and dry-run behavior. Keep live trading disabled by default; these scripts do not enable broker-live mode.
+Health checks wait up to 60 seconds by default (`HEALTH_RETRIES=30`, `HEALTH_SLEEP_SECONDS=2`) and print backend
+`systemctl status` plus recent journal logs if port `8000` never becomes ready.
 
 ## Smoke Tests
 

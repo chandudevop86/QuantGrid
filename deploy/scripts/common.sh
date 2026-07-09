@@ -8,6 +8,8 @@ FRONTEND_DIR="${FRONTEND_DIR:-${APP_DIR}/apps/frontend}"
 TRADING_SERVICE_DIR="${TRADING_SERVICE_DIR:-${APP_DIR}/services/trading-service}"
 WEB_ROOT="${WEB_ROOT:-/var/www/quantgrid}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
+HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
+HEALTH_SLEEP_SECONDS="${HEALTH_SLEEP_SECONDS:-2}"
 
 log() {
   printf '[quantgrid] %s\n' "$*"
@@ -56,8 +58,27 @@ check_database() {
 
 health_check() {
   local url="${1:-${BASE_URL}/health}"
+  local attempts="${2:-${HEALTH_RETRIES}}"
+  local sleep_seconds="${3:-${HEALTH_SLEEP_SECONDS}}"
+  local attempt
   log "Checking ${url}"
-  run curl -fsS "${url}"
+  for attempt in $(seq 1 "${attempts}"); do
+    if run curl -fsS "${url}" >/dev/null; then
+      log "Health check passed: ${url}"
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${attempts}" ]]; then
+      log "Backend not ready yet (${attempt}/${attempts}); waiting ${sleep_seconds}s"
+      sleep "${sleep_seconds}"
+    fi
+  done
+
+  echo "Backend health check failed after ${attempts} attempts: ${url}" >&2
+  echo "Service status:" >&2
+  sudo systemctl status "${SERVICE_NAME}" --no-pager >&2 || true
+  echo "Recent backend logs:" >&2
+  sudo journalctl -u "${SERVICE_NAME}" -n "${HEALTH_LOG_LINES:-120}" --no-pager >&2 || true
+  return 1
 }
 
 systemctl_run() {

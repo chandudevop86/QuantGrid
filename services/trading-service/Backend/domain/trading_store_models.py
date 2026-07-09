@@ -16,6 +16,17 @@ class JobRecord(Base):
     job_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class BacktestJobRecord(Base):
+    __tablename__ = "backtest_jobs"
+
+    job_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    job_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class MarketPriceTickRecord(Base):
     __tablename__ = "market_price_ticks"
 

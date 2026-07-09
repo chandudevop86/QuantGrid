@@ -39,6 +39,32 @@ function hasBacktestTrades(backtest: any) {
   return Number(backtest?.metrics?.total_trades ?? 0) > 0;
 }
 
+function emptyBacktest(message = "Backtest has been queued and will start shortly.") {
+  return {
+    metrics: { total_trades: 0, win_rate: 0, pnl: 0, sharpe_ratio: 0 },
+    equity_curve: [],
+    job_status: "QUEUED",
+    job_message: message,
+    progress_pct: 0,
+  };
+}
+
+function backtestFromJob(job: any) {
+  const run = job?.result?.runs?.[0] ?? job?.partial_results?.[0] ?? {};
+  return {
+    ...run,
+    metrics: run?.metrics ?? { total_trades: 0, win_rate: 0, pnl: 0, sharpe_ratio: 0 },
+    equity_curve: run?.equity_curve ?? [],
+    job_status: job?.status,
+    job_message: job?.message,
+    progress_pct: job?.progress_pct ?? 0,
+  };
+}
+
+function isBacktestActive(job: any) {
+  return ["QUEUED", "RUNNING", "TIMEOUT"].includes(String(job?.status ?? ""));
+}
+
 export default function ProfessionalSignals() {
   const [signals, setSignals] = useState<any>(null);
   const [trades, setTrades] = useState<any[]>([]);
@@ -54,22 +80,22 @@ export default function ProfessionalSignals() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setBacktest(emptyBacktest());
     const calls: Array<[string, Promise<any>]> = [
       ["signals", api.latestSignals()],
       ["trade journal", api.tradeJournal()],
       ["risk engine", api.riskEngine()],
-      ["backtest", api.runBacktestingModule({ symbol: "NIFTY", strategy_name: backtestStrategy, min_score: 0 })],
       ["signal audit", api.signalsAudit()],
     ];
     Promise.allSettled(calls.map(([, promise]) => promise))
-      .then(([signalResult, journalResult, riskResult, backtestResult, auditResult]) => {
+      .then(([signalResult, journalResult, riskResult, auditResult]) => {
         if (cancelled) return;
         // Track WHICH calls failed and why, instead of silently discarding the reason. A
         // fallback "no data" object looks identical in the UI whether the backend legitimately
         // has nothing to report or the request actually errored (401/500/network failure) --
         // previously that distinction was invisible without opening browser devtools.
         const failures: string[] = [];
-        [signalResult, journalResult, riskResult, backtestResult, auditResult].forEach((result, index) => {
+        [signalResult, journalResult, riskResult, auditResult].forEach((result, index) => {
           if (result.status === "rejected") {
             const [label] = calls[index];
             const reason = result.reason?.response?.status
@@ -83,19 +109,34 @@ export default function ProfessionalSignals() {
         const signalData = signalResult.status === "fulfilled" ? signalResult.value : { active_signals: [], rejected_signals: [], stale_signals: [], message: "Signals unavailable." };
         const journalData = journalResult.status === "fulfilled" ? journalResult.value : { recent_trades: [], total_trades: 0, win_rate: 0, pnl: 0 };
         const riskData = riskResult.status === "fulfilled" ? riskResult.value : { summary: { trades_today: 0, daily_pnl: 0 } };
-        const backtestData = backtestResult.status === "fulfilled" ? backtestResult.value : { metrics: { total_trades: 0, win_rate: 0, pnl: 0, sharpe_ratio: 0 }, equity_curve: [] };
         const auditData = auditResult.status === "fulfilled" ? auditResult.value : { strategies: [], lifecycle_totals: {} };
         setSignals(signalData);
         setJournal(journalData);
         setTrades(Array.isArray(journalData?.recent_trades) ? journalData.recent_trades : []);
         setRisk(riskData?.summary ?? riskData);
-        setBacktest(backtestData);
         setAudit(auditData);
         setError(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
+    api.startBacktest({ symbol: "NIFTY", strategies: [backtestStrategy], min_score: 0, expected_seconds: 45 })
+      .then(function poll(job: any): any {
+        if (cancelled) return null;
+        setBacktest(backtestFromJob(job));
+        if (!isBacktestActive(job)) return job;
+        return new Promise((resolve) => window.setTimeout(resolve, 2500))
+          .then(() => api.backtestJob(job.job_id))
+          .then(poll);
+      })
+      .catch((reason) => {
+        if (cancelled) return;
+        const detail = reason?.response?.status ? `HTTP ${reason.response.status}` : reason?.message || "request failed";
+        setPartialErrors((items) => [...items, `backtest (${detail})`]);
+        setBacktest(emptyBacktest("Backtest is unavailable right now."));
+      });
+
     return () => {
       cancelled = true;
     };
@@ -260,8 +301,9 @@ export default function ProfessionalSignals() {
               <div className="form-panel-header">
                 <div>
                   <h2>Backtest Metrics</h2>
-                  <p>{backtestStrategy.toUpperCase()} / NIFTY / 1m</p>
+                  <p>{backtest?.job_message ?? `${backtestStrategy.toUpperCase()} / NIFTY / 1m`}</p>
                 </div>
+                <span className="status-pill">{backtest?.job_status ?? "QUEUED"} {Math.round(Number(backtest?.progress_pct ?? 0))}%</span>
               </div>
               <div className="signal-summary">
                 <span>

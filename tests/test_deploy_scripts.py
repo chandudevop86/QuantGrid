@@ -18,6 +18,7 @@ REQUIRED_SCRIPTS = {
     "deploy.sh",
     "restart.sh",
     "logs.sh",
+    "production_frontend.sh",
 }
 
 
@@ -47,6 +48,30 @@ def test_deploy_and_restart_validate_database_before_backend_restart():
 
     assert deploy.index("check_database") < deploy.index('bash "${SCRIPT_DIR}/backend.sh" restart')
     assert restart.index("check_database") < restart.index('bash "${SCRIPT_DIR}/backend.sh" restart')
+
+
+def test_health_check_waits_and_prints_backend_diagnostics():
+    common = _text("common.sh")
+
+    assert "HEALTH_RETRIES" in common
+    assert "Backend not ready yet" in common
+    assert "Backend health check failed after" in common
+    assert 'systemctl status "${SERVICE_NAME}"' in common
+    assert 'journalctl -u "${SERVICE_NAME}"' in common
+
+
+def test_production_frontend_guard_blocks_vite_and_requires_static_bundle():
+    deploy = _text("deploy.sh")
+    restart = _text("restart.sh")
+    guard = _text("production_frontend.sh")
+
+    assert 'bash "${SCRIPT_DIR}/production_frontend.sh" stop-vite' in deploy
+    assert 'bash "${SCRIPT_DIR}/production_frontend.sh" check' in deploy
+    assert 'bash "${SCRIPT_DIR}/production_frontend.sh" check' in restart
+    assert "/@vite/client" in guard
+    assert "/src/main" in guard
+    assert '"/assets/"' in guard
+    assert "Production must use Nginx static assets, not Vite." in guard
 
 
 def test_scripts_do_not_hardcode_secrets_or_live_trading_enablement():

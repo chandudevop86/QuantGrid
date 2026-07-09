@@ -54,6 +54,7 @@ pytest-cache-files-*/
 tmp_pytest_run/
 tmp/
 cover/
+*.rej
 
 # Translations
 *.mo

@@ -8,6 +8,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from Backend.application.backtest_job_store import (
+    clear_backtest_jobs_for_tests,
+    create_backtest_job,
+    get_backtest_job_record,
+    list_backtest_job_records,
+    update_backtest_job_record,
+)
 from Backend.application.quant_modules import backtesting_module
 
 
@@ -16,6 +23,7 @@ DEFAULT_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversi
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="quantgrid-backtest")
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}
+_RECOVERED = False
 
 
 def _utc_now() -> str:
@@ -43,6 +51,7 @@ class BacktestJob:
 
 
 def start_backtest_job(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    _ensure_recovered_jobs()
     payload = payload or {}
     strategies = _normalize_strategies(payload.get("strategies"))
     job = BacktestJob(
@@ -54,20 +63,25 @@ def start_backtest_job(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     )
     with _LOCK:
         _JOBS[job.job_id] = job
+        create_backtest_job(_job_to_record(job), job.payload)
         snapshot = _job_snapshot(job)
     _EXECUTOR.submit(_run_backtest_job, job.job_id)
     return snapshot
 
 
 def get_backtest_job(job_id: str) -> dict[str, Any] | None:
+    _ensure_recovered_jobs()
     with _LOCK:
-        job = _JOBS.get(job_id)
+        record = get_backtest_job_record(job_id)
+        job = _job_from_record(record) if record else _JOBS.get(job_id)
         return _job_snapshot(job) if job else None
 
 
 def cancel_backtest_job(job_id: str) -> dict[str, Any] | None:
+    _ensure_recovered_jobs()
     with _LOCK:
-        job = _JOBS.get(job_id)
+        record = get_backtest_job_record(job_id)
+        job = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
         if job is None:
             return None
         job.cancel_requested = True
@@ -75,39 +89,50 @@ def cancel_backtest_job(job_id: str) -> dict[str, Any] | None:
             job.status = "CANCELLED"
             job.completed_at = _utc_now()
             job.updated_at = job.completed_at
+        _JOBS[job.job_id] = job
+        _persist_job(job)
         return _job_snapshot(job)
 
 
 def list_backtest_jobs(limit: int = 20) -> list[dict[str, Any]]:
-    with _LOCK:
-        jobs = sorted(_JOBS.values(), key=lambda item: item.created_at, reverse=True)
-        return [_job_snapshot(job) for job in jobs[: max(1, min(int(limit), 100))]]
+    _ensure_recovered_jobs()
+    records = list_backtest_job_records(limit=max(1, min(int(limit), 100)))
+    return [_job_snapshot(_job_from_record(record)) for record in records]
 
 
 def reset_backtest_jobs_for_tests() -> None:
+    global _RECOVERED
     with _LOCK:
         _JOBS.clear()
+        clear_backtest_jobs_for_tests()
+        _RECOVERED = True
 
 
 def _run_backtest_job(job_id: str) -> None:
     with _LOCK:
-        job = _JOBS.get(job_id)
+        record = get_backtest_job_record(job_id)
+        job = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
         if job is None or job.cancel_requested:
             return
+        _JOBS[job.job_id] = job
         job.status = "RUNNING"
-        job.started_at = _utc_now()
+        job.started_at = job.started_at or _utc_now()
+        job.completed_at = None
         job.updated_at = job.started_at
+        _persist_job(job)
 
     try:
-        for strategy in list(job.strategies):
+        completed = {str(run.get("strategy")) for run in job.partial_results}
+        for strategy in [item for item in list(job.strategies) if item not in completed]:
             with _LOCK:
-                current = _JOBS.get(job_id)
+                record = get_backtest_job_record(job_id)
+                current = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
                 if current is None or current.cancel_requested:
                     return
+                _JOBS[current.job_id] = current
                 current.current_strategy = strategy
                 current.updated_at = _utc_now()
-                if _elapsed_seconds(current) > current.expected_seconds:
-                    current.status = "TIMEOUT"
+                _persist_job(current)
 
             result = backtesting_module(_strategy_payload(job.payload, strategy))
             metrics = result.get("metrics", {})
@@ -120,37 +145,107 @@ def _run_backtest_job(job_id: str) -> None:
                 "recent_outcomes": result.get("recent_outcomes", []),
             }
             with _LOCK:
-                current = _JOBS.get(job_id)
+                record = get_backtest_job_record(job_id)
+                current = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
                 if current is None:
                     return
+                _JOBS[current.job_id] = current
                 current.partial_results.append(run)
                 current.completed_strategies = len(current.partial_results)
                 current.updated_at = _utc_now()
                 if current.cancel_requested:
                     current.status = "CANCELLED"
                     current.completed_at = current.updated_at
+                    _persist_job(current)
                     return
                 if _elapsed_seconds(current) > current.expected_seconds:
                     current.status = "TIMEOUT"
+                _persist_job(current)
 
         with _LOCK:
-            current = _JOBS.get(job_id)
+            record = get_backtest_job_record(job_id)
+            current = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
             if current is None:
                 return
+            _JOBS[current.job_id] = current
             current.result = _comparison_result(current)
             current.status = "CANCELLED" if current.cancel_requested else "COMPLETED"
             current.current_strategy = None
             current.completed_at = _utc_now()
             current.updated_at = current.completed_at
+            _persist_job(current)
     except Exception as exc:
         with _LOCK:
-            current = _JOBS.get(job_id)
+            record = get_backtest_job_record(job_id)
+            current = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
             if current is None:
                 return
+            _JOBS[current.job_id] = current
             current.status = "FAILED"
             current.error = _friendly_error(exc)
             current.completed_at = _utc_now()
             current.updated_at = current.completed_at
+            _persist_job(current)
+
+
+def _ensure_recovered_jobs() -> None:
+    global _RECOVERED
+    with _LOCK:
+        if _RECOVERED:
+            return
+        records = list_backtest_job_records(limit=100)
+        for record in records:
+            job = _job_from_record(record)
+            if job.status in {"QUEUED", "RUNNING", "TIMEOUT"} and not job.cancel_requested and job.completed_strategies < job.total_strategies:
+                _JOBS[job.job_id] = job
+                _EXECUTOR.submit(_run_backtest_job, job.job_id)
+        _RECOVERED = True
+
+
+def _persist_job(job: BacktestJob) -> None:
+    update_backtest_job_record(job.job_id, _job_to_record(job))
+
+
+def _job_to_record(job: BacktestJob) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "payload": job.payload,
+        "strategies": list(job.strategies),
+        "status": job.status,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "started_at": job.started_at,
+        "completed_at": job.completed_at,
+        "current_strategy": job.current_strategy,
+        "completed_strategies": job.completed_strategies,
+        "total_strategies": job.total_strategies,
+        "partial_results": list(job.partial_results),
+        "result": job.result,
+        "error": job.error,
+        "cancel_requested": job.cancel_requested,
+        "expected_seconds": job.expected_seconds,
+    }
+
+
+def _job_from_record(record: dict[str, Any]) -> BacktestJob:
+    return BacktestJob(
+        job_id=str(record["job_id"]),
+        payload=dict(record.get("payload") or {}),
+        strategies=list(record.get("strategies") or []),
+        status=str(record.get("status") or "QUEUED"),
+        created_at=str(record.get("created_at") or _utc_now()),
+        updated_at=str(record.get("updated_at") or _utc_now()),
+        started_at=record.get("started_at"),
+        completed_at=record.get("completed_at"),
+        current_strategy=record.get("current_strategy"),
+        completed_strategies=int(record.get("completed_strategies") or 0),
+        total_strategies=int(record.get("total_strategies") or len(record.get("strategies") or [])),
+        partial_results=list(record.get("partial_results") or []),
+        result=record.get("result"),
+        error=record.get("error"),
+        cancel_requested=bool(record.get("cancel_requested")),
+        expected_seconds=float(record.get("expected_seconds") or 45.0),
+    )
 
 
 def _comparison_result(job: BacktestJob) -> dict[str, Any]:

@@ -30,6 +30,7 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'quantgrid.sqlite3'}")
     monkeypatch.setenv("MARKET_DATA_DB_FILE", str(tmp_path / "market.sqlite3"))
     monkeypatch.setenv("JOB_STORE_DB_FILE", str(tmp_path / "jobs.sqlite3"))
+    monkeypatch.setenv("BACKTEST_JOB_STORE_DB_FILE", str(tmp_path / "backtest_jobs.sqlite3"))
     monkeypatch.setenv("PAPER_TRADE_DB_FILE", str(tmp_path / "paper_trades.sqlite3"))
     monkeypatch.setenv("POSITION_STORE_DB_FILE", str(tmp_path / "positions.sqlite3"))
     monkeypatch.setenv("KILL_SWITCH_DB_FILE", str(tmp_path / "risk_state.sqlite3"))

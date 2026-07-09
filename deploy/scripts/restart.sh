@@ -7,4 +7,5 @@ source "${SCRIPT_DIR}/common.sh"
 check_database
 bash "${SCRIPT_DIR}/backend.sh" restart
 bash "${SCRIPT_DIR}/scheduler.sh" restart
+bash "${SCRIPT_DIR}/production_frontend.sh" check
 health_check "${BASE_URL}/health"
