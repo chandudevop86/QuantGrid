@@ -176,6 +176,34 @@ def test_risk_engine_allows_valid_paper_order(monkeypatch):
     assert result.allowed is True
 
 
+def test_order_risk_blocks_wide_spread_from_signal_metadata(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status())
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    signal = _signal(metadata={"quantity": 1, "score": 20, "validation_passed": True, "spread_bps": 60})
+
+    result = risk_gate.validate_order_risk(signal, execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "SPREAD_TOO_WIDE"
+
+
+def test_order_risk_blocks_high_impact_news_from_signal_metadata(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status())
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    signal = _signal(metadata={"quantity": 1, "score": 20, "validation_passed": True, "high_impact_news": True})
+
+    result = risk_gate.validate_order_risk(signal, execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "NEWS_RISK"
+
+
 def test_live_guardrail_rejects_live_order_on_http():
     from Backend.presentation.api.execution import _live_guardrail_failure
 

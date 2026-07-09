@@ -58,6 +58,7 @@ class OrderManagementService:
         local_order_id = str(context.get("local_order_id") or f"OMS-{uuid4().hex[:12]}")
         audit: list[dict[str, Any]] = []
         order_key = self._order_key(signal)
+        existing_active_order_keys = set(self._active_order_keys)
 
         # Reserve the order key BEFORE running risk validation, not after. Reserving it
         # after the check leaves a window where two concurrent submissions for the same
@@ -65,7 +66,7 @@ class OrderManagementService:
         # defeating the duplicate-order guard entirely (classic check-then-act race).
         if order_key in self._active_order_keys:
             reasons = [f"Duplicate order suppressed: '{order_key}' already has an active order in flight."]
-            risk = RiskValidationResult(allowed=False, reasons=reasons, risk_score=0, blocked_by=["duplicate_order_key"], warnings=[])
+            risk = RiskValidationResult(allowed=False, reasons=reasons, risk_score=0, blocked_by=["DUPLICATE_TRADE"], warnings=[])
             self._audit(audit, "duplicate_suppressed", local_order_id, {"status": "rejected", "order_key": order_key})
             return self._result(local_order_id, "rejected", None, risk, 0, reasons, [], audit)
         self._active_order_keys.add(order_key)
@@ -85,7 +86,7 @@ class OrderManagementService:
                     signal,
                     {
                         **context,
-                        "active_trade_keys": [*context.get("active_trade_keys", []), *self._active_order_keys],
+                        "active_trade_keys": [*context.get("active_trade_keys", []), *existing_active_order_keys],
                     },
                 )
             self._audit(audit, "risk_checked", local_order_id, {"allowed": risk.allowed, "blocked_by": risk.blocked_by})

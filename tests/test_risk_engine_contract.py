@@ -150,3 +150,55 @@ def test_risk_engine_can_warn_without_blocking_low_liquidity():
     assert result.allowed is True
     assert result.blocked_by == []
     assert any("liquidity" in warning.lower() for warning in result.warnings)
+
+
+def test_risk_engine_blocks_options_execution_hazards():
+    result = RiskEngine(RiskLimits(block_expiry_day_option_buying=True)).validate(
+        _signal(metadata={"instrument_type": "CE"}),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "slippage_bps": 30,
+            "spread_bps": 50,
+            "gap_pct": 1.2,
+            "expiry_day": True,
+            "gamma": 0.12,
+            "broker_connected": False,
+        },
+    )
+
+    assert result.allowed is False
+    assert "SLIPPAGE_TOO_HIGH" in result.blocked_by
+    assert "SPREAD_TOO_WIDE" in result.blocked_by
+    assert "GAP_RISK" in result.blocked_by
+    assert "EXPIRY_DECAY_RISK" in result.blocked_by
+    assert "GAMMA_RISK" in result.blocked_by
+    assert "BROKER_DISCONNECTED" in result.blocked_by
+
+
+def test_risk_engine_blocks_news_and_holiday_risk():
+    result = RiskEngine().validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "news_impact": "HIGH",
+            "market_session": "HOLIDAY",
+        },
+    )
+
+    assert result.allowed is False
+    assert "NEWS_RISK" in result.blocked_by
+    assert "HOLIDAY_RISK" in result.blocked_by
+    assert any("news" in warning.lower() for warning in result.warnings)
+    assert any("holiday" in warning.lower() for warning in result.warnings)

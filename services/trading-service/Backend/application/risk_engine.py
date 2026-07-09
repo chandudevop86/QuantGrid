@@ -29,6 +29,13 @@ class RiskLimits:
     volatility_warning_vix: float = 18.0
     min_risk_reward: float = 1.5
     block_low_liquidity: bool = True
+    max_slippage_bps: float = 25.0
+    max_spread_bps: float = 35.0
+    max_gap_pct: float = 1.0
+    block_expiry_day_option_buying: bool = False
+    max_gamma: float = 0.08
+    block_news_risk: bool = True
+    block_holiday_trading: bool = True
 
 
 class RiskEngine:
@@ -50,6 +57,14 @@ class RiskEngine:
         self._block_if(float(context.get("market_data_age_seconds", 0)) > self.limits.stale_market_data_seconds, "STALE_MARKET_DATA", "Market data is stale.", reasons, blocked_by)
         self._block_if(float(context.get("vix", 0.0)) >= self.limits.high_vix, "HIGH_VOLATILITY", "Volatility is elevated.", reasons, blocked_by)
         self._block_if(self.limits.block_low_liquidity and self._is_low_liquidity(context), "LOW_LIQUIDITY", "Liquidity is too thin for a reliable options entry.", reasons, blocked_by)
+        self._block_if(self._slippage_bps(context) > self.limits.max_slippage_bps, "SLIPPAGE_TOO_HIGH", "Expected slippage is too high for a safe options entry.", reasons, blocked_by)
+        self._block_if(self._spread_bps(context) > self.limits.max_spread_bps, "SPREAD_TOO_WIDE", "Bid/ask spread is too wide for a safe options entry.", reasons, blocked_by)
+        self._block_if(abs(float(context.get("gap_pct", 0.0) or 0.0)) >= self.limits.max_gap_pct, "GAP_RISK", "Opening gap risk requires waiting for confirmation.", reasons, blocked_by)
+        self._block_if(self._expiry_decay_blocks(signal, context), "EXPIRY_DECAY_RISK", "Expiry-day option decay risk blocks fresh option buying.", reasons, blocked_by)
+        self._block_if(float(context.get("gamma", 0.0) or 0.0) > self.limits.max_gamma, "GAMMA_RISK", "Option gamma risk is above the configured limit.", reasons, blocked_by)
+        self._block_if(self.limits.block_news_risk and self._has_news_risk(context), "NEWS_RISK", "High-impact news risk blocks fresh entries.", reasons, blocked_by)
+        self._block_if(self.limits.block_holiday_trading and self._has_holiday_risk(context), "HOLIDAY_RISK", "Holiday or thin-session risk blocks fresh entries.", reasons, blocked_by)
+        self._block_if(context.get("broker_connected") is False, "BROKER_DISCONNECTED", "Broker connection is not healthy.", reasons, blocked_by)
         self._block_if(self._is_duplicate_trade(signal, context), "DUPLICATE_TRADE", "A similar trade is already active.", reasons, blocked_by)
         self._block_if(self._risk_reward(signal) < self.limits.min_risk_reward, "RISK_REWARD_TOO_LOW", "Risk-reward is below the minimum threshold.", reasons, blocked_by)
 
@@ -61,6 +76,18 @@ class RiskEngine:
             warnings.append("Market data is aging; confirm freshness before entry.")
         if self._is_low_liquidity(context):
             warnings.append("Option liquidity is thin; spreads and exits can slip.")
+        if 0 < self._slippage_bps(context) <= self.limits.max_slippage_bps:
+            warnings.append("Slippage estimate is present; verify execution price stays inside plan.")
+        if 0 < self._spread_bps(context) <= self.limits.max_spread_bps:
+            warnings.append("Spread estimate is present; avoid market orders if spread widens.")
+        if 0 < abs(float(context.get("gap_pct", 0.0) or 0.0)) < self.limits.max_gap_pct:
+            warnings.append("Gap risk is present; wait for confirmation if price is extended.")
+        if 0 < float(context.get("gamma", 0.0) or 0.0) <= self.limits.max_gamma:
+            warnings.append("Gamma exposure is present; size conservatively.")
+        if self._has_news_risk(context):
+            warnings.append("High-impact news risk is present; wait for post-news stabilization.")
+        if self._has_holiday_risk(context):
+            warnings.append("Holiday or thin-session risk is present; liquidity and follow-through can degrade.")
 
         risk_score = max(0, 100 - len(blocked_by) * 15 - len(warnings) * 5)
         return RiskValidationResult(
@@ -129,3 +156,34 @@ class RiskEngine:
             or ""
         ).strip().upper()
         return liquidity in {"LOW", "THIN", "WEAK", "ILLIQUID"}
+
+    @staticmethod
+    def _slippage_bps(context: dict[str, Any]) -> float:
+        return float(context.get("slippage_bps") or context.get("expected_slippage_bps") or 0.0)
+
+    @staticmethod
+    def _spread_bps(context: dict[str, Any]) -> float:
+        return float(context.get("spread_bps") or context.get("bid_ask_spread_bps") or 0.0)
+
+    def _expiry_decay_blocks(self, signal: StrategySignal, context: dict[str, Any]) -> bool:
+        if not self.limits.block_expiry_day_option_buying:
+            return False
+        if not bool(context.get("expiry_day")):
+            return False
+        instrument = str(context.get("instrument_type") or signal.metadata.get("instrument_type") or "").upper()
+        side = str(signal.side or "").upper()
+        return side == "BUY" and instrument in {"OPTION", "CE", "PE", "CALL", "PUT", "NIFTY_OPTION"}
+
+    @staticmethod
+    def _has_news_risk(context: dict[str, Any]) -> bool:
+        if bool(context.get("news_risk") or context.get("news_driven") or context.get("high_impact_news")):
+            return True
+        impact = str(context.get("news_impact") or "").strip().upper()
+        return impact in {"HIGH", "EVENT", "SHOCK", "BREAKING"}
+
+    @staticmethod
+    def _has_holiday_risk(context: dict[str, Any]) -> bool:
+        if bool(context.get("holiday_effect") or context.get("market_holiday") or context.get("thin_session")):
+            return True
+        session = str(context.get("market_session") or context.get("session_status") or "").strip().upper()
+        return session in {"HOLIDAY", "SPECIAL_SESSION", "THIN", "LOW_LIQUIDITY_SESSION"}

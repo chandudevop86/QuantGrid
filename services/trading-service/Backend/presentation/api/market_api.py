@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.market_data_service import get_market_data_service
@@ -31,6 +31,7 @@ from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan
 from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
+from Backend.application.volume_analysis import analyze_volume
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
 
 router = APIRouter(tags=["market"])
@@ -747,6 +748,45 @@ def get_option_chain(
 @router.get("/signals")
 def get_signals():
     return {"signals": []}
+
+
+@router.get("/volume-analysis")
+def get_volume_analysis(
+    symbol: str = "NIFTY",
+    timeframe: str = "1m",
+    period: str = "1d",
+    limit: int = 100,
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    candles_payload = get_candles(symbol, interval=timeframe, period=period, limit=limit, _role=_role)
+    result = analyze_volume(
+        symbol=symbol,
+        timeframe=timeframe,
+        candles=list(candles_payload.get("candles") or []),
+    ).to_dict()
+    return {
+        **result,
+        "source": candles_payload.get("source"),
+        "volume_status": candles_payload.get("volume_status"),
+        "data_quality": candles_payload.get("data_quality"),
+    }
+
+
+@router.post("/volume-analysis")
+def post_volume_analysis(
+    payload: dict[str, Any] = Body(...),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+):
+    candles = payload.get("candles")
+    if not isinstance(candles, list):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="candles must be a list of OHLCV rows.")
+    result = analyze_volume(
+        symbol=str(payload.get("symbol") or "NIFTY"),
+        timeframe=str(payload.get("timeframe") or payload.get("interval") or "1m"),
+        candles=candles,
+        delivery_data=payload.get("delivery_data") if isinstance(payload.get("delivery_data"), list) else None,
+    )
+    return result.to_dict()
 
 
 @router.get("/candles/{symbol}")

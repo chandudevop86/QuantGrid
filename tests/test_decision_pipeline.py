@@ -117,6 +117,8 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert checklist["trend"]["trend_direction"] == "UPTREND"
     assert checklist["ema"]["ema_bias"] == "BULLISH"
     assert checklist["volume"]["supports_trade"] is True
+    assert checklist["volume"]["smart_money_score"] >= 50
+    assert "volume_profile" in checklist["volume"]["details"]
     assert checklist["risk_reward"]["allowed"] is True
     assert checklist["htf"]["passed"] is True
     assert checklist["market_structure"]["latest_structure_event"] in {"BOS", "HH_HL"}
@@ -205,7 +207,7 @@ def test_decision_pipeline_prefers_no_trade_when_votes_conflict(monkeypatch):
 
 
 def test_strategy_selection_uses_registry_metadata():
-    engine = StrategyEngine()
+    engine = StrategyEngine(persist_governance=False)
     engine.configure_strategy("breakout", version="2.4.0")
 
     result = DecisionPipelineService(strategy_engine=engine).run(
@@ -236,7 +238,7 @@ def test_strategy_selection_uses_registry_metadata():
 
 
 def test_strategy_selection_ignores_disabled_registry_strategy():
-    engine = StrategyEngine()
+    engine = StrategyEngine(persist_governance=False)
     engine.configure_strategy("breakout", enabled=False, rollout_pct=0)
 
     result = DecisionPipelineService(strategy_engine=engine).run(
@@ -295,7 +297,11 @@ def test_ema_analyzer_bullish_bearish_and_weak():
 
 
 def test_volume_analyzer_confirms_breakout_and_rejects_low_volume():
-    assert analyze_volume(_bullish_candles()).supports_trade is True
+    bullish_volume = analyze_volume(_bullish_candles())
+    assert bullish_volume.supports_trade is True
+    assert bullish_volume.volume_status == "BREAKOUT_CONFIRMED"
+    assert bullish_volume.institutional_buying is True
+    assert bullish_volume.details["volume_profile"]["poc"] is not None
     low_volume = _bullish_candles()
     low_volume[-1]["volume"] = 10
     rejected = analyze_volume(low_volume)

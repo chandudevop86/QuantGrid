@@ -17,6 +17,14 @@ The central risk engine checks:
 - Stale market data
 - High volatility
 - Low option liquidity
+- Slippage estimate above limit
+- Bid/ask spread above limit
+- Gap risk above limit
+- High-impact news risk
+- Holiday or thin-session risk
+- Expiry-day option decay block, when enabled
+- Gamma risk above limit
+- Broker disconnected status
 - Duplicate trade
 - Expiry-day warning
 
@@ -42,12 +50,26 @@ Every validation returns:
 - `STALE_MARKET_DATA`
 - `HIGH_VOLATILITY`
 - `LOW_LIQUIDITY`
+- `SLIPPAGE_TOO_HIGH`
+- `SPREAD_TOO_WIDE`
+- `GAP_RISK`
+- `NEWS_RISK`
+- `HOLIDAY_RISK`
+- `EXPIRY_DECAY_RISK`
+- `GAMMA_RISK`
+- `BROKER_DISCONNECTED`
 - `DUPLICATE_TRADE`
 - `RISK_REWARD_TOO_LOW`
 
 ## Low Liquidity Rule
 
 By default, LOW, THIN, WEAK, and ILLIQUID option liquidity block new entries. This can be set to warning-only with `RiskLimits(block_low_liquidity=False)` for controlled tests or staged rollout.
+
+## Options Execution Hazards
+
+Risk 2.0 blocks fresh entries when explicit context or signal metadata shows unsafe execution assumptions: excessive slippage, wide spread, large gap, excessive gamma, or broker disconnect. Expiry-day option-buying can be promoted from warning to blocker with `RiskLimits(block_expiry_day_option_buying=True)`.
+
+High-impact news and holiday/thin-session flags block by default. Use explicit signal metadata such as `high_impact_news`, `news_impact=HIGH`, `holiday_effect`, or `market_session=HOLIDAY` so the backend, not the UI, remains the source of truth.
 
 ## Live Trading Position
 

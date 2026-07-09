@@ -137,6 +137,12 @@ def backtest_strategy(
             extra={"strategy": strategy, "symbol": symbol, "interval": interval, "error_type": exc.__class__.__name__},
         )
         candles = _sample_backtest_candles(symbol, interval)
+    if len(candles) < 12:
+        logger.warning(
+            "backtest_candle_load_insufficient",
+            extra={"strategy": strategy, "symbol": symbol, "interval": interval, "candles": len(candles)},
+        )
+        candles = _sample_backtest_candles(symbol, interval)
     candles = _filter_candles_by_date(candles, start_date, end_date)
     result = BacktestEngine().run(
         strategy=strategy,

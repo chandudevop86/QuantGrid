@@ -20,6 +20,7 @@ ORDER_STATUSES = {
 
 POSITION_CREATING_STATUSES = {"broker_submitted", "pending", "open", "partially_filled", "filled"}
 TERMINAL_STATUSES = {"filled", "cancelled", "rejected", "failed"}
+ACTIVE_STATUSES = ORDER_STATUSES - TERMINAL_STATUSES
 
 
 def utc_now() -> str:
@@ -41,6 +42,7 @@ def init_order_store() -> None:
         "trailing_stop_pct": "ALTER TABLE orders ADD COLUMN trailing_stop_pct FLOAT",
         "execution_mode": "ALTER TABLE orders ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'paper' NOT NULL",
         "broker_status": "ALTER TABLE orders ADD COLUMN broker_status VARCHAR(80)",
+        "order_key": "ALTER TABLE orders ADD COLUMN order_key VARCHAR(160)",
     }
     with engine.begin() as connection:
         for column, statement in additions.items():
@@ -56,6 +58,7 @@ def create_order(payload: dict[str, Any]) -> dict[str, Any]:
     now = utc_now()
     row = {
         "local_order_id": str(payload.get("local_order_id") or f"ORD-{uuid4().hex[:16]}"),
+        "order_key": _order_key(payload),
         "broker_order_id": payload.get("broker_order_id"),
         "symbol": str(payload.get("symbol") or "").upper(),
         "side": str(payload.get("side") or "").upper(),
@@ -87,6 +90,25 @@ def get_order(local_order_id: str) -> dict[str, Any] | None:
 
     with SessionLocal() as db:
         row = db.query(OrderRecord).filter(OrderRecord.local_order_id == local_order_id).first()
+        return _record_to_dict(row) if row else None
+
+
+def get_active_order_by_key(order_key: str) -> dict[str, Any] | None:
+    init_order_store()
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import OrderRecord
+
+    normalized = str(order_key or "").strip().upper()
+    if not normalized:
+        return None
+    with SessionLocal() as db:
+        row = (
+            db.query(OrderRecord)
+            .filter(OrderRecord.order_key == normalized)
+            .filter(OrderRecord.status.in_(sorted(ACTIVE_STATUSES)))
+            .order_by(OrderRecord.updated_at.desc(), OrderRecord.created_at.desc())
+            .first()
+        )
         return _record_to_dict(row) if row else None
 
 
@@ -167,6 +189,7 @@ def should_create_position(status: str) -> bool:
 def _record_to_dict(record: Any) -> dict[str, Any]:
     return {
         "local_order_id": record.local_order_id,
+        "order_key": getattr(record, "order_key", None),
         "broker_order_id": record.broker_order_id,
         "symbol": record.symbol,
         "side": record.side,
@@ -190,6 +213,18 @@ def _validate_status(status: str) -> str:
     if normalized not in ORDER_STATUSES:
         raise ValueError(f"unsupported order status: {status}")
     return normalized
+
+
+def _order_key(payload: dict[str, Any]) -> str | None:
+    explicit = payload.get("order_key")
+    if explicit:
+        return str(explicit).strip().upper()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    side = str(payload.get("side") or "").strip().upper()
+    strategy = str(payload.get("strategy") or payload.get("strategy_name") or "").strip().upper()
+    if symbol and side and strategy:
+        return f"{symbol}:{side}:{strategy}"
+    return None
 
 
 def _validate_execution_mode(mode: str) -> str:

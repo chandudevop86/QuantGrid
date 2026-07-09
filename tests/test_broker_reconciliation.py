@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from test_sqlalchemy_trading_stores import configure_sqlalchemy_store
 
@@ -323,3 +324,92 @@ def test_reconciliation_updates_lifecycle_order_when_broker_filled(monkeypatch):
     assert updated_order["entry_price"] == 101
     assert created_position is not None
     assert created_position["quantity"] == 25
+
+
+def test_reconciliation_recovers_stale_pre_broker_order(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+
+    init_database()
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    local_order = order_store.create_order(
+        {
+            "order_key": "NIFTY:BUY:BREAKOUT",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "status": "risk_approved",
+            "created_at": stale_at,
+            "updated_at": stale_at,
+        }
+    )
+
+    class FakeBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            raise AssertionError("stale pre-broker order should not query broker without broker id")
+
+    with SessionLocal() as db:
+        actor = User(username="ops", password_hash="hash", role="ops")
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+
+    recovered = order_store.get_order(local_order["local_order_id"])
+    assert summary["mismatches"] == 1
+    assert summary["fixed"] == 1
+    assert summary["needs_review"] == 0
+    assert recovered["status"] == "failed"
+    assert recovered["broker_status"] == "not_submitted"
+    assert order_store.get_active_order_by_key("NIFTY:BUY:BREAKOUT") is None
+
+
+def test_reconciliation_marks_ambiguous_submitted_order_without_broker_id_for_review(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+
+    init_database()
+    stale_at = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    local_order = order_store.create_order(
+        {
+            "order_key": "NIFTY:BUY:BREAKOUT",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "status": "broker_submitted",
+            "created_at": stale_at,
+            "updated_at": stale_at,
+        }
+    )
+
+    class FakeBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            raise AssertionError("ambiguous local order without broker id should not query broker")
+
+    with SessionLocal() as db:
+        actor = User(username="ops", password_hash="hash", role="ops")
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+
+    unchanged = order_store.get_order(local_order["local_order_id"])
+    assert summary["mismatches"] == 1
+    assert summary["fixed"] == 0
+    assert summary["needs_review"] == 1
+    assert unchanged["status"] == "broker_submitted"
+    assert order_store.get_active_order_by_key("NIFTY:BUY:BREAKOUT")["local_order_id"] == local_order["local_order_id"]

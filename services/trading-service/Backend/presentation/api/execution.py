@@ -16,6 +16,7 @@ from Backend.application.order_management import OrderManagementService
 from Backend.application.order_store import (
     broker_status_to_order_status,
     create_order,
+    get_active_order_by_key,
     should_create_position,
     transition_order,
 )
@@ -321,13 +322,28 @@ def _audit_order_transition(
 def _create_lifecycle_order(
     order: Any,
     *,
+    signal: StrategySignal,
     execution_mode: str,
     db: Session | None,
     request: Request | None,
     actor: User | None,
 ) -> dict[str, Any]:
+    order_key = f"{signal.symbol.upper()}:{signal.side.upper()}:{signal.strategy_name.upper()}"
+    duplicate = get_active_order_by_key(order_key)
+    if duplicate:
+        _audit_order_transition(
+            db,
+            request,
+            actor,
+            {**duplicate, "status_reason": "Duplicate active order suppressed before broker submission."},
+            duplicate.get("status", "active"),
+            {"duplicate_order_key": order_key},
+        )
+        raise ValueError(f"DUPLICATE_ACTIVE_ORDER: {duplicate['local_order_id']}")
     local_order = create_order(
         {
+            "order_key": order_key,
+            "strategy": signal.strategy_name,
             "symbol": order.symbol,
             "side": order.side,
             "quantity": order.quantity,
@@ -700,7 +716,22 @@ async def _submit_paper_signal(
         constraints,
         requested_quantity(signal),
     )
-    lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
+    try:
+        lifecycle_order = _create_lifecycle_order(order, signal=signal, execution_mode=execution_mode, db=db, request=request, actor=actor)
+    except ValueError as exc:
+        if str(exc).startswith("DUPLICATE_ACTIVE_ORDER"):
+            observe_rejected_order("duplicate_active_order", execution_mode)
+            return _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=str(exc),
+                execution_mode=execution_mode,
+                strategy_diagnostics=strategy_diagnostics,
+                extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
+            )
+        raise
     lifecycle_order = _transition_lifecycle_order(
         lifecycle_order,
         "risk_approved",

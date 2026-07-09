@@ -106,6 +106,31 @@ def test_order_store_transitions_broker_submitted_and_rejected(monkeypatch):
     assert rejected["broker_status"] == "rejected"
 
 
+def test_order_store_finds_active_duplicate_order_key(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import order_store
+
+    created = order_store.create_order(
+        {
+            "strategy": "breakout",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "paper",
+            "status": "broker_submitted",
+        }
+    )
+
+    duplicate = order_store.get_active_order_by_key("NIFTY:BUY:BREAKOUT")
+
+    assert created["order_key"] == "NIFTY:BUY:BREAKOUT"
+    assert duplicate["local_order_id"] == created["local_order_id"]
+
+    order_store.transition_order(created["local_order_id"], "filled")
+    assert order_store.get_active_order_by_key("NIFTY:BUY:BREAKOUT") is None
+
+
 def test_order_cancel_api_transitions_and_audits(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import order_store

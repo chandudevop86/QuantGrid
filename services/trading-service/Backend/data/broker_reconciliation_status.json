@@ -1,9 +1,9 @@
 {
-  "checked_orders": 1,
-  "checked_positions": 2,
+  "checked_orders": 0,
+  "checked_positions": 0,
   "errors": [],
-  "fixed": 2,
-  "last_run_at": "2026-07-02T10:50:26.633530+00:00",
-  "mismatches": 2,
-  "needs_review": 0
+  "fixed": 0,
+  "last_run_at": "2026-07-09T04:14:36.812679+00:00",
+  "mismatches": 1,
+  "needs_review": 1
 }

@@ -98,6 +98,20 @@ def validate_order_risk(
             "vix": signal.metadata.get("vix", 0),
             "liquidity": signal.metadata.get("liquidity") or signal.metadata.get("liquidity_status"),
             "expiry_day": signal.metadata.get("expiry_day", False),
+            "instrument_type": signal.metadata.get("instrument_type"),
+            "slippage_bps": signal.metadata.get("slippage_bps") or signal.metadata.get("expected_slippage_bps"),
+            "spread_bps": signal.metadata.get("spread_bps") or signal.metadata.get("bid_ask_spread_bps"),
+            "gap_pct": signal.metadata.get("gap_pct"),
+            "gamma": signal.metadata.get("gamma"),
+            "news_risk": signal.metadata.get("news_risk"),
+            "news_driven": signal.metadata.get("news_driven"),
+            "high_impact_news": signal.metadata.get("high_impact_news"),
+            "news_impact": signal.metadata.get("news_impact"),
+            "holiday_effect": signal.metadata.get("holiday_effect"),
+            "market_holiday": signal.metadata.get("market_holiday"),
+            "thin_session": signal.metadata.get("thin_session"),
+            "market_session": signal.metadata.get("market_session"),
+            "broker_connected": signal.metadata.get("broker_connected"),
         },
     )
 
@@ -153,6 +167,8 @@ def validate_order_risk(
         return decision(False, "MAX_OPEN_POSITIONS_EXCEEDED")
     if not central_decision.accepted:
         return decision(False, central_decision.reason)
+    if not risk_engine_result.allowed:
+        return decision(False, risk_engine_result.blocked_by[0])
 
     if execution_mode == "live" and not validation.valid_for_execution:
         return decision(

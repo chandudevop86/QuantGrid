@@ -12,3 +12,4 @@ Rules for QuantGrid development:
 - Trader-facing navigation stays limited to Dashboard, Market, Signals, Paper Trading, History, and Settings.
 - Advanced pages remain available through Developer Mode route permissions for admin/developer users.
 - Strategy selection must read plugin metadata from `StrategyEngine.registry()` instead of maintaining duplicate version maps.
+- Strategy governance changes must persist through `Backend/application/strategy_governance_store.py`; do not keep rollout/version state only in memory.

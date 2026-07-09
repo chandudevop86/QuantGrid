@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from Backend.application.decision_engine import DecisionEngine, DecisionInputs, TradingDecision
 from Backend.application.recommendation_store import recommendation_metrics, record_recommendation
+from Backend.application.volume_analysis import analyze_volume as analyze_institutional_volume
 from Backend.domain.engine.strategy_engine import StrategyEngine
 
 
@@ -92,6 +94,13 @@ class VolumeAnalysis:
     volume_strength: int
     supports_trade: bool
     reason: str
+    institutional_buying: bool = False
+    institutional_selling: bool = False
+    relative_volume: float = 0.0
+    smart_money_score: int = 0
+    volume_confidence: int = 0
+    signal: str = "NO TRADE"
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +108,13 @@ class VolumeAnalysis:
             "volume_strength": self.volume_strength,
             "supports_trade": self.supports_trade,
             "reason": self.reason,
+            "institutional_buying": self.institutional_buying,
+            "institutional_selling": self.institutional_selling,
+            "relative_volume": self.relative_volume,
+            "smart_money_score": self.smart_money_score,
+            "volume_confidence": self.volume_confidence,
+            "signal": self.signal,
+            "details": self.details,
         }
 
 
@@ -496,6 +512,63 @@ def analyze_ema(candles: list[dict[str, Any]]) -> EMAAnalysis:
 def analyze_volume(candles: list[dict[str, Any]]) -> VolumeAnalysis:
     if len(candles) < 6:
         return VolumeAnalysis("LOW_DATA", 20, False, "Need more candles for volume confirmation.")
+    try:
+        institutional = analyze_institutional_volume(
+            symbol="NIFTY",
+            timeframe="pipeline",
+            candles=_candles_with_timestamps(candles),
+        ).to_dict()
+    except Exception:
+        return _legacy_volume_analysis(candles)
+    status = "NORMAL"
+    if institutional["breakout_confirmation"]:
+        status = "BREAKOUT_CONFIRMED"
+    elif institutional["breakdown_confirmation"]:
+        status = "BREAKDOWN_CONFIRMED"
+    elif institutional["volume_spike"]:
+        status = "VOLUME_SPIKE"
+    elif institutional["relative_volume"] < 0.8:
+        status = "LOW_VOLUME_MOVE"
+
+    supports_trade = bool(
+        institutional["volume_confidence"] >= 45
+        and institutional["signal"] in {"BUY", "SELL", "WAIT"}
+        and status != "LOW_VOLUME_MOVE"
+    )
+    return VolumeAnalysis(
+        status,
+        int(institutional["volume_confidence"]),
+        supports_trade,
+        str(institutional["reason"]),
+        institutional_buying=bool(institutional["institutional_buying"] or institutional["breakout_confirmation"]),
+        institutional_selling=bool(institutional["institutional_selling"] or institutional["breakdown_confirmation"]),
+        relative_volume=float(institutional["relative_volume"]),
+        smart_money_score=int(institutional["smart_money_score"]),
+        volume_confidence=int(institutional["volume_confidence"]),
+        signal=str(institutional["signal"]),
+        details={
+            "current_volume": institutional["current_volume"],
+            "average_volume_20": institutional["average_volume_20"],
+            "average_volume_50": institutional["average_volume_50"],
+            "volume_ratio": institutional["volume_ratio"],
+            "volume_trend": institutional["volume_trend"],
+            "delivery_percentage": institutional["delivery_percentage"],
+            "volume_spike": institutional["volume_spike"],
+            "breakout_confirmation": institutional["breakout_confirmation"],
+            "breakdown_confirmation": institutional["breakdown_confirmation"],
+            "accumulation": institutional["accumulation"],
+            "distribution": institutional["distribution"],
+            "obv": institutional["obv"],
+            "vwap": institutional["vwap"],
+            "cmf": institutional["cmf"],
+            "ad_line": institutional["ad_line"],
+            "volume_profile": institutional["volume_profile"],
+            "ai_summary": institutional["ai_summary"],
+        },
+    )
+
+
+def _legacy_volume_analysis(candles: list[dict[str, Any]]) -> VolumeAnalysis:
     volumes = [_num(candle.get("volume")) for candle in candles[-21:]]
     latest_volume = volumes[-1]
     average = sum(volumes[:-1]) / max(len(volumes) - 1, 1)
@@ -512,6 +585,16 @@ def analyze_volume(candles: list[dict[str, Any]]) -> VolumeAnalysis:
     if latest_volume < average * 0.8:
         return VolumeAnalysis("LOW_VOLUME_MOVE", 35, False, "Volume does not confirm the move.")
     return VolumeAnalysis("NORMAL", 55, True, "Volume is near average.")
+
+
+def _candles_with_timestamps(candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    normalized: list[dict[str, Any]] = []
+    for index, candle in enumerate(candles):
+        row = dict(candle)
+        row.setdefault("timestamp", (start + timedelta(minutes=index)).isoformat())
+        normalized.append(row)
+    return normalized
 
 
 def analyze_support_resistance(candles: list[dict[str, Any]]) -> SupportResistanceAnalysis:
@@ -905,7 +988,10 @@ def _strategy_selection_engine(
         if not regime_match:
             score -= 40
             reasons.append(f"Registry does not support {current_regime} regime.")
-        if strategy in allowed or _strategy_family(strategy) in allowed:
+        if strategy in allowed:
+            score += 15
+            reasons.append("Exact strategy is allowed by market regime.")
+        elif _strategy_family(strategy) in allowed:
             score += 12
             reasons.append("Allowed by market regime.")
         if strategy in blocked or _strategy_family(strategy) in blocked:

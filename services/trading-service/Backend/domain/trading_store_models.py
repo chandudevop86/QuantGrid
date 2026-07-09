@@ -98,6 +98,7 @@ class OrderRecord(Base):
     __tablename__ = "orders"
 
     local_order_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    order_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     broker_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     side: Mapped[str] = mapped_column(String(10), nullable=False)

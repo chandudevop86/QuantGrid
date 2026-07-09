@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,9 @@ SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitte
 REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
 FILLED_STATUSES = {"filled", "traded", "complete", "completed", "confirmed"}
 OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
+PRE_BROKER_STALE_STATUSES = {"requested", "risk_approved"}
+AMBIGUOUS_NO_BROKER_ID_STATUSES = {"broker_submitted", "pending", "open", "partially_filled"}
+STALE_LOCAL_ORDER_MINUTES = 30
 
 
 async def reconcile_broker_state(
@@ -45,6 +48,7 @@ async def reconcile_broker_state(
         "needs_review": 0,
         "errors": [],
     }
+    _recover_stale_local_orders(summary, db, actor, request)
     local_orders = _local_orders(db)
     local_positions = list_open_positions()
 
@@ -222,6 +226,50 @@ def reconciliation_status() -> dict[str, Any]:
             "needs_review": 0,
             "errors": [],
         }
+
+
+def _recover_stale_local_orders(
+    summary: dict[str, Any],
+    db: Session,
+    actor: User,
+    request: Request | None,
+) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_LOCAL_ORDER_MINUTES)
+    for order in list_orders(500):
+        status = _normal_status(order.get("status"))
+        if status not in PRE_BROKER_STALE_STATUSES | AMBIGUOUS_NO_BROKER_ID_STATUSES:
+            continue
+        if order.get("broker_order_id"):
+            continue
+        updated_at = _parse_time(order.get("updated_at") or order.get("created_at"))
+        if updated_at is None or updated_at > cutoff:
+            continue
+        if status in PRE_BROKER_STALE_STATUSES:
+            _record_fix(
+                summary,
+                db,
+                actor,
+                request,
+                "stale_pre_broker_order_failed",
+                order.get("local_order_id") or "-",
+                {"local_order": order, "stale_minutes": STALE_LOCAL_ORDER_MINUTES},
+            )
+            transition_order(
+                str(order["local_order_id"]),
+                "failed",
+                status_reason="Stale pre-broker lifecycle order recovered after restart.",
+                broker_status="not_submitted",
+            )
+            continue
+        _record_review(
+            summary,
+            db,
+            actor,
+            request,
+            "ambiguous_broker_submission_missing_id",
+            order.get("local_order_id") or "-",
+            {"local_order": order, "stale_minutes": STALE_LOCAL_ORDER_MINUTES},
+        )
     try:
         return json.loads(STATUS_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -502,6 +550,18 @@ def _normal_status(status: str | None) -> str:
     if value in {"traded", "complete", "completed"}:
         return "filled"
     return value or "unknown"
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _metadata(raw: str | None) -> dict[str, Any]:

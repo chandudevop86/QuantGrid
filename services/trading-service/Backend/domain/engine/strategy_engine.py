@@ -33,14 +33,16 @@ class StrategyGovernance:
 
 
 class StrategyEngine:
-    def __init__(self, strategies: dict[str, IStrategy] | None = None) -> None:
+    def __init__(self, strategies: dict[str, IStrategy] | None = None, *, persist_governance: bool = True) -> None:
         self._strategies: dict[str, IStrategy] = strategies or {}
         self._governance: dict[str, StrategyGovernance] = {}
         self._audit_trail: list[dict[str, Any]] = []
+        self._persist_governance_enabled = persist_governance
         if strategies:
             for name in self._strategies:
                 normalized = self._normalize(name)
                 self._governance[normalized] = StrategyGovernance(name=normalized)
+                self._persist_governance(self._governance[normalized], overwrite=False)
         else:
             self.register("amd", AMDStrategy())
             self.register("breakout", BreakoutStrategy())
@@ -51,6 +53,7 @@ class StrategyEngine:
             self.register("btst", BTSTStrategy())
             self.register("cbt", CRTTBSStrategy())
             self.register("crt_tbs", CRTTBSStrategy())
+        self._load_persisted_governance()
 
     def register(
         self,
@@ -71,6 +74,7 @@ class StrategyEngine:
             rollout_pct=max(0, min(100, int(rollout_pct))),
             supported_regimes=supported_regimes or self._default_supported_regimes(normalized),
         )
+        self._persist_governance(self._governance[normalized], overwrite=False)
         self._audit("registered", normalized, self._governance[normalized].to_dict())
 
     def available(self) -> list[str]:
@@ -80,6 +84,15 @@ class StrategyEngine:
         return [self._governance[name].to_dict() for name in sorted(self._strategies)]
 
     def audit_trail(self) -> list[dict[str, Any]]:
+        if self._persist_governance_enabled:
+            try:
+                from Backend.application.strategy_governance_store import list_strategy_governance_audit
+
+                rows = list_strategy_governance_audit()
+                if rows:
+                    return rows
+            except Exception:
+                pass
         return list(self._audit_trail)
 
     def configure_strategy(
@@ -90,6 +103,7 @@ class StrategyEngine:
         rollout_pct: int | None = None,
         version: str | None = None,
         notes: str | None = None,
+        supported_regimes: list[str] | None = None,
     ) -> dict[str, Any]:
         normalized = self._normalize(name)
         if normalized not in self._strategies:
@@ -103,7 +117,10 @@ class StrategyEngine:
             current.version = str(version)
         if notes is not None:
             current.notes = str(notes)
+        if supported_regimes is not None:
+            current.supported_regimes = [str(regime) for regime in supported_regimes if str(regime or "").strip()] or ["Any"]
         current.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist_governance(current, overwrite=True)
         self._audit("configured", normalized, current.to_dict())
         return current.to_dict()
 
@@ -139,11 +156,51 @@ class StrategyEngine:
         return mapping.get(name, ["Any"])
 
     def _audit(self, event: str, strategy: str, details: dict[str, Any]) -> None:
-        self._audit_trail.append(
-            {
-                "event": event,
-                "strategy": strategy,
-                "details": details,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
+        row = {
+            "event": event,
+            "strategy": strategy,
+            "details": details,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._audit_trail.append(row)
+        if self._persist_governance_enabled:
+            try:
+                from Backend.application.strategy_governance_store import record_strategy_governance_audit
+
+                record_strategy_governance_audit(event, strategy, details)
+            except Exception:
+                pass
+
+    def _persist_governance(self, governance: StrategyGovernance, *, overwrite: bool) -> None:
+        if not self._persist_governance_enabled:
+            return
+        try:
+            from Backend.application.strategy_governance_store import upsert_strategy_governance
+
+            upsert_strategy_governance(governance.to_dict(), overwrite=overwrite)
+        except Exception:
+            pass
+
+    def _load_persisted_governance(self) -> None:
+        if not self._persist_governance_enabled:
+            return
+        try:
+            from Backend.application.strategy_governance_store import list_strategy_governance
+
+            rows = list_strategy_governance()
+        except Exception:
+            return
+        for row in rows:
+            name = self._normalize(str(row.get("name") or ""))
+            if name not in self._strategies:
+                continue
+            self._governance[name] = StrategyGovernance(
+                name=name,
+                version=str(row.get("version") or "1.0.0"),
+                enabled=bool(row.get("enabled", True)),
+                rollout_pct=max(0, min(100, int(row.get("rollout_pct", 100)))),
+                supported_regimes=list(row.get("supported_regimes") or self._default_supported_regimes(name)),
+                owner=str(row.get("owner") or "quantgrid"),
+                notes=str(row.get("notes") or ""),
+                updated_at=str(row.get("updated_at") or datetime.now(timezone.utc).isoformat()),
+            )
