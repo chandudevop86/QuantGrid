@@ -268,7 +268,7 @@ export default function OptionChain() {
                     {usingSynthetic
                       ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data."
                       : chainUnavailable
-                        ? "Live option-chain rows unavailable. Refresh Dhan token to load real chain data."
+                        ? "Live option-chain rows unavailable. Check Dhan Data API access, IP whitelist, client ID, and token."
                         : "Option chain data is not available yet."}
                   </td>
                 </tr>

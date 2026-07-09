@@ -409,6 +409,26 @@ def test_dhan_failure_payload_preserves_reason():
         raise AssertionError("Dhan failure payload should raise")
 
 
+def test_dhan_failure_payload_with_null_remarks_explains_entitlement_checks():
+    from Backend.presentation.api import market_api
+
+    payload = {
+        "status": "failure",
+        "remarks": {"error_code": None, "error_type": None, "error_message": None},
+        "data": "",
+    }
+
+    try:
+        market_api._ensure_dhan_success(payload)
+    except RuntimeError as exc:
+        message = str(exc)
+        assert "without an error message" in message
+        assert "Data APIs" in message
+        assert "IP is whitelisted" in message
+    else:
+        raise AssertionError("Dhan failure payload should raise")
+
+
 def test_option_chain_reports_dhan_token_rejected(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 

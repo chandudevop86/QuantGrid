@@ -347,6 +347,13 @@ def _dhan_failure_message(payload: Any) -> str | None:
             return f"Dhan option-chain API rejected the request ({code}): {message}"
         if message:
             return f"Dhan option-chain API rejected the request: {message}"
+        if remarks and all(value in {None, ""} for value in remarks.values()):
+            return (
+                "Dhan option-chain API rejected the request without an error message. "
+                "Profile login can still pass in this state; verify that Dhan Data APIs / "
+                "Option Chain are enabled for this account and that this server's outbound "
+                f"IP is whitelisted. Raw remarks: {json.dumps(remarks)}"
+            )
     if isinstance(remarks, str) and remarks:
         return f"Dhan option-chain API rejected the request: {remarks}"
     message = payload.get("errorMessage") or payload.get("error_message") or payload.get("message")
