@@ -30,6 +30,7 @@ The central risk engine checks:
 - Expiry-day option decay block, when enabled
 - Gamma risk above limit
 - Broker disconnected status
+- Active broker circuit breaker
 - Duplicate trade
 - Expiry-day warning
 
@@ -68,6 +69,7 @@ Every validation returns:
 - `EXPIRY_DECAY_RISK`
 - `GAMMA_RISK`
 - `BROKER_DISCONNECTED`
+- `BROKER_CIRCUIT_ACTIVE`
 - `DUPLICATE_TRADE`
 - `RISK_REWARD_TOO_LOW`
 
@@ -92,6 +94,10 @@ Default limits are 60% total portfolio exposure, 30% per-symbol exposure, and 2 
 Every order is checked against daily loss, weekly loss, trade count, and consecutive-loss limits before paper or live execution. Weekly P&L is calculated from closed paper trades in the last 7 days plus open unrealized P&L.
 
 Configure weekly loss with `QUANTGRID_MAX_WEEKLY_LOSS`. If omitted, QuantGrid defaults to three times the configured daily loss. Configure the losing-streak stop with `QUANTGRID_MAX_CONSECUTIVE_LOSSES`.
+
+## Broker Risk
+
+Live order risk checks fail closed when the broker circuit breaker is active and return `BROKER_CIRCUIT_ACTIVE`. Paper orders remain available during broker instability so operators can continue analysis and dry-run validation without touching the broker.
 
 ## Live Trading Position
 

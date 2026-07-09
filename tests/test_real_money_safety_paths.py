@@ -264,6 +264,45 @@ def test_order_risk_blocks_consecutive_losses_from_risk_status(monkeypatch):
     assert "MAX_CONSECUTIVE_LOSSES" in result.details["risk_engine"]["blocked_by"]
 
 
+def test_live_order_risk_blocks_active_broker_circuit(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status(weekly_pnl=0.0, max_weekly_loss=7000.0))
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    monkeypatch.setattr(
+        risk_gate,
+        "broker_circuit_status",
+        lambda: {"active": True, "reason": "Broker failure threshold reached."},
+    )
+
+    result = risk_gate.validate_order_risk(_signal(), execution_mode="live", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "BROKER_CIRCUIT_ACTIVE"
+    assert result.details["broker_circuit"]["active"] is True
+    assert "BROKER_CIRCUIT_ACTIVE" in result.details["risk_engine"]["blocked_by"]
+
+
+def test_paper_order_risk_ignores_active_broker_circuit(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status(weekly_pnl=0.0, max_weekly_loss=7000.0))
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    monkeypatch.setattr(
+        risk_gate,
+        "broker_circuit_status",
+        lambda: {"active": True, "reason": "Broker failure threshold reached."},
+    )
+
+    result = risk_gate.validate_order_risk(_signal(), execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is True
+    assert result.details["broker_circuit"]["active"] is False
+    assert "BROKER_CIRCUIT_ACTIVE" not in result.details["risk_engine"]["blocked_by"]
+
+
 def test_live_guardrail_rejects_live_order_on_http():
     from Backend.presentation.api.execution import _live_guardrail_failure
 
