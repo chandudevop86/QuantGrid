@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from Backend.application.candle_validation import validate_live_candle
+from Backend.application.broker_circuit_breaker import broker_circuit_status
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.paper_trade_store import risk_status
 from Backend.application.risk_engine import RiskEngine, RiskLimits
@@ -79,10 +80,13 @@ def validate_order_risk(
     max_allowed_risk = round(float(status["risk_per_trade_amount"]), 2)
 
     validation = validate_live_candle(candles_1m or [], interval="1m", mode=execution_mode)
+    broker_circuit = broker_circuit_status() if execution_mode == "live" else {"active": False}
     risk_engine_result = RiskEngine(
         RiskLimits(
             max_trades_per_day=int(status["max_trades_per_day"]),
             max_daily_loss=float(status["max_daily_loss"]),
+            max_weekly_loss=float(status.get("max_weekly_loss") or RiskLimits().max_weekly_loss),
+            max_consecutive_losses=int(status.get("max_consecutive_losses", 2) or 2),
             max_capital_per_trade=float(status.get("risk_per_trade_amount", 0.0) or 0.0),
             max_open_positions=int(status["max_open_positions"]),
         )
@@ -92,6 +96,10 @@ def validate_order_risk(
             "kill_switch_active": kill_switch["active"],
             "trades_today": status["trades_today"],
             "daily_pnl": status["daily_pnl"],
+            "weekly_pnl": status.get("weekly_pnl", 0.0),
+            "max_weekly_loss": status.get("max_weekly_loss"),
+            "consecutive_losses": status.get("consecutive_losses", 0),
+            "max_consecutive_losses": status.get("max_consecutive_losses"),
             "capital_per_trade": risk_amount,
             "open_positions": status["open_positions"],
             "market_data_age_seconds": getattr(validation, "delay_seconds", 0) or 0,
@@ -112,6 +120,12 @@ def validate_order_risk(
             "thin_session": signal.metadata.get("thin_session"),
             "market_session": signal.metadata.get("market_session"),
             "broker_connected": signal.metadata.get("broker_connected"),
+            "broker_circuit_active": broker_circuit.get("active"),
+            "broker_circuit_reason": broker_circuit.get("reason"),
+            "portfolio_exposure_pct": signal.metadata.get("portfolio_exposure_pct") or signal.metadata.get("total_exposure_pct"),
+            "symbol_exposure_pct": signal.metadata.get("symbol_exposure_pct") or signal.metadata.get("instrument_exposure_pct"),
+            "correlated_positions": signal.metadata.get("correlated_positions") or signal.metadata.get("correlation_group_count"),
+            "correlation_group": signal.metadata.get("correlation_group"),
         },
     )
 
@@ -128,6 +142,7 @@ def validate_order_risk(
             "kill_switch_active": kill_switch["active"],
             "central_risk_decision": central_decision.to_dict(),
             "risk_engine": risk_engine_result.to_dict(),
+            "broker_circuit": broker_circuit,
         }
         if extra:
             details.update(extra)

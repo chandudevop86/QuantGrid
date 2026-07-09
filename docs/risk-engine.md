@@ -9,6 +9,8 @@ The central risk engine checks:
 - Kill switch
 - Max trades per day
 - Max daily loss
+- Max weekly loss
+- Max consecutive losses
 - Max capital per trade
 - Max open positions
 - Stop loss exists
@@ -22,6 +24,9 @@ The central risk engine checks:
 - Gap risk above limit
 - High-impact news risk
 - Holiday or thin-session risk
+- Portfolio exposure above limit
+- Symbol exposure above limit
+- Correlated position count above limit
 - Expiry-day option decay block, when enabled
 - Gamma risk above limit
 - Broker disconnected status
@@ -43,6 +48,8 @@ Every validation returns:
 - `KILL_SWITCH`
 - `MAX_TRADES_PER_DAY`
 - `MAX_DAILY_LOSS`
+- `WEEKLY_LOSS_LIMIT`
+- `MAX_CONSECUTIVE_LOSSES`
 - `MAX_CAPITAL_PER_TRADE`
 - `MAX_OPEN_POSITIONS`
 - `STOP_LOSS_REQUIRED`
@@ -55,6 +62,9 @@ Every validation returns:
 - `GAP_RISK`
 - `NEWS_RISK`
 - `HOLIDAY_RISK`
+- `PORTFOLIO_EXPOSURE_LIMIT`
+- `SYMBOL_EXPOSURE_LIMIT`
+- `CORRELATION_LIMIT`
 - `EXPIRY_DECAY_RISK`
 - `GAMMA_RISK`
 - `BROKER_DISCONNECTED`
@@ -70,6 +80,18 @@ By default, LOW, THIN, WEAK, and ILLIQUID option liquidity block new entries. Th
 Risk 2.0 blocks fresh entries when explicit context or signal metadata shows unsafe execution assumptions: excessive slippage, wide spread, large gap, excessive gamma, or broker disconnect. Expiry-day option-buying can be promoted from warning to blocker with `RiskLimits(block_expiry_day_option_buying=True)`.
 
 High-impact news and holiday/thin-session flags block by default. Use explicit signal metadata such as `high_impact_news`, `news_impact=HIGH`, `holiday_effect`, or `market_session=HOLIDAY` so the backend, not the UI, remains the source of truth.
+
+## Exposure And Correlation Limits
+
+Risk 2.0 blocks concentration when signal metadata or risk context reports excessive portfolio exposure, symbol exposure, or correlated positions. Supported metadata keys are `portfolio_exposure_pct`, `total_exposure_pct`, `symbol_exposure_pct`, `instrument_exposure_pct`, `correlated_positions`, and `correlation_group_count`.
+
+Default limits are 60% total portfolio exposure, 30% per-symbol exposure, and 2 correlated positions. Near-limit exposure remains allowed but emits warnings so operators can reduce size before hard rejection.
+
+## Discipline Stops
+
+Every order is checked against daily loss, weekly loss, trade count, and consecutive-loss limits before paper or live execution. Weekly P&L is calculated from closed paper trades in the last 7 days plus open unrealized P&L.
+
+Configure weekly loss with `QUANTGRID_MAX_WEEKLY_LOSS`. If omitted, QuantGrid defaults to three times the configured daily loss. Configure the losing-streak stop with `QUANTGRID_MAX_CONSECUTIVE_LOSSES`.
 
 ## Live Trading Position
 

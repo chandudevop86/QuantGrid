@@ -204,6 +204,66 @@ def test_order_risk_blocks_high_impact_news_from_signal_metadata(monkeypatch):
     assert result.reason == "NEWS_RISK"
 
 
+def test_order_risk_blocks_portfolio_exposure_from_signal_metadata(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status())
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    signal = _signal(
+        metadata={
+            "quantity": 1,
+            "score": 20,
+            "validation_passed": True,
+            "portfolio_exposure_pct": 75.0,
+            "symbol_exposure_pct": 10.0,
+            "correlated_positions": 1,
+        }
+    )
+
+    result = risk_gate.validate_order_risk(signal, execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "PORTFOLIO_EXPOSURE_LIMIT"
+    assert "PORTFOLIO_EXPOSURE_LIMIT" in result.details["risk_engine"]["blocked_by"]
+
+
+def test_order_risk_blocks_weekly_loss_from_risk_status(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(
+        risk_gate,
+        "risk_status",
+        lambda: _risk_status(weekly_pnl=-7000.0, max_weekly_loss=7000.0),
+    )
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+
+    result = risk_gate.validate_order_risk(_signal(), execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "WEEKLY_LOSS_LIMIT"
+    assert "WEEKLY_LOSS_LIMIT" in result.details["risk_engine"]["blocked_by"]
+
+
+def test_order_risk_blocks_consecutive_losses_from_risk_status(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(
+        risk_gate,
+        "risk_status",
+        lambda: _risk_status(consecutive_losses=3, max_consecutive_losses=3, weekly_pnl=0.0, max_weekly_loss=7000.0),
+    )
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+
+    result = risk_gate.validate_order_risk(_signal(), execution_mode="paper", candles_1m=_fresh_candle())
+
+    assert result.allowed is False
+    assert result.reason == "MAX_CONSECUTIVE_LOSSES"
+    assert "MAX_CONSECUTIVE_LOSSES" in result.details["risk_engine"]["blocked_by"]
+
+
 def test_live_guardrail_rejects_live_order_on_http():
     from Backend.presentation.api.execution import _live_guardrail_failure
 

@@ -181,6 +181,25 @@ def test_risk_engine_blocks_options_execution_hazards():
     assert "BROKER_DISCONNECTED" in result.blocked_by
 
 
+def test_risk_engine_blocks_active_broker_circuit():
+    result = RiskEngine().validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "broker_circuit_active": True,
+        },
+    )
+
+    assert result.allowed is False
+    assert "BROKER_CIRCUIT_ACTIVE" in result.blocked_by
+
+
 def test_risk_engine_blocks_news_and_holiday_risk():
     result = RiskEngine().validate(
         _signal(),
@@ -202,3 +221,60 @@ def test_risk_engine_blocks_news_and_holiday_risk():
     assert "HOLIDAY_RISK" in result.blocked_by
     assert any("news" in warning.lower() for warning in result.warnings)
     assert any("holiday" in warning.lower() for warning in result.warnings)
+
+
+def test_risk_engine_blocks_portfolio_exposure_and_correlation_limits():
+    result = RiskEngine(
+        RiskLimits(
+            max_total_exposure_pct=50.0,
+            max_symbol_exposure_pct=20.0,
+            max_correlated_positions=1,
+        )
+    ).validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+            "portfolio_exposure_pct": 55.0,
+            "symbol_exposure_pct": 25.0,
+            "correlated_positions": 2,
+        },
+    )
+
+    assert result.allowed is False
+    assert "PORTFOLIO_EXPOSURE_LIMIT" in result.blocked_by
+    assert "SYMBOL_EXPOSURE_LIMIT" in result.blocked_by
+    assert "CORRELATION_LIMIT" in result.blocked_by
+    assert any("exposure" in warning.lower() for warning in result.warnings)
+    assert any("correlated" in warning.lower() for warning in result.warnings)
+
+
+def test_risk_engine_blocks_weekly_loss_and_consecutive_losses():
+    result = RiskEngine(
+        RiskLimits(
+            max_weekly_loss=5000.0,
+            max_consecutive_losses=2,
+        )
+    ).validate(
+        _signal(),
+        {
+            "trades_today": 0,
+            "daily_pnl": 0,
+            "weekly_pnl": -5000.0,
+            "consecutive_losses": 2,
+            "capital_per_trade": 10000,
+            "open_positions": 0,
+            "market_data_age_seconds": 5,
+            "vix": 14,
+            "kill_switch_active": False,
+        },
+    )
+
+    assert result.allowed is False
+    assert "WEEKLY_LOSS_LIMIT" in result.blocked_by
+    assert "MAX_CONSECUTIVE_LOSSES" in result.blocked_by

@@ -22,6 +22,8 @@ class RiskValidationResult:
 class RiskLimits:
     max_trades_per_day: int = 3
     max_daily_loss: float = 3000.0
+    max_weekly_loss: float = 9000.0
+    max_consecutive_losses: int = 2
     max_capital_per_trade: float = 25000.0
     max_open_positions: int = 3
     stale_market_data_seconds: int = 120
@@ -36,6 +38,9 @@ class RiskLimits:
     max_gamma: float = 0.08
     block_news_risk: bool = True
     block_holiday_trading: bool = True
+    max_total_exposure_pct: float = 60.0
+    max_symbol_exposure_pct: float = 30.0
+    max_correlated_positions: int = 2
 
 
 class RiskEngine:
@@ -50,6 +55,8 @@ class RiskEngine:
         self._block_if(context.get("kill_switch_active"), "KILL_SWITCH", "Kill switch is active.", reasons, blocked_by)
         self._block_if(int(context.get("trades_today", 0)) >= self.limits.max_trades_per_day, "MAX_TRADES_PER_DAY", "Max trades per day reached.", reasons, blocked_by)
         self._block_if(abs(min(0.0, float(context.get("daily_pnl", 0.0)))) >= self.limits.max_daily_loss, "MAX_DAILY_LOSS", "Max daily loss reached.", reasons, blocked_by)
+        self._block_if(self._weekly_loss(context) >= self._weekly_loss_limit(context), "WEEKLY_LOSS_LIMIT", "Weekly loss limit reached.", reasons, blocked_by)
+        self._block_if(int(context.get("consecutive_losses", 0)) >= self._max_consecutive_losses(context), "MAX_CONSECUTIVE_LOSSES", "Max consecutive losses reached.", reasons, blocked_by)
         self._block_if(float(context.get("capital_per_trade", 0.0)) > self.limits.max_capital_per_trade, "MAX_CAPITAL_PER_TRADE", "Capital per trade is too high.", reasons, blocked_by)
         self._block_if(int(context.get("open_positions", 0)) >= self.limits.max_open_positions, "MAX_OPEN_POSITIONS", "Max open positions reached.", reasons, blocked_by)
         self._block_if(float(signal.stop_loss or 0) <= 0, "STOP_LOSS_REQUIRED", "Stop loss is required.", reasons, blocked_by)
@@ -64,7 +71,11 @@ class RiskEngine:
         self._block_if(float(context.get("gamma", 0.0) or 0.0) > self.limits.max_gamma, "GAMMA_RISK", "Option gamma risk is above the configured limit.", reasons, blocked_by)
         self._block_if(self.limits.block_news_risk and self._has_news_risk(context), "NEWS_RISK", "High-impact news risk blocks fresh entries.", reasons, blocked_by)
         self._block_if(self.limits.block_holiday_trading and self._has_holiday_risk(context), "HOLIDAY_RISK", "Holiday or thin-session risk blocks fresh entries.", reasons, blocked_by)
+        self._block_if(self._portfolio_exposure_pct(context) > self.limits.max_total_exposure_pct, "PORTFOLIO_EXPOSURE_LIMIT", "Portfolio exposure is above the configured limit.", reasons, blocked_by)
+        self._block_if(self._symbol_exposure_pct(context) > self.limits.max_symbol_exposure_pct, "SYMBOL_EXPOSURE_LIMIT", "Symbol exposure is above the configured limit.", reasons, blocked_by)
+        self._block_if(self._correlated_positions(context) > self.limits.max_correlated_positions, "CORRELATION_LIMIT", "Too many correlated positions are already active.", reasons, blocked_by)
         self._block_if(context.get("broker_connected") is False, "BROKER_DISCONNECTED", "Broker connection is not healthy.", reasons, blocked_by)
+        self._block_if(context.get("broker_circuit_active"), "BROKER_CIRCUIT_ACTIVE", "Broker circuit breaker is active.", reasons, blocked_by)
         self._block_if(self._is_duplicate_trade(signal, context), "DUPLICATE_TRADE", "A similar trade is already active.", reasons, blocked_by)
         self._block_if(self._risk_reward(signal) < self.limits.min_risk_reward, "RISK_REWARD_TOO_LOW", "Risk-reward is below the minimum threshold.", reasons, blocked_by)
 
@@ -88,6 +99,12 @@ class RiskEngine:
             warnings.append("High-impact news risk is present; wait for post-news stabilization.")
         if self._has_holiday_risk(context):
             warnings.append("Holiday or thin-session risk is present; liquidity and follow-through can degrade.")
+        if self._portfolio_exposure_pct(context) >= self.limits.max_total_exposure_pct * 0.8:
+            warnings.append("Portfolio exposure is near the configured cap; avoid concentration.")
+        if self._symbol_exposure_pct(context) >= self.limits.max_symbol_exposure_pct * 0.8:
+            warnings.append("Symbol exposure is near the configured cap; avoid adding size.")
+        if self._correlated_positions(context) >= max(1, self.limits.max_correlated_positions):
+            warnings.append("Correlated exposure is elevated; avoid stacking the same market view.")
 
         risk_score = max(0, 100 - len(blocked_by) * 15 - len(warnings) * 5)
         return RiskValidationResult(
@@ -105,8 +122,9 @@ class RiskEngine:
 
         self._block_if(context.get("kill_switch_active"), "KILL_SWITCH_ACTIVE", "Kill switch is active.", reasons, blocked_by)
         self._block_if(abs(min(0.0, float(context.get("daily_pnl", 0.0)))) >= float(context.get("max_daily_loss", self.limits.max_daily_loss)), "DAILY_LOSS_LIMIT", "Daily loss limit reached.", reasons, blocked_by)
+        self._block_if(self._weekly_loss(context) >= self._weekly_loss_limit(context), "WEEKLY_LOSS_LIMIT", "Weekly loss limit reached.", reasons, blocked_by)
         self._block_if(int(context.get("trades_today", 0)) >= int(context.get("max_trades_per_day", self.limits.max_trades_per_day)), "MAX_TRADES_PER_DAY", "Max trades per day reached.", reasons, blocked_by)
-        self._block_if(int(context.get("consecutive_losses", 0)) >= int(context.get("max_consecutive_losses", 10**9)), "MAX_CONSECUTIVE_LOSSES", "Max consecutive losses reached.", reasons, blocked_by)
+        self._block_if(int(context.get("consecutive_losses", 0)) >= self._max_consecutive_losses(context), "MAX_CONSECUTIVE_LOSSES", "Max consecutive losses reached.", reasons, blocked_by)
 
         if int(context.get("trades_today", 0)) == int(context.get("max_trades_per_day", self.limits.max_trades_per_day)) - 1:
             warnings.append("One trade remains before the daily trade limit.")
@@ -187,3 +205,25 @@ class RiskEngine:
             return True
         session = str(context.get("market_session") or context.get("session_status") or "").strip().upper()
         return session in {"HOLIDAY", "SPECIAL_SESSION", "THIN", "LOW_LIQUIDITY_SESSION"}
+
+    @staticmethod
+    def _portfolio_exposure_pct(context: dict[str, Any]) -> float:
+        return float(context.get("portfolio_exposure_pct") or context.get("total_exposure_pct") or 0.0)
+
+    @staticmethod
+    def _symbol_exposure_pct(context: dict[str, Any]) -> float:
+        return float(context.get("symbol_exposure_pct") or context.get("instrument_exposure_pct") or 0.0)
+
+    @staticmethod
+    def _correlated_positions(context: dict[str, Any]) -> int:
+        return int(context.get("correlated_positions") or context.get("correlation_group_count") or 0)
+
+    def _weekly_loss_limit(self, context: dict[str, Any]) -> float:
+        return float(context.get("max_weekly_loss") or self.limits.max_weekly_loss)
+
+    @staticmethod
+    def _weekly_loss(context: dict[str, Any]) -> float:
+        return abs(min(0.0, float(context.get("weekly_pnl", 0.0) or 0.0)))
+
+    def _max_consecutive_losses(self, context: dict[str, Any]) -> int:
+        return int(context.get("max_consecutive_losses") or self.limits.max_consecutive_losses)

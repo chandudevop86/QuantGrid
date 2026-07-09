@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -713,7 +713,9 @@ def risk_status() -> dict[str, Any]:
 
     settings = get_settings()
     positions = position_summary()
-    today = datetime.now(timezone.utc).date().isoformat()
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
+    week_start = now - timedelta(days=7)
     trades = list_paper_trades(500)
     today_trades = [trade for trade in trades if str(trade.get("created_at", "")).startswith(today)]
     closed_statuses = {"closed", "exited", "completed"}
@@ -723,6 +725,14 @@ def risk_status() -> dict[str, Any]:
         if str(trade.get("status") or "").lower() in closed_statuses
     )
     daily_pnl = round(float(positions["todays_pnl"]) + closed_trade_pnl, 2)
+    weekly_closed_pnl = sum(
+        float(trade.get("pnl") or 0.0)
+        for trade in trades
+        if str(trade.get("status") or "").lower() in closed_statuses
+        and _trade_created_at(trade) is not None
+        and _trade_created_at(trade) >= week_start
+    )
+    weekly_pnl = round(float(positions["unrealized_pnl"]) + weekly_closed_pnl, 2)
     consecutive_losses = 0
     for trade in trades:
         if float(trade.get("pnl") or 0.0) < 0:
@@ -732,6 +742,7 @@ def risk_status() -> dict[str, Any]:
 
     return {
         "daily_pnl": daily_pnl,
+        "weekly_pnl": weekly_pnl,
         "trades_today": len(today_trades),
         "capital": settings.capital,
         "risk_per_trade_pct": settings.risk_per_trade_pct,
@@ -742,9 +753,23 @@ def risk_status() -> dict[str, Any]:
         "unrealized_pnl": positions["unrealized_pnl"],
         "consecutive_losses": consecutive_losses,
         "max_daily_loss": settings.max_daily_loss,
+        "max_weekly_loss": float(os.getenv("QUANTGRID_MAX_WEEKLY_LOSS", str(settings.max_daily_loss * 3))),
         "max_trades_per_day": int(os.getenv("QUANTGRID_MAX_TRADES_PER_DAY", "3")),
         "max_consecutive_losses": int(os.getenv("QUANTGRID_MAX_CONSECUTIVE_LOSSES", "2")),
         "max_open_positions": int(os.getenv("QUANTGRID_MAX_OPEN_POSITIONS", "3")),
         "max_quantity": int(os.getenv("QUANTGRID_MAX_QUANTITY", "1800")),
         "risk_configured": settings.risk_configured,
     }
+
+
+def _trade_created_at(trade: dict[str, Any]) -> datetime | None:
+    raw = str(trade.get("created_at") or "")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
