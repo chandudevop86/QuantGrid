@@ -94,6 +94,29 @@ function jobPayload(job: BacktestJob | null): BacktestComparison | null {
   } as BacktestComparison;
 }
 
+function isActiveJob(job: BacktestJob | null) {
+  return Boolean(job && ["QUEUED", "RUNNING", "TIMEOUT"].includes(job.status));
+}
+
+function progressLabel(job: BacktestJob | null) {
+  if (!job) return "Ready";
+  if (job.status === "COMPLETED") return "Completed";
+  if (job.status === "CANCELLED") return "Cancelled";
+  if (job.status === "FAILED") return "Failed";
+  if (job.status === "TIMEOUT") return "Long Running";
+  if (job.status === "QUEUED") return "Queued";
+  return "Running";
+}
+
+function strategyLabel(job: BacktestJob | null) {
+  if (!job) return "-";
+  if (job.current_strategy) return titleCase(job.current_strategy);
+  if (job.status === "COMPLETED") return "All strategies completed";
+  if (job.status === "FAILED") return "Stopped on error";
+  if (job.status === "CANCELLED") return "Cancelled";
+  return "Waiting to start";
+}
+
 export default function Backtesting() {
   const [payload, setPayload] = useState<BacktestComparison | null>(null);
   const [job, setJob] = useState<BacktestJob | null>(null);
@@ -174,9 +197,10 @@ export default function Backtesting() {
   const metrics = selectedRun?.metrics ?? {};
   const ranked = payload?.ranked ?? [];
   const curve = selectedRun?.equity_curve ?? [];
-  const active = job && ["QUEUED", "RUNNING", "TIMEOUT"].includes(job.status);
+  const active = isActiveJob(job);
   const progress = Math.max(0, Math.min(100, Number(job?.progress_pct ?? 0)));
-  const currentStrategy = job?.current_strategy ? titleCase(job.current_strategy) : "Waiting";
+  const currentStrategy = strategyLabel(job);
+  const statusLabel = progressLabel(job);
 
   return (
     <section className="dashboard-page">
@@ -213,7 +237,7 @@ export default function Backtesting() {
               </div>
               <div className="dashboard-actions">
                 <button className="refresh-button" type="button" onClick={refreshJob}>Refresh results</button>
-                <button className="refresh-button" type="button" onClick={cancelJob} disabled={!active}>Cancel</button>
+                {active && <button className="refresh-button" type="button" onClick={cancelJob}>Cancel</button>}
               </div>
             </div>
             <div className="backtest-progress-track" aria-label={`Backtest progress ${progress}%`}>
@@ -221,9 +245,9 @@ export default function Backtesting() {
             </div>
             <div className="signal-trade-grid">
               <span>
-                <small>Running</small>
+                <small>Status</small>
                 <strong>{formatNumber(progress, 0)}%</strong>
-                <small>{job.status}</small>
+                <small>{statusLabel}</small>
               </span>
               <span>
                 <small>Strategy</small>
