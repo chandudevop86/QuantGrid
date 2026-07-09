@@ -4,6 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 
@@ -119,6 +120,47 @@ def test_sqlalchemy_market_trade_position_and_kill_switch_stores(monkeypatch):
     assert kill_switch.kill_switch_status()["active"] is False
     assert kill_switch.activate_kill_switch(reason="test", actor="admin")["active"] is True
     assert kill_switch.deactivate_kill_switch(actor="admin")["active"] is False
+
+
+def test_sqlalchemy_position_store_migrates_pending_exit_columns(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.core.database import engine
+    from Backend.application import position_store
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE positions (
+                    id INTEGER PRIMARY KEY,
+                    broker_order_id VARCHAR(120),
+                    symbol VARCHAR(32) NOT NULL,
+                    side VARCHAR(10) NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    entry_price FLOAT NOT NULL,
+                    stop_loss FLOAT,
+                    target FLOAT,
+                    trailing_stop_loss FLOAT,
+                    trailing_stop_pct FLOAT,
+                    current_price FLOAT,
+                    exit_price FLOAT,
+                    exit_reason VARCHAR(80),
+                    open_pnl FLOAT NOT NULL DEFAULT 0,
+                    closed_pnl FLOAT NOT NULL DEFAULT 0,
+                    status VARCHAR(20) NOT NULL,
+                    opened_at VARCHAR(40) NOT NULL,
+                    closed_at VARCHAR(40),
+                    updated_at VARCHAR(40) NOT NULL
+                )
+                """
+            )
+        )
+
+    position_store.init_position_store()
+    columns = {column["name"] for column in inspect(engine).get_columns("positions")}
+
+    assert "pending_exit_correlation_id" in columns
+    assert "pending_exit_broker_order_id" in columns
 
 
 def test_production_rejects_missing_or_sqlite_database(monkeypatch):

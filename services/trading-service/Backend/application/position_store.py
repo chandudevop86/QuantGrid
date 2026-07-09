@@ -332,6 +332,8 @@ def _init_db_store() -> None:
         "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
         "trailing_stop_loss": "ALTER TABLE positions ADD COLUMN trailing_stop_loss FLOAT",
         "trailing_stop_pct": "ALTER TABLE positions ADD COLUMN trailing_stop_pct FLOAT",
+        "pending_exit_correlation_id": "ALTER TABLE positions ADD COLUMN pending_exit_correlation_id VARCHAR(120)",
+        "pending_exit_broker_order_id": "ALTER TABLE positions ADD COLUMN pending_exit_broker_order_id VARCHAR(120)",
     }
     with engine.begin() as connection:
         for column, statement in additions.items():
@@ -365,6 +367,8 @@ def _position_row(payload: dict[str, Any]) -> dict[str, Any]:
         "opened_at": str(payload.get("opened_at") or now),
         "closed_at": None,
         "updated_at": now,
+        "pending_exit_correlation_id": payload.get("pending_exit_correlation_id"),
+        "pending_exit_broker_order_id": payload.get("pending_exit_broker_order_id"),
     }
 
 
@@ -389,6 +393,8 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "opened_at": record.opened_at,
         "closed_at": record.closed_at,
         "updated_at": record.updated_at,
+        "pending_exit_correlation_id": record.pending_exit_correlation_id,
+        "pending_exit_broker_order_id": record.pending_exit_broker_order_id,
     }
 
 
