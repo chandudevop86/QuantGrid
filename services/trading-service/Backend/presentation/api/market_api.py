@@ -516,7 +516,7 @@ def _dhan_leg_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
     security_id, exchange_segment = _dhan_underlying(symbol)
     base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
-    expiry_payload = _dhan_option_provider_payload("optionchain/expirylist", base_body)
+    expiry_payload =_dhan_option_provider_payload("optionchain/expirylist", base_body)
     expiry_values = _dhan_expiry_values(expiry_payload)
     expiry = next((str(item) for item in expiry_values if item), None)
     if not expiry:
