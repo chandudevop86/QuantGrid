@@ -17,9 +17,15 @@ export default function Sidebar() {
   ];
   const advancedItems = [
     { to: "/analysis", label: "Live Analysis", icon: "spark" },
+    { to: "/candles", label: "Candles", icon: "pulse" },
+    { to: "/copilot", label: "Market Copilot", icon: "spark" },
     { to: "/trade", label: "Order Ticket", icon: "trade" },
     { to: "/execution", label: "Execution", icon: "pulse" },
     { to: "/strategies", label: "Strategies", icon: "history" },
+    { to: "/jobs", label: "Jobs", icon: "history" },
+    { to: "/institutional", label: "Institutional", icon: "grid" },
+    { to: "/investing", label: "Investing", icon: "trade" },
+    { to: "/trading-engine", label: "Trading Engine", icon: "settings" },
     { to: "/operations", label: "Operations", icon: "grid" },
     { to: "/security", label: "Security", icon: "settings" },
   ];

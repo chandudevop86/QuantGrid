@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { getApiErrorMessage } from "../api/client";
 import {
@@ -11,6 +12,7 @@ import {
 } from "../mode";
 import {
   clearCurrentAuth,
+  canAccessRoute,
   getCurrentRole,
   hasAuthToken,
   roleLabels,
@@ -21,6 +23,7 @@ import {
 import { getMarketStatusClass, getMarketStatusLabel, type MarketStatusLabel } from "../utils/marketStatus";
 
 export default function Topbar() {
+  const navigate = useNavigate();
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -30,6 +33,8 @@ export default function Topbar() {
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const [operations, setOperations] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAlerts, setShowAlerts] = useState(false);
 
   useEffect(() => {
     const syncRole = () => {
@@ -112,6 +117,31 @@ export default function Topbar() {
   };
   const brokerConnected = Boolean(operations?.system_health?.broker?.connected);
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
+  const searchableRoutes = [
+    ["Overview", "/"], ["Market option chain", "/market"], ["Signals", "/signals"],
+    ["Paper trades positions", "/paper-trades"], ["Backtest history", "/history"], ["Risk settings", "/settings"],
+    ["Live analysis", "/analysis"], ["Order ticket", "/trade"], ["Execution", "/execution"],
+    ["Strategies", "/strategies"], ["Operations", "/operations"], ["Security", "/security"],
+    ["Candles", "/candles"], ["Market copilot", "/copilot"], ["Jobs", "/jobs"],
+    ["Institutional", "/institutional"], ["Investing", "/investing"], ["Trading engine", "/trading-engine"],
+  ] as const;
+  const availableRoutes = searchableRoutes.filter(([, path]) => canAccessRoute(role, path));
+  const submitSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return;
+    const match = availableRoutes.find(([label, path]) => label.toLowerCase().includes(query) || path.includes(query));
+    if (match) {
+      navigate(match[1]);
+      setSearchQuery("");
+    }
+  };
+  const alerts = [
+    !systemReady ? "System health requires review." : null,
+    !brokerConnected ? "Broker is not connected; orders remain in paper mode." : null,
+    marketStatus !== "LIVE" ? `Market status is ${marketStatus.toLowerCase()}.` : null,
+    mode === "live" ? "Live trading mode is enabled." : null,
+  ].filter(Boolean) as string[];
 
   return (
     <header className={`topbar ${isAuthenticated ? "topbar-authenticated" : "topbar-guest"}`}>
@@ -120,10 +150,13 @@ export default function Topbar() {
         <strong>NIFTY Options</strong>
       </div>
       <div className="topbar-actions">
-        <label className="topbar-search">
-          <span className="sr-only">Search QuantGrid</span>
-          <input type="search" placeholder="Search NIFTY, signal, setup" aria-label="Search QuantGrid" />
-        </label>
+        <form className="topbar-search" onSubmit={submitSearch} role="search">
+          <label className="sr-only" htmlFor="quantgrid-search">Search QuantGrid</label>
+          <input id="quantgrid-search" type="search" list="quantgrid-search-routes" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Go to market, signals, risk..." aria-label="Search QuantGrid" />
+          <datalist id="quantgrid-search-routes">
+            {availableRoutes.map(([label, path]) => <option key={path} value={label} />)}
+          </datalist>
+        </form>
         <div className="topbar-system-group" aria-label="Market and system status">
           <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
             <span className="status-indicator" aria-hidden="true" />
@@ -153,10 +186,19 @@ export default function Topbar() {
             </div>
           </div>
         )}
-        <button className="notification-button" type="button" aria-label="Notifications">
+        <div className="notification-menu">
+        <button className="notification-button" type="button" aria-label={`Notifications, ${alerts.length} active`} aria-expanded={showAlerts} onClick={() => setShowAlerts((current) => !current)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
           <span>Alerts</span>
+          {alerts.length > 0 && <small className="notification-count">{alerts.length}</small>}
         </button>
+        {showAlerts && (
+          <div className="notification-popover" role="status">
+            <div className="notification-popover-header"><strong>System alerts</strong><span>{alerts.length} active</span></div>
+            {alerts.length ? alerts.map((alert) => <p key={alert}>{alert}</p>) : <p className="notification-empty">No active alerts. Systems look ready.</p>}
+          </div>
+        )}
+        </div>
         {isAuthenticated ? (
           <div className="auth-status">
             <span className="user-avatar" aria-hidden="true">{roleLabels[role].slice(0, 1)}</span>

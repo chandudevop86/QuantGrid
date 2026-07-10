@@ -21,6 +21,7 @@ import Security from "./pages/Security";
 import Strategies from "./pages/Strategies";
 import Trade from "./pages/Trade";
 import TradeJournal from "./pages/TradeJournal";
+import PaperTrades from "./pages/PaperTrades";
 import TradingEngine from "./pages/TradingEngine";
 import RequireRole from "./components/RequireRole";
 
@@ -35,7 +36,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={protect("/", <Dashboard />)} />
           <Route path="/market" element={protect("/market", <OptionChain />)} />
-          <Route path="/paper-trades" element={protect("/paper-trades", <TradeJournal />)} />
+          <Route path="/paper-trades" element={protect("/paper-trades", <PaperTrades />)} />
           <Route path="/history" element={protect("/history", <Backtesting />)} />
           <Route path="/settings" element={protect("/settings", <RiskDashboard />)} />
           <Route path="/candles" element={protect("/candles", <Candles />)} />
