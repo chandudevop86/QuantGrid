@@ -564,6 +564,13 @@ def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, wa
         "warning": warning,
         "updated_at": payload["updated_at"],
         "rows": payload["rows"],
+        "live_rows_available": False,
+        "fallback_message": warning,
+        "data_quality": {
+            "status": "synthetic_fallback",
+            "reason": "market_price_unavailable",
+            "message": warning,
+        },
         "pcr": payload.get("pcr"),
         "PCR": payload.get("pcr"),
         "max_pain": payload.get("max_pain"),
@@ -721,6 +728,15 @@ def get_option_chain(
         rows = []
 
     rows, data_quality = validate_option_chain_rows(rows, source=source)
+    data_quality_payload = data_quality.model_dump()
+    fallback_message = warning if not provider_available else None
+    if not provider_available:
+        data_quality_payload = {
+            **data_quality_payload,
+            "status": "option_chain_rows_unavailable",
+            "reason": "option_chain_rows_unavailable",
+            "message": fallback_message,
+        }
     call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
     put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
     pcr = round(put_oi / call_oi, 3) if call_oi else None
@@ -741,7 +757,9 @@ def get_option_chain(
         "warning": warning,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
-        "data_quality": data_quality.model_dump(),
+        "live_rows_available": provider_available and bool(rows),
+        "fallback_message": fallback_message,
+        "data_quality": data_quality_payload,
         "pcr": pcr,
         "PCR": pcr,
         "max_pain": atm if provider_available else None,
