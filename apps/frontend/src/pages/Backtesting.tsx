@@ -110,10 +110,10 @@ function progressLabel(job: BacktestJob | null) {
 
 function strategyLabel(job: BacktestJob | null) {
   if (!job) return "-";
-  if (job.current_strategy) return titleCase(job.current_strategy);
   if (job.status === "COMPLETED") return "All strategies completed";
   if (job.status === "FAILED") return "Stopped on error";
   if (job.status === "CANCELLED") return "Cancelled";
+  if (job.current_strategy) return titleCase(job.current_strategy);
   return "Waiting to start";
 }
 
@@ -368,3 +368,4 @@ export default function Backtesting() {
     </section>
   );
 }
+
