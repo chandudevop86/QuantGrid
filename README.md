@@ -29,10 +29,9 @@ npm run dev
 ```
 
 The frontend reads `VITE_API_BASE_URL` or `VITE_API_URL`. In Vite dev on port
-`5173`, it defaults to the same hostname on backend port `8000`. In production
-it defaults to same-origin `/api`, which should be reverse-proxied to the
-backend.
-
+`5173`, set `VITE_API_URL` when the backend is not available through `/api`.
+For production Nginx, build with `VITE_API_URL=/api` and `VITE_WS_URL=/ws`
+so browser login posts to the reverse proxy instead of the user machine's localhost.
 ## Trading API
 
 ```bash
@@ -341,3 +340,7 @@ This starts Kafka, Zookeeper, Redis, and Postgres for the local services.
 Set `POSTGRES_PASSWORD` before starting the stack.
 
 AWS 3-tier Terraform lives in `infra/terraform/aws`; see `infra/terraform/aws/README.md` before planning or applying infrastructure.
+
+
+
+

@@ -2,6 +2,13 @@ FROM node:20-slim AS build
 
 WORKDIR /app/apps/frontend
 
+ARG VITE_API_URL=/api
+ARG VITE_API_BASE_URL=/api
+ARG VITE_WS_URL=/ws
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_WS_URL=${VITE_WS_URL}
+
 COPY apps/frontend/package*.json ./
 RUN npm ci
 

@@ -6,12 +6,12 @@ export default function Sidebar() {
   const [role, setRole] = useState(getCurrentRole());
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const navItems = [
-    { to: "/", label: "Dashboard" },
-    { to: "/market", label: "Market" },
-    { to: "/signals", label: "Signals" },
-    { to: "/paper-trades", label: "Paper Trades" },
-    { to: "/history", label: "History" },
-    { to: "/settings", label: "Settings" },
+    { to: "/", label: "Overview", icon: "grid" },
+    { to: "/market", label: "Market", icon: "pulse" },
+    { to: "/signals", label: "Signals", icon: "spark" },
+    { to: "/paper-trades", label: "Paper Trades", icon: "trade" },
+    { to: "/history", label: "History", icon: "history" },
+    { to: "/settings", label: "Settings", icon: "settings" },
   ];
 
   useEffect(() => {
@@ -39,6 +39,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
+        <span className="sidebar-label">Workspace</span>
         {navItems.filter((item) => authenticated && canAccessRoute(role, item.to)).map((item) => (
           <NavLink
             key={item.to}
@@ -46,10 +47,19 @@ export default function Sidebar() {
             end={item.to === "/"}
             className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
           >
-            {item.label}
+            <span className={`nav-icon nav-icon-${item.icon}`} aria-hidden="true" />
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
+
+      <div className="sidebar-footer">
+        <span className="sidebar-status-dot" aria-hidden="true" />
+        <div>
+          <strong>Engine online</strong>
+          <span>Monitoring markets</span>
+        </div>
+      </div>
     </aside>
   );
 }
