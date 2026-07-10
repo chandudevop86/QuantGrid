@@ -36,6 +36,41 @@ def test_test_environment_uses_file_backed_local_stores(monkeypatch):
     assert use_legacy_sqlite_store() is True
 
 
+def test_hot_path_stores_initialize_once_per_engine(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import market_data_store, paper_trade_store
+    from Backend.core import database
+
+    market_initializations = 0
+    paper_initializations = 0
+
+    def initialize_market_store():
+        nonlocal market_initializations
+        market_initializations += 1
+
+    def initialize_paper_store():
+        nonlocal paper_initializations
+        paper_initializations += 1
+
+    monkeypatch.setattr(market_data_store, "_initialize_market_data_store", initialize_market_store)
+    monkeypatch.setattr(paper_trade_store, "_initialize_paper_trade_store", initialize_paper_store)
+
+    market_data_store.init_market_data_store()
+    market_data_store.init_market_data_store()
+    paper_trade_store.init_paper_trade_store()
+    paper_trade_store.init_paper_trade_store()
+
+    assert market_initializations == 1
+    assert paper_initializations == 1
+
+    database._rebuild_engine("sqlite://")
+    market_data_store.init_market_data_store()
+    paper_trade_store.init_paper_trade_store()
+
+    assert market_initializations == 2
+    assert paper_initializations == 2
+
+
 def test_sqlalchemy_job_store_interface(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import job_store

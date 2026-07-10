@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import json
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("PAPER_TRADE_DB_FILE", DATA_DIR / "paper_trades.sqlite3"))
+_init_lock = threading.Lock()
+_initialized_store_key: tuple[str, object] | None = None
 
 
 def utc_now() -> str:
@@ -25,6 +28,29 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_paper_trade_store() -> None:
+    global _initialized_store_key
+
+    store_key = _paper_trade_store_key()
+    if _initialized_store_key == store_key:
+        return
+
+    with _init_lock:
+        store_key = _paper_trade_store_key()
+        if _initialized_store_key == store_key:
+            return
+        _initialize_paper_trade_store()
+        _initialized_store_key = store_key
+
+
+def _paper_trade_store_key() -> tuple[str, object]:
+    if _use_sqlite():
+        return ("sqlite", str(DB_FILE.resolve()))
+    from Backend.core.database import engine
+
+    return ("sqlalchemy", engine)
+
+
+def _initialize_paper_trade_store() -> None:
     if not _use_sqlite():
         _init_db_store()
         return
