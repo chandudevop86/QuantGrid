@@ -440,6 +440,56 @@ def test_higher_timeframe_filter_blocks_conflict():
     assert result["passed"] is False
 
 
+def test_higher_timeframe_filter_blocks_missing_required_series():
+    result = analyze_higher_timeframe(
+        MarketDataInputs(
+            candles=_bullish_candles(),
+            candles_1m=_bullish_candles(),
+            candles_5m=_bullish_candles(),
+        )
+    )
+
+    assert result["passed"] is False
+    assert result["allowed_direction"] == "NONE"
+    assert result["timeframes"]["15m"] == "UNAVAILABLE"
+    assert result["timeframes"]["1h"] == "UNAVAILABLE"
+    assert result["missing_required_timeframes"] == ["15m", "1h"]
+    assert "unavailable" in result["reason"].lower()
+
+
+def test_environment_market_context_does_not_silently_enter_decision_inputs(monkeypatch):
+    monkeypatch.setenv("OI_BIAS", "BULLISH")
+    monkeypatch.setenv("PCR", "1.25")
+    validation = type("Validation", (), {"market_live": True, "valid_for_execution": True, "delay_seconds": 2, "warnings": []})()
+
+    market = DecisionPipelineService().from_environment(validation=validation, candles=_bullish_candles())
+
+    assert market.oi_bias is None
+    assert market.pcr is None
+    assert market.context_status["oi_bias"]["available"] is False
+    assert any("Verified options context is unavailable" in warning for warning in market.warnings)
+
+
+def test_verified_market_context_requires_source_timestamp_and_live_suitability():
+    validation = type("Validation", (), {"market_live": True, "valid_for_execution": True, "delay_seconds": 2, "warnings": []})()
+    timestamp = "2026-07-10T09:20:00+05:30"
+    market = DecisionPipelineService().from_environment(
+        validation=validation,
+        candles=_bullish_candles(),
+        market_context={
+            "oi_bias": {"value": "BULLISH", "source": "dhan-option-chain", "timestamp": timestamp, "available": True, "live_suitable": True},
+            "pcr": {"value": 1.25, "source": "dhan-option-chain", "timestamp": timestamp, "available": True, "live_suitable": True},
+            "india_vix": {"value": 14.8, "source": "sample-fallback", "timestamp": timestamp, "available": True, "live_suitable": True},
+        },
+    )
+
+    assert market.oi_bias == "BULLISH"
+    assert market.pcr == 1.25
+    assert market.india_vix is None
+    assert market.context_status["oi_bias"]["available"] is True
+    assert market.context_status["india_vix"]["available"] is False
+
+
 def test_higher_timeframe_allows_ce_and_pe_direction():
     bullish = analyze_higher_timeframe(
         MarketDataInputs(candles_1m=_bullish_candles(), candles_5m=_bullish_candles(), candles_15m=_bullish_candles(), candles_1h=_bullish_candles())

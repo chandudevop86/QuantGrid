@@ -93,6 +93,13 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
     started_at = perf_counter()
     settings = get_settings()
     candles = latest_candles("NIFTY", "1m", 100)
+    candles_by_interval = {
+        "1m": candles,
+        "5m": latest_candles("NIFTY", "5m", 100),
+        "15m": latest_candles("NIFTY", "15m", 100),
+        "1h": latest_candles("NIFTY", "1h", 100),
+        "1d": latest_candles("NIFTY", "1d", 100),
+    }
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
     observe_market_data_age("NIFTY", "1m", validation.delay_seconds)
     market_store = market_data_summary("NIFTY", "1m")
@@ -126,7 +133,12 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
     )
     pipeline = DecisionPipelineService()
     pipeline_result = pipeline.run(
-        pipeline.from_environment(validation=validation, candles=candles, symbol="NIFTY"),
+        pipeline.from_environment(
+            validation=validation,
+            candles=candles,
+            candles_by_interval=candles_by_interval,
+            symbol="NIFTY",
+        ),
         risk_blocked=risk_blocked,
         confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
     )

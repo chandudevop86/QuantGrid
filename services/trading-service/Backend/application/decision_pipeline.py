@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -59,6 +58,7 @@ class MarketDataInputs:
     consecutive_losses: int = 0
     max_consecutive_losses: int = 3
     duplicate_signal: bool = False
+    context_status: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,33 +255,43 @@ class DecisionPipelineService:
             score_reason=f"{decision.score_reason} {checklist}",
         )
 
-    def from_environment(self, *, validation: Any, candles: list[dict[str, Any]] | None = None, symbol: str = "NIFTY") -> MarketDataInputs:
+    def from_environment(
+        self,
+        *,
+        validation: Any,
+        candles: list[dict[str, Any]] | None = None,
+        candles_by_interval: dict[str, list[dict[str, Any]]] | None = None,
+        market_context: dict[str, dict[str, Any]] | None = None,
+        symbol: str = "NIFTY",
+    ) -> MarketDataInputs:
         candles = candles or []
+        candles_by_interval = candles_by_interval or {}
+        context_values, context_status, context_warnings = _verified_market_context(market_context or {})
         return MarketDataInputs(
             symbol=symbol,
             market_live=bool(getattr(validation, "market_live", False)),
             valid_for_execution=bool(getattr(validation, "valid_for_execution", False)),
             feed_delay_seconds=getattr(validation, "delay_seconds", 0) or 0,
-            warnings=list(getattr(validation, "warnings", []) or []),
+            warnings=[*list(getattr(validation, "warnings", []) or []), *context_warnings],
             candles=candles,
-            candles_1m=candles,
-            candles_5m=candles,
-            candles_15m=candles,
-            candles_1h=candles,
-            trend=os.getenv("MARKET_TREND"),
-            momentum=os.getenv("MOMENTUM_BIAS"),
-            price_action=os.getenv("PRICE_ACTION"),
-            support=os.getenv("SUPPORT_LEVEL", "Nearest confirmed demand zone"),
-            resistance=os.getenv("RESISTANCE_LEVEL", "Nearest confirmed supply zone"),
-            oi_bias=os.getenv("OI_BIAS"),
-            pcr=_float_env("PCR"),
-            max_pain=os.getenv("MAX_PAIN"),
-            india_vix=_float_env("INDIA_VIX"),
-            fii_dii_bias=os.getenv("FII_DII_BIAS"),
-            gift_nifty_bias=os.getenv("GIFT_NIFTY_BIAS"),
-            vwap_relation=os.getenv("VWAP_RELATION"),
-            liquidity=os.getenv("LIQUIDITY_STATUS"),
-            expiry_day=_bool_env("EXPIRY_DAY"),
+            candles_1m=candles_by_interval.get("1m", candles),
+            candles_5m=candles_by_interval.get("5m", []),
+            candles_15m=candles_by_interval.get("15m", []),
+            candles_1h=candles_by_interval.get("1h", []),
+            candles_daily=candles_by_interval.get("1d", []),
+            trend=_context_text(context_values, "trend"),
+            momentum=_context_text(context_values, "momentum"),
+            price_action=_context_text(context_values, "price_action"),
+            oi_bias=_context_text(context_values, "oi_bias"),
+            pcr=_context_number(context_values, "pcr"),
+            max_pain=_context_text(context_values, "max_pain"),
+            india_vix=_context_number(context_values, "india_vix"),
+            fii_dii_bias=_context_text(context_values, "fii_dii_bias"),
+            gift_nifty_bias=_context_text(context_values, "gift_nifty_bias"),
+            vwap_relation=_context_text(context_values, "vwap_relation"),
+            liquidity=_context_text(context_values, "liquidity"),
+            expiry_day=bool(context_values.get("expiry_day", False)),
+            context_status=context_status,
         )
 
     def _map_factors(self, market: MarketDataInputs, *, risk_blocked: bool = False) -> dict[str, Any]:
@@ -397,6 +407,7 @@ class DecisionPipelineService:
             "liquidity": market.liquidity,
             "expiry_day": market.expiry_day,
             "data_freshness_seconds": market.feed_delay_seconds,
+            "market_context_status": market.context_status,
             "checklist": checklist,
             "checklist_score": checklist_score,
             "checklist_blockers": blockers,
@@ -658,29 +669,51 @@ def analyze_risk_reward(market: MarketDataInputs, bias: str, sr: SupportResistan
 
 
 def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
-    reads = {
-        "1m": analyze_trend(market.candles_1m or market.candles).trend_direction,
-        "5m": analyze_trend(market.candles_5m or market.candles).trend_direction,
-        "15m": analyze_trend(market.candles_15m or market.candles).trend_direction,
-        "1h": analyze_trend(market.candles_1h or market.candles).trend_direction,
-        "daily": analyze_trend(market.candles_daily or market.candles_1h or market.candles).trend_direction,
+    series = {
+        "1m": market.candles_1m or market.candles,
+        "5m": market.candles_5m,
+        "15m": market.candles_15m,
+        "1h": market.candles_1h,
+        "daily": market.candles_daily,
     }
+    reads = {
+        timeframe: analyze_trend(candles).trend_direction if candles else "UNAVAILABLE"
+        for timeframe, candles in series.items()
+    }
+    availability = {timeframe: bool(candles) for timeframe, candles in series.items()}
+    required_timeframes = ("15m", "1h")
+    missing_required = [timeframe for timeframe in required_timeframes if not availability[timeframe]]
     h1_bias = _bias_from_direction(reads["1h"])
-    directional = {_bias_from_direction(value) for value in reads.values() if _bias_from_direction(value) != "NEUTRAL"}
-    conflict = len(directional) > 1 or (_bias_from_direction(reads["15m"]) not in {"NEUTRAL", h1_bias})
+    available_reads = [value for timeframe, value in reads.items() if availability[timeframe]]
+    directional = {_bias_from_direction(value) for value in available_reads if _bias_from_direction(value) != "NEUTRAL"}
+    conflict = bool(
+        missing_required
+        or len(directional) > 1
+        or (_bias_from_direction(reads["15m"]) not in {"NEUTRAL", h1_bias})
+    )
     allowed_direction = "CE" if h1_bias == "BULLISH" else "PE" if h1_bias == "BEARISH" else "NONE"
-    aligned = sum(1 for value in reads.values() if _bias_from_direction(value) == h1_bias and h1_bias != "NEUTRAL")
+    aligned = sum(1 for value in available_reads if _bias_from_direction(value) == h1_bias and h1_bias != "NEUTRAL")
+    available_count = sum(availability.values())
+    passed = bool(not missing_required and h1_bias in {"BULLISH", "BEARISH"} and not conflict)
+    if missing_required:
+        reason = f"Required higher-timeframe data unavailable: {', '.join(missing_required)}."
+    elif passed:
+        reason = "Available higher timeframes align."
+    else:
+        reason = "Available higher timeframes conflict or H1 is neutral."
     return {
         "timeframes": reads,
+        "availability": availability,
+        "missing_required_timeframes": missing_required,
         "primary_trend": h1_bias,
         "lower_timeframe_signal": _bias_from_direction(reads["1m"]),
         "higher_timeframe_bias": h1_bias,
-        "alignment_score": int(aligned / max(len(reads), 1) * 100),
+        "alignment_score": int(aligned / max(available_count, 1) * 100),
         "h1_bias": h1_bias,
         "allowed_direction": allowed_direction,
         "conflict": conflict,
-        "passed": bool(h1_bias in {"BULLISH", "BEARISH"} and not conflict),
-        "reason": "Higher timeframes align." if h1_bias in {"BULLISH", "BEARISH"} and not conflict else "Higher timeframes conflict or H1 is neutral.",
+        "passed": passed,
+        "reason": reason,
     }
 
 
@@ -1621,15 +1654,84 @@ def _majority_bias(values: list[str | None]) -> str:
     return "NEUTRAL"
 
 
-def _float_env(name: str) -> float | None:
-    raw = os.getenv(name)
-    if raw in {None, ""}:
-        return None
+_MARKET_CONTEXT_FIELDS = (
+    "trend",
+    "momentum",
+    "price_action",
+    "oi_bias",
+    "pcr",
+    "max_pain",
+    "india_vix",
+    "fii_dii_bias",
+    "gift_nifty_bias",
+    "vwap_relation",
+    "liquidity",
+    "expiry_day",
+)
+
+
+def _verified_market_context(
+    context: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[str]]:
+    values: dict[str, Any] = {}
+    statuses: dict[str, dict[str, Any]] = {}
+    warnings: list[str] = []
+    disallowed_sources = ("sample", "synthetic", "fallback", "mock", "environment")
+    for field_name in _MARKET_CONTEXT_FIELDS:
+        item = context.get(field_name)
+        if not isinstance(item, dict):
+            statuses[field_name] = {"available": False, "reason": "not provided"}
+            continue
+        source = str(item.get("source") or "").strip()
+        timestamp = str(item.get("timestamp") or "").strip()
+        live_suitable = item.get("live_suitable") is True
+        source_allowed = bool(source) and not any(marker in source.lower() for marker in disallowed_sources)
+        timestamp_valid = _context_timestamp_valid(timestamp)
+        value_available = item.get("available") is True and item.get("value") is not None
+        verified = bool(value_available and source_allowed and timestamp_valid and live_suitable)
+        reasons: list[str] = []
+        if not value_available:
+            reasons.append("value unavailable")
+        if not source_allowed:
+            reasons.append("source is missing or non-trading-grade")
+        if not timestamp_valid:
+            reasons.append("timestamp is missing, invalid, or timezone-naive")
+        if not live_suitable:
+            reasons.append("source is not marked live-suitable")
+        statuses[field_name] = {
+            "available": verified,
+            "source": source or "unknown",
+            "timestamp": timestamp or None,
+            "live_suitable": live_suitable,
+            "reason": "; ".join(reasons) if reasons else "verified",
+        }
+        if verified:
+            values[field_name] = item["value"]
+        else:
+            warnings.append(f"{field_name.replace('_', ' ').title()} ignored: {statuses[field_name]['reason']}.")
+    if not statuses["oi_bias"]["available"] or not statuses["pcr"]["available"]:
+        warnings.append("Verified options context is unavailable; options evidence cannot support a trade.")
+    return values, statuses, _dedupe(warnings)
+
+
+def _context_timestamp_valid(value: str) -> bool:
+    if not value:
+        return False
     try:
-        return float(raw)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def _context_text(values: dict[str, Any], name: str) -> str | None:
+    value = values.get(name)
+    return str(value) if value is not None else None
+
+
+def _context_number(values: dict[str, Any], name: str) -> float | None:
+    value = values.get(name)
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
         return None
-
-
-def _bool_env(name: str) -> bool:
-    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes", "on"}
