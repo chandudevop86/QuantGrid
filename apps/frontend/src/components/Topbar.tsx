@@ -150,6 +150,7 @@ export default function Topbar() {
         <strong>NIFTY Options</strong>
       </div>
       <div className="topbar-actions">
+        {isAuthenticated && <>
         <form className="topbar-search" onSubmit={submitSearch} role="search">
           <label className="sr-only" htmlFor="quantgrid-search">Search QuantGrid</label>
           <input id="quantgrid-search" type="search" list="quantgrid-search-routes" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Go to market, signals, risk..." aria-label="Search QuantGrid" />
@@ -199,6 +200,7 @@ export default function Topbar() {
           </div>
         )}
         </div>
+        </>}
         {isAuthenticated ? (
           <div className="auth-status">
             <span className="user-avatar" aria-hidden="true">{roleLabels[role].slice(0, 1)}</span>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useUiMode } from "../hooks/useUiMode";
-import { canAccessRoute, getCurrentRole, hasAuthToken } from "../roles";
+import { canAccessRoute, getCurrentRole, hasAuthToken, roleLabels } from "../roles";
 
 export default function Sidebar() {
   const [role, setRole] = useState(getCurrentRole());
@@ -49,7 +49,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${authenticated ? "" : " sidebar-guest"}`}>
       <div className="brand">
         <span className="brand-mark">QG</span>
         <div>
@@ -108,8 +108,8 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <span className="sidebar-status-dot" aria-hidden="true" />
         <div>
-          <strong>Engine online</strong>
-          <span>Monitoring markets</span>
+          <strong>{roleLabels[role]} session</strong>
+          <span>Authenticated workspace</span>
         </div>
       </div>
     </aside>
