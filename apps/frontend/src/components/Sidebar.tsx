@@ -1,17 +1,31 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { useUiMode } from "../hooks/useUiMode";
 import { canAccessRoute, getCurrentRole, hasAuthToken } from "../roles";
 
 export default function Sidebar() {
   const [role, setRole] = useState(getCurrentRole());
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
+  const uiMode = useUiMode();
   const navItems = [
     { to: "/", label: "Overview", icon: "grid" },
-    { to: "/candles", label: "Market", icon: "pulse" },
+    { to: "/market", label: "Market", icon: "pulse" },
+    { to: "/signals", label: "Signals", icon: "spark" },
+    { to: "/paper-trades", label: "Paper Trades", icon: "trade" },
+    { to: "/history", label: "History", icon: "history" },
+    { to: "/settings", label: "Risk & Settings", icon: "settings" },
+  ];
+  const advancedItems = [
     { to: "/analysis", label: "Live Analysis", icon: "spark" },
-    { to: "/trade", label: "Trade", icon: "trade" },
+    { to: "/trade", label: "Order Ticket", icon: "trade" },
+    { to: "/execution", label: "Execution", icon: "pulse" },
     { to: "/strategies", label: "Strategies", icon: "history" },
-    { to: "/execution", label: "Execution", icon: "settings" },
+    { to: "/operations", label: "Operations", icon: "grid" },
+    { to: "/security", label: "Security", icon: "settings" },
+  ];
+  const adminItems = [
+    { to: "/dhan-login", label: "Broker Login", icon: "trade" },
+    { to: "/admin/users", label: "Users", icon: "settings" },
   ];
 
   useEffect(() => {
@@ -51,6 +65,38 @@ export default function Sidebar() {
             <span>{item.label}</span>
           </NavLink>
         ))}
+
+        {authenticated && uiMode === "developer" && (role === "admin" || role === "developer") && (
+          <>
+            <span className="sidebar-label sidebar-section-label">Advanced</span>
+            {advancedItems.filter((item) => canAccessRoute(role, item.to)).map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `nav-link nav-link-advanced${isActive ? " active" : ""}`}
+              >
+                <span className={`nav-icon nav-icon-${item.icon}`} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </>
+        )}
+
+        {authenticated && uiMode === "developer" && role === "admin" && (
+          <>
+            <span className="sidebar-label sidebar-section-label">Administration</span>
+            {adminItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `nav-link nav-link-advanced${isActive ? " active" : ""}`}
+              >
+                <span className={`nav-icon nav-icon-${item.icon}`} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </>
+        )}
       </nav>
 
       <div className="sidebar-footer">

@@ -67,6 +67,7 @@ body {
 .brand strong { font-size: 17px; letter-spacing: -0.02em; }
 .brand span { color: var(--muted); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
 .sidebar-nav { gap: 5px; }
+.sidebar-nav { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(148,163,184,.2) transparent; }
 
 .sidebar-label {
   margin: 0 12px 8px;
@@ -76,6 +77,7 @@ body {
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+.sidebar-section-label { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 
 .nav-link {
   position: relative;
@@ -190,6 +192,7 @@ body {
   .brand, .sidebar-footer { display: none; }
   .sidebar-nav { display: flex; justify-content: space-around; gap: 3px; }
   .nav-link { flex: 1; min-height: 48px; }
+  .nav-link-advanced { display: none; }
   .app-main { padding-bottom: 66px; }
   .topbar { position: relative; padding: 12px 16px; }
   .topbar-title { display: none; }
@@ -291,6 +294,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .auth-status button:hover { background: rgba(248,113,113,.1); color: #fca5a5; }
 
+.workspace-controls { display: flex; align-items: center; gap: 7px; }
+.compact-toggle { padding: 3px; border-color: var(--line); border-radius: 10px; background: rgba(255,255,255,.025); }
+.compact-toggle button { min-height: 28px; padding: 4px 8px; border-radius: 7px; font-size: 10px; }
+.compact-toggle button.active { background: rgba(45,212,191,.14); color: #bffbf2; box-shadow: inset 0 0 0 1px rgba(45,212,191,.15); }
+.compact-toggle[aria-label="Trading mode"] button.active:last-child { background: rgba(239,68,68,.18); color: #fecaca; }
+
 .decision-status {
   border: 1px solid var(--line-strong);
   border-radius: 999px;
@@ -348,12 +357,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width: 1180px) {
   .topbar-system-group .terminal-pill:last-child { display: none; }
   .notification-button span { display: none; }
+  .workspace-controls .compact-toggle[aria-label="Interface mode"] { display: none; }
 }
 
 @media (max-width: 760px) {
   .topbar-system-group .terminal-pill { display: none; }
   .auth-role { display: none !important; }
   .notification-button { width: 38px; padding: 0; }
+  .workspace-controls { display: none; }
   .decision-grid, .execution-safety-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 

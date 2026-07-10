@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { getApiErrorMessage } from "../api/client";
-import { getCurrentMode, type TradingMode } from "../mode";
+import {
+  getCurrentMode,
+  getCurrentUiMode,
+  setCurrentMode,
+  setCurrentUiMode,
+  type TradingMode,
+  type UiMode,
+} from "../mode";
 import {
   clearCurrentAuth,
   getCurrentRole,
@@ -21,6 +28,7 @@ export default function Topbar() {
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
+  const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const [operations, setOperations] = useState<any>(null);
 
   useEffect(() => {
@@ -29,14 +37,17 @@ export default function Topbar() {
       setIsAuthenticated(hasAuthToken());
     };
     const syncMode = () => setMode(getCurrentMode());
+    const syncUiMode = () => setUiMode(getCurrentUiMode());
 
     window.addEventListener("quantgrid-role-change", syncRole);
     window.addEventListener("quantgrid-mode-change", syncMode);
+    window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
     window.addEventListener("storage", syncRole);
     window.addEventListener("storage", syncMode);
     return () => {
       window.removeEventListener("quantgrid-role-change", syncRole);
       window.removeEventListener("quantgrid-mode-change", syncMode);
+      window.removeEventListener("quantgrid-ui-mode-change", syncUiMode);
       window.removeEventListener("storage", syncRole);
       window.removeEventListener("storage", syncMode);
     };
@@ -128,6 +139,18 @@ export default function Topbar() {
         {mode === "live" && (
           <div className="alert alert-error live-warning" role="alert">
             LIVE TRADING ENABLED
+          </div>
+        )}
+        {isAuthenticated && (role === "admin" || role === "developer") && (
+          <div className="workspace-controls" aria-label="Workspace controls">
+            <div className="mode-toggle compact-toggle" role="group" aria-label="Interface mode">
+              <button type="button" className={uiMode === "trader" ? "active" : ""} onClick={() => setCurrentUiMode("trader")}>Trader</button>
+              <button type="button" className={uiMode === "developer" ? "active" : ""} onClick={() => setCurrentUiMode("developer")}>Advanced</button>
+            </div>
+            <div className="mode-toggle compact-toggle" role="group" aria-label="Trading mode">
+              <button type="button" className={mode === "paper" ? "active" : ""} onClick={() => setCurrentMode("paper")}>Paper</button>
+              <button type="button" className={mode === "live" ? "active" : ""} onClick={() => setCurrentMode("live")} title="Live mode requires HTTPS">Live</button>
+            </div>
           </div>
         )}
         <button className="notification-button" type="button" aria-label="Notifications">
