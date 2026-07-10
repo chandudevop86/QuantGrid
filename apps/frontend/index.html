@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#08111f" />
+    <link rel="icon" type="image/svg+xml" href="/quantgrid-logo.svg" />
     <title>QuantGrid</title>
     <style>
       :root {
@@ -56,6 +58,12 @@
         font-weight: 800;
       }
 
+      .boot-mark img {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
       .boot-card strong {
         display: block;
         font-size: 18px;
@@ -102,7 +110,7 @@
       <div class="boot-screen" role="status" aria-live="polite">
         <div class="boot-card">
           <div class="boot-brand">
-            <span class="boot-mark">QG</span>
+            <span class="boot-mark"><img src="/quantgrid-logo.svg" alt="" /></span>
             <strong>QuantGrid</strong>
           </div>
           <p>Loading trading dashboard...</p>

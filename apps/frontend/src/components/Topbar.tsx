@@ -210,7 +210,7 @@ export default function Topbar() {
             </button>
           </div>
         ) : (
-          <form className="auth-form" onSubmit={login}>
+          <form className="auth-form" id="quantgrid-login" onSubmit={login}>
             <input
               value={username}
               onChange={(event) => setUsername(event.target.value)}

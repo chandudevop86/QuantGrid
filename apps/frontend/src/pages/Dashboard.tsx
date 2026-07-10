@@ -294,9 +294,9 @@ export default function Dashboard() {
     <section className="dashboard-page decision-dashboard">
       <div className="page-heading dashboard-heading">
         <div>
-          <span className="page-eyebrow">Market intelligence</span>
-          <h1>Decision overview</h1>
-          <p>A focused view of today&apos;s setup, confidence, risk, and execution readiness.</p>
+          <span className="page-eyebrow">{isAuthenticated ? "Market intelligence" : "Risk-first NIFTY options"}</span>
+          <h1>{isAuthenticated ? "Decision overview" : "Trade with discipline, not impulse."}</h1>
+          <p>{isAuthenticated ? "A focused view of today's setup, confidence, risk, and execution readiness." : "One explainable decision workspace for Buy CE, Buy PE, or No Trade—with risk checks before execution."}</p>
         </div>
         <span className={`decision-status decision-status-${String(decision.system_status).toLowerCase()}`}>
           {decision.system_status}
@@ -304,9 +304,56 @@ export default function Dashboard() {
       </div>
 
       {!isAuthenticated && (
-        <div className="alert alert-warning" role="status">
-          Login with an authorized account to view today&apos;s trading decision.
-        </div>
+        <>
+          <section className="guest-hero-panel" aria-label="QuantGrid product overview">
+            <div className="guest-hero-copy">
+              <span className="guest-proof-label"><i aria-hidden="true" /> Decision-first trading workspace</span>
+              <h2>Clarity before every options decision.</h2>
+              <p>QuantGrid brings market context, confirmation, position risk, and execution readiness into one disciplined workflow.</p>
+              <div className="guest-hero-actions">
+                <a className="guest-primary-action" href="#quantgrid-login">Open your workspace</a>
+                <span>Authorized access only</span>
+              </div>
+            </div>
+            <div className="guest-decision-preview" aria-label="Example decision output">
+              <div className="guest-preview-head"><span>Decision framework</span><strong>Risk first</strong></div>
+              <div className="guest-preview-decision"><small>Possible outcome</small><strong>BUY CE · BUY PE · NO TRADE</strong></div>
+              <div className="guest-preview-grid">
+                <span><small>Context</small><strong>Market regime</strong></span>
+                <span><small>Evidence</small><strong>Confluence</strong></span>
+                <span><small>Protection</small><strong>Risk gates</strong></span>
+                <span><small>Clarity</small><strong>Explainability</strong></span>
+              </div>
+            </div>
+          </section>
+
+          <section className="guest-section">
+            <div className="guest-section-heading"><span>One focused workflow</span><h2>From market data to a disciplined decision</h2></div>
+            <div className="guest-workflow" aria-label="QuantGrid workflow">
+              {[
+                ["01", "Read", "Market regime and data freshness"],
+                ["02", "Confirm", "Trend, structure, volume, and options context"],
+                ["03", "Qualify", "Confidence, confluence, and trade quality"],
+                ["04", "Protect", "Entry, stop, target, and exposure checks"],
+                ["05", "Review", "Paper execution and auditable outcomes"],
+              ].map(([number, title, copy]) => <article key={number}><span>{number}</span><strong>{title}</strong><p>{copy}</p></article>)}
+            </div>
+          </section>
+
+          <section className="guest-section guest-principles-section">
+            <div className="guest-section-heading"><span>Built for discipline</span><h2>Fewer decisions. Better explained.</h2></div>
+            <div className="guest-principles-grid">
+              <article><strong>No Trade is a decision</strong><p>QuantGrid can withhold a setup when confirmation, freshness, or risk requirements are not satisfied.</p></article>
+              <article><strong>Risk before execution</strong><p>Position sizing, loss limits, exposure, and execution readiness remain visible before an order is considered.</p></article>
+              <article><strong>Evidence over prediction</strong><p>Supporting factors, opposing factors, warnings, and invalidation levels explain what could change the view.</p></article>
+            </div>
+          </section>
+
+          <aside className="guest-disclaimer">
+            <strong>Decision support, not a profit promise.</strong>
+            <p>QuantGrid assists structured analysis and risk management. Markets are uncertain, and no software can guarantee profitable trades. Validate decisions and use paper mode before live execution.</p>
+          </aside>
+        </>
       )}
 
       {isAuthenticated && loading && <Loader label="Reading market..." />}

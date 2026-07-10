@@ -51,10 +51,10 @@ export default function Sidebar() {
   return (
     <aside className={`sidebar${authenticated ? "" : " sidebar-guest"}`}>
       <div className="brand">
-        <span className="brand-mark">QG</span>
+        <span className="brand-mark"><img src="/quantgrid-logo.svg" alt="" /></span>
         <div>
           <strong>QuantGrid</strong>
-          <span>Trading Console</span>
+          <span>Disciplined Decisions</span>
         </div>
       </div>
 
