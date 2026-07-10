@@ -152,3 +152,31 @@ def test_live_nse_option_chain_function_falls_back_on_http_403(monkeypatch):
     assert payload["fallback_reason"] == "HTTPError"
     assert payload["provider_warning"] == "Live NSE option-chain provider unavailable; using synthetic fallback data."
     assert "HTTP Error 403" in payload["fallback_detail"]
+
+def test_backtesting_comparison_ranks_traded_runs_above_no_trade_placeholders(monkeypatch):
+    import Backend.application.quant_modules as quant_modules
+
+    def result(payload):
+        strategy = payload["strategy_name"]
+        if strategy == "mean_reversion":
+            return {
+                "symbol": "NIFTY",
+                "metrics": {"total_trades": 0, "net_pnl": 0, "pnl": 0, "sharpe_ratio": 0, "max_drawdown": 0},
+                "cost_model": {},
+                "equity_curve": [{"index": 0, "equity": 100000}],
+                "recent_outcomes": [],
+            }
+        return {
+            "symbol": "NIFTY",
+            "metrics": {"total_trades": 1, "net_pnl": -2862, "pnl": -2862, "sharpe_ratio": 0, "max_drawdown": 0.0286},
+            "cost_model": {},
+            "equity_curve": [{"index": 0, "equity": 100000}, {"index": 1, "equity": 97138}],
+            "recent_outcomes": [],
+        }
+
+    monkeypatch.setattr(quant_modules, "backtesting_module", result)
+
+    payload = quant_modules.backtesting_comparison({"symbol": "NIFTY", "strategies": ["mean_reversion", "amd"]})
+
+    assert [item["strategy"] for item in payload["ranked"]] == ["amd", "mean_reversion"]
+    assert payload["best_strategy"] == "amd"

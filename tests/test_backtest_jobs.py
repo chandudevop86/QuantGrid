@@ -173,3 +173,33 @@ def test_backtest_api_start_returns_job_id(app_client):
     payload = response.json()
     assert payload["job_id"]
     assert payload["status"] in {"QUEUED", "RUNNING", "COMPLETED"}
+
+def test_backtest_job_ranks_traded_runs_above_no_trade_placeholders(monkeypatch):
+    from Backend.application import backtest_jobs
+
+    backtest_jobs.reset_backtest_jobs_for_tests()
+
+    def result(strategy: str) -> dict:
+        if strategy == "mean_reversion":
+            return {
+                "symbol": "NIFTY",
+                "metrics": {"total_trades": 0, "net_pnl": 0, "pnl": 0, "sharpe_ratio": 0, "max_drawdown": 0},
+                "cost_model": {},
+                "equity_curve": [{"index": 0, "equity": 100000}],
+                "recent_outcomes": [],
+            }
+        return {
+            "symbol": "NIFTY",
+            "metrics": {"total_trades": 1, "net_pnl": -2862, "pnl": -2862, "sharpe_ratio": 0, "max_drawdown": 0.0286},
+            "cost_model": {},
+            "equity_curve": [{"index": 0, "equity": 100000}, {"index": 1, "equity": 97138}],
+            "recent_outcomes": [],
+        }
+
+    monkeypatch.setattr(backtest_jobs, "backtesting_module", lambda payload: result(payload["strategy_name"]))
+
+    started = backtest_jobs.start_backtest_job({"symbol": "NIFTY", "strategies": ["mean_reversion", "amd"], "expected_seconds": 5})
+    finished = _wait_for(lambda: backtest_jobs.get_backtest_job(started["job_id"]) if backtest_jobs.get_backtest_job(started["job_id"])["status"] == "COMPLETED" else None)
+
+    assert [item["strategy"] for item in finished["result"]["ranked"]] == ["amd", "mean_reversion"]
+    assert finished["result"]["best_strategy"] == "amd"

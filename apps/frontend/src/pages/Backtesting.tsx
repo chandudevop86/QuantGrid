@@ -74,16 +74,20 @@ function formatDuration(seconds: unknown) {
   return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
 }
 
+function backtestRankScore(run: BacktestRun) {
+  const hasTrades = number(run.metrics?.total_trades) > 0 ? 1 : 0;
+  return hasTrades * 1_000_000_000
+    + number(run.metrics?.sharpe_ratio) * 100_000
+    + number(run.metrics?.net_pnl ?? run.metrics?.pnl)
+    - number(run.metrics?.max_drawdown) * 1_000;
+}
+
 function jobPayload(job: BacktestJob | null): BacktestComparison | null {
   if (!job) return null;
   if (job.result) return job.result;
   const runs = job.partial_results ?? [];
   if (!runs.length) return null;
-  const ranked = [...runs].sort((left, right) => {
-    const leftScore = number(left.metrics?.sharpe_ratio) * 100000 + number(left.metrics?.net_pnl ?? left.metrics?.pnl) - number(left.metrics?.max_drawdown) * 1000;
-    const rightScore = number(right.metrics?.sharpe_ratio) * 100000 + number(right.metrics?.net_pnl ?? right.metrics?.pnl) - number(right.metrics?.max_drawdown) * 1000;
-    return rightScore - leftScore;
-  });
+  const ranked = [...runs].sort((left, right) => backtestRankScore(right) - backtestRankScore(left));
   return {
     module: "backtesting_comparison",
     symbol: "NIFTY",
@@ -368,4 +372,5 @@ export default function Backtesting() {
     </section>
   );
 }
+
 

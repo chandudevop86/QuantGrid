@@ -494,15 +494,7 @@ def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, A
             "equity_curve": result.get("equity_curve", []),
             "recent_outcomes": result.get("recent_outcomes", []),
         })
-    ranked = sorted(
-        runs,
-        key=lambda item: (
-            float(item["metrics"].get("sharpe_ratio") or 0),
-            float(item["metrics"].get("net_pnl") or item["metrics"].get("pnl") or 0),
-            -float(item["metrics"].get("max_drawdown") or 0),
-        ),
-        reverse=True,
-    )
+    ranked = sorted(runs, key=_backtest_rank_key, reverse=True)
     return {
         "module": "backtesting_comparison",
         "symbol": str(payload.get("symbol") or "NIFTY").upper(),
@@ -513,6 +505,16 @@ def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, A
     }
 
 
+
+def _backtest_rank_key(item: dict[str, Any]) -> tuple[float, float, float, float]:
+    metrics = item.get("metrics", {}) or {}
+    total_trades = float(metrics.get("total_trades") or 0)
+    return (
+        1.0 if total_trades > 0 else 0.0,
+        float(metrics.get("sharpe_ratio") or 0),
+        float(metrics.get("net_pnl") or metrics.get("pnl") or 0),
+        -float(metrics.get("max_drawdown") or 0),
+    )
 def _professional_backtest_metrics(
     candles: list[dict[str, Any]],
     trades: list[dict[str, Any]],
@@ -689,3 +691,5 @@ def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         "risk_engine": risk_engine_summary(),
         "trade_journal": trade_journal_summary(),
     }
+
+

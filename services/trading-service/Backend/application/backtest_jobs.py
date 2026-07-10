@@ -259,15 +259,7 @@ def _job_from_record(record: dict[str, Any]) -> BacktestJob:
 
 
 def _comparison_result(job: BacktestJob) -> dict[str, Any]:
-    ranked = sorted(
-        job.partial_results,
-        key=lambda item: (
-            float(item.get("metrics", {}).get("sharpe_ratio") or 0),
-            float(item.get("metrics", {}).get("net_pnl") or item.get("metrics", {}).get("pnl") or 0),
-            -float(item.get("metrics", {}).get("max_drawdown") or 0),
-        ),
-        reverse=True,
-    )
+    ranked = sorted(job.partial_results, key=_backtest_rank_key, reverse=True)
     return {
         "module": "backtesting_comparison",
         "symbol": str(job.payload.get("symbol") or "NIFTY").upper(),
@@ -278,6 +270,16 @@ def _comparison_result(job: BacktestJob) -> dict[str, Any]:
     }
 
 
+
+def _backtest_rank_key(item: dict[str, Any]) -> tuple[float, float, float, float]:
+    metrics = item.get("metrics", {}) or {}
+    total_trades = float(metrics.get("total_trades") or 0)
+    return (
+        1.0 if total_trades > 0 else 0.0,
+        float(metrics.get("sharpe_ratio") or 0),
+        float(metrics.get("net_pnl") or metrics.get("pnl") or 0),
+        -float(metrics.get("max_drawdown") or 0),
+    )
 def _job_snapshot(job: BacktestJob) -> dict[str, Any]:
     elapsed = _elapsed_seconds(job)
     remaining = _estimated_remaining_seconds(job, elapsed)
@@ -379,3 +381,5 @@ def _parse_time(value: str | None) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
