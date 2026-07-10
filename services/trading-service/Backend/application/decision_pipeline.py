@@ -59,6 +59,27 @@ class MarketDataInputs:
     max_consecutive_losses: int = 3
     duplicate_signal: bool = False
     context_status: dict[str, dict[str, Any]] = field(default_factory=dict)
+    enforce_data_quality: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class TradeDataQualityResult:
+    quality_score: int
+    usable_for_trade: bool
+    status: str
+    critical_errors: list[str]
+    warnings: list[str]
+    components: dict[str, dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "quality_score": self.quality_score,
+            "usable_for_trade": self.usable_for_trade,
+            "status": self.status,
+            "critical_errors": self.critical_errors,
+            "warnings": self.warnings,
+            "components": self.components,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +283,7 @@ class DecisionPipelineService:
         candles: list[dict[str, Any]] | None = None,
         candles_by_interval: dict[str, list[dict[str, Any]]] | None = None,
         market_context: dict[str, dict[str, Any]] | None = None,
+        enforce_data_quality: bool = False,
         symbol: str = "NIFTY",
     ) -> MarketDataInputs:
         candles = candles or []
@@ -290,8 +312,12 @@ class DecisionPipelineService:
             gift_nifty_bias=_context_text(context_values, "gift_nifty_bias"),
             vwap_relation=_context_text(context_values, "vwap_relation"),
             liquidity=_context_text(context_values, "liquidity"),
+            call_oi=_context_number(context_values, "call_oi"),
+            put_oi=_context_number(context_values, "put_oi"),
+            iv=_context_number(context_values, "iv"),
             expiry_day=bool(context_values.get("expiry_day", False)),
             context_status=context_status,
+            enforce_data_quality=enforce_data_quality,
         )
 
     def _map_factors(self, market: MarketDataInputs, *, risk_blocked: bool = False) -> dict[str, Any]:
@@ -301,6 +327,7 @@ class DecisionPipelineService:
         volume_analysis = analyze_volume(base_candles)
         sr_analysis = analyze_support_resistance(base_candles)
         htf_analysis = analyze_higher_timeframe(market)
+        data_quality = assess_trade_data_quality(market, htf_analysis)
         market_structure = analyze_market_structure(base_candles, volume_analysis)
         key_levels = analyze_key_levels(base_candles)
         supply_demand = analyze_supply_demand(base_candles)
@@ -327,6 +354,8 @@ class DecisionPipelineService:
         market_bias = _majority_bias(directional_votes)
         blockers = _checklist_blockers(market, trend_analysis, ema_analysis, volume_analysis, sr_analysis, risk_reward)
         blockers.extend(_high_probability_blockers(htf_analysis, price_action, discipline, options_flow, institutional, regime))
+        blockers.extend(data_quality.critical_errors)
+        blockers = _dedupe(blockers)
         if blockers:
             market_bias = "NEUTRAL"
         confluence = _confluence_engine(
@@ -375,6 +404,7 @@ class DecisionPipelineService:
                     "weights": confluence["weights"],
                     "breakdown": confluence["breakdown"],
                 },
+                "data_quality": data_quality.to_dict(),
             }
         )
         final_decision = _final_decision_payload(
@@ -408,6 +438,7 @@ class DecisionPipelineService:
             "expiry_day": market.expiry_day,
             "data_freshness_seconds": market.feed_delay_seconds,
             "market_context_status": market.context_status,
+            "data_quality": data_quality.to_dict(),
             "checklist": checklist,
             "checklist_score": checklist_score,
             "checklist_blockers": blockers,
@@ -665,6 +696,78 @@ def analyze_risk_reward(market: MarketDataInputs, bias: str, sr: SupportResistan
         warnings,
         round(stop, 2),
         round(target, 2),
+    )
+
+
+def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> TradeDataQualityResult:
+    if not market.enforce_data_quality:
+        return TradeDataQualityResult(
+            quality_score=100,
+            usable_for_trade=True,
+            status="NOT_ASSESSED",
+            critical_errors=[],
+            warnings=["Central data-quality enforcement was not requested by this legacy caller."],
+            components={},
+        )
+
+    from app.validation.data_quality import validate_candles
+
+    series = {
+        "1m": market.candles_1m or market.candles,
+        "5m": market.candles_5m,
+        "15m": market.candles_15m,
+        "1h": market.candles_1h,
+        "1d": market.candles_daily,
+    }
+    required = {"1m", "15m", "1h"}
+    critical_errors: list[str] = []
+    warnings: list[str] = []
+    components: dict[str, dict[str, Any]] = {}
+    scores: list[int] = []
+
+    for timeframe, candles in series.items():
+        _valid, report = validate_candles(candles, source="stored-live-cache" if candles else "unavailable")
+        payload = report.model_dump()
+        components[f"candles_{timeframe}"] = payload
+        scores.append(report.quality_score)
+        if timeframe in required and not candles:
+            critical_errors.append(f"data quality: required {timeframe} candles are unavailable")
+        elif timeframe in required and report.status == "FAIL":
+            critical_errors.append(f"data quality: {timeframe} candles failed validation")
+        elif report.status != "PASS":
+            warnings.append(f"{timeframe} candle quality is {report.status.lower()} ({report.quality_score}/100).")
+
+    if not market.valid_for_execution:
+        critical_errors.append("data quality: market data is stale or invalid for execution")
+
+    option_fields = ("oi_bias", "pcr")
+    missing_options = [name for name in option_fields if not market.context_status.get(name, {}).get("available")]
+    option_score = int((len(option_fields) - len(missing_options)) / len(option_fields) * 100)
+    components["options"] = {
+        "status": "PASS" if not missing_options else "FAIL",
+        "quality_score": option_score,
+        "missing_fields": missing_options,
+        "observations": {name: market.context_status.get(name, {"available": False}) for name in option_fields},
+    }
+    scores.append(option_score)
+    if missing_options:
+        critical_errors.append(f"data quality: verified options context unavailable ({', '.join(missing_options)})")
+
+    if htf.get("missing_required_timeframes"):
+        missing = ", ".join(htf["missing_required_timeframes"])
+        critical_errors.append(f"data quality: required higher timeframes unavailable ({missing})")
+
+    critical_errors = _dedupe(critical_errors)
+    warnings = _dedupe(warnings)
+    score = int(sum(scores) / max(len(scores), 1))
+    usable = not critical_errors
+    return TradeDataQualityResult(
+        quality_score=score,
+        usable_for_trade=usable,
+        status="PASS" if usable and score >= 80 else "WARN" if usable else "FAIL",
+        critical_errors=critical_errors,
+        warnings=warnings,
+        components=components,
     )
 
 
@@ -1666,6 +1769,9 @@ _MARKET_CONTEXT_FIELDS = (
     "gift_nifty_bias",
     "vwap_relation",
     "liquidity",
+    "call_oi",
+    "put_oi",
+    "iv",
     "expiry_day",
 )
 

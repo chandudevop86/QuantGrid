@@ -36,6 +36,12 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
+_LATEST_OPTION_CONTEXT: dict[str, dict[str, dict[str, Any]]] = {}
+
+
+def latest_verified_option_context(symbol: str = "NIFTY") -> dict[str, dict[str, Any]]:
+    """Return the latest provider observation already validated by this module."""
+    return dict(_LATEST_OPTION_CONTEXT.get(symbol.upper(), {}))
 
 DHAN_UNDERLYING_DEFAULTS: dict[str, tuple[int, str]] = {
     "NIFTY": (13, "IDX_I"),
@@ -61,7 +67,7 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
         return None
     valid_candles, data_quality = validate_candles(candles, source="stored-live-cache")
 
-    return {
+    result = {
         "symbol": symbol.upper(),
         "market_symbol": _market_symbol(symbol),
         "interval": interval,
@@ -73,6 +79,7 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
         "cached": True,
         "warning": "Live market data provider is unavailable; served latest stored live candles.",
     }
+    return result
 
 
 def _market_symbol(symbol: str) -> str:
@@ -744,7 +751,7 @@ def get_option_chain(
     resistance_rows = [row for row in rows if row["strike"] > atm]
     support = max(support_rows, key=lambda row: float(row["pe"].get("oi") or 0))["strike"] if support_rows else None
     resistance = max(resistance_rows, key=lambda row: float(row["ce"].get("oi") or 0))["strike"] if resistance_rows else None
-    return {
+    result = {
         "symbol": symbol.upper(),
         "underlying_price": round(price, 2),
         "spot": round(price, 2),
@@ -766,6 +773,51 @@ def get_option_chain(
         "support": support,
         "resistance": resistance,
         "provider_available": provider_available,
+    }
+    _LATEST_OPTION_CONTEXT[symbol.upper()] = _option_context_from_payload(result)
+    return result
+
+
+def _option_context_from_payload(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows = list(payload.get("rows") or [])
+    source = str(payload.get("source") or "unknown")
+    timestamp = str(payload.get("updated_at") or datetime.now(timezone.utc).isoformat())
+    quality = payload.get("data_quality") or {}
+    provider_available = bool(payload.get("provider_available") and rows)
+    settings = get_settings()
+    live_suitable = bool(
+        provider_available
+        and quality.get("status") == "PASS"
+        and (source == "dhan-option-chain" or (source == "yahoo-finance-options" and settings.allow_yahoo_for_live))
+    )
+    call_oi = sum(float(row.get("ce", {}).get("oi") or 0) for row in rows)
+    put_oi = sum(float(row.get("pe", {}).get("oi") or 0) for row in rows)
+    pcr = payload.get("pcr")
+    pcr_number = float(pcr) if pcr is not None else None
+    oi_bias = "BULLISH" if pcr_number is not None and pcr_number >= 1.15 else "BEARISH" if pcr_number is not None and pcr_number <= 0.85 else "NEUTRAL"
+    iv_values = [
+        float(leg.get("iv"))
+        for row in rows
+        for leg in (row.get("ce", {}), row.get("pe", {}))
+        if leg.get("iv") is not None
+    ]
+    average_iv = round(sum(iv_values) / len(iv_values), 3) if iv_values else None
+
+    def observation(value: Any, *, available: bool = True) -> dict[str, Any]:
+        return {
+            "value": value,
+            "source": source,
+            "timestamp": timestamp,
+            "available": bool(provider_available and available and value is not None),
+            "live_suitable": live_suitable,
+        }
+
+    return {
+        "oi_bias": observation(oi_bias, available=pcr_number is not None),
+        "pcr": observation(pcr_number),
+        "call_oi": observation(call_oi, available=call_oi > 0),
+        "put_oi": observation(put_oi, available=put_oi > 0),
+        "iv": observation(average_iv),
     }
 
 

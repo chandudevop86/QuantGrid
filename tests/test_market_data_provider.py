@@ -710,3 +710,40 @@ def test_live_market_data_service_accepts_fresh_live_provider(monkeypatch):
     assert ltp["price"] == 100
     assert candles["source"] == "live"
     assert candles["fresh"] is True
+def test_option_chain_snapshot_builds_verified_context_only_from_live_provider():
+    from Backend.presentation.api.market_api import _option_context_from_payload
+
+    timestamp = "2026-07-10T09:20:00+05:30"
+    verified = _option_context_from_payload(
+        {
+            "source": "dhan-option-chain",
+            "updated_at": timestamp,
+            "provider_available": True,
+            "data_quality": {"status": "PASS"},
+            "pcr": 1.25,
+            "rows": [
+                {"strike": 25000, "ce": {"oi": 100, "iv": 14}, "pe": {"oi": 125, "iv": 16}},
+            ],
+        }
+    )
+    unavailable = _option_context_from_payload(
+        {
+            "source": "synthetic-demo-chain",
+            "updated_at": timestamp,
+            "provider_available": False,
+            "data_quality": {"status": "WARN"},
+            "pcr": 1.25,
+            "rows": [
+                {"strike": 25000, "ce": {"oi": 100, "iv": 14}, "pe": {"oi": 125, "iv": 16}},
+            ],
+        }
+    )
+
+    assert verified["pcr"]["available"] is True
+    assert verified["pcr"]["live_suitable"] is True
+    assert verified["oi_bias"]["value"] == "BULLISH"
+    assert verified["call_oi"]["value"] == 100
+    assert verified["put_oi"]["value"] == 125
+    assert verified["iv"]["value"] == 15
+    assert unavailable["pcr"]["available"] is False
+    assert unavailable["pcr"]["live_suitable"] is False

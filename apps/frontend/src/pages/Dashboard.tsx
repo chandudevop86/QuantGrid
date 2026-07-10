@@ -251,6 +251,21 @@ export default function Dashboard() {
   const checklistRr = checklist?.risk_reward ?? decision.factor_snapshot?.risk_reward;
   const finalDecision = decision.factor_snapshot?.final_decision;
   const paperGate = decision.factor_snapshot?.high_probability_trade_engine?.paper_trade_gate;
+  const dataQuality = decision.factor_snapshot?.data_quality ?? checklist?.data_quality;
+  const tradeEligible = Boolean(
+    paperGate?.allowed
+    && dataQuality?.usable_for_trade
+    && (finalDecision?.trade_decision ?? decision.trade_recommendation) !== "No Trade"
+  );
+  const noTradeReasons = (
+    finalDecision?.block_reasons?.length
+      ? finalDecision.block_reasons
+      : dataQuality?.critical_errors?.length
+        ? dataQuality.critical_errors
+        : decision.warnings?.length
+          ? decision.warnings
+          : ["Conditions do not align for a qualified trade."]
+  );
   const disciplinePass = checklist?.discipline?.discipline_passed ?? checklist?.discipline?.passed;
   const plainReason = finalDecision?.explainability?.plain_english ?? finalDecision?.explanation?.[0] ?? decision.simple_explanation;
   const supplyDemandText = checklist?.supply_demand?.trade_location_quality
@@ -368,214 +383,73 @@ export default function Dashboard() {
 
       {isAuthenticated && !loading && !error && (
         <>
-          <div className="market-snapshot-bar" aria-label="Market overview">
-            {marketSnapshot.map((item) => (
-              <span className={`market-snapshot-item market-snapshot-${item.tone}`} key={item.label}>
-                <small>{item.label}</small>
-                <strong>{item.value}</strong>
-              </span>
-            ))}
-          </div>
+          <section className="product-dashboard-section" aria-labelledby="market-decision-title">
+            <div className="section-header"><div><span className="section-number">01</span><h2 id="market-decision-title">Market Decision</h2></div><span>Updated {formatTime(operations?.updated_at)}</span></div>
+            <div className="market-snapshot-bar" aria-label="Available market overview">
+              {marketSnapshot.filter((item) => item.value !== "Waiting").map((item) => <span className={`market-snapshot-item market-snapshot-${item.tone}`} key={item.label}><small>{item.label}</small><strong>{item.value}</strong></span>)}
+            </div>
+            <article className={`decision-card decision-card-${badgeTone(finalDecision?.trade_decision ?? decision.trade_recommendation)}`}>
+              <div className="decision-copy"><span className="decision-kicker">Current classification</span><strong>{finalDecision?.trade_decision ?? decision.trade_recommendation}</strong><p>{plainReason}</p></div>
+              <div className={`confidence-card confidence-${confidenceTone(confidence)}`}><span>Trade Confidence</span><strong>{confidence}%</strong><div className="confidence-track" style={{ "--confidence": `${confidence}%` } as CSSProperties}><span /></div></div>
+            </article>
+            <div className="decision-grid decision-grid-compact">
+              <span><small>Market Bias</small><strong>{decision.market_bias}</strong></span>
+              <span><small>Signal Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
+              <span><small>Market Regime</small><strong>{checklist?.market_regime?.market_regime ?? checklist?.market_regime?.regime ?? "Unknown"}</strong></span>
+              <span><small>Data Freshness</small><strong>{dataQuality?.status ?? decision.data_status}</strong></span>
+            </div>
+          </section>
 
-          <article className={`decision-card decision-card-${badgeTone(finalDecision?.trade_decision ?? decision.trade_recommendation)}`}>
-            <div className="decision-copy">
-              <span className="decision-kicker">Today&apos;s Decision</span>
-              <strong>{finalDecision?.trade_decision ?? decision.trade_recommendation}</strong>
-              <p>{plainReason}</p>
-            </div>
-            <div className={`confidence-card confidence-${confidenceTone(confidence)}`}>
-              <span>Confidence</span>
-              <strong>{confidence}%</strong>
-              <div className="confidence-track" style={{ "--confidence": `${confidence}%` } as CSSProperties}>
-                <span />
-              </div>
-            </div>
-          </article>
+          <section className="product-dashboard-section" aria-labelledby="why-decision-title">
+            <div className="section-header"><div><span className="section-number">02</span><h2 id="why-decision-title">Why This Decision</h2></div><span>Evidence, conflicts, and what changes the view</span></div>
+            <div className="narrative-card"><p>{plainReason}</p><div className="narrative-columns">
+              <div><strong>Supporting Evidence</strong>{(decision.supporting_factors?.length ? decision.supporting_factors : ["No verified supporting evidence."]).slice(0, 5).map((item) => <span key={item}>{item}</span>)}</div>
+              <div><strong>Opposing & Missing</strong>{([...decision.opposing_factors, ...decision.warnings].length ? [...decision.opposing_factors, ...decision.warnings] : ["No active conflict."]).slice(0, 5).map((item) => <span key={item}>{item}</span>)}</div>
+              <div><strong>What Changes The View</strong>{whatWouldChange.slice(0, 5).map((item) => <span key={item}>{item}</span>)}</div>
+            </div></div>
+          </section>
 
-          <div className="decision-grid">
-            <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
-            <span><small>Strategy</small><strong>{finalDecision?.strategy ?? finalDecision?.strategy_selection?.selected_strategy ?? "none"}</strong></span>
-            <span><small>Market Regime</small><strong>{checklist?.market_regime?.market_regime ?? checklist?.market_regime?.regime ?? "Unknown"}</strong></span>
-            <span><small>Probability</small><strong>{Number(finalDecision?.probability_score ?? finalDecision?.confidence_score ?? confidence)}%</strong></span>
-            <span><small>Confluence Score</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
-            <span><small>Entry</small><strong>{finalDecision?.entry_zone ?? decision.entry_zone}</strong></span>
-            <span><small>Stop Loss</small><strong>{finalDecision?.stop_loss ?? decision.stop_loss}</strong></span>
-            <span><small>Target</small><strong>{finalDecision?.target ?? decision.target}</strong></span>
-            <span><small>Risk/Reward</small><strong>{Number(finalDecision?.risk_reward_ratio ?? checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span>
-            <span><small>Position Size</small><strong>{finalDecision?.position_size ?? checklistRr?.position_size ?? 0}</strong></span>
-            <span><small>Risk Status</small><strong>{riskStatus}</strong></span>
-            <span><small>Support</small><strong>{decision.support}</strong></span>
-            <span><small>Resistance</small><strong>{decision.resistance}</strong></span>
-            <span><small>Invalidation Level</small><strong>{finalDecision?.invalidation_level ?? decision.invalidation_level}</strong></span>
-            <span><small>System Status</small><strong>{finalDecision?.system_status ?? decision.data_status}</strong></span>
-          </div>
+          <section className="product-dashboard-section" aria-labelledby="trade-plan-title">
+            <div className="section-header"><div><span className="section-number">03</span><h2 id="trade-plan-title">{tradeEligible ? "Trade Plan" : "No Trade"}</h2></div><span>{tradeEligible ? "Validated plan" : "Capital protection is the valid action"}</span></div>
+            {tradeEligible ? <div className="trade-plan-grid">
+              <span><small>Instrument</small><strong>NIFTY Options</strong></span><span><small>Direction</small><strong>{finalDecision?.trade_decision}</strong></span>
+              <span><small>Entry Zone</small><strong>{finalDecision?.entry_zone ?? decision.entry_zone}</strong></span><span><small>Stop Loss</small><strong>{finalDecision?.stop_loss ?? decision.stop_loss}</strong></span>
+              <span><small>Target</small><strong>{finalDecision?.target ?? decision.target}</strong></span><span><small>Invalidation</small><strong>{finalDecision?.invalidation_level ?? decision.invalidation_level}</strong></span>
+              <span><small>Risk / Reward</small><strong>{Number(finalDecision?.risk_reward_ratio ?? checklistRr?.risk_reward_ratio ?? 0).toFixed(2)}</strong></span><span><small>Position Size</small><strong>{finalDecision?.position_size ?? checklistRr?.position_size ?? 0}</strong></span>
+            </div> : <div className="no-trade-panel"><strong>Conditions do not support a qualified trade.</strong><p>No Trade protects capital when evidence, freshness, provider quality, or risk requirements fail.</p><ul>{noTradeReasons.slice(0, 6).map((reason) => <li key={reason}>{reason}</li>)}</ul></div>}
+          </section>
 
-          <div className="status-panel-grid compact-status-grid">
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>Supporting</span>
-                <strong>{decision.supporting_factors?.length ?? 0}</strong>
-              </div>
-              <div className="status-panel-body">
-                {(decision.supporting_factors?.length ? decision.supporting_factors : ["No strong supporting factors yet."]).slice(0, 4).map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </div>
+          <section className="product-dashboard-section" aria-labelledby="key-levels-title">
+            <div className="section-header"><div><span className="section-number">04</span><h2 id="key-levels-title">Key Levels</h2></div><span>Levels that define risk and invalidate the view</span></div>
+            <div className="table-wrap"><table className="table key-levels-table"><thead><tr><th>Level</th><th>Value</th><th>Purpose</th></tr></thead><tbody>
+              <tr><td>Support</td><td>{decision.support}</td><td>Nearest confirmed demand</td></tr>
+              <tr><td>Resistance</td><td>{decision.resistance}</td><td>Nearest confirmed supply</td></tr>
+              <tr><td>Entry Zone</td><td>{finalDecision?.entry_zone ?? decision.entry_zone}</td><td>Valid only when all gates pass</td></tr>
+              <tr><td>Invalidation</td><td>{finalDecision?.invalidation_level ?? decision.invalidation_level}</td><td>Closes the current thesis</td></tr>
+              <tr><td>VWAP</td><td>{decision.factor_snapshot?.vwap_relation ?? "Unavailable"}</td><td>Intraday value reference</td></tr>
+            </tbody></table></div>
+          </section>
 
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>Opposing</span>
-                <strong>{decision.opposing_factors?.length ?? 0}</strong>
-              </div>
-              <div className="status-panel-body">
-                {(decision.opposing_factors?.length ? decision.opposing_factors : ["No major opposing factor."]).slice(0, 4).map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
+          <section className="product-dashboard-section" aria-labelledby="system-trust-title">
+            <div className="section-header"><div><span className="section-number">05</span><h2 id="system-trust-title">System Trust</h2></div><span>{dataQuality?.usable_for_trade ? "Data usable" : "Recommendation blocked"}</span></div>
+            <div className="system-trust-grid">
+              <span><small>Data Quality</small><strong>{dataQuality?.quality_score ?? 0}/100 · {dataQuality?.status ?? "UNKNOWN"}</strong></span>
+              <span><small>Latest Candle</small><strong>{formatTime(market?.last_candle_timestamp)}</strong></span>
+              <span><small>Feed Delay</small><strong>{market?.feed_delay_seconds ?? "-"}s</strong></span>
+              <span><small>Market Session</small><strong>{marketStatusLabel}</strong></span>
+              <span><small>API / Database</small><strong>{health?.api?.healthy && health?.db?.healthy ? "Ready" : "Review"}</strong></span>
+              <span><small>Market Provider</small><strong>{health?.market_data?.healthy ? "Available" : "Unavailable"}</strong></span>
+              <span><small>Broker Mode</small><strong>{health?.broker?.connected ? "Connected" : "Paper only"}</strong></span>
+              <span><small>Risk State</small><strong>{risk?.active_risk_state ?? "UNKNOWN"}</strong></span>
+              <span><small>Realtime</small><strong>{socketStatus}</strong></span>
             </div>
+            {dataQuality?.critical_errors?.length > 0 && <div className="missing-data-banner" role="alert"><strong>Trade plan blocked by data quality</strong>{dataQuality.critical_errors.slice(0, 5).map((item: string) => <span key={item}>{item}</span>)}</div>}
+          </section>
 
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>Warnings</span>
-                <strong>{decision.warnings?.length ?? 0}</strong>
-              </div>
-              <div className="status-panel-body">
-                {(decision.warnings?.length ? decision.warnings : ["No active warning."]).slice(0, 4).map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>Decision Quality</h2>
-              <span>{decision.score_reason}</span>
-            </div>
-            <div className="execution-safety-grid">
-              <span><small>Precision</small><strong>{Math.round(Number(decision.recommendation_metrics?.precision ?? 0) * 100)}%</strong></span>
-              <span><small>Recall</small><strong>{Math.round(Number(decision.recommendation_metrics?.recall ?? 0) * 100)}%</strong></span>
-              <span><small>Trade Quality</small><strong>{finalDecision?.trade_quality ?? "Skip"}</strong></span>
-              <span><small>Confluence</small><strong>{Number(finalDecision?.confluence_score ?? checklist?.confluence_engine?.confluence_score ?? 0)}%</strong></span>
-              <span><small>Skipped Trades</small><strong>{Number(decision.recommendation_metrics?.skipped_trades ?? 0)}</strong></span>
-              <span><small>Blocked Trades</small><strong>{Number(decision.recommendation_metrics?.blocked_trades ?? 0)}</strong></span>
-              <span><small>Profit Factor</small><strong>{Number(decision.recommendation_metrics?.profit_factor ?? 0).toFixed(2)}</strong></span>
-              <span><small>Max Drawdown</small><strong>{formatMoney(decision.recommendation_metrics?.max_drawdown)}</strong></span>
-            </div>
-          </div>
-
-          <div className="dashboard-section narrative-section">
-            <div className="section-header">
-              <h2>Market Narrative</h2>
-              <span>{finalDecision?.explainability?.score_reason ?? decision.score_reason}</span>
-            </div>
-            <div className="narrative-card">
-              <p>{plainReason}</p>
-              <div className="narrative-columns">
-                <div>
-                  <strong>Supporting Factors</strong>
-                  {(decision.supporting_factors?.length ? decision.supporting_factors : ["No strong supporting factors yet."]).slice(0, 4).map((item) => <span key={item}>{item}</span>)}
-                </div>
-                <div>
-                  <strong>Counter Reasons</strong>
-                  {(decision.opposing_factors?.length ? decision.opposing_factors : ["No major opposing factor."]).slice(0, 4).map((item) => <span key={item}>{item}</span>)}
-                </div>
-                <div>
-                  <strong>What Changes The View</strong>
-                  {whatWouldChange.slice(0, 4).map((item) => <span key={item}>{item}</span>)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="status-panel-grid regime-grid">
-            {regimeRows.map((row) => (
-              <div className="status-panel regime-card" key={row.instrument}>
-                <div className="status-panel-header">
-                  <span>{row.instrument}</span>
-                  <strong>{row.regime}</strong>
-                </div>
-                <div className="status-panel-body">
-                  <span>Bias: {row.bias}</span>
-                  <span>Strength: {row.strength}</span>
-                  <span>Allowed strategy: {row.strategy}</span>
-                  <span>{row.warning || "No active regime warning."}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>30-Second Checklist</h2>
-              <span>Checklist Score: {Number(checklist?.checklist_score ?? decision.factor_snapshot?.checklist_score ?? 0)}%</span>
-            </div>
-            <div className="checklist-panel">
-              {checklistRows.map((row) => (
-                <div className="checklist-row" key={row.label}>
-                  <span className={`status-pill status-pill-${badgeTone(row.status)}`}>{row.status}</span>
-                  <strong>{row.label}</strong>
-                  <p>{row.reason}</p>
-                  <small>{row.weight} pts</small>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="status-panel-grid compact-status-grid">
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>Market</span>
-                <strong className={`market-status-text ${getMarketStatusClass(marketStatusLabel)}`}>
-                  {marketStatusLabel}
-                </strong>
-              </div>
-              <div className="status-panel-body">
-                <span>Session: {market?.session_state ?? "unknown"}</span>
-                <span>Feed delay: {market?.feed_delay_seconds ?? "-"}s</span>
-                <span>Last candle: {formatTime(market?.last_candle_timestamp)}</span>
-              </div>
-            </div>
-
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>Signal</span>
-                <strong>{decision.market_bias}</strong>
-              </div>
-              <div className="status-panel-body">
-                <span>{optionsRead(String(decision.market_bias))}</span>
-                <span>Recommendation: {decision.trade_recommendation}</span>
-                <span>Wait when confidence is below 70%.</span>
-              </div>
-            </div>
-
-            <div className="status-panel">
-              <div className="status-panel-header">
-                <span>System</span>
-                <strong>{decision.system_status}</strong>
-              </div>
-              <div className="status-panel-body">
-                <span>Mode: {risk?.execution_mode ?? "PAPER"}</span>
-                <span>Risk state: {risk?.active_risk_state ?? "UNKNOWN"}</span>
-                <span>Daily PnL: {formatMoney(risk?.daily_pnl)}</span>
-                <span>Realtime: {socketStatus}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="dashboard-section">
-            <div className="section-header">
-              <h2>System Status</h2>
-              <span>Only what affects the decision</span>
-            </div>
-            <div className="execution-safety-grid">
-              <span><small>API</small><strong>{health?.api?.healthy ? "Ready" : "Review"}</strong></span>
-              <span><small>Database</small><strong>{health?.db?.healthy ? "Ready" : "Review"}</strong></span>
-              <span><small>Market Data</small><strong>{health?.market_data?.healthy ? "Usable" : "Waiting"}</strong></span>
-              <span><small>Broker</small><strong>{health?.broker?.connected ? "Connected" : "Paper"}</strong></span>
-            </div>
-          </div>
+          <details className="dashboard-advanced-details">
+            <summary>Advanced evidence and diagnostics</summary>
+            <div className="checklist-panel">{checklistRows.map((row) => <div className="checklist-row" key={row.label}><span className={`status-pill status-pill-${badgeTone(row.status)}`}>{row.status}</span><strong>{row.label}</strong><p>{row.reason}</p><small>{row.weight} pts</small></div>)}</div>
+          </details>
         </>
       )}
     </section>

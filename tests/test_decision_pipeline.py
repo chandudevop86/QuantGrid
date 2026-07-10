@@ -13,6 +13,7 @@ from Backend.application.decision_pipeline import (
     DecisionPipelineService,
     MarketDataInputs,
     analyze_fvg,
+    assess_trade_data_quality,
     analyze_higher_timeframe,
     analyze_liquidity,
     analyze_market_regime,
@@ -110,6 +111,7 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "discipline",
         "confluence_engine",
         "confidence_engine",
+        "data_quality",
     }
     assert checklist["checklist_score"] > 0
     assert checklist["passed"]
@@ -488,6 +490,23 @@ def test_verified_market_context_requires_source_timestamp_and_live_suitability(
     assert market.india_vix is None
     assert market.context_status["oi_bias"]["available"] is True
     assert market.context_status["india_vix"]["available"] is False
+
+
+def test_central_data_quality_gate_blocks_missing_options_and_required_timeframes():
+    market = MarketDataInputs(
+        candles=_bullish_candles(),
+        candles_1m=_bullish_candles(),
+        valid_for_execution=True,
+        enforce_data_quality=True,
+    )
+    htf = analyze_higher_timeframe(market)
+
+    quality = assess_trade_data_quality(market, htf)
+
+    assert quality.usable_for_trade is False
+    assert quality.status == "FAIL"
+    assert any("verified options context unavailable" in reason for reason in quality.critical_errors)
+    assert any("higher timeframes unavailable" in reason for reason in quality.critical_errors)
 
 
 def test_higher_timeframe_allows_ce_and_pe_direction():

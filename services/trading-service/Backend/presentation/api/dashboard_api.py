@@ -100,6 +100,9 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         "1h": latest_candles("NIFTY", "1h", 100),
         "1d": latest_candles("NIFTY", "1d", 100),
     }
+    from Backend.presentation.api.market_api import latest_verified_option_context
+
+    market_context = latest_verified_option_context("NIFTY")
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
     observe_market_data_age("NIFTY", "1m", validation.delay_seconds)
     market_store = market_data_summary("NIFTY", "1m")
@@ -137,6 +140,8 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             validation=validation,
             candles=candles,
             candles_by_interval=candles_by_interval,
+            market_context=market_context,
+            enforce_data_quality=True,
             symbol="NIFTY",
         ),
         risk_blocked=risk_blocked,

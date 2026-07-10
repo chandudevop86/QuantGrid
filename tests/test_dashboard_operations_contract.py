@@ -52,6 +52,7 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "discipline",
         "confluence_engine",
         "confidence_engine",
+        "data_quality",
         "market_regime",
         "strategy_selection",
         "supply_demand",
