@@ -87,6 +87,9 @@ systemctl_run() {
 
 systemd_unit_exists() {
   local service="$1"
+  if [[ "${DRY_RUN:-0}" == "1" ]]; then
+    return 1
+  fi
   sudo systemctl list-unit-files "${service}.service" --no-legend 2>/dev/null | grep -q "^${service}.service"
 }
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -104,6 +104,48 @@ def list_backtest_job_records(limit: int = 20) -> list[dict[str, Any]]:
     return [json.loads(row["job_json"]) for row in rows]
 
 
+def claim_recoverable_backtest_jobs(owner: str, *, limit: int = 100, lease_seconds: int = 300) -> list[dict[str, Any]]:
+    init_backtest_job_store()
+    limit = max(1, min(int(limit), 100))
+    if not _use_sqlite():
+        return _db_claim_recoverable_backtest_jobs(owner, limit=limit, lease_seconds=lease_seconds)
+
+    claimed: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc)
+    lease_until = (now + timedelta(seconds=lease_seconds)).isoformat()
+    with _connect() as connection:
+        connection.isolation_level = None
+        connection.execute("BEGIN IMMEDIATE")
+        rows = connection.execute(
+            """
+            SELECT job_id, job_json
+            FROM backtest_jobs
+            WHERE status IN ('QUEUED', 'RUNNING', 'TIMEOUT')
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        for row in rows:
+            job = json.loads(row["job_json"])
+            if not _lease_available(job, now):
+                continue
+            job["recovery_owner"] = owner
+            job["recovery_lease_until"] = lease_until
+            job["updated_at"] = utc_now()
+            connection.execute(
+                """
+                UPDATE backtest_jobs
+                SET updated_at = ?, job_json = ?
+                WHERE job_id = ?
+                """,
+                (job["updated_at"], json.dumps(job), row["job_id"]),
+            )
+            claimed.append(job)
+        connection.execute("COMMIT")
+    return claimed
+
+
 def clear_backtest_jobs_for_tests() -> None:
     init_backtest_job_store()
     if not _use_sqlite():
@@ -111,6 +153,25 @@ def clear_backtest_jobs_for_tests() -> None:
         return
     with _connect() as connection:
         connection.execute("DELETE FROM backtest_jobs")
+
+
+def _lease_available(job: dict[str, Any], now: datetime) -> bool:
+    if job.get("cancel_requested"):
+        return False
+    lease_until = _parse_time(job.get("recovery_lease_until"))
+    return lease_until is None or lease_until <= now
+
+
+def _parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _connect() -> sqlite3.Connection:
@@ -188,6 +249,36 @@ def _db_list_backtest_job_records(limit: int) -> list[dict[str, Any]]:
     with SessionLocal() as db:
         rows = db.query(BacktestJobRecord).order_by(BacktestJobRecord.created_at.desc()).limit(limit).all()
         return [json.loads(row.job_json) for row in rows]
+
+
+def _db_claim_recoverable_backtest_jobs(owner: str, *, limit: int, lease_seconds: int) -> list[dict[str, Any]]:
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import BacktestJobRecord
+
+    claimed: list[dict[str, Any]] = []
+    now = datetime.now(timezone.utc)
+    lease_until = (now + timedelta(seconds=lease_seconds)).isoformat()
+    with SessionLocal() as db:
+        rows = (
+            db.query(BacktestJobRecord)
+            .filter(BacktestJobRecord.status.in_(["QUEUED", "RUNNING", "TIMEOUT"]))
+            .order_by(BacktestJobRecord.created_at.asc())
+            .with_for_update(skip_locked=True)
+            .limit(limit)
+            .all()
+        )
+        for row in rows:
+            job = json.loads(row.job_json)
+            if not _lease_available(job, now):
+                continue
+            job["recovery_owner"] = owner
+            job["recovery_lease_until"] = lease_until
+            job["updated_at"] = utc_now()
+            row.updated_at = job["updated_at"]
+            row.job_json = json.dumps(job)
+            claimed.append(job)
+        db.commit()
+    return claimed
 
 
 def _db_clear_backtest_jobs_for_tests() -> None:

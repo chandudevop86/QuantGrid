@@ -73,6 +73,13 @@ def test_restart_installs_missing_systemd_units_before_restart():
     assert scheduler.index('ensure_systemd_service "${WORKER_SERVICE_NAME}" "${SERVICE_FILE}"') < scheduler.index('systemctl_run restart "${WORKER_SERVICE_NAME}"')
 
 
+def test_dry_run_does_not_call_real_systemd_unit_lookup():
+    common = _text("common.sh")
+
+    assert 'if [[ "${DRY_RUN:-0}" == "1" ]]; then' in common
+    assert common.index('if [[ "${DRY_RUN:-0}" == "1" ]]; then', common.index("systemd_unit_exists()")) < common.index("sudo systemctl list-unit-files")
+
+
 def test_production_frontend_guard_blocks_vite_and_requires_static_bundle():
     deploy = _text("deploy.sh")
     restart = _text("restart.sh")

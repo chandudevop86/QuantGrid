@@ -87,6 +87,38 @@ def test_backtest_job_can_be_read_after_memory_cache_is_cleared(monkeypatch):
     assert reloaded["partial_results"] == finished["partial_results"]
 
 
+def test_backtest_recovery_claims_active_jobs_once(monkeypatch):
+    from Backend.application import backtest_job_store
+
+    now = backtest_job_store.utc_now()
+    job = {
+        "job_id": "recover-1",
+        "payload": {"symbol": "NIFTY"},
+        "strategies": ["amd"],
+        "status": "RUNNING",
+        "created_at": now,
+        "updated_at": now,
+        "started_at": now,
+        "completed_at": None,
+        "current_strategy": "amd",
+        "completed_strategies": 0,
+        "total_strategies": 1,
+        "partial_results": [],
+        "result": None,
+        "error": None,
+        "cancel_requested": False,
+        "expected_seconds": 45.0,
+    }
+    backtest_job_store.create_backtest_job(job, job["payload"])
+
+    first = backtest_job_store.claim_recoverable_backtest_jobs("worker-a")
+    second = backtest_job_store.claim_recoverable_backtest_jobs("worker-b")
+
+    assert [item["job_id"] for item in first] == ["recover-1"]
+    assert second == []
+    assert first[0]["recovery_owner"] == "worker-a"
+
+
 def test_backtest_job_reports_timeout_without_losing_partial_results(monkeypatch):
     from Backend.application import backtest_jobs
 

@@ -5,10 +5,11 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from Backend.application.backtest_job_store import (
+    claim_recoverable_backtest_jobs,
     clear_backtest_jobs_for_tests,
     create_backtest_job,
     get_backtest_job_record,
@@ -24,6 +25,7 @@ _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="quantgrid-back
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}
 _RECOVERED = False
+_WORKER_ID = f"backtest-worker-{uuid.uuid4()}"
 
 
 def _utc_now() -> str:
@@ -48,6 +50,8 @@ class BacktestJob:
     error: str | None = None
     cancel_requested: bool = False
     expected_seconds: float = 45.0
+    recovery_owner: str | None = None
+    recovery_lease_until: str | None = None
 
 
 def start_backtest_job(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -193,7 +197,7 @@ def _ensure_recovered_jobs() -> None:
     with _LOCK:
         if _RECOVERED:
             return
-        records = list_backtest_job_records(limit=100)
+        records = claim_recoverable_backtest_jobs(_WORKER_ID, limit=100)
         for record in records:
             job = _job_from_record(record)
             if job.status in {"QUEUED", "RUNNING", "TIMEOUT"} and not job.cancel_requested and job.completed_strategies < job.total_strategies:
@@ -203,6 +207,8 @@ def _ensure_recovered_jobs() -> None:
 
 
 def _persist_job(job: BacktestJob) -> None:
+    if job.recovery_owner == _WORKER_ID and job.status in {"QUEUED", "RUNNING", "TIMEOUT"}:
+        job.recovery_lease_until = (datetime.now(timezone.utc) + timedelta(seconds=300)).isoformat()
     update_backtest_job_record(job.job_id, _job_to_record(job))
 
 
@@ -224,6 +230,8 @@ def _job_to_record(job: BacktestJob) -> dict[str, Any]:
         "error": job.error,
         "cancel_requested": job.cancel_requested,
         "expected_seconds": job.expected_seconds,
+        "recovery_owner": job.recovery_owner,
+        "recovery_lease_until": job.recovery_lease_until,
     }
 
 
@@ -245,6 +253,8 @@ def _job_from_record(record: dict[str, Any]) -> BacktestJob:
         error=record.get("error"),
         cancel_requested=bool(record.get("cancel_requested")),
         expected_seconds=float(record.get("expected_seconds") or 45.0),
+        recovery_owner=record.get("recovery_owner"),
+        recovery_lease_until=record.get("recovery_lease_until"),
     )
 
 
