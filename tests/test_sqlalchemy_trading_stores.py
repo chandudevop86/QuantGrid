@@ -38,11 +38,13 @@ def test_test_environment_uses_file_backed_local_stores(monkeypatch):
 
 def test_hot_path_stores_initialize_once_per_engine(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
-    from Backend.application import market_data_store, paper_trade_store
+    from Backend.application import job_store, market_data_store, paper_trade_store, position_store
     from Backend.core import database
 
     market_initializations = 0
     paper_initializations = 0
+    job_initializations = 0
+    position_initializations = 0
 
     def initialize_market_store():
         nonlocal market_initializations
@@ -52,23 +54,43 @@ def test_hot_path_stores_initialize_once_per_engine(monkeypatch):
         nonlocal paper_initializations
         paper_initializations += 1
 
+    def initialize_job_store():
+        nonlocal job_initializations
+        job_initializations += 1
+
+    def initialize_position_store():
+        nonlocal position_initializations
+        position_initializations += 1
+
     monkeypatch.setattr(market_data_store, "_initialize_market_data_store", initialize_market_store)
     monkeypatch.setattr(paper_trade_store, "_initialize_paper_trade_store", initialize_paper_store)
+    monkeypatch.setattr(job_store, "_initialize_job_store", initialize_job_store)
+    monkeypatch.setattr(position_store, "_initialize_position_store", initialize_position_store)
 
     market_data_store.init_market_data_store()
     market_data_store.init_market_data_store()
     paper_trade_store.init_paper_trade_store()
     paper_trade_store.init_paper_trade_store()
+    job_store.init_job_store()
+    job_store.init_job_store()
+    position_store.init_position_store()
+    position_store.init_position_store()
 
     assert market_initializations == 1
     assert paper_initializations == 1
+    assert job_initializations == 1
+    assert position_initializations == 1
 
     database._rebuild_engine("sqlite://")
     market_data_store.init_market_data_store()
     paper_trade_store.init_paper_trade_store()
+    job_store.init_job_store()
+    position_store.init_position_store()
 
     assert market_initializations == 2
     assert paper_initializations == 2
+    assert job_initializations == 2
+    assert position_initializations == 2
 
 
 def test_sqlalchemy_job_store_interface(monkeypatch):

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.monitoring import observe_api_request
@@ -164,7 +165,8 @@ def create_app():
             with SessionLocal() as db:
                 db.execute(text("SELECT 1"))
         except Exception as exc:
-            db_status = {"healthy": False, "message": str(exc)}
+            logger.warning("health_database_check_failed", exc_info=exc)
+            db_status = {"healthy": False, "message": "Database unavailable."}
 
         redis_status = redis_service.status()
 
@@ -214,7 +216,8 @@ def create_app():
                         except asyncio.TimeoutError:
                             from Backend.presentation.api.dashboard_api import operations
 
-                            await websocket.send_json({"type": "dashboard_status", "payload": operations()})
+                            payload = await run_in_threadpool(operations)
+                            await websocket.send_json({"type": "dashboard_status", "payload": payload})
                 except WebSocketDisconnect:
                     manager.disconnect(websocket)
                 return
@@ -245,7 +248,8 @@ def create_app():
                 except asyncio.TimeoutError:
                     from Backend.presentation.api.dashboard_api import operations
 
-                    await websocket.send_json({"type": "dashboard_status", "payload": operations()})
+                    payload = await run_in_threadpool(operations)
+                    await websocket.send_json({"type": "dashboard_status", "payload": payload})
         except WebSocketDisconnect:
             manager.disconnect(websocket)
 

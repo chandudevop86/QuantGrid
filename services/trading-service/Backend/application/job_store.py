@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from sqlalchemy import func
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 DB_FILE = Path(os.getenv("JOB_STORE_DB_FILE", DATA_DIR / "dashboard_jobs.sqlite3"))
 LEGACY_JOBS_FILE = DATA_DIR / "dashboard_jobs.json"
+_init_lock = threading.Lock()
+_initialized_store_key: tuple[str, object] | None = None
 
 
 def utc_now() -> str:
@@ -26,6 +29,29 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_job_store() -> None:
+    global _initialized_store_key
+
+    store_key = _job_store_key()
+    if _initialized_store_key == store_key:
+        return
+
+    with _init_lock:
+        store_key = _job_store_key()
+        if _initialized_store_key == store_key:
+            return
+        _initialize_job_store()
+        _initialized_store_key = store_key
+
+
+def _job_store_key() -> tuple[str, object]:
+    if _use_sqlite():
+        return ("sqlite", str(DB_FILE.resolve()))
+    from Backend.core.database import engine
+
+    return ("sqlalchemy", engine)
+
+
+def _initialize_job_store() -> None:
     if not _use_sqlite():
         _init_db_store()
         return
