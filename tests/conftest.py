@@ -22,6 +22,22 @@ def reset_backend_modules() -> None:
             del sys.modules[name]
 
 
+@pytest.fixture(autouse=True)
+def clear_process_caches_between_tests():
+    module = sys.modules.get("Backend.core.config")
+    if module is not None and hasattr(module, "_cached_settings"):
+        module._cached_settings.cache_clear()
+    kill_switch = sys.modules.get("Backend.application.kill_switch")
+    if kill_switch is not None and hasattr(kill_switch, "_invalidate_cache"):
+        kill_switch._invalidate_cache()
+    yield
+    module = sys.modules.get("Backend.core.config")
+    if module is not None and hasattr(module, "_cached_settings"):
+        module._cached_settings.cache_clear()
+    kill_switch = sys.modules.get("Backend.application.kill_switch")
+    if kill_switch is not None and hasattr(kill_switch, "_invalidate_cache"):
+        kill_switch._invalidate_cache()
+
 @pytest.fixture()
 def app_client(tmp_path, monkeypatch):
     monkeypatch.setenv("QUANTGRID_ENV", "local")
@@ -39,7 +55,10 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
     reset_backend_modules()
 
+    from Backend.application.kill_switch import deactivate_kill_switch
     from Backend.presentation.api.main import app
+
+    deactivate_kill_switch(actor="test-fixture")
 
     with TestClient(app) as client:
         yield client
@@ -51,3 +70,4 @@ def admin_headers(client: TestClient) -> dict[str, str]:
     response = client.post("/auth/login", json={"username": "admin", "password": TEST_ADMIN_PASSWORD})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+

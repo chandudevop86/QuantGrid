@@ -148,3 +148,34 @@ def test_dhan_option_chain_status_reports_expiry_success(monkeypatch):
     assert status["data_api_connected"] is True
     assert status["expiry_available"] is True
     assert status["expiry"] == "2026-07-30"
+
+def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
+    from Backend.presentation.api import broker_api
+    from conftest import admin_headers
+
+    monkeypatch.setattr(broker_api, "check_dhan_profile", lambda: {"provider": "dhan", "connected": True, "error": None})
+
+    create = app_client.post(
+        "/admin/users/create",
+        json={"username": "trader-persist", "password": "TraderPass1!", "role": "trader"},
+        headers=admin_headers(app_client),
+    )
+    assert create.status_code == 200
+    login = app_client.post("/auth/login", json={"username": "trader-persist", "password": "TraderPass1!"})
+    assert login.status_code == 200
+    trader_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    denied = app_client.post(
+        "/broker/dhan/login",
+        json={"client_id": "1234567890", "access_token": "token-123456789", "persist": True},
+        headers=trader_headers,
+    )
+    assert denied.status_code == 403
+
+    allowed = app_client.post(
+        "/broker/dhan/login",
+        json={"client_id": "1234567890", "access_token": "token-123456789", "persist": False},
+        headers=trader_headers,
+    )
+    assert allowed.status_code == 200
+

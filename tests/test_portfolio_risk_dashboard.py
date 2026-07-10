@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from Backend.application.portfolio_risk import build_portfolio_risk_dashboard
+import Backend.application.portfolio_risk as portfolio_risk
 from conftest import admin_headers
 
 
@@ -10,7 +10,7 @@ def test_portfolio_risk_dashboard_computes_period_pnl_and_sizing(monkeypatch):
     now = datetime.now(timezone.utc)
 
     monkeypatch.setattr(
-        "Backend.application.portfolio_risk.risk_status",
+        portfolio_risk, "risk_status",
         lambda: {
             "daily_pnl": -250,
             "trades_today": 1,
@@ -29,7 +29,7 @@ def test_portfolio_risk_dashboard_computes_period_pnl_and_sizing(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "Backend.application.portfolio_risk.position_summary",
+        portfolio_risk, "position_summary",
         lambda: {
             "open_positions": 1,
             "closed_positions": 1,
@@ -40,19 +40,19 @@ def test_portfolio_risk_dashboard_computes_period_pnl_and_sizing(monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "Backend.application.portfolio_risk.list_open_positions",
+        portfolio_risk, "list_open_positions",
         lambda: [{"symbol": "NIFTY", "side": "BUY", "quantity": 50, "entry_price": 500, "current_price": 500}],
     )
     monkeypatch.setattr(
-        "Backend.application.portfolio_risk.list_trade_journal",
+        portfolio_risk, "list_trade_journal",
         lambda limit: [
             {"pnl": 700, "closed_at": (now - timedelta(days=2)).isoformat()},
             {"pnl": -200, "closed_at": (now - timedelta(days=20)).isoformat()},
         ],
     )
-    monkeypatch.setattr("Backend.application.portfolio_risk._atr", lambda symbol: 20.0)
+    monkeypatch.setattr(portfolio_risk, "_atr", lambda symbol: 20.0)
 
-    payload = build_portfolio_risk_dashboard("NIFTY", entry_price=500, stop_loss=480)
+    payload = portfolio_risk.build_portfolio_risk_dashboard("NIFTY", entry_price=500, stop_loss=480)
 
     assert payload["module"] == "portfolio_risk"
     assert payload["pnl"]["daily"] == -250
@@ -75,3 +75,4 @@ def test_portfolio_risk_dashboard_api_contract(app_client):
     assert {"daily", "weekly", "monthly"} <= set(payload["pnl"])
     assert {"fixed_risk", "atr_based"} <= set(payload["position_sizing"])
     assert {"daily_loss", "max_open_trades", "exposure_limit"} <= set(payload["checks"])
+

@@ -147,7 +147,7 @@ def generate_signals(
 
 
 @router.get("/strategies")
-def list_strategies():
+def list_strategies(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     service = TradingService()
     return service.trading_engine.strategy_engine.available()
 

@@ -5,7 +5,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from starlette.websockets import WebSocketDisconnect
@@ -27,6 +27,7 @@ from Backend.presentation.api.auth import init_auth_store, seed_bootstrap_users,
 from Backend.domain.security.models import User
 from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
+from Backend.presentation.api.roles import require_roles
 
 
 def _allowed_origins() -> list[str]:
@@ -190,7 +191,7 @@ def create_app():
         return {"status": "ok" if all(item.get("healthy", False) for item in services.values()) else "degraded", "services": services}
 
     @app.get("/metrics")
-    def metrics():
+    def metrics(_role: str = Depends(require_roles("admin", "ops"))):
         return prometheus_metrics_response()
 
     @app.websocket("/ws")

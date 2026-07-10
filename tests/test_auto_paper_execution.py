@@ -105,6 +105,18 @@ def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
         ),
     )
     monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
+    risk_payload = {
+        "allowed": True,
+        "reason": "OK",
+        "risk_amount": 225.0,
+        "max_allowed_risk": 1000.0,
+        "details": {"risk_engine": {"risk_score": 100, "blocked_by": [], "warnings": []}},
+    }
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *args, **kwargs: SimpleNamespace(**risk_payload, to_dict=lambda: risk_payload),
+    )
     monkeypatch.setattr(
         execution_api,
         "validate_execution_constraints",
@@ -230,3 +242,5 @@ def test_manual_paper_rejects_buy_signal_with_stop_above_entry(app_client, monke
     payload = response.json()
     assert payload["status"] == "rejected"
     assert payload["reason"] == "BUY signal requires stop < entry < target."
+
+

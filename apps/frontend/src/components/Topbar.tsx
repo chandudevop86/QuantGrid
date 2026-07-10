@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { getApiErrorMessage } from "../api/client";
+import { getCurrentMode, type TradingMode } from "../mode";
 import {
   clearCurrentAuth,
   getCurrentRole,
@@ -19,6 +20,7 @@ export default function Topbar() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
+  const [mode, setMode] = useState<TradingMode>(getCurrentMode());
   const [operations, setOperations] = useState<any>(null);
 
   useEffect(() => {
@@ -26,11 +28,17 @@ export default function Topbar() {
       setRole(getCurrentRole());
       setIsAuthenticated(hasAuthToken());
     };
+    const syncMode = () => setMode(getCurrentMode());
+
     window.addEventListener("quantgrid-role-change", syncRole);
+    window.addEventListener("quantgrid-mode-change", syncMode);
     window.addEventListener("storage", syncRole);
+    window.addEventListener("storage", syncMode);
     return () => {
       window.removeEventListener("quantgrid-role-change", syncRole);
+      window.removeEventListener("quantgrid-mode-change", syncMode);
       window.removeEventListener("storage", syncRole);
+      window.removeEventListener("storage", syncMode);
     };
   }, []);
 
@@ -108,6 +116,11 @@ export default function Topbar() {
         <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
           {marketStatus}
         </div>
+        {mode === "live" && (
+          <div className="alert alert-error live-warning" role="alert">
+            LIVE TRADING ENABLED
+          </div>
+        )}
         <div className={`terminal-pill ${brokerConnected ? "terminal-pill-good" : "terminal-pill-muted"}`} title="Broker status">
           Broker {brokerConnected ? "Connected" : "Paper"}
         </div>

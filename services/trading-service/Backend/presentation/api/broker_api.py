@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from Backend.core.config import get_settings
+from Backend.core.config import get_settings, reload_settings
 from Backend.core.database import get_db
 from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
 from Backend.application.broker_circuit_breaker import broker_circuit_status, reset_broker_circuit
@@ -214,11 +214,13 @@ def dhan_option_chain_status(
 
 
 @router.post("/dhan/login")
-def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("admin", "trader"))):
+def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("admin", "trader", "ops"))):
     os.environ["QUANTGRID_BROKER_PROVIDER"] = "dhan"
     os.environ["QUANTGRID_BROKER_CLIENT_ID"] = payload.client_id.strip()
     os.environ["QUANTGRID_BROKER_ACCESS_TOKEN"] = payload.access_token.strip()
     if payload.persist:
+        if _role not in {"admin", "ops"}:
+            raise HTTPException(status_code=403, detail="Only admins or ops can persist global Dhan credentials.")
         _write_env_values(
             _env_file_path(),
             {
@@ -228,18 +230,19 @@ def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("ad
             },
         )
 
+    settings = reload_settings()
     status = check_dhan_profile()
     status["saved"] = bool(payload.persist)
-    status["live_trading_enabled"] = get_settings().live_trading_enabled
-    status["broker_live_enabled"] = get_settings().broker_live_enabled
-    status["risk_configured"] = get_settings().risk_configured
-    status["audit_logging_enabled"] = get_settings().audit_logging_enabled
+    status["live_trading_enabled"] = settings.live_trading_enabled
+    status["broker_live_enabled"] = settings.broker_live_enabled
+    status["risk_configured"] = settings.risk_configured
+    status["audit_logging_enabled"] = settings.audit_logging_enabled
     status["circuit_breaker"] = broker_circuit_status()
-    status["live_readiness"] = _live_readiness(get_settings())
+    status["live_readiness"] = _live_readiness(settings)
     status["real_money_orders_enabled"] = bool(
-        get_settings().live_trading_enabled
-        and get_settings().broker_live_enabled
-        and get_settings().broker_configured
+        settings.live_trading_enabled
+        and settings.broker_live_enabled
+        and settings.broker_configured
         and status.get("connected")
         and not status["circuit_breaker"].get("active")
     )

@@ -124,6 +124,18 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
         ),
     )
     monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
+    risk_payload = {
+        "allowed": True,
+        "reason": "OK",
+        "risk_amount": 225.0,
+        "max_allowed_risk": 1000.0,
+        "details": {"risk_engine": {"risk_score": 100, "blocked_by": [], "warnings": []}},
+    }
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *args, **kwargs: SimpleNamespace(**risk_payload, to_dict=lambda: risk_payload),
+    )
     monkeypatch.setattr(
         execution_api,
         "validate_execution_constraints",
@@ -144,7 +156,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "paper_order_submitted"
+    assert response.json()["status"] == "paper_order_submitted", response.json()
 
 
 def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypatch):
@@ -222,3 +234,19 @@ def test_sqlite_database_url_rejected_in_production(monkeypatch):
         validate_security_config()
 
     reset_backend_modules()
+
+def test_metrics_requires_admin_or_ops(app_client):
+    response = app_client.get("/metrics")
+    assert response.status_code == 401
+
+    response = app_client.get("/metrics", headers=admin_headers(app_client))
+    assert response.status_code == 200
+
+
+def test_trading_strategies_requires_auth(app_client):
+    response = app_client.get("/trading/strategies")
+    assert response.status_code == 401
+
+    response = app_client.get("/trading/strategies", headers=admin_headers(app_client))
+    assert response.status_code == 200
+

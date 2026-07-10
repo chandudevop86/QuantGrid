@@ -6,8 +6,14 @@ from Backend.application.signal_quality import decide_signal
 from Backend.domain.models.signal import StrategySignal
 
 
-def _trend_candles(count: int, *, start_price: float = 100.0, step: float = 1.0) -> list[dict]:
-    start = datetime(2026, 5, 22, 3, 0, tzinfo=timezone.utc)
+def _trend_candles(
+    count: int,
+    *,
+    start_price: float = 100.0,
+    step: float = 1.0,
+    start: datetime | None = None,
+) -> list[dict]:
+    start = start or datetime(2026, 5, 22, 3, 0, tzinfo=timezone.utc)
     price = start_price
     candles = []
     for index in range(count):
@@ -25,8 +31,14 @@ def _trend_candles(count: int, *, start_price: float = 100.0, step: float = 1.0)
     return candles
 
 
-def _signal(*, score: float = 8, side: str = "BUY", minutes_back: int = 0) -> StrategySignal:
-    latest = datetime(2026, 5, 22, 3, 39, tzinfo=timezone.utc)
+def _signal(
+    *,
+    score: float = 8,
+    side: str = "BUY",
+    minutes_back: int = 0,
+    latest: datetime | None = None,
+) -> StrategySignal:
+    latest = latest or datetime(2026, 5, 22, 3, 39, tzinfo=timezone.utc)
     return StrategySignal(
         strategy_name="test",
         symbol="NIFTY",
@@ -93,17 +105,25 @@ def test_stale_underlying_candles_rejected_even_when_signal_matches_candle_time(
 
 
 def test_low_score_rejection():
-    decision = decide_signal(_signal(score=5), candles_1m=_trend_candles(40), candles_15m=_trend_candles(40))
+    latest = datetime.now(timezone.utc)
+    start = latest - timedelta(minutes=39)
+    decision = decide_signal(
+        _signal(score=5, latest=latest),
+        candles_1m=_trend_candles(40, start=start),
+        candles_15m=_trend_candles(40, start=start),
+    )
 
     assert decision.allowed is False
     assert decision.reason == "LOW_SCORE"
 
 
 def test_mtf_conflict_rejection():
+    latest = datetime.now(timezone.utc)
+    start = latest - timedelta(minutes=39)
     decision = decide_signal(
-        _signal(side="SELL"),
-        candles_1m=_trend_candles(40),
-        candles_15m=_trend_candles(40),
+        _signal(side="SELL", latest=latest),
+        candles_1m=_trend_candles(40, start=start),
+        candles_15m=_trend_candles(40, start=start),
     )
 
     assert decision.allowed is False
