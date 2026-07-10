@@ -105,36 +105,41 @@ export default function Topbar() {
   return (
     <header className={`topbar ${isAuthenticated ? "topbar-authenticated" : "topbar-guest"}`}>
       <div className="topbar-title">
-        <strong>NIFTY Options Decision Assistant</strong>
-        <span>Buy CE, Buy PE, or No Trade</span>
+        <span className="topbar-eyebrow">Decision workspace</span>
+        <strong>NIFTY Options</strong>
       </div>
       <div className="topbar-actions">
         <label className="topbar-search">
           <span className="sr-only">Search QuantGrid</span>
           <input type="search" placeholder="Search NIFTY, signal, setup" aria-label="Search QuantGrid" />
         </label>
-        <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
-          {marketStatus}
+        <div className="topbar-system-group" aria-label="Market and system status">
+          <div className={`market-status-badge ${getMarketStatusClass(marketStatus)}`} role="status">
+            <span className="status-indicator" aria-hidden="true" />
+            {marketStatus}
+          </div>
+          <div className={`terminal-pill ${brokerConnected ? "terminal-pill-good" : "terminal-pill-muted"}`} title="Broker status">
+            Broker {brokerConnected ? "Connected" : "Paper"}
+          </div>
+          <div className={`terminal-pill ${systemReady ? "terminal-pill-good" : "terminal-pill-warn"}`} title="System health">
+            System {systemReady ? "Ready" : "Review"}
+          </div>
         </div>
         {mode === "live" && (
           <div className="alert alert-error live-warning" role="alert">
             LIVE TRADING ENABLED
           </div>
         )}
-        <div className={`terminal-pill ${brokerConnected ? "terminal-pill-good" : "terminal-pill-muted"}`} title="Broker status">
-          Broker {brokerConnected ? "Connected" : "Paper"}
-        </div>
-        <div className={`terminal-pill ${systemReady ? "terminal-pill-good" : "terminal-pill-warn"}`} title="System health">
-          System {systemReady ? "Ready" : "Review"}
-        </div>
         <button className="notification-button" type="button" aria-label="Notifications">
-          Alerts
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
+          <span>Alerts</span>
         </button>
         {isAuthenticated ? (
           <div className="auth-status">
-            <span>{roleLabels[role]}</span>
-            <button type="button" onClick={logout}>
-              Logout
+            <span className="user-avatar" aria-hidden="true">{roleLabels[role].slice(0, 1)}</span>
+            <span className="auth-role">{roleLabels[role]}</span>
+            <button type="button" onClick={logout} title="Sign out" aria-label="Sign out">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" /></svg>
             </button>
           </div>
         ) : (

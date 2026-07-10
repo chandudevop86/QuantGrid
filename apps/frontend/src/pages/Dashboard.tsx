@@ -294,8 +294,9 @@ export default function Dashboard() {
     <section className="dashboard-page decision-dashboard">
       <div className="page-heading dashboard-heading">
         <div>
-          <h1>QuantGrid</h1>
-          <p>In less than 30 seconds: Buy CE, Buy PE, or No Trade.</p>
+          <span className="page-eyebrow">Market intelligence</span>
+          <h1>Decision overview</h1>
+          <p>A focused view of today&apos;s setup, confidence, risk, and execution readiness.</p>
         </div>
         <span className={`decision-status decision-status-${String(decision.system_status).toLowerCase()}`}>
           {decision.system_status}

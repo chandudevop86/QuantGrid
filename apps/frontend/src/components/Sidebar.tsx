@@ -7,11 +7,11 @@ export default function Sidebar() {
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const navItems = [
     { to: "/", label: "Overview", icon: "grid" },
-    { to: "/market", label: "Market", icon: "pulse" },
-    { to: "/signals", label: "Signals", icon: "spark" },
-    { to: "/paper-trades", label: "Paper Trades", icon: "trade" },
-    { to: "/history", label: "History", icon: "history" },
-    { to: "/settings", label: "Settings", icon: "settings" },
+    { to: "/candles", label: "Market", icon: "pulse" },
+    { to: "/analysis", label: "Live Analysis", icon: "spark" },
+    { to: "/trade", label: "Trade", icon: "trade" },
+    { to: "/strategies", label: "Strategies", icon: "history" },
+    { to: "/execution", label: "Execution", icon: "settings" },
   ];
 
   useEffect(() => {
