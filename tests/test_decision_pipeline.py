@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -158,8 +159,12 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "explainability",
         "invalidation_level",
         "system_status",
+        "trade_eligibility",
+        "trade_plan",
     }
     assert final_decision["trade_decision"] == "Buy CE"
+    assert final_decision["trade_eligibility"]["eligible"] is True
+    assert final_decision["trade_plan"] is not None
     assert final_decision["selected_strategy"] != "none"
     assert final_decision["strategy_version"] != "0.0.0"
     assert final_decision["strategy"] != "none"
@@ -204,8 +209,16 @@ def test_decision_pipeline_prefers_no_trade_when_votes_conflict(monkeypatch):
     assert result.decision.trade_recommendation == "No Trade"
     assert result.factors["market_bias"] == "NEUTRAL"
     no_trade = result.factors["final_decision"]["no_trade_intelligence"]
+    assert result.factors["final_decision"]["trade_eligibility"]["eligible"] is False
+    assert result.factors["final_decision"]["trade_plan"] is None
     assert no_trade["suggested_action"]
     assert no_trade["next_review_condition"]
+    assert no_trade["reason_details"]
+    assert all(
+        set(detail) == {"code", "category", "severity", "message", "remediation"}
+        for detail in no_trade["reason_details"]
+    )
+    assert all(detail["code"] == detail["code"].upper() for detail in no_trade["reason_details"])
 
 
 def test_strategy_selection_uses_registry_metadata():
@@ -507,6 +520,37 @@ def test_central_data_quality_gate_blocks_missing_options_and_required_timeframe
     assert quality.status == "FAIL"
     assert any("verified options context unavailable" in reason for reason in quality.critical_errors)
     assert any("higher timeframes unavailable" in reason for reason in quality.critical_errors)
+
+
+def test_central_data_quality_gate_blocks_duplicate_out_of_order_and_gapped_candles():
+    def series(interval_minutes: int) -> list[dict]:
+        base = datetime.fromisoformat("2026-07-10T09:15:00+05:30")
+        rows = _bullish_candles()[:25]
+        for index, row in enumerate(rows):
+            row["timestamp"] = (base + timedelta(minutes=index * interval_minutes)).isoformat()
+        return rows
+
+    one_minute = series(1)
+    one_minute[8]["timestamp"] = one_minute[7]["timestamp"]
+    fifteen_minute = series(15)
+    fifteen_minute[12]["timestamp"] = (datetime.fromisoformat(fifteen_minute[11]["timestamp"]) + timedelta(minutes=45)).isoformat()
+    one_hour = series(60)
+    market = MarketDataInputs(
+        candles=one_minute,
+        candles_1m=one_minute,
+        candles_15m=fifteen_minute,
+        candles_1h=one_hour,
+        valid_for_execution=True,
+        enforce_data_quality=True,
+        context_status={"oi_bias": {"available": True}, "pcr": {"available": True}},
+    )
+
+    quality = assess_trade_data_quality(market, analyze_higher_timeframe(market))
+
+    assert quality.usable_for_trade is False
+    assert any("duplicate candle timestamps" in reason for reason in quality.critical_errors)
+    assert any("out of order" in reason for reason in quality.critical_errors)
+    assert any("unexpected interval gap" in reason for reason in quality.critical_errors)
 
 
 def test_higher_timeframe_allows_ce_and_pe_direction():

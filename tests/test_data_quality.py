@@ -52,6 +52,22 @@ def test_option_chain_validation_normalizes_provider_aliases():
     assert valid[0]["pe"]["ltp"] == 90
 
 
+def test_option_chain_validation_rejects_structural_and_market_integrity_errors():
+    _valid, report = validate_option_chain_rows(
+        [
+            {"strike": 22500, "ce": {"oi": 100, "bid": {"price": 12}, "ask": {"price": 10}}, "pe": {"oi": 90}},
+            {"strike": 22500, "ce": {"oi": 110}, "pe": {"oi": 95}},
+        ],
+        source="broker-option-chain",
+        expiry="2020-01-01",
+    )
+
+    assert report.status == "FAIL"
+    assert any("duplicate strikes" in error for error in report.errors)
+    assert any("bid exceeds ask" in error for error in report.errors)
+    assert any("expiry is in the past" in error for error in report.errors)
+
+
 def test_fundamental_validation_marks_missing_data_unavailable():
     report = validate_fundamental_snapshot({"symbol": "MISS", "name": "Missing Data Ltd"}, source="fundamentals")
 

@@ -420,6 +420,26 @@ class DecisionPipelineService:
             probability,
         )
         paper_trade_gate = _paper_trade_gate(market, final_decision, risk_reward, discipline, confluence, risk_blocked)
+        eligible = bool(paper_trade_gate["allowed"] and final_decision["trade_decision"] != "No Trade")
+        final_decision["trade_eligibility"] = {
+            "eligible": eligible,
+            "mode": "paper",
+            "status": "ELIGIBLE" if eligible else "BLOCKED",
+            "reasons": [] if eligible else list(paper_trade_gate["reasons"]),
+        }
+        final_decision["trade_plan"] = (
+            {
+                "decision": final_decision["trade_decision"],
+                "entry_zone": final_decision["entry_zone"],
+                "stop_loss": final_decision["stop_loss"],
+                "target": final_decision["target"],
+                "invalidation_level": final_decision["invalidation_level"],
+                "risk_reward_ratio": final_decision["risk_reward_ratio"],
+                "position_size": final_decision["position_size"],
+            }
+            if eligible
+            else None
+        )
         return {
             "market_bias": market_bias,
             "trend": trend,
@@ -728,6 +748,8 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
     for timeframe, candles in series.items():
         _valid, report = validate_candles(candles, source="stored-live-cache" if candles else "unavailable")
         payload = report.model_dump()
+        integrity = _candle_series_integrity(candles, timeframe)
+        payload["series_integrity"] = integrity
         components[f"candles_{timeframe}"] = payload
         scores.append(report.quality_score)
         if timeframe in required and not candles:
@@ -736,6 +758,17 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
             critical_errors.append(f"data quality: {timeframe} candles failed validation")
         elif report.status != "PASS":
             warnings.append(f"{timeframe} candle quality is {report.status.lower()} ({report.quality_score}/100).")
+        if timeframe in required:
+            if integrity["insufficient_history"]:
+                critical_errors.append(f"data quality: {timeframe} history has fewer than {integrity['minimum_rows']} candles")
+            if integrity["duplicate_timestamps"]:
+                critical_errors.append(f"data quality: {timeframe} contains duplicate candle timestamps")
+            if integrity["out_of_order"]:
+                critical_errors.append(f"data quality: {timeframe} candles are out of order")
+            if integrity["gap_count"]:
+                critical_errors.append(f"data quality: {timeframe} contains {integrity['gap_count']} unexpected interval gap(s)")
+            if integrity["mixed_timezone_awareness"]:
+                critical_errors.append(f"data quality: {timeframe} mixes timezone-aware and timezone-naive timestamps")
 
     if not market.valid_for_execution:
         critical_errors.append("data quality: market data is stale or invalid for execution")
@@ -769,6 +802,38 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
         warnings=warnings,
         components=components,
     )
+
+
+def _candle_series_integrity(candles: list[dict[str, Any]], timeframe: str, minimum_rows: int = 20) -> dict[str, Any]:
+    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}.get(timeframe, 0)
+    parsed: list[datetime] = []
+    awareness: set[bool] = set()
+    for candle in candles:
+        raw = candle.get("timestamp") or candle.get("datetime") or candle.get("time")
+        if raw in {None, ""}:
+            continue
+        try:
+            value = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        awareness.add(value.tzinfo is not None and value.utcoffset() is not None)
+        parsed.append(value)
+
+    comparable = [value.timestamp() if value.tzinfo is not None else value.replace(tzinfo=timezone.utc).timestamp() for value in parsed]
+    duplicate_count = len(comparable) - len(set(comparable))
+    out_of_order = any(current <= previous for previous, current in zip(comparable, comparable[1:]))
+    gap_limit = interval_seconds * (4 if timeframe == "1d" else 1.5)
+    gap_count = sum(1 for previous, current in zip(comparable, comparable[1:]) if interval_seconds and current - previous > gap_limit)
+    return {
+        "rows": len(candles),
+        "minimum_rows": minimum_rows,
+        "timestamps_checked": len(parsed),
+        "insufficient_history": bool(candles and len(candles) < minimum_rows),
+        "duplicate_timestamps": duplicate_count,
+        "out_of_order": out_of_order,
+        "gap_count": gap_count,
+        "mixed_timezone_awareness": len(awareness) > 1,
+    }
 
 
 def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
@@ -1527,11 +1592,38 @@ def _no_trade_intelligence(
         "trade_decision": "No Trade",
         "primary_reason": primary[0] if primary else "",
         "block_reasons": primary,
+        "reason_details": [_no_trade_reason_detail(reason) for reason in primary],
         "missing_confirmations": list(confluence.get("failed_factors") or []),
         "suggested_action": "Wait. Do not enter until the listed confirmations appear." if primary else "Wait for a clean pullback inside the entry zone.",
         "next_review_condition": _next_review_condition(primary, checklist, risk_reward),
         "wait_for": _wait_for(checklist, risk_reward),
         "policy": "Prefer missing a trade over taking a poor NIFTY options trade.",
+    }
+
+
+def _no_trade_reason_detail(reason: str) -> dict[str, str]:
+    normalized = reason.lower()
+    mappings = (
+        (("stale", "fresh", "data quality", "timeframe", "provider", "unavailable"), "DATA_NOT_TRUSTED", "data", "critical", "Wait for complete, verified, fresh market data."),
+        (("risk/reward", "risk reward", "rr "), "RISK_REWARD_INSUFFICIENT", "risk", "high", "Wait for an entry that provides at least the configured minimum risk/reward."),
+        (("risk engine", "daily loss", "consecutive losses", "over trading", "revenge"), "RISK_LIMIT_ACTIVE", "risk", "critical", "Do not trade until the active risk control has cleared."),
+        (("higher timeframe", "15m", "1h"), "TIMEFRAME_CONFIRMATION_MISSING", "confirmation", "high", "Wait for the required higher timeframes to align."),
+        (("price action", "rejection", "engulfing"), "PRICE_CONFIRMATION_MISSING", "confirmation", "high", "Wait for a confirmed price-action trigger."),
+        (("volume",), "VOLUME_CONFIRMATION_MISSING", "confirmation", "medium", "Wait for volume to confirm the move."),
+        (("confluence", "trade quality", "checklist"), "CONFLUENCE_INSUFFICIENT", "quality", "high", "Wait until the minimum confluence and trade-quality thresholds pass."),
+        (("duplicate",), "DUPLICATE_SIGNAL", "discipline", "high", "Ignore the duplicate setup and wait for a new qualified signal."),
+        (("late entry", "chasing"), "ENTRY_TOO_LATE", "discipline", "high", "Wait for a clean pullback rather than chasing price."),
+        (("gap",), "OPENING_GAP_RISK", "market", "high", "Wait for the gap structure and volatility to stabilize."),
+    )
+    for keywords, code, category, severity, remediation in mappings:
+        if any(keyword in normalized for keyword in keywords):
+            return {"code": code, "category": category, "severity": severity, "message": reason, "remediation": remediation}
+    return {
+        "code": "SETUP_NOT_QUALIFIED",
+        "category": "quality",
+        "severity": "medium",
+        "message": reason,
+        "remediation": "Wait for the failed confirmation to pass before reviewing the setup again.",
     }
 
 

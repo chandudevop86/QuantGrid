@@ -243,7 +243,7 @@ def test_option_chain_prefers_dhan_provider(monkeypatch):
 
     def fake_dhan_payload(path, body):
         if path == "optionchain/expirylist":
-            return {"status": "success", "data": {"data": ["2026-06-25"]}}
+            return {"status": "success", "data": {"data": ["2026-12-31"]}}
         return {
             "status": "success",
             "data": {
@@ -312,7 +312,7 @@ def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
             return False
 
         def read(self):
-            return b'{"data": ["2026-06-25"]}'
+            return b'{"data": ["2026-12-31"]}'
 
     def fake_urlopen(request, timeout=0):
         captured["url"] = request.full_url
@@ -328,7 +328,7 @@ def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
         {"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"},
     )
 
-    assert payload == {"data": ["2026-06-25"]}
+    assert payload == {"data": ["2026-12-31"]}
     assert captured["url"] == "https://api.dhan.co/v2/optionchain/expirylist"
     assert captured["payload"] == {
         "UnderlyingScrip": 13,
@@ -353,12 +353,12 @@ def test_option_chain_uses_dhan_sdk_when_available(monkeypatch):
         def expiry_list(self, security_id, exchange_segment):
             assert security_id == 13
             assert exchange_segment == "IDX_I"
-            return {"status": "success", "data": {"data": ["2026-06-25"]}}
+            return {"status": "success", "data": {"data": ["2026-12-31"]}}
 
         def option_chain(self, security_id, exchange_segment, expiry):
             assert security_id == 13
             assert exchange_segment == "IDX_I"
-            assert expiry == "2026-06-25"
+            assert expiry == "2026-12-31"
             return {
                 "status": "success",
                 "data": {
@@ -385,7 +385,7 @@ def test_option_chain_uses_dhan_sdk_when_available(monkeypatch):
 
     assert result["source"] == "dhan-option-chain"
     assert result["provider_available"] is True
-    assert result["expiry"] == "2026-06-25"
+    assert result["expiry"] == "2026-12-31"
 
 
 def test_dhan_failure_payload_preserves_reason():

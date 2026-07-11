@@ -734,7 +734,7 @@ def get_option_chain(
         source = "option-chain-unavailable"
         rows = []
 
-    rows, data_quality = validate_option_chain_rows(rows, source=source)
+    rows, data_quality = validate_option_chain_rows(rows, source=source, expiry=expiry)
     data_quality_payload = data_quality.model_dump()
     fallback_message = warning if not provider_available else None
     if not provider_available:

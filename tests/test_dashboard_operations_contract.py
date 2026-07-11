@@ -99,6 +99,8 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "explainability",
         "invalidation_level",
         "system_status",
+        "trade_eligibility",
+        "trade_plan",
     }
     assert final_decision["trade_decision"] in {"Buy CE", "Buy PE", "No Trade"}
     assert final_decision["trade_quality"] in {"Excellent", "Good", "Average", "Poor", "Skip"}
@@ -106,8 +108,15 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert isinstance(final_decision["strategy_version"], str)
     assert final_decision["confidence_label"] in {"High", "Medium", "Low", "Blocked"}
     assert isinstance(final_decision["no_trade_intelligence"], dict)
+    assert isinstance(final_decision["trade_eligibility"], dict)
+    assert final_decision["trade_eligibility"]["status"] in {"ELIGIBLE", "BLOCKED"}
+    if final_decision["trade_eligibility"]["eligible"]:
+        assert isinstance(final_decision["trade_plan"], dict)
+    else:
+        assert final_decision["trade_plan"] is None
     assert "suggested_action" in final_decision["no_trade_intelligence"]
     assert "next_review_condition" in final_decision["no_trade_intelligence"]
+    assert "reason_details" in final_decision["no_trade_intelligence"]
     assert isinstance(final_decision["explainability"], dict)
     assert final_decision["explainability"]["plain_english"]
     assert isinstance(final_decision["strategy_selection"], dict)
@@ -116,6 +125,17 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert "market_status" in payload
     assert "risk_summary" in payload
     assert "system_health" in payload
+    broker = payload["system_health"]["broker"]
+    assert isinstance(broker["configured"], bool)
+    assert broker["connected"] is False
+    assert broker["session_verified"] is False
+    worker = payload["system_health"]["background_worker"]
+    assert worker["healthy"] is False
+    assert worker["status"] == "UNKNOWN"
+    assert payload["observability"]["signal_generation_metrics"] is None
+    assert payload["observability"]["rejected_order_count"] is None
+    assert payload["backtest_context"]["historical_win_rate"] is None
+    assert payload["backtest_context"]["sharpe_ratio"] is None
     assert payload["observability"]["api_latency_ms"] >= 0
     assert payload["observability"]["api_latency_status"] in {"OK", "SLOW"}
     assert isinstance(payload["observability"]["decision_metrics"], dict)

@@ -190,13 +190,21 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
                 "connections": len(manager.active_connections),
             },
             "broker": {
-                "connected": settings.broker_configured,
+                "configured": settings.broker_configured,
+                "connected": False,
+                "session_verified": False,
                 "provider": settings.broker_provider or "paper",
-                "message": "Broker configured." if settings.broker_configured else "Real-money broker disconnected.",
+                "message": (
+                    "Broker credentials configured; session not verified by this dashboard check."
+                    if settings.broker_configured
+                    else "Real-money broker is not configured."
+                ),
             },
             "background_worker": {
-                "healthy": count_jobs("running") >= 0,
+                "healthy": False,
+                "status": "UNKNOWN",
                 "active_jobs": count_jobs("running"),
+                "message": "Worker heartbeat is not available; job counts do not prove worker health.",
             },
             "market_data": {
                 "healthy": market_store["candles"] > 0,
@@ -220,13 +228,13 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "websocket_connections": len(manager.active_connections),
             "api_latency_ms": latency_ms,
             "api_latency_status": "OK" if latency_ms < 500 else "SLOW",
-            "signal_generation_metrics": {"generated": 0, "validated": 0},
-            "strategy_execution_metrics": 0,
-            "signal_count_metrics": 0,
-            "failed_strategy_execution_metrics": 0,
-            "option_chain_failure_metrics": 0,
-            "rejected_order_metrics": 0,
-            "rejected_order_count": 0,
+            "signal_generation_metrics": None,
+            "strategy_execution_metrics": None,
+            "signal_count_metrics": None,
+            "failed_strategy_execution_metrics": None,
+            "option_chain_failure_metrics": None,
+            "rejected_order_metrics": None,
+            "rejected_order_count": None,
             "feed_delay_seconds": validation.delay_seconds,
             "redis_healthy": redis["connected"],
             "db_healthy": db_status["healthy"],
@@ -243,8 +251,8 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             },
         },
         "backtest_context": {
-            "historical_win_rate": 0.0,
-            "sharpe_ratio": 0.0,
+            "historical_win_rate": None,
+            "sharpe_ratio": None,
             "recent_trade_outcomes": [],
             "replay_links": [],
             "message": "Run a backtest or replay to attach historical confidence to this strategy.",

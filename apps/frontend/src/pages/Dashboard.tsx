@@ -49,6 +49,8 @@ type Decision = {
       strategy_selection?: { selected_strategy?: string; selected_score?: number; reason?: string };
       probability_engine?: { probability_score?: number; confidence_score?: number; reason?: string };
       no_trade_intelligence?: { primary_reason?: string; block_reasons?: string[]; wait_for?: string[] };
+      trade_eligibility?: { eligible?: boolean; mode?: string; status?: string; reasons?: string[] };
+      trade_plan?: { decision?: string; entry_zone?: string; stop_loss?: string; target?: string; invalidation_level?: string; risk_reward_ratio?: number | null; position_size?: number | null } | null;
       explainability?: { plain_english?: string; score_reason?: string; warnings?: string[] };
     };
     checklist_score?: number;
@@ -253,9 +255,10 @@ export default function Dashboard() {
   const paperGate = decision.factor_snapshot?.high_probability_trade_engine?.paper_trade_gate;
   const dataQuality = decision.factor_snapshot?.data_quality ?? checklist?.data_quality;
   const tradeEligible = Boolean(
-    paperGate?.allowed
+    finalDecision?.trade_eligibility?.eligible
+    ?? (paperGate?.allowed
     && dataQuality?.usable_for_trade
-    && (finalDecision?.trade_decision ?? decision.trade_recommendation) !== "No Trade"
+    && (finalDecision?.trade_decision ?? decision.trade_recommendation) !== "No Trade")
   );
   const noTradeReasons = (
     finalDecision?.block_reasons?.length

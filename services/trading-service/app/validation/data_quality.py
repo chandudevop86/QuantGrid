@@ -181,9 +181,12 @@ def validate_candles(candles: list[dict[str, Any]], *, source: str | None = None
     )
 
 
-def validate_option_chain_rows(rows: list[dict[str, Any]], *, source: str | None = None) -> tuple[list[dict[str, Any]], DataQualityReport]:
+def validate_option_chain_rows(
+    rows: list[dict[str, Any]], *, source: str | None = None, expiry: str | datetime | None = None
+) -> tuple[list[dict[str, Any]], DataQualityReport]:
     valid: list[dict[str, Any]] = []
     errors: list[str] = []
+    warnings: list[str] = []
     for index, row in enumerate(rows):
         try:
             parsed = OptionChainRow(**row)
@@ -191,8 +194,37 @@ def validate_option_chain_rows(rows: list[dict[str, Any]], *, source: str | None
         except ValidationError as exc:
             errors.append(f"option_chain[{index}]: {exc.errors()[0]['msg']}")
     missing = [] if rows else ["option_chain"]
+    strikes = [float(row["strike"]) for row in valid]
+    if len(strikes) != len(set(strikes)):
+        errors.append("option_chain: duplicate strikes")
+    if any(current <= previous for previous, current in zip(strikes, strikes[1:])):
+        errors.append("option_chain: strikes must be strictly increasing")
     if valid and not any((row["ce"].get("oi") or 0) > 0 or (row["pe"].get("oi") or 0) > 0 for row in valid):
         missing.append("open_interest")
+    missing_oi_legs = sum(1 for row in valid for leg in (row["ce"], row["pe"]) if leg.get("oi") is None)
+    if missing_oi_legs:
+        missing.append("open_interest_completeness")
+        warnings.append(f"Open interest is missing for {missing_oi_legs} option leg(s).")
+    for index, row in enumerate(valid):
+        for side in ("ce", "pe"):
+            leg = row[side]
+            bid = (leg.get("bid") or {}).get("price")
+            ask = (leg.get("ask") or {}).get("price")
+            if bid is None or ask is None:
+                continue
+            bid_value, ask_value = float(bid), float(ask)
+            if bid_value > ask_value:
+                errors.append(f"option_chain[{index}].{side}: bid exceeds ask")
+            elif ask_value > 0 and (ask_value - bid_value) / ask_value > 0.25:
+                warnings.append(f"option_chain[{index}].{side}: bid/ask spread exceeds 25%")
+    if expiry is not None:
+        try:
+            expiry_value = expiry if isinstance(expiry, datetime) else datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+            expiry_date = expiry_value.date()
+            if expiry_date < datetime.now(timezone.utc).date():
+                errors.append("option_chain: expiry is in the past")
+        except (TypeError, ValueError):
+            errors.append("option_chain: expiry is invalid")
     score = _quality_score(total=len(rows), valid=len(valid), missing=len(missing), errors=len(errors), fallback=_is_fallback(source))
     return valid, DataQualityReport(
         subject="option_chain",
@@ -202,7 +234,10 @@ def validate_option_chain_rows(rows: list[dict[str, Any]], *, source: str | None
         rows_checked=len(rows),
         missing_fields=missing,
         errors=errors,
-        warnings=["Option chain has no open interest; derivative signals are low confidence."] if "open_interest" in missing else [],
+        warnings=(
+            (["Option chain has no open interest; derivative signals are low confidence."] if "open_interest" in missing else [])
+            + warnings
+        ),
         provider=validate_provider_quality(source=source, rows=valid, missing_fields=missing, fallback=_is_fallback(source)),
     )
 
