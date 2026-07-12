@@ -3297,6 +3297,15 @@ select {
 
 .dashboard-advanced-details[open] summary { border-bottom: 1px solid var(--line); }
 .dashboard-advanced-details .checklist-panel { padding: 16px; }
+.confidence-evidence-panel { display: grid; gap: 13px; padding: 16px 16px 0; }
+.confidence-evidence-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.confidence-evidence-heading strong { color: #e2e8f0; font-size: 13px; }
+.confidence-evidence-heading p { margin: 5px 0 0; color: #7f8da1; font-size: 11px; }
+.confidence-evidence-heading > span { flex: 0 0 auto; color: var(--accent); font-size: 11px; font-weight: 800; }
+.confidence-evidence-table-wrap { overflow-x: auto; }
+.confidence-evidence-table { min-width: 820px; }
+.confidence-evidence-table td:first-child { color: #dce6f1; font-weight: 700; text-transform: capitalize; }
+.confidence-evidence-table td { color: #9eabba; font-size: 11px; }
 .key-levels-table td:nth-child(2) { color: #dce6f1; font-weight: 750; }
 
 @media (max-width: 1000px) {
@@ -3317,4 +3326,5 @@ select {
   .system-trust-grid > span { min-height: 68px; }
   .no-trade-panel { padding: 18px 16px; }
   .key-levels-table { min-width: 580px; }
+  .confidence-evidence-heading { display: grid; gap: 8px; }
 }

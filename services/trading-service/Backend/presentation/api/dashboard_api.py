@@ -47,12 +47,58 @@ def _present_job(job: dict) -> dict:
 
 @router.get("/summary")
 def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
+    return _product_summary(operations(_role))
+
+
+def _product_summary(payload: dict) -> dict:
+    decision = payload.get("decision") or {}
+    factors = decision.get("factor_snapshot") or {}
+    final = factors.get("final_decision") or {}
+    confidence = final.get("trade_confidence") or {}
+    eligibility = final.get("trade_eligibility") or {"eligible": False, "status": "BLOCKED", "reasons": ["Decision eligibility is unavailable."]}
+    no_trade = final.get("no_trade_intelligence") or {}
+    quality = factors.get("data_quality") or (factors.get("checklist") or {}).get("data_quality") or {}
+    market = payload.get("market_status") or {}
+    health = payload.get("system_health") or {}
+    risk = payload.get("risk_summary") or {}
     return {
-        "status": "ready",
-        "open_positions": 0,
-        "active_jobs": count_jobs("running"),
-        "total_jobs": count_jobs(),
-        "updated_at": utc_now(),
+        "contract_version": "1.0",
+        "updated_at": payload.get("updated_at"),
+        "market_decision": {
+            "bias": final.get("market_bias") or decision.get("market_bias"),
+            "decision": final.get("trade_decision") or decision.get("trade_recommendation"),
+            "trade_quality": final.get("trade_quality"),
+            "trade_confidence": confidence,
+            "system_status": final.get("system_status") or decision.get("system_status"),
+        },
+        "why_this_decision": {
+            "plain_english": (final.get("explainability") or {}).get("plain_english") or decision.get("simple_explanation"),
+            "supporting_factors": final.get("supporting_factors") or decision.get("supporting_factors") or [],
+            "opposing_factors": final.get("opposing_factors") or decision.get("opposing_factors") or [],
+            "warnings": (final.get("explainability") or {}).get("warnings") or decision.get("warnings") or [],
+        },
+        "trade_or_no_trade": {
+            "eligibility": eligibility,
+            "trade_plan": final.get("trade_plan") if eligibility.get("eligible") else None,
+            "no_trade": no_trade if not eligibility.get("eligible") else None,
+        },
+        "key_levels": {
+            "support": decision.get("support"),
+            "resistance": decision.get("resistance"),
+            "entry_zone": final.get("entry_zone"),
+            "invalidation_level": final.get("invalidation_level") or decision.get("invalidation_level"),
+        },
+        "system_trust": {
+            "market": market,
+            "data_quality": quality,
+            "api": health.get("api"),
+            "database": health.get("db"),
+            "market_data": health.get("market_data"),
+            "broker": health.get("broker"),
+            "worker": health.get("background_worker"),
+            "risk_state": risk.get("active_risk_state"),
+            "execution_mode": risk.get("execution_mode"),
+        },
     }
 
 
@@ -64,6 +110,28 @@ def _redis_status() -> dict:
         "mode": status["mode"],
         "message": status["message"],
         "url_configured": status["url_configured"],
+    }
+
+
+def _worker_status() -> dict:
+    heartbeat = redis_service.read_worker_heartbeat()
+    active_jobs = count_jobs("running")
+    if not heartbeat:
+        return {
+            "healthy": False,
+            "status": "UNKNOWN",
+            "active_jobs": active_jobs,
+            "last_seen": None,
+            "worker_id": None,
+            "message": "Worker heartbeat is unavailable; job counts do not prove worker health.",
+        }
+    return {
+        "healthy": True,
+        "status": "RUNNING",
+        "active_jobs": active_jobs,
+        "last_seen": heartbeat.get("last_seen"),
+        "worker_id": heartbeat.get("worker_id"),
+        "message": "Worker heartbeat received through Redis.",
     }
 
 
@@ -205,12 +273,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
                     else "Real-money broker is not configured."
                 ),
             },
-            "background_worker": {
-                "healthy": False,
-                "status": "UNKNOWN",
-                "active_jobs": count_jobs("running"),
-                "message": "Worker heartbeat is not available; job counts do not prove worker health.",
-            },
+            "background_worker": _worker_status(),
             "market_data": {
                 "healthy": market_store["candles"] > 0,
                 "candles": market_store["candles"],

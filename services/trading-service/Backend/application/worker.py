@@ -25,6 +25,7 @@ from Backend.application.job_queue import dequeue_job, mark_job_completed, mark_
 from Backend.application.job_store import claim_job
 from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
 from Backend.application.notifications import send_alert
+from Backend.application.redis_service import redis_service
 from Backend.application.trade_exit_engine import monitor_open_positions
 from Backend.core.database import SessionLocal, init_database
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
@@ -312,13 +313,21 @@ def _run_periodic_security_scan(scan_type: str) -> dict[str, Any]:
 
 def run_worker_loop(poll_interval: float = 1.0) -> None:
     init_database()
+    redis_service.configure()
     logger.info("QuantGrid worker started with id %s", WORKER_ID)
     next_exit_check = time.monotonic()
     next_narrative_check = time.monotonic()
     next_investment_check = time.monotonic()
     next_security_full_check = time.monotonic()
     next_security_health_check = time.monotonic()
+    next_heartbeat = time.monotonic()
     while True:
+        if time.monotonic() >= next_heartbeat:
+            redis_service.write_worker_heartbeat(
+                {"worker_id": WORKER_ID, "status": "RUNNING", "last_seen": datetime.now(timezone.utc).isoformat()},
+                ttl_seconds=15,
+            )
+            next_heartbeat = time.monotonic() + 5
         processed = process_next_job()
         if _exit_monitor_enabled() and time.monotonic() >= next_exit_check:
             try:

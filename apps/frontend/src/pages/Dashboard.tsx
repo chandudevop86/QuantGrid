@@ -452,6 +452,30 @@ export default function Dashboard() {
 
           <details className="dashboard-advanced-details">
             <summary>Advanced evidence and diagnostics</summary>
+            <div className="confidence-evidence-panel">
+              <div className="confidence-evidence-heading">
+                <div><strong>Trade Confidence Factors</strong><p>{finalDecision?.trade_confidence?.meaning ?? "Decision readiness evidence and contribution trace."}</p></div>
+                <span>{confidence}/100 · {finalDecision?.trade_confidence?.label ?? "UNAVAILABLE"}</span>
+              </div>
+              <div className="table-wrap confidence-evidence-table-wrap">
+                <table className="table confidence-evidence-table">
+                  <thead><tr><th>Factor</th><th>State</th><th>Contribution</th><th>Weight</th><th>Source</th><th>Observed</th></tr></thead>
+                  <tbody>
+                    {(finalDecision?.trade_confidence?.factors ?? []).map((factor) => (
+                      <tr key={factor.name}>
+                        <td>{String(factor.name ?? "unknown").replace(/_/g, " ")}</td>
+                        <td><span className={`status-pill status-pill-${factor.available ? badgeTone(factor.contribution ? "PASS" : "WARN") : "danger"}`}>{factor.available ? (factor.contribution ? "Supporting" : "Not passed") : "Unavailable"}</span></td>
+                        <td>{factor.contribution ?? 0} pts</td>
+                        <td>{factor.weight ?? 0} pts</td>
+                        <td>{factor.source ?? "Unavailable"}</td>
+                        <td>{formatTime(factor.timestamp)}</td>
+                      </tr>
+                    ))}
+                    {!finalDecision?.trade_confidence?.factors?.length && <tr><td colSpan={6}>Factor trace is unavailable for this decision.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
             <div className="checklist-panel">{checklistRows.map((row) => <div className="checklist-row" key={row.label}><span className={`status-pill status-pill-${badgeTone(row.status)}`}>{row.status}</span><strong>{row.label}</strong><p>{row.reason}</p><small>{row.weight} pts</small></div>)}</div>
           </details>
         </>

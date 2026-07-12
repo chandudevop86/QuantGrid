@@ -19,6 +19,7 @@ class RedisStatus:
 
 
 class RedisService:
+    WORKER_HEARTBEAT_KEY = "quantgrid:worker:heartbeat"
     def __init__(self) -> None:
         self.url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL")
         self.client: Any | None = None
@@ -70,6 +71,31 @@ class RedisService:
         except Exception as exc:
             logger.warning("redis_publish_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
             return False
+
+    def write_worker_heartbeat(self, payload: dict[str, Any], *, ttl_seconds: int = 15) -> bool:
+        if self.client is None:
+            return False
+        try:
+            self.client.set(self.WORKER_HEARTBEAT_KEY, json.dumps(payload, default=str), ex=max(1, ttl_seconds))
+            return True
+        except Exception as exc:
+            logger.warning("redis_worker_heartbeat_write_failed", extra={"error_type": exc.__class__.__name__})
+            return False
+
+    def read_worker_heartbeat(self) -> dict[str, Any] | None:
+        if self.client is None:
+            return None
+        try:
+            value = self.client.get(self.WORKER_HEARTBEAT_KEY)
+            if value is None:
+                return None
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
+            payload = json.loads(value)
+            return payload if isinstance(payload, dict) else None
+        except Exception as exc:
+            logger.warning("redis_worker_heartbeat_read_failed", extra={"error_type": exc.__class__.__name__})
+            return None
 
     async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         if self.async_client is None:
