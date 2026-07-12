@@ -118,8 +118,8 @@ export default function Topbar() {
   const brokerConnected = Boolean(operations?.system_health?.broker?.connected);
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
   const searchableRoutes = [
-    ["Overview", "/"], ["Market option chain", "/market"], ["Signals", "/signals"],
-    ["Paper trades positions", "/paper-trades"], ["Backtest history", "/history"], ["Risk settings", "/settings"],
+    ["Market decision overview", "/"], ["Options market chain", "/market"], ["Qualified setups signals", "/signals"],
+    ["Paper portfolio positions", "/paper-trades"], ["Backtest results", "/history"], ["Risk controls", "/settings"],
     ["Live analysis", "/analysis"], ["Order ticket", "/trade"], ["Execution", "/execution"],
     ["Strategies", "/strategies"], ["Operations", "/operations"], ["Security", "/security"],
     ["Candles", "/candles"], ["Market copilot", "/copilot"], ["Jobs", "/jobs"],
@@ -153,7 +153,7 @@ export default function Topbar() {
         {isAuthenticated && <>
         <form className="topbar-search" onSubmit={submitSearch} role="search">
           <label className="sr-only" htmlFor="quantgrid-search">Search QuantGrid</label>
-          <input id="quantgrid-search" type="search" list="quantgrid-search-routes" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Go to market, signals, risk..." aria-label="Search QuantGrid" />
+          <input id="quantgrid-search" type="search" list="quantgrid-search-routes" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Go to decision, options, risk..." aria-label="Search QuantGrid" />
           <datalist id="quantgrid-search-routes">
             {availableRoutes.map(([label, path]) => <option key={path} value={label} />)}
           </datalist>

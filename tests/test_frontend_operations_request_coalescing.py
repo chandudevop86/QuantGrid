@@ -1,0 +1,27 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_operations_api_coalesces_requests_with_auth_aware_short_cache():
+    source = (ROOT / "apps" / "frontend" / "src" / "api" / "index.ts").read_text(encoding="utf-8")
+
+    assert "OPERATIONS_CACHE_TTL_MS = 3000" in source
+    assert 'localStorage.getItem("quantgrid_token")' in source
+    assert "operationsCache?.authKey === authKey" in source
+    assert "operationsRequest?.authKey === authKey" in source
+    assert "operationsRequest = { authKey, promise }" in source
+    assert "operationsStatus," in source
+
+
+def test_operations_api_does_not_cache_failed_requests():
+    source = (ROOT / "apps" / "frontend" / "src" / "api" / "index.ts").read_text(encoding="utf-8")
+    status_function = source.split("function operationsStatus()", 1)[1].split("export type SignalPayload", 1)[0]
+
+    assert ".then((data) =>" in status_function
+    assert "operationsCache =" in status_function
+    assert ".finally(() =>" in status_function
+    assert "operationsRequest = null" in status_function

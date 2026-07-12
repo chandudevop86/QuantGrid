@@ -8,12 +8,12 @@ export default function Sidebar() {
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const uiMode = useUiMode();
   const navItems = [
-    { to: "/", label: "Overview", icon: "grid" },
-    { to: "/market", label: "Market", icon: "pulse" },
-    { to: "/signals", label: "Signals", icon: "spark" },
-    { to: "/paper-trades", label: "Paper Trades", icon: "trade" },
-    { to: "/history", label: "History", icon: "history" },
-    { to: "/settings", label: "Risk & Settings", icon: "settings" },
+    { to: "/", label: "Market Decision", icon: "grid" },
+    { to: "/market", label: "Options Market", icon: "pulse" },
+    { to: "/signals", label: "Qualified Setups", icon: "spark" },
+    { to: "/paper-trades", label: "Paper Portfolio", icon: "trade" },
+    { to: "/history", label: "Backtest Results", icon: "history" },
+    { to: "/settings", label: "Risk Controls", icon: "settings" },
   ];
   const advancedItems = [
     { to: "/analysis", label: "Live Analysis", icon: "spark" },

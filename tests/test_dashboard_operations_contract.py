@@ -139,3 +139,23 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert payload["observability"]["api_latency_ms"] >= 0
     assert payload["observability"]["api_latency_status"] in {"OK", "SLOW"}
     assert isinstance(payload["observability"]["decision_metrics"], dict)
+
+
+def test_dashboard_database_failure_does_not_expose_exception_details(app_client, monkeypatch):
+    from Backend.presentation.api import dashboard_api
+
+    secret_detail = "postgresql://quant:super-secret@internal-db:5432/quantgrid"
+
+    def failed_session():
+        raise RuntimeError(secret_detail)
+
+    monkeypatch.setattr(dashboard_api, "SessionLocal", failed_session)
+    response = app_client.get("/dashboard/operations", headers=admin_headers(app_client))
+
+    assert response.status_code == 200
+    payload = response.json()
+    db_health = payload["system_health"]["db"]
+    assert db_health["healthy"] is False
+    assert db_health["status"] == "UNAVAILABLE"
+    assert secret_detail not in response.text
+    assert "super-secret" not in response.text

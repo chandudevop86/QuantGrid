@@ -117,7 +117,12 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         db.execute(text("SELECT 1"))
         db_status = {"healthy": True, "message": "Database query ok."}
     except Exception as exc:  # pragma: no cover - environment dependent
-        db_status = {"healthy": False, "message": str(exc)}
+        logger.exception("dashboard_database_health_check_failed", extra={"error_type": exc.__class__.__name__})
+        db_status = {
+            "healthy": False,
+            "status": "UNAVAILABLE",
+            "message": "Database health check failed. Review server logs using the request timestamp.",
+        }
     finally:
         if db is not None:
             db.close()

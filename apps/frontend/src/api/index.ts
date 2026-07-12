@@ -1,5 +1,37 @@
 import API from "./client";
 
+const OPERATIONS_CACHE_TTL_MS = 3000;
+let operationsCache: { authKey: string; expiresAt: number; data: any } | null = null;
+let operationsRequest: { authKey: string; promise: Promise<any> } | null = null;
+
+function currentAuthKey() {
+  return typeof window === "undefined" ? "server" : window.localStorage.getItem("quantgrid_token") ?? "anonymous";
+}
+
+function operationsStatus() {
+  const authKey = currentAuthKey();
+  const now = Date.now();
+  if (operationsCache?.authKey === authKey && operationsCache.expiresAt > now) {
+    return Promise.resolve(operationsCache.data);
+  }
+  if (operationsRequest?.authKey === authKey) {
+    return operationsRequest.promise;
+  }
+
+  const promise = API.get("/dashboard/operations")
+    .then((res) => res.data)
+    .catch(() => API.get("/operations/status").then((res) => res.data))
+    .then((data) => {
+      operationsCache = { authKey, expiresAt: Date.now() + OPERATIONS_CACHE_TTL_MS, data };
+      return data;
+    })
+    .finally(() => {
+      if (operationsRequest?.promise === promise) operationsRequest = null;
+    });
+  operationsRequest = { authKey, promise };
+  return promise;
+}
+
 export type SignalPayload = {
   strategy_name: string;
   symbol: string;
@@ -47,10 +79,7 @@ export const api = {
   dhanLogin: (payload: { client_id: string; access_token: string; persist?: boolean }) =>
     API.post("/broker/dhan/login", payload).then((res) => res.data),
   getSummary: () => API.get("/dashboard/summary").then((res) => res.data),
-  operationsStatus: () =>
-    API.get("/dashboard/operations")
-      .then((res) => res.data)
-      .catch(() => API.get("/operations/status").then((res) => res.data)),
+  operationsStatus,
   auditTrail: () => API.get("/audit/logs", { params: { limit: 50 } }).then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
