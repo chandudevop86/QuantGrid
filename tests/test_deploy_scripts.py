@@ -11,6 +11,7 @@ REQUIRED_SCRIPTS = {
     "common.sh",
     "backend.sh",
     "frontend.sh",
+    "database.sh",
     "postgres.sh",
     "redis.sh",
     "nginx.sh",
@@ -48,6 +49,16 @@ def test_deploy_and_restart_validate_database_before_backend_restart():
 
     assert deploy.index("check_database") < deploy.index('bash "${SCRIPT_DIR}/backend.sh" restart')
     assert restart.index("check_database") < restart.index('bash "${SCRIPT_DIR}/backend.sh" restart')
+
+
+def test_database_script_exposes_expected_check_command_without_duplicate_schema_logic():
+    database = _text("database.sh")
+
+    assert "check|init)" in database
+    assert "check_database" in database
+    assert "Backend.tools.check_database" not in database
+    assert "CREATE TABLE" not in database
+    assert "Use postgres.sh for database service start/status operations." in database
 
 
 def test_health_check_waits_and_prints_backend_diagnostics():

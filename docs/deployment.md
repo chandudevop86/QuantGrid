@@ -80,11 +80,14 @@ bundle from Nginx at `/var/www/quantgrid`.
 ## Database Check
 
 ```bash
-cd services/trading-service
-python -m Backend.tools.check_database
+cd /root/QuantGrid
+bash deploy/scripts/database.sh check
 ```
 
-The deployment scripts run the same database/schema check before backend or worker restart.
+`check` validates security configuration, initializes the existing trading-store schemas, tests connectivity, and prints
+a password-masked database URL. `init` is an explicit alias for the same idempotent operation. The deployment scripts
+run this shared database/schema check before backend or worker restart. Use `postgres.sh` only for Postgres container
+start and status operations.
 
 ## Automated Deploy Scripts
 
