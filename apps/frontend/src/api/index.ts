@@ -8,6 +8,11 @@ function currentAuthKey() {
   return typeof window === "undefined" ? "server" : window.localStorage.getItem("quantgrid_token") ?? "anonymous";
 }
 
+function canonicalRouteUnavailable(error: unknown) {
+  const status = (error as { response?: { status?: number } })?.response?.status;
+  return status === 404 || status === 405;
+}
+
 function operationsStatus() {
   const authKey = currentAuthKey();
   const now = Date.now();
@@ -20,7 +25,10 @@ function operationsStatus() {
 
   const promise = API.get("/dashboard/operations")
     .then((res) => res.data)
-    .catch(() => API.get("/operations/status").then((res) => res.data))
+    .catch((error: unknown) => {
+      if (!canonicalRouteUnavailable(error)) throw error;
+      return API.get("/operations/status").then((res) => res.data);
+    })
     .then((data) => {
       operationsCache = { authKey, expiresAt: Date.now() + OPERATIONS_CACHE_TTL_MS, data };
       return data;
