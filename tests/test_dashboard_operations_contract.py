@@ -101,6 +101,7 @@ def test_dashboard_operations_returns_decision_contract(app_client):
         "system_status",
         "trade_eligibility",
         "trade_plan",
+        "trade_confidence",
     }
     assert final_decision["trade_decision"] in {"Buy CE", "Buy PE", "No Trade"}
     assert final_decision["trade_quality"] in {"Excellent", "Good", "Average", "Poor", "Skip"}
@@ -109,6 +110,8 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert final_decision["confidence_label"] in {"High", "Medium", "Low", "Blocked"}
     assert isinstance(final_decision["no_trade_intelligence"], dict)
     assert isinstance(final_decision["trade_eligibility"], dict)
+    assert final_decision["trade_confidence"]["score"] == final_decision["confluence_score"]
+    assert isinstance(final_decision["trade_confidence"]["factors"], list)
     assert final_decision["trade_eligibility"]["status"] in {"ELIGIBLE", "BLOCKED"}
     if final_decision["trade_eligibility"]["eligible"]:
         assert isinstance(final_decision["trade_plan"], dict)

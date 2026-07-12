@@ -51,6 +51,7 @@ type Decision = {
       no_trade_intelligence?: { primary_reason?: string; block_reasons?: string[]; wait_for?: string[] };
       trade_eligibility?: { eligible?: boolean; mode?: string; status?: string; reasons?: string[] };
       trade_plan?: { decision?: string; entry_zone?: string; stop_loss?: string; target?: string; invalidation_level?: string; risk_reward_ratio?: number | null; position_size?: number | null } | null;
+      trade_confidence?: { score?: number; label?: string; meaning?: string; factors?: Array<{ name?: string; contribution?: number; weight?: number; source?: string; timestamp?: string; available?: boolean }> };
       explainability?: { plain_english?: string; score_reason?: string; warnings?: string[] };
     };
     checklist_score?: number;
@@ -240,7 +241,6 @@ export default function Dashboard() {
   }, [isAuthenticated]);
 
   const decision = { ...fallbackDecision(), ...(operations?.decision ?? {}) };
-  const confidence = Number(decision.confidence ?? 0);
   const market = operations?.market_status;
   const risk = operations?.risk_summary;
   const health = operations?.system_health;
@@ -252,6 +252,7 @@ export default function Dashboard() {
   const checklistSr = checklist?.support_resistance ?? decision.factor_snapshot?.support_resistance;
   const checklistRr = checklist?.risk_reward ?? decision.factor_snapshot?.risk_reward;
   const finalDecision = decision.factor_snapshot?.final_decision;
+  const confidence = Number(finalDecision?.trade_confidence?.score ?? decision.confidence ?? 0);
   const paperGate = decision.factor_snapshot?.high_probability_trade_engine?.paper_trade_gate;
   const dataQuality = decision.factor_snapshot?.data_quality ?? checklist?.data_quality;
   const tradeEligible = Boolean(

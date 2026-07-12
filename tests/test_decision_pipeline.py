@@ -161,10 +161,19 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
         "system_status",
         "trade_eligibility",
         "trade_plan",
+        "trade_confidence",
     }
     assert final_decision["trade_decision"] == "Buy CE"
     assert final_decision["trade_eligibility"]["eligible"] is True
     assert final_decision["trade_plan"] is not None
+    trade_confidence = final_decision["trade_confidence"]
+    assert trade_confidence["score"] == final_decision["confluence_score"]
+    assert "not probability of profit" in trade_confidence["meaning"]
+    assert trade_confidence["factors"]
+    assert all(
+        set(factor) == {"name", "value", "direction", "weight", "contribution", "source", "timestamp", "available"}
+        for factor in trade_confidence["factors"]
+    )
     assert final_decision["selected_strategy"] != "none"
     assert final_decision["strategy_version"] != "0.0.0"
     assert final_decision["strategy"] != "none"

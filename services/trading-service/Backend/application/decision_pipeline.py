@@ -371,6 +371,7 @@ class DecisionPipelineService:
             risk_reward,
             discipline,
         )
+        trade_confidence = _trade_confidence_contract(market, confluence)
         strategy_selection = _strategy_selection_engine(regime, market_structure, price_action, volume_analysis, risk_reward, confluence, self.strategy_engine.registry())
         probability = _probability_engine(confluence, regime, options_flow, institutional, risk_reward)
         checklist_score = confluence["confluence_score"]
@@ -403,6 +404,7 @@ class DecisionPipelineService:
                     "confidence_score": confluence["confluence_score"],
                     "weights": confluence["weights"],
                     "breakdown": confluence["breakdown"],
+                    "trade_confidence": trade_confidence,
                 },
                 "data_quality": data_quality.to_dict(),
             }
@@ -419,6 +421,7 @@ class DecisionPipelineService:
             strategy_selection,
             probability,
         )
+        final_decision["trade_confidence"] = trade_confidence
         paper_trade_gate = _paper_trade_gate(market, final_decision, risk_reward, discipline, confluence, risk_blocked)
         eligible = bool(paper_trade_gate["allowed"] and final_decision["trade_decision"] != "No Trade")
         final_decision["trade_eligibility"] = {
@@ -1512,6 +1515,48 @@ def _trade_quality(score: int, hard_blocks: list[str]) -> str:
     if score >= 55:
         return "Average"
     return "Poor"
+
+
+def _trade_confidence_contract(market: MarketDataInputs, confluence: dict[str, Any]) -> dict[str, Any]:
+    candles = market.candles_1m or market.candles
+    candle = candles[-1] if candles else {}
+    candle_timestamp = candle.get("timestamp") or candle.get("datetime") or candle.get("time")
+    evaluated_at = datetime.now(timezone.utc).isoformat()
+    weight_aliases = {"price_action_confirmation": "price_action"}
+    factors = []
+    for name, contribution in confluence.get("breakdown", {}).items():
+        weight = int(confluence.get("weights", {}).get(weight_aliases.get(name, name), 0))
+        if name == "options_flow":
+            observations = [market.context_status.get("oi_bias", {}), market.context_status.get("pcr", {})]
+            available = all(item.get("available") for item in observations)
+            source = ", ".join(sorted({str(item.get("source")) for item in observations if item.get("source")})) or "unavailable"
+            timestamp = next((item.get("timestamp") for item in observations if item.get("timestamp")), None)
+        elif name in {"risk_management", "discipline_fomo"}:
+            available = True
+            source = "risk-engine" if name == "risk_management" else "discipline-engine"
+            timestamp = evaluated_at
+        else:
+            available = bool(candles)
+            source = "stored-live-cache" if available else "unavailable"
+            timestamp = candle_timestamp
+        factors.append({
+            "name": name,
+            "value": int(contribution),
+            "direction": "SUPPORTING" if contribution > 0 else "OPPOSING",
+            "weight": weight,
+            "contribution": int(contribution),
+            "source": source,
+            "timestamp": timestamp,
+            "available": available,
+        })
+    score = int(confluence.get("confluence_score") or 0)
+    return {
+        "score": score,
+        "label": "READY" if score >= 70 and not confluence.get("hard_blocks") else "CAUTION" if score >= 55 else "BLOCKED",
+        "meaning": "Decision readiness based on verified confluence; not probability of profit.",
+        "formula": "sum(factor contributions) / sum(factor weights) * 100",
+        "factors": factors,
+    }
 
 
 def _final_decision_payload(
