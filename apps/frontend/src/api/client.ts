@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getAuthToken } from "../roles";
 
 const fallbackBaseURL =
   typeof window === "undefined"
@@ -48,8 +49,7 @@ API.interceptors.request.use((config) => {
       : window.location.protocol === "http:" && !["localhost", "127.0.0.1", "::1"].includes(window.location.hostname)
         ? "paper"
         : window.localStorage.getItem("quantgrid_mode") ?? import.meta.env.VITE_DEFAULT_MODE ?? "paper";
-  const token =
-    typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_token");
+  const token = getAuthToken();
 
   if (token) {
     config.headers.set("Authorization", `Bearer ${token}`);

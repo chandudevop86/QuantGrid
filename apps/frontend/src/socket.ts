@@ -39,8 +39,9 @@ function normalizeSocketUrl(socketUrl: string | undefined) {
 export function createSocket() {
   const socketUrl = normalizeSocketUrl(import.meta.env.VITE_WS_URL) ?? defaultSocketUrl();
   const target = new URL(socketUrl, typeof window === "undefined" ? undefined : window.location.origin);
-  const token = typeof window === "undefined" ? null : window.localStorage.getItem("quantgrid_token");
+  const token = getAuthToken();
   return token
     ? new WebSocket(target.toString(), ["quantgrid", token])
     : new WebSocket(target.toString());
 }
+import { getAuthToken } from "./roles";

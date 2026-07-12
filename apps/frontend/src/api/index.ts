@@ -1,11 +1,12 @@
 import API from "./client";
+import { getAuthToken } from "../roles";
 
 const OPERATIONS_CACHE_TTL_MS = 3000;
 let operationsCache: { authKey: string; expiresAt: number; data: any } | null = null;
 let operationsRequest: { authKey: string; promise: Promise<any> } | null = null;
 
 function currentAuthKey() {
-  return typeof window === "undefined" ? "server" : window.localStorage.getItem("quantgrid_token") ?? "anonymous";
+  return typeof window === "undefined" ? "server" : getAuthToken() ?? "anonymous";
 }
 
 function canonicalRouteUnavailable(error: unknown) {

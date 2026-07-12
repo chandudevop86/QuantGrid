@@ -54,10 +54,23 @@ type AuthClaims = {
   uid?: number;
 };
 
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const sessionToken = window.sessionStorage.getItem("quantgrid_token");
+  if (sessionToken) return sessionToken;
+
+  const legacyToken = window.localStorage.getItem("quantgrid_token");
+  if (legacyToken) {
+    window.sessionStorage.setItem("quantgrid_token", legacyToken);
+    window.localStorage.removeItem("quantgrid_token");
+  }
+  return legacyToken;
+}
+
 function decodeAuthClaims(): AuthClaims | null {
   if (typeof window === "undefined") return null;
 
-  const token = window.localStorage.getItem("quantgrid_token");
+  const token = getAuthToken();
   if (!token) return null;
 
   const parts = token.split(".");
@@ -92,13 +105,15 @@ export function setCurrentRole(role: Role) {
 
 export function setCurrentAuth(role: Role, token: string) {
   window.localStorage.setItem("quantgrid_role", role);
-  window.localStorage.setItem("quantgrid_token", token);
+  window.sessionStorage.setItem("quantgrid_token", token);
+  window.localStorage.removeItem("quantgrid_token");
   window.dispatchEvent(new CustomEvent("quantgrid-role-change", { detail: role }));
 }
 
 export function clearCurrentAuth() {
   window.localStorage.removeItem("quantgrid_role");
   window.localStorage.removeItem("quantgrid_token");
+  window.sessionStorage.removeItem("quantgrid_token");
   window.dispatchEvent(new CustomEvent("quantgrid-role-change", { detail: "viewer" }));
 }
 
