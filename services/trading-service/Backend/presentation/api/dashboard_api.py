@@ -62,6 +62,7 @@ def _product_summary(payload: dict) -> dict:
     health = payload.get("system_health") or {}
     risk = payload.get("risk_summary") or {}
     return {
+        "status": "ready",
         "contract_version": "1.0",
         "updated_at": payload.get("updated_at"),
         "market_decision": {

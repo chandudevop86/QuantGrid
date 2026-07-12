@@ -124,6 +124,8 @@ def test_dashboard_operations_returns_decision_contract(app_client):
     assert final_decision["explainability"]["plain_english"]
     assert isinstance(final_decision["strategy_selection"], dict)
     assert isinstance(final_decision["probability_engine"], dict)
+    assert final_decision["probability_engine"]["metric_type"] == "heuristic_decision_readiness"
+    assert final_decision["probability_engine"]["not_probability_of_profit"] is True
     assert isinstance(decision["recommendation_metrics"], dict)
     assert "market_status" in payload
     assert "risk_summary" in payload

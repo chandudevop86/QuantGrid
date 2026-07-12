@@ -9,6 +9,7 @@ def test_dashboard_summary_exposes_only_canonical_five_section_contract(app_clie
     assert response.status_code == 200, response.text
     payload = response.json()
     assert set(payload) == {
+        "status",
         "contract_version",
         "updated_at",
         "market_decision",
@@ -17,6 +18,7 @@ def test_dashboard_summary_exposes_only_canonical_five_section_contract(app_clie
         "key_levels",
         "system_trust",
     }
+    assert payload["status"] == "ready"
     assert payload["contract_version"] == "1.0"
     assert payload["market_decision"]["decision"] in {"Buy CE", "Buy PE", "No Trade"}
     assert "not probability of profit" in payload["market_decision"]["trade_confidence"]["meaning"]

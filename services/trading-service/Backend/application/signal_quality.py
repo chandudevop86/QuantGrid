@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from Backend.application.candle_validation import normalize_timestamp, validate_live_candle
+from Backend.application.candle_validation import normalize_timestamp, validate_live_candle, validation_settings
 from Backend.domain.indicators.indicators import IndicatorService
 from Backend.domain.models.signal import StrategySignal
 
@@ -146,8 +146,15 @@ def decide_signal(
     # candle time to *actual* wall-clock time. Omitting `now` lets validate_live_candle use its
     # own correct default (real current time), which is what actually catches a stale feed.
     candle_validation = validate_live_candle(candles_1m, mode="paper")
+    wall_clock_age_seconds = (
+        max(0.0, (datetime.now(timezone.utc) - latest).total_seconds())
+        if latest is not None
+        else None
+    )
 
     if age is None or age > max_signal_age_minutes():
+        return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+    if wall_clock_age_seconds is None or wall_clock_age_seconds > validation_settings().reject_after_seconds:
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
     if not candle_validation.valid_for_analysis:
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)

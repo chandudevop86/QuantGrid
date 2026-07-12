@@ -184,6 +184,12 @@ def test_decision_pipeline_maps_candles_to_buy_ce_and_persists_metrics(monkeypat
     assert isinstance(result.factors["strategy_selection"]["why_others_rejected"], list)
     assert 0 <= result.factors["probability_engine"]["probability_score"] <= 100
     assert result.factors["probability_engine"]["evidence"]
+    readiness = result.factors["probability_engine"]
+    assert readiness["metric_type"] == "heuristic_decision_readiness"
+    assert readiness["readiness_score"] == readiness["probability_score"]
+    assert readiness["not_probability_of_profit"] is True
+    assert "not probability of profit" in readiness["meaning"]
+    assert readiness["legacy_fields"]["probability_score"].startswith("deprecated")
     assert result.decision_id
 
     record_recommendation_outcome(result.decision_id, outcome="WIN", pnl=500, actual_direction="BULLISH")

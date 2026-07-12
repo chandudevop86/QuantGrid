@@ -1282,8 +1282,8 @@ def _probability_engine(
     score += 5 if options_flow.get("passed") else -8
     score += (float(institutional.get("institutional_score") or 0) - 50) * 0.15
     score += 4 if risk.allowed else -15
-    probability = int(max(0, min(100, round(score))))
-    confidence = int(max(0, min(100, round((probability + float(confluence.get("confluence_score") or 0)) / 2))))
+    readiness = int(max(0, min(100, round(score))))
+    confidence = int(max(0, min(100, round((readiness + float(confluence.get("confluence_score") or 0)) / 2))))
     evidence = [
         f"Confluence score {confluence.get('confluence_score', 0)}.",
         f"Market regime {regime.get('market_regime', 'Unknown')}.",
@@ -1299,12 +1299,17 @@ def _probability_engine(
     if not risk.allowed:
         penalties.append("Risk validation failed.")
     return {
-        "probability_score": probability,
+        "metric_type": "heuristic_decision_readiness",
+        "readiness_score": readiness,
+        "meaning": "Deterministic setup readiness; not probability of profit or expected return.",
+        "not_probability_of_profit": True,
+        "legacy_fields": {"probability_score": "deprecated; use readiness_score"},
+        "probability_score": readiness,
         "confidence_score": confidence,
         "confidence_label": "High" if confidence >= 85 else "Medium" if confidence >= 70 else "Low" if confidence >= 55 else "Blocked",
         "evidence": evidence,
         "penalties": penalties,
-        "explanation": f"Confidence {confidence}% and probability {probability}% from deterministic evidence.",
+        "explanation": f"Decision readiness {readiness}/100 and confidence {confidence}/100 from deterministic evidence.",
         "inputs": {
             "confluence_score": confluence.get("confluence_score"),
             "market_regime": regime.get("market_regime"),
@@ -1312,7 +1317,7 @@ def _probability_engine(
             "institutional_score": institutional.get("institutional_score"),
             "risk_reward_allowed": risk.allowed,
         },
-        "reason": f"Probability {probability}% from confluence, regime, options, institutional context, and risk.",
+        "reason": f"Readiness {readiness}/100 from confluence, regime, options, institutional context, and risk; not a profit forecast.",
     }
 
 
