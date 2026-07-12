@@ -3,4 +3,5 @@ ruff
 bandit
 pip-audit
 pytest-cov
+pytest-timeout
 mypy

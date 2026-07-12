@@ -50,10 +50,7 @@ pipeline {
           sh label: 'Run pytest and fail pipeline on test failure', script: '''
             set -eu
             QUANTGRID_ENV=local QUANTGRID_ALLOW_DEV_SEED_USERS=true \
-              python -m pytest tests \
-                --cov=services/trading-service/Backend \
-                --cov-report=term-missing \
-                --cov-fail-under=45
+              python scripts/run_test_groups.py --groups 4 --group-timeout 180 --coverage --cov-fail-under 45
           '''
         }
       }

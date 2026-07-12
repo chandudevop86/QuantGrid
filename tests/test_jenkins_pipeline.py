@@ -5,7 +5,7 @@ def test_jenkins_pytest_stage_fails_pipeline_on_test_failure():
     jenkinsfile = Path(__file__).resolve().parents[1] / "Jenkinsfile"
     text = jenkinsfile.read_text(encoding="utf-8")
 
-    assert "python -m pytest tests" in text
+    assert "python scripts/run_test_groups.py --groups 4 --group-timeout 180 --coverage --cov-fail-under 45" in text
     assert "set -eu" in text
     assert "returnStatus" not in text
     assert "pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45 || true" not in text

@@ -34,7 +34,7 @@ jobs:
           QUANTGRID_ENV: local
           QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
           QUANTGRID_ALLOW_DEV_SEED_USERS: "true"
-        run: python -m pytest tests --cov=services/trading-service/Backend --cov-report=term-missing --cov-fail-under=45
+        run: python scripts/run_test_groups.py --groups 4 --group-timeout 180 --coverage --cov-fail-under 45
 
   frontend:
     name: Frontend build
