@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
 
@@ -157,18 +158,68 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _timestamp_bucket(candle: dict, interval_seconds: int) -> int | None:
+    raw = candle.get("timestamp") or candle.get("datetime") or candle.get("time")
+    if raw in {None, ""}:
+        return None
+    try:
+        value = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    timestamp = value.timestamp() if value.tzinfo is not None else value.replace(tzinfo=timezone.utc).timestamp()
+    return int(timestamp // interval_seconds * interval_seconds)
+
+
+def _aggregate_candles(candles: list[dict], interval_seconds: int, limit: int = 100) -> list[dict]:
+    buckets: dict[int, list[dict]] = {}
+    for candle in candles:
+        bucket = _timestamp_bucket(candle, interval_seconds)
+        if bucket is None:
+            continue
+        buckets.setdefault(bucket, []).append(candle)
+
+    aggregated = []
+    for bucket, rows in sorted(buckets.items()):
+        if not rows:
+            continue
+        opens = [row.get("open") for row in rows if row.get("open") is not None]
+        highs = [row.get("high") for row in rows if row.get("high") is not None]
+        lows = [row.get("low") for row in rows if row.get("low") is not None]
+        closes = [row.get("close") for row in rows if row.get("close") is not None]
+        if not opens or not highs or not lows or not closes:
+            continue
+        aggregated.append({
+            "timestamp": datetime.fromtimestamp(bucket, timezone.utc).isoformat(),
+            "open": float(opens[0]),
+            "high": max(float(value) for value in highs),
+            "low": min(float(value) for value in lows),
+            "close": float(closes[-1]),
+            "volume": sum(float(row.get("volume") or 0) for row in rows),
+            "source": "derived-from-stored-candles",
+        })
+    return aggregated[-limit:]
+
+
+def _dashboard_candles_by_interval(symbol: str) -> dict[str, list[dict]]:
+    one_minute = latest_candles(symbol, "1m", 300)
+    five_minute = latest_candles(symbol, "5m", 100) or _aggregate_candles(one_minute, 300)
+    fifteen_minute = latest_candles(symbol, "15m", 100) or _aggregate_candles(one_minute, 900)
+    one_hour = latest_candles(symbol, "1h", 100) or _aggregate_candles(fifteen_minute or one_minute, 3600)
+    return {
+        "1m": one_minute[-100:],
+        "5m": five_minute,
+        "15m": fifteen_minute,
+        "1h": one_hour,
+        "1d": latest_candles(symbol, "1d", 100),
+    }
+
+
 @router.get("/operations")
 def operations(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     started_at = perf_counter()
     settings = get_settings()
-    candles = latest_candles("NIFTY", "1m", 100)
-    candles_by_interval = {
-        "1m": candles,
-        "5m": latest_candles("NIFTY", "5m", 100),
-        "15m": latest_candles("NIFTY", "15m", 100),
-        "1h": latest_candles("NIFTY", "1h", 100),
-        "1d": latest_candles("NIFTY", "1d", 100),
-    }
+    candles_by_interval = _dashboard_candles_by_interval("NIFTY")
+    candles = candles_by_interval["1m"]
     from Backend.presentation.api.market_api import latest_verified_option_context
 
     market_context = latest_verified_option_context("NIFTY")

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from conftest import admin_headers
 
 
@@ -164,3 +166,33 @@ def test_dashboard_database_failure_does_not_expose_exception_details(app_client
     assert db_health["status"] == "UNAVAILABLE"
     assert secret_detail not in response.text
     assert "super-secret" not in response.text
+
+
+def test_dashboard_derives_missing_hourly_candles_from_lower_timeframes(monkeypatch):
+    from Backend.presentation.api import dashboard_api
+
+    base = datetime.fromisoformat("2026-07-13T09:15:00+05:30")
+    one_minute = [
+        {
+            "timestamp": (base + timedelta(minutes=index)).isoformat(),
+            "open": 100 + index,
+            "high": 101 + index,
+            "low": 99 + index,
+            "close": 100.5 + index,
+            "volume": 10,
+        }
+        for index in range(130)
+    ]
+
+    def fake_latest_candles(symbol, interval, limit):
+        if interval == "1m":
+            return one_minute[-limit:]
+        return []
+
+    monkeypatch.setattr(dashboard_api, "latest_candles", fake_latest_candles)
+
+    candles_by_interval = dashboard_api._dashboard_candles_by_interval("NIFTY")
+
+    assert candles_by_interval["15m"]
+    assert candles_by_interval["1h"]
+    assert candles_by_interval["1h"][0]["source"] == "derived-from-stored-candles"

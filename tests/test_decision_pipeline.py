@@ -568,6 +568,33 @@ def test_central_data_quality_gate_blocks_duplicate_out_of_order_and_gapped_cand
     assert any("unexpected interval gap" in reason for reason in quality.critical_errors)
 
 
+def test_central_data_quality_allows_market_session_gaps():
+    def series(start: str, interval_minutes: int, count: int) -> list[dict]:
+        base = datetime.fromisoformat(start)
+        rows = _bullish_candles()[:count]
+        for index, row in enumerate(rows):
+            row["timestamp"] = (base + timedelta(minutes=index * interval_minutes)).isoformat()
+        return rows
+
+    one_minute = series("2026-07-10T15:10:00+05:30", 1, 20) + series("2026-07-13T09:15:00+05:30", 1, 20)
+    fifteen_minute = series("2026-07-10T14:45:00+05:30", 15, 4) + series("2026-07-13T09:15:00+05:30", 15, 20)
+    one_hour = series("2026-07-10T10:15:00+05:30", 60, 6) + series("2026-07-13T09:15:00+05:30", 60, 20)
+    market = MarketDataInputs(
+        candles=one_minute,
+        candles_1m=one_minute,
+        candles_15m=fifteen_minute,
+        candles_1h=one_hour,
+        valid_for_execution=True,
+        enforce_data_quality=True,
+        context_status={"oi_bias": {"available": True}, "pcr": {"available": True}},
+    )
+
+    quality = assess_trade_data_quality(market, analyze_higher_timeframe(market))
+
+    assert not any("unexpected interval gap" in reason for reason in quality.critical_errors)
+    assert any("market-session gap" in warning for warning in quality.warnings)
+
+
 def test_higher_timeframe_allows_ce_and_pe_direction():
     bullish = analyze_higher_timeframe(
         MarketDataInputs(candles_1m=_bullish_candles(), candles_5m=_bullish_candles(), candles_15m=_bullish_candles(), candles_1h=_bullish_candles())

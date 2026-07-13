@@ -107,9 +107,11 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     candles_response = get_candles(payload.symbol, interval=payload.interval, period=payload.period)
     confirmation_response = get_candles(payload.symbol, interval="5m", period=payload.period)
     trend_response = get_candles(payload.symbol, interval="15m", period=payload.period)
+    hourly_response = get_candles(payload.symbol, interval="1h", period="5d")
     candles = _prepare_strategy_candles(candles_response)
     confirmation_candles = _prepare_strategy_candles(confirmation_response)
     trend_candles = _prepare_strategy_candles(trend_response)
+    hourly_candles = _prepare_strategy_candles(hourly_response)
     service = TradingService()
     candle_validation = validate_live_candle(
         candles,
@@ -125,7 +127,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         capital=payload.capital,
         risk_pct=payload.risk_pct,
         rr_ratio=payload.rr_ratio,
-        params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles},
+        params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles, "h1_candles": hourly_candles},
     )
     gate_active_signals, rejected_signals, stale_signals = split_signals(
         raw_signals,

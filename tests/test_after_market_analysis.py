@@ -36,8 +36,18 @@ def test_after_market_analysis_allowed_but_live_execution_blocked(monkeypatch):
         metadata={"score": 9},
     )
 
-    monkeypatch.setattr(worker, "get_candles", lambda symbol, interval="1m", period="1d": _closed_market_response(interval))
-    monkeypatch.setattr(worker.TradingService, "run_strategy", lambda self, **kwargs: [signal])
+    requested_intervals = []
+
+    def fake_get_candles(symbol, interval="1m", period="1d"):
+        requested_intervals.append((interval, period))
+        return _closed_market_response(interval)
+
+    def fake_run_strategy(self, **kwargs):
+        assert kwargs["params"]["h1_candles"]
+        return [signal]
+
+    monkeypatch.setattr(worker, "get_candles", fake_get_candles)
+    monkeypatch.setattr(worker.TradingService, "run_strategy", fake_run_strategy)
     monkeypatch.setattr(worker, "split_signals", lambda signals, **kwargs: (signals, [], []))
     monkeypatch.setattr(worker, "validate_signals", lambda signals, **kwargs: (signals, "live"))
     monkeypatch.setattr(worker, "analyze_market_structure", lambda candles, **kwargs: {"trade_decision": "WAIT"})
@@ -66,6 +76,7 @@ def test_after_market_analysis_allowed_but_live_execution_blocked(monkeypatch):
     assert result["validation"]["valid_for_analysis"] is True
     assert result["validation"]["valid_for_execution"] is False
     assert result["signals"][0]["symbol"] == "NIFTY"
+    assert ("1h", "5d") in requested_intervals
 
     try:
         run_live_analysis(

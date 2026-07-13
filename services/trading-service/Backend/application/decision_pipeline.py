@@ -768,8 +768,10 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
                 critical_errors.append(f"data quality: {timeframe} contains duplicate candle timestamps")
             if integrity["out_of_order"]:
                 critical_errors.append(f"data quality: {timeframe} candles are out of order")
-            if integrity["gap_count"]:
-                critical_errors.append(f"data quality: {timeframe} contains {integrity['gap_count']} unexpected interval gap(s)")
+            if integrity["unexpected_gap_count"]:
+                critical_errors.append(f"data quality: {timeframe} contains {integrity['unexpected_gap_count']} unexpected interval gap(s)")
+            if integrity["session_gap_count"]:
+                warnings.append(f"{timeframe} contains {integrity['session_gap_count']} market-session gap(s), ignored for trade blocking.")
             if integrity["mixed_timezone_awareness"]:
                 critical_errors.append(f"data quality: {timeframe} mixes timezone-aware and timezone-naive timestamps")
 
@@ -826,7 +828,15 @@ def _candle_series_integrity(candles: list[dict[str, Any]], timeframe: str, mini
     duplicate_count = len(comparable) - len(set(comparable))
     out_of_order = any(current <= previous for previous, current in zip(comparable, comparable[1:]))
     gap_limit = interval_seconds * (4 if timeframe == "1d" else 1.5)
-    gap_count = sum(1 for previous, current in zip(comparable, comparable[1:]) if interval_seconds and current - previous > gap_limit)
+    gap_count = 0
+    session_gap_count = 0
+    for previous_value, current_value, previous_ts, current_ts in zip(parsed, parsed[1:], comparable, comparable[1:]):
+        if not interval_seconds or current_ts - previous_ts <= gap_limit:
+            continue
+        if _is_market_session_gap(previous_value, current_value, interval_seconds):
+            session_gap_count += 1
+        else:
+            gap_count += 1
     return {
         "rows": len(candles),
         "minimum_rows": minimum_rows,
@@ -835,8 +845,28 @@ def _candle_series_integrity(candles: list[dict[str, Any]], timeframe: str, mini
         "duplicate_timestamps": duplicate_count,
         "out_of_order": out_of_order,
         "gap_count": gap_count,
+        "unexpected_gap_count": gap_count,
+        "session_gap_count": session_gap_count,
         "mixed_timezone_awareness": len(awareness) > 1,
     }
+
+
+def _is_market_session_gap(previous: datetime, current: datetime, interval_seconds: int) -> bool:
+    previous_local = _as_kolkata_naive(previous)
+    current_local = _as_kolkata_naive(current)
+    if current_local.date() != previous_local.date():
+        return True
+    market_close_seconds = 15 * 3600 + 30 * 60
+    market_open_seconds = 9 * 3600 + 15 * 60
+    previous_seconds = previous_local.hour * 3600 + previous_local.minute * 60 + previous_local.second
+    current_seconds = current_local.hour * 3600 + current_local.minute * 60 + current_local.second
+    return previous_seconds <= market_close_seconds <= current_seconds - interval_seconds or previous_seconds < market_open_seconds <= current_seconds
+
+
+def _as_kolkata_naive(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value
+    return value.astimezone(timezone(timedelta(hours=5, minutes=30))).replace(tzinfo=None)
 
 
 def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
