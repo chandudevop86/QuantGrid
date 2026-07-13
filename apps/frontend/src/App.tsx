@@ -10,7 +10,6 @@ import DhanLogin from "./pages/DhanLogin";
 import Execution from "./pages/Execution";
 import InstitutionalDashboard from "./pages/InstitutionalDashboard";
 import Investing from "./pages/Investing";
-import LiveAnalysis from "./pages/LiveAnalysis";
 import MarketCopilot from "./pages/MarketCopilot";
 import Jobs from "./pages/Jobs";
 import OptionChain from "./pages/OptionChain";
@@ -44,8 +43,8 @@ export default function App() {
           <Route path="/candles" element={protect("/candles", <Candles />)} />
           <Route path="/backtesting" element={<Navigate to="/history" replace />} />
           <Route path="/execution" element={protect("/execution", <Execution />)} />
-          <Route path="/live" element={<Navigate to="/analysis" replace />} />
-          <Route path="/analysis" element={protect("/analysis", <LiveAnalysis />)} />
+          <Route path="/live" element={<Navigate to="/strategies" replace />} />
+          <Route path="/analysis" element={<Navigate to="/strategies" replace />} />
           <Route path="/copilot" element={protect("/copilot", <MarketCopilot />)} />
           <Route path="/option-chain" element={<Navigate to="/market" replace />} />
           <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />

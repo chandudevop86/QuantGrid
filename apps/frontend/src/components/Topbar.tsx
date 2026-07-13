@@ -138,8 +138,8 @@ export default function Topbar() {
     ["Market decision overview", "/"], ["Options market chain", "/market"], ["Qualified setups signals", "/signals"],
     ["Paper portfolio positions", "/paper-trades"], ["Backtest results", "/history"], ["Risk controls", "/settings"],
     ["Subscription plan and access", "/subscription"],
-    ["Live analysis", "/analysis"], ["Order ticket", "/trade"], ["Execution", "/execution"],
-    ["Strategies", "/strategies"], ["Operations", "/operations"], ["Security", "/security"],
+    ["Strategy monitoring", "/strategies"], ["Order ticket", "/trade"], ["Execution", "/execution"],
+    ["Operations", "/operations"], ["Security", "/security"],
     ["Candles", "/candles"], ["Market copilot", "/copilot"], ["Jobs", "/jobs"],
     ["Institutional", "/institutional"], ["Investing", "/investing"], ["Trading engine", "/trading-engine"],
   ] as const;

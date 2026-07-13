@@ -21,7 +21,6 @@ def test_advanced_routes_are_developer_mode_only():
     source = _roles_source()
     advanced_routes = [
         "/candles",
-        "/analysis",
         "/copilot",
         "/operations",
         "/institutional",
@@ -40,10 +39,11 @@ def test_duplicate_page_routes_redirect_to_one_canonical_destination():
     app = (ROOT / "apps" / "frontend" / "src" / "App.tsx").read_text(encoding="utf-8")
 
     assert 'path="/backtesting" element={<Navigate to="/history" replace />}' in app
-    assert 'path="/live" element={<Navigate to="/analysis" replace />}' in app
+    assert 'path="/live" element={<Navigate to="/strategies" replace />}' in app
+    assert 'path="/analysis" element={<Navigate to="/strategies" replace />}' in app
     assert 'path="/option-chain" element={<Navigate to="/market" replace />}' in app
     assert 'path="/risk" element={<Navigate to="/settings" replace />}' in app
     assert app.count("<Backtesting />") == 1
-    assert app.count("<LiveAnalysis />") == 1
+    assert "<LiveAnalysis />" not in app
     assert app.count("<OptionChain />") == 1
     assert app.count("<RiskDashboard />") == 1

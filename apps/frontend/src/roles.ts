@@ -26,7 +26,6 @@ const developerModeRoutes: Record<string, Role[]> = {
   "/copilot": ["admin", "developer"],
   "/dhan-login": ["admin"],
   "/execution": ["admin", "developer"],
-  "/analysis": ["admin", "developer"],
   "/jobs": ["admin", "developer"],
   "/operations": ["admin", "developer"],
   "/institutional": ["admin", "developer"],
@@ -121,10 +120,12 @@ export function hasAuthToken() {
 }
 
 export function canAccessRoute(role: Role, path: string) {
+  if (path === "/analysis" || path === "/live") return canAccessRoute(role, "/strategies");
   if (role === "admin") return true;
   return routeRoles[path]?.includes(role) ?? false;
 }
 
 export function isDeveloperModeRoute(path: string) {
+  if (path === "/analysis" || path === "/live") return true;
   return path in developerModeRoutes;
 }

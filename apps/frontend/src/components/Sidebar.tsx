@@ -17,7 +17,6 @@ export default function Sidebar() {
     { to: "/subscription", label: "Plan & Access", icon: "settings" },
   ];
   const advancedItems = [
-    { to: "/analysis", label: "Live Analysis", icon: "spark" },
     { to: "/candles", label: "Candles", icon: "pulse" },
     { to: "/copilot", label: "Market Copilot", icon: "spark" },
     { to: "/trade", label: "Order Ticket", icon: "trade" },
