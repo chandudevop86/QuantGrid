@@ -61,6 +61,15 @@ def test_institutional_dashboard_marks_missing_live_option_metrics():
     assert any("Live option-chain metrics are unavailable" in warning for warning in payload["warnings"])
 
 
+def test_institutional_dashboard_exposes_missing_input_env_names():
+    payload = build_institutional_dashboard("NIFTY", option_chain=None)
+
+    fii_cash = payload["cash_flows"]["fii_cash"]
+    assert fii_cash["value"] is None
+    assert fii_cash["source"] == "unavailable"
+    assert fii_cash["env_name"] == "FII_CASH_FLOW or QUANTGRID_FII_CASH_FLOW"
+
+
 def test_institutional_dashboard_api_contract(app_client, monkeypatch):
     from Backend.presentation.api import institutional_api
 

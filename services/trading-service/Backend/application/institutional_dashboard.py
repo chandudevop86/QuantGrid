@@ -69,13 +69,16 @@ def build_institutional_dashboard(
 
 def _env_metric(label: str, env_name: str, unit: str | None) -> dict[str, Any]:
     value = _env_float(env_name)
+    configured_env = env_name
     if value is None:
         value = _env_float(f"QUANTGRID_{env_name}")
+        configured_env = f"QUANTGRID_{env_name}"
     return {
         "label": label,
         "value": value,
         "unit": unit,
         "source": "env" if value is not None else "unavailable",
+        "env_name": configured_env if value is not None else f"{env_name} or QUANTGRID_{env_name}",
     }
 
 

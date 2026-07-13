@@ -6,6 +6,7 @@ type Metric = {
   value: number | null;
   unit?: string | null;
   source?: string;
+  env_name?: string;
 };
 
 type OiLeader = {
@@ -36,6 +37,7 @@ type InstitutionalPayload = {
 };
 
 function formatNumber(value: unknown, suffix?: string | null) {
+  if (value === null || value === undefined || value === "") return "-";
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return "-";
   const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(parsed);
@@ -70,7 +72,7 @@ function MetricCard({ item }: { item: Metric }) {
     <article className={`metric-card${unavailable ? " metric-card-warn" : " metric-card-good"}`}>
       <span className="metric-label">{item.label}</span>
       <strong className="metric-value">{formatNumber(item.value, item.unit)}</strong>
-      <span className="metric-helper">{unavailable ? "Not configured" : `Source: ${item.source ?? "configured"}`}</span>
+      <span className="metric-helper">{unavailable ? `Set ${item.env_name ?? "env input"}` : `Source: ${item.source ?? "configured"}`}</span>
     </article>
   );
 }
