@@ -51,11 +51,14 @@ class RedisService:
             self._next_reconnect_at = 0.0
         except Exception as exc:
             logger.exception("redis_startup_validation_failed", extra={"error_type": exc.__class__.__name__})
-            self.client = None
-            self.async_client = None
-            self._status = RedisStatus(False, "fallback", f"Redis unavailable; using fallback: {exc}", True)
-            self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
+            self._mark_connection_failed("Redis unavailable; using in-process fallback.")
         return self._status
+
+    def _mark_connection_failed(self, message: str = "Redis operation failed; using in-process fallback.") -> None:
+        self.client = None
+        self.async_client = None
+        self._status = RedisStatus(False, "fallback", message, bool(self.url))
+        self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
 
     def _reconnect_interval_seconds(self) -> float:
         try:
@@ -84,10 +87,8 @@ class RedisService:
                 self.client.ping()
                 self._status = RedisStatus(True, "redis", "Redis ping ok.", True)
             except Exception as exc:
-                self._status = RedisStatus(False, "fallback", f"Redis ping failed; using fallback: {exc}", True)
-                self.client = None
-                self.async_client = None
-                self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
+                logger.warning("redis_health_ping_failed", extra={"error_type": exc.__class__.__name__})
+                self._mark_connection_failed("Redis health check failed; using in-process fallback.")
         return {
             "healthy": self._status.healthy,
             "mode": self._status.mode,
@@ -103,6 +104,7 @@ class RedisService:
             return True
         except Exception as exc:
             logger.warning("redis_publish_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return False
 
     def write_worker_heartbeat(self, payload: dict[str, Any], *, ttl_seconds: int = 15) -> bool:
@@ -113,6 +115,7 @@ class RedisService:
             return True
         except Exception as exc:
             logger.warning("redis_worker_heartbeat_write_failed", extra={"error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return False
 
     def read_worker_heartbeat(self) -> dict[str, Any] | None:
@@ -128,6 +131,7 @@ class RedisService:
             return payload if isinstance(payload, dict) else None
         except Exception as exc:
             logger.warning("redis_worker_heartbeat_read_failed", extra={"error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return None
 
     def start_cooldown(self, name: str, *, ttl_seconds: int) -> bool:
@@ -142,6 +146,7 @@ class RedisService:
             return True
         except Exception as exc:
             logger.warning("redis_cooldown_write_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return False
 
     def cooldown_remaining(self, name: str) -> int | None:
@@ -152,6 +157,7 @@ class RedisService:
             return ttl if ttl > 0 else None
         except Exception as exc:
             logger.warning("redis_cooldown_read_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return None
 
     def acquire_lock(self, name: str, *, ttl_seconds: int) -> str | None:
@@ -169,6 +175,7 @@ class RedisService:
             return token if acquired else ""
         except Exception as exc:
             logger.warning("redis_lock_acquire_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return None
 
     def release_lock(self, name: str, token: str) -> bool:
@@ -179,28 +186,38 @@ class RedisService:
             return bool(self.client.eval(script, 1, f"{self.LOCK_KEY_PREFIX}{name}", token))
         except Exception as exc:
             logger.warning("redis_lock_release_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
             return False
 
     async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
-        if not self._ensure_connected() or self.async_client is None:
-            return
-        pubsub = self.async_client.pubsub()
-        await pubsub.subscribe(channel)
-        try:
-            async for message in pubsub.listen():
-                if message.get("type") != "message":
-                    continue
+        while True:
+            if not self._ensure_connected() or self.async_client is None:
+                await asyncio.sleep(self._reconnect_interval_seconds())
+                continue
+
+            pubsub = self.async_client.pubsub()
+            try:
+                await pubsub.subscribe(channel)
+                async for message in pubsub.listen():
+                    if message.get("type") != "message":
+                        continue
+                    try:
+                        await callback(json.loads(message.get("data")))
+                    except Exception:
+                        logger.exception("redis_subscriber_callback_failed", extra={"channel": channel})
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("redis_subscriber_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
+                self._mark_connection_failed()
+            finally:
                 try:
-                    await callback(json.loads(message.get("data")))
+                    await pubsub.unsubscribe(channel)
+                    await pubsub.close()
                 except Exception:
-                    logger.exception("redis_subscriber_callback_failed", extra={"channel": channel})
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("redis_subscriber_failed", extra={"channel": channel})
-        finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.close()
+                    logger.warning("redis_subscriber_cleanup_failed", extra={"channel": channel})
+
+            await asyncio.sleep(self._reconnect_interval_seconds())
 
 
 redis_service = RedisService()

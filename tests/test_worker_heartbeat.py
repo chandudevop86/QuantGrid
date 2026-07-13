@@ -32,6 +32,11 @@ class FakeRedis:
         return 1
 
 
+class FailingRedis:
+    def set(self, *_args, **_kwargs):
+        raise ConnectionError("redis://user:secret@internal-redis:6379")
+
+
 def test_worker_heartbeat_round_trip_uses_expiring_redis_key():
     service = RedisService()
     fake = FakeRedis()
@@ -118,3 +123,17 @@ def test_redis_reconnect_attempts_are_rate_limited(monkeypatch):
     )
 
     assert service.cooldown_remaining("dhan-option-chain") is None
+
+
+def test_runtime_redis_failure_enters_safe_backoff_without_exposing_details(monkeypatch):
+    service = RedisService()
+    service.url = "redis://127.0.0.1:6379/0"
+    service.client = FailingRedis()
+    service.async_client = object()
+    monkeypatch.setenv("QUANTGRID_REDIS_RECONNECT_SECONDS", "10")
+
+    assert service.write_worker_heartbeat({"status": "RUNNING"}) is False
+    assert service.client is None
+    assert service.async_client is None
+    assert service._next_reconnect_at > 0
+    assert "secret" not in service.status()["message"]

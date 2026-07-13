@@ -22,7 +22,7 @@ class ConnectionManager:
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
-        if redis_service.status().get("healthy") and self._subscriber_task is None:
+        if self._subscriber_task is None or self._subscriber_task.done():
             self._subscriber_task = loop.create_task(redis_service.subscribe_json(self.channel, self._broadcast_local))
 
     async def connect(self, websocket: WebSocket, *, subprotocol: str | None = None) -> bool:
