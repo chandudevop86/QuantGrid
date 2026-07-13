@@ -7,6 +7,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -36,6 +37,23 @@ compatibility_router = APIRouter()
 logger = logging.getLogger("quantgrid.dashboard")
 
 
+class ProductDashboardSection(BaseModel):
+    """Stable section envelope while nested decision fields evolve independently."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ProductDashboardSummary(BaseModel):
+    status: str
+    contract_version: str = Field(pattern=r"^\d+\.\d+$")
+    updated_at: datetime | str | None = None
+    market_decision: ProductDashboardSection
+    why_this_decision: ProductDashboardSection
+    trade_or_no_trade: ProductDashboardSection
+    key_levels: ProductDashboardSection
+    system_trust: ProductDashboardSection
+
+
 def _present_job(job: dict) -> dict:
     if job.get("status") != "queued" or job.get("queued_at"):
         return job
@@ -47,9 +65,18 @@ def _present_job(job: dict) -> dict:
     }
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=ProductDashboardSummary)
 def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
     return _product_summary(operations(_role))
+
+
+@compatibility_router.get("/product/dashboard-summary", response_model=ProductDashboardSummary)
+def product_dashboard_summary(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    """Canonical product route backed by the existing dashboard summary adapter."""
+
+    return summary(_role)
 
 
 def _product_summary(payload: dict) -> dict:

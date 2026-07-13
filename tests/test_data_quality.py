@@ -68,6 +68,21 @@ def test_option_chain_validation_rejects_structural_and_market_integrity_errors(
     assert any("expiry is in the past" in error for error in report.errors)
 
 
+def test_candle_validation_detects_cross_row_integrity_problems():
+    rows = [
+        {"timestamp": "2026-07-13T09:15:00+05:30", "open": 100, "high": 102, "low": 99, "close": 101, "volume": 10},
+        {"timestamp": "2026-07-13T09:15:00+05:30", "open": 101, "high": 103, "low": 100, "close": 102, "volume": 0},
+        {"timestamp": "2026-07-13T09:20:00+05:30", "open": 102, "high": 104, "low": 101, "close": 103, "volume": 12},
+    ]
+
+    _valid, report = validate_candles(rows, source="live-provider", expected_interval_seconds=60)
+
+    assert report.status == "FAIL"
+    assert any("duplicate timestamps" in error for error in report.errors)
+    assert any("gaps exceed" in warning for warning in report.warnings)
+    assert any("zero volume" in warning for warning in report.warnings)
+
+
 def test_fundamental_validation_marks_missing_data_unavailable():
     report = validate_fundamental_snapshot({"symbol": "MISS", "name": "Missing Data Ltd"}, source="fundamentals")
 

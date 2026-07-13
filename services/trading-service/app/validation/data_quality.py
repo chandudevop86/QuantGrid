@@ -158,14 +158,40 @@ class DataQualityReport(BaseModel):
     generated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
-def validate_candles(candles: list[dict[str, Any]], *, source: str | None = None) -> tuple[list[dict[str, Any]], DataQualityReport]:
+def validate_candles(
+    candles: list[dict[str, Any]],
+    *,
+    source: str | None = None,
+    expected_interval_seconds: int | None = None,
+) -> tuple[list[dict[str, Any]], DataQualityReport]:
     valid: list[dict[str, Any]] = []
     errors: list[str] = []
+    warnings: list[str] = []
     for index, candle in enumerate(candles):
         try:
             valid.append(CandleInput(**candle).model_dump(mode="json"))
         except ValidationError as exc:
             errors.append(f"candle[{index}]: {exc.errors()[0]['msg']}")
+    timestamps = [datetime.fromisoformat(str(candle["timestamp"]).replace("Z", "+00:00")) for candle in valid]
+    if len(timestamps) != len(set(timestamps)):
+        errors.append("candles: duplicate timestamps")
+    if any(current < previous for previous, current in zip(timestamps, timestamps[1:])):
+        errors.append("candles: timestamps are out of order")
+    if len({timestamp.tzinfo is not None for timestamp in timestamps}) > 1:
+        errors.append("candles: timestamps mix timezone-aware and naive values")
+
+    positive_deltas = [
+        (current - previous).total_seconds()
+        for previous, current in zip(timestamps, timestamps[1:])
+        if current > previous
+    ]
+    expected = expected_interval_seconds or (int(min(positive_deltas)) if positive_deltas else None)
+    if expected and any(delta > expected * 1.5 for delta in positive_deltas):
+        warnings.append(f"candles: one or more gaps exceed the expected {expected}-second interval")
+
+    zero_volume = sum(1 for candle in valid if candle.get("volume") == 0)
+    if zero_volume:
+        warnings.append(f"candles: zero volume reported for {zero_volume} row(s)")
     missing = [] if candles else ["candles"]
     score = _quality_score(total=len(candles), valid=len(valid), missing=len(missing), errors=len(errors), fallback=_is_fallback(source))
     return valid, DataQualityReport(
@@ -176,7 +202,7 @@ def validate_candles(candles: list[dict[str, Any]], *, source: str | None = None
         rows_checked=len(candles),
         missing_fields=missing,
         errors=errors,
-        warnings=["Fallback/source is not trading-grade."] if _is_fallback(source) else [],
+        warnings=(["Fallback/source is not trading-grade."] if _is_fallback(source) else []) + warnings,
         provider=validate_provider_quality(source=source, rows=valid, missing_fields=missing, fallback=_is_fallback(source)),
     )
 
