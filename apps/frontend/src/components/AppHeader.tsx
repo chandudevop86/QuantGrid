@@ -15,7 +15,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
-  const [brokerConnected, setBrokerConnected] = useState(false);
+  const [brokerConnected, setBrokerConnected] = useState<boolean | null>(null);
   const [brokerMessage, setBrokerMessage] = useState("Broker is disconnected; orders remain in paper mode.");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
@@ -30,7 +30,12 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
   }, []);
 
   useEffect(() => {
-    if (!authenticated) { setBrokerConnected(false); return; }
+    if (!authenticated) { setBrokerConnected(null); return; }
+    if (!(["admin", "developer", "trader", "ops"] as Role[]).includes(role)) {
+      setBrokerConnected(null);
+      setBrokerMessage("Broker status is restricted for this role.");
+      return;
+    }
     let active = true;
     const load = async () => {
       try {
@@ -43,7 +48,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
     void load();
     const interval = window.setInterval(load, 30000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [authenticated]);
+  }, [authenticated, role]);
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault(); setAuthError(null);
@@ -55,7 +60,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
   };
   const marketStatus = getMarketStatusLabel(operations?.market_status);
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
-  const alerts = [!brokerConnected ? brokerMessage : null, marketStatus !== "LIVE" ? `Market is ${marketStatus.toLowerCase()}.` : null, !systemReady ? "System health requires review." : null, mode === "live" ? "Live trading mode is enabled." : null].filter(Boolean) as string[];
+  const alerts = [brokerConnected === false ? brokerMessage : null, marketStatus !== "LIVE" ? `Market is ${marketStatus.toLowerCase()}.` : null, !systemReady ? "System health requires review." : null, mode === "live" ? "Live trading mode is enabled." : null].filter(Boolean) as string[];
 
   if (!authenticated) return <header className="qg-app-header qg-login-header"><div className="qg-header-brand"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></div><form onSubmit={login}><input aria-label="Username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" /><input aria-label="Password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" /><button type="submit">Login</button>{authError && <span role="alert">{authError}</span>}</form></header>;
 
@@ -66,7 +71,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
       <div className="qg-header-market"><span>Workspace</span><strong>NIFTY Options</strong></div>
       <div className="qg-header-actions">
         <StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}>Market {marketStatus === "LIVE" ? "Open" : "Closed"}</StatusBadge>
-        <StatusBadge tone={brokerConnected ? "positive" : "danger"}>Broker {brokerConnected ? "Connected" : "Disconnected"}</StatusBadge>
+        <StatusBadge tone={brokerConnected === true ? "positive" : brokerConnected === false ? "danger" : "neutral"}>Broker {brokerConnected === true ? "Connected" : brokerConnected === false ? "Disconnected" : "Restricted"}</StatusBadge>
         <div className="qg-mode-control" role="group" aria-label="Trading mode"><button type="button" className={mode === "paper" ? "active" : ""} onClick={() => setCurrentMode("paper")}>Paper</button><button type="button" className={mode === "live" ? "active live" : ""} onClick={() => setCurrentMode("live")}>Live</button></div>
         <AlertPopover alerts={alerts} open={alertsOpen} onToggle={() => setAlertsOpen((value) => !value)} />
         <div className="qg-user-menu"><button type="button" className="qg-header-button" aria-expanded={userOpen} onClick={() => setUserOpen((value) => !value)}><span className="qg-user-avatar">{roleLabels[role][0]}</span><span>{roleLabels[role]}</span></button>{userOpen && <div className="qg-user-popover"><strong>{roleLabels[role]}</strong><span>Authenticated session</span><button type="button" onClick={() => { clearCurrentAuth(); setAuthenticated(false); }}>Sign out</button></div>}</div>

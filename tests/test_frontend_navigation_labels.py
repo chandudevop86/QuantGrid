@@ -10,13 +10,12 @@ def test_default_navigation_uses_unambiguous_product_labels():
     sidebar = (ROOT / "apps" / "frontend" / "src" / "components" / "Sidebar.tsx").read_text(encoding="utf-8")
 
     expected = {
-        'to: "/", label: "Market Decision"',
-        'to: "/market", label: "Options Market"',
-        'to: "/signals", label: "Live Analysis"',
+        'to: "/", label: "Dashboard"',
+        'to: "/market", label: "Market"',
         'to: "/strategies", label: "Strategies"',
         'to: "/trade", label: "Orders"',
         'to: "/paper-trades", label: "Positions"',
-        'to: "/trade-journal", label: "Trade History"',
+        'to: "/trade-journal", label: "History"',
         'to: "/settings", label: "Risk"',
         'to: "/subscription", label: "Settings"',
     }
@@ -33,9 +32,11 @@ def test_default_navigation_remains_focused_and_advanced_routes_remain_available
 
     assert default_block.count("{ to:") == 8
     assert 'to: "/candles"' in advanced_block
-    assert 'to: "/market"' in advanced_block
+    assert 'to: "/signals"' in advanced_block
     assert 'to: "/security"' in advanced_block
     assert 'to: "/operations"' in admin_block
     assert 'to: "/admin/users"' in admin_block
     assert "allowedAdvanced" in sidebar
     assert "advancedOpen" in sidebar
+    assert "qg-mobile-more" in sidebar
+    assert 'aria-controls="qg-mobile-navigation"' in sidebar

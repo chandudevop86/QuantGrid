@@ -3716,6 +3716,7 @@ body { background: var(--qg-bg); color: var(--qg-text); }
 .qg-admin-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--qg-muted); font: inherit; font-weight: 700; text-align: left; }
 .qg-admin-toggle:hover { background: var(--qg-surface); color: var(--qg-text); }
 .qg-admin-nav > div { display: grid; gap: 4px; margin-top: 4px; }
+.qg-mobile-more, .qg-mobile-nav-panel { display: none; }
 
 .qg-app-header {
   position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 22px;
@@ -3809,6 +3810,16 @@ body { background: var(--qg-bg); color: var(--qg-text); }
 .qg-level-line { stroke-width: 1; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }.qg-support-line { stroke: var(--qg-green); }.qg-resistance-line { stroke: var(--qg-red); }
 .qg-chart-axis { pointer-events: none; position: absolute; inset: 8px 8px 70px auto; display: flex; flex-direction: column; justify-content: space-between; color: var(--qg-muted); font-size: 10px; }
 .qg-chart-loading { display: grid; place-items: center; min-height: 310px; color: var(--qg-muted); }
+.qg-recent-signals .qg-section-heading a { min-height: 40px; padding: 10px 0 10px 14px; color: var(--qg-teal); font-size: 12px; font-weight: 800; text-decoration: none; }
+.qg-signals-loading { display: grid; place-items: center; min-height: 150px; color: var(--qg-muted); }
+.qg-signal-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.qg-signal-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; min-height: 66px; padding: 12px 0; border-bottom: 1px solid var(--qg-border); }
+.qg-signal-list li:last-child { border-bottom: 0; }
+.qg-signal-list li > div { min-width: 0; }
+.qg-signal-list li > div:first-child { display: grid; gap: 5px; }
+.qg-signal-list li > div:first-child span { overflow: hidden; color: var(--qg-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.qg-signal-list li > div:last-child { display: grid; grid-template-columns: auto minmax(70px, auto) 54px; gap: 10px; align-items: center; text-align: right; }
+.qg-signal-list time { color: var(--qg-muted); font-size: 10px; }
 .qg-state-panel { padding: 28px; }.qg-state-panel p { margin: 8px 0 0; color: var(--qg-muted); }.qg-state-panel button { margin-top: 16px; padding: 7px 14px; }
 .qg-error-state { border-color: #642626; }
 .qg-dashboard-skeleton { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
@@ -3839,6 +3850,13 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   .qg-sidebar .nav-link[data-mobile="true"] { display: flex; }
   .qg-sidebar .nav-link.active { box-shadow: inset 0 3px var(--qg-teal); }
   .qg-admin-nav { display: none; }
+  .qg-mobile-more { display: flex; min-width: 0; min-height: 56px; padding: 5px 2px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--qg-muted); font-size: 9px; }
+  .qg-mobile-nav-panel { position: fixed; inset: 60px 0 72px; z-index: 49; display: flex; flex-direction: column; padding: 16px; overflow-y: auto; border-top: 1px solid var(--qg-border); background: var(--qg-sidebar); }
+  .qg-mobile-nav-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .qg-mobile-nav-header strong { font-size: 18px; }
+  .qg-mobile-nav-header button { width: 44px; height: 44px; border: 1px solid var(--qg-border); border-radius: 8px; background: var(--qg-surface); color: var(--qg-text); font-size: 22px; }
+  .qg-mobile-nav-panel nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .qg-mobile-nav-panel .nav-link { display: flex; min-height: 52px; padding: 10px 12px; flex-direction: row; justify-content: flex-start; gap: 10px; font-size: 12px; text-align: left; }
   .qg-card { padding: 18px; }
   .qg-decision-card { min-height: 0; }
   .qg-decision-heading h1 { font-size: 42px; }
@@ -3852,4 +3870,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   .qg-login-header form { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .qg-login-header form > span { grid-column: 1 / -1; }
   .qg-dashboard-skeleton { grid-template-columns: 1fr; }
+  .qg-signal-list li { align-items: flex-start; grid-template-columns: 1fr; gap: 10px; }
+  .qg-signal-list li > div:last-child { grid-template-columns: auto 1fr auto; text-align: left; }
 }

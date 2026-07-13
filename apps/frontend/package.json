@@ -7,6 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "lint": "tsc --noEmit --pretty false",
+    "type-check": "tsc -b --pretty false",
     "test": "vitest run",
     "test:a11y": "vitest run src/components/MarketStatusBanner.a11y.test.tsx",
     "test:e2e": "playwright test"
