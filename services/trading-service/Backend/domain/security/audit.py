@@ -83,9 +83,11 @@ def request_id(request: Request | None) -> str | None:
 
 
 def ensure_audit_schema(db: Session) -> None:
+ """Ensure the audit-log database schema exists."""
+    # Add your schema creation or migration logic here.
+pass
 
-
- def write_audit_log(
+def write_audit_log(
     db: Session,
     *,
     action: str,
