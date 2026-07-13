@@ -36,9 +36,21 @@ async def stop_market_data_stream() -> None:
 
 
 async def _market_data_loop(symbols: list[str]) -> None:
-    interval = max(1, int(os.getenv("QUANTGRID_MARKET_STREAM_POLL_SECONDS", "3")))
-    service = get_market_data_service()
+    interval = _poll_interval_seconds()
+    service = None
     while True:
+        if service is None:
+            try:
+                service = get_market_data_service()
+            except Exception as exc:
+                logger.warning(
+                    "market_stream_initialization_failed",
+                    extra={"error_type": exc.__class__.__name__},
+                )
+                for symbol in symbols:
+                    await manager.broadcast(_feed_down_payload(symbol))
+                await asyncio.sleep(interval)
+                continue
         for symbol in symbols:
             try:
                 tick = await asyncio.to_thread(service.get_ltp, symbol, mode="paper")
@@ -60,6 +72,14 @@ async def publish_tick(tick: dict[str, Any]) -> None:
 def _configured_symbols() -> list[str]:
     raw = os.getenv("QUANTGRID_MARKET_STREAM_SYMBOLS", "NIFTY")
     return [item.strip().upper() for item in raw.split(",") if item.strip()]
+
+
+def _poll_interval_seconds() -> int:
+    try:
+        return max(1, int(os.getenv("QUANTGRID_MARKET_STREAM_POLL_SECONDS", "3")))
+    except (TypeError, ValueError):
+        logger.warning("invalid_market_stream_poll_interval", extra={"fallback_seconds": 3})
+        return 3
 
 
 def _feed_down_payload(symbol: str) -> dict[str, Any]:
