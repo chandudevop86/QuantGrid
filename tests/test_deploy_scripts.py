@@ -104,8 +104,21 @@ def test_redis_script_avoids_legacy_compose_containerconfig_failure():
     assert "--restart unless-stopped" in redis
     assert "-p 127.0.0.1:6379:6379" in redis
     assert "redis:7-alpine" in redis
+    assert '--mount "source=${REDIS_VOLUME_NAME},target=/data"' in redis
+    assert '--health-cmd "redis-cli ping || exit 1"' in redis
+    assert "redis-server --appendonly yes --appendfsync everysec" in redis
     assert 'docker exec "${REDIS_CONTAINER_NAME}" redis-cli ping' in redis
     assert "--remove-orphans" not in redis
+
+
+def test_redis_compose_services_are_persistent_and_health_checked():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    app_compose = (ROOT / "docker-compose.app.yml").read_text(encoding="utf-8")
+
+    for content, volume in ((compose, "redis_data:/data"), (app_compose, "app_redis_data:/data")):
+        assert '["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]' in content
+        assert volume in content
+        assert '["CMD", "redis-cli", "ping"]' in content
 
 
 def test_systemd_production_env_uses_host_redis_address():

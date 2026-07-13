@@ -6,6 +6,7 @@ source "${SCRIPT_DIR}/common.sh"
 
 ACTION="${1:-check}"
 REDIS_CONTAINER_NAME="${REDIS_CONTAINER_NAME:-quantgrid-redis}"
+REDIS_VOLUME_NAME="${REDIS_VOLUME_NAME:-quantgrid-redis-data}"
 
 compose_v2_available() {
   command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
@@ -19,8 +20,13 @@ start_standalone_redis() {
   run docker run -d \
     --name "${REDIS_CONTAINER_NAME}" \
     --restart unless-stopped \
+    --mount "source=${REDIS_VOLUME_NAME},target=/data" \
+    --health-cmd "redis-cli ping || exit 1" \
+    --health-interval 10s \
+    --health-timeout 3s \
+    --health-retries 5 \
     -p 127.0.0.1:6379:6379 \
-    redis:7-alpine
+    redis:7-alpine redis-server --appendonly yes --appendfsync everysec
 }
 
 case "${ACTION}" in
