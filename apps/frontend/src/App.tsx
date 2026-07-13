@@ -40,19 +40,19 @@ export default function App() {
           <Route path="/history" element={protect("/history", <Backtesting />)} />
           <Route path="/settings" element={protect("/settings", <RiskDashboard />)} />
           <Route path="/candles" element={protect("/candles", <Candles />)} />
-          <Route path="/backtesting" element={protect("/backtesting", <Backtesting />)} />
+          <Route path="/backtesting" element={<Navigate to="/history" replace />} />
           <Route path="/execution" element={protect("/execution", <Execution />)} />
-          <Route path="/live" element={protect("/live", <LiveAnalysis />)} />
+          <Route path="/live" element={<Navigate to="/analysis" replace />} />
           <Route path="/analysis" element={protect("/analysis", <LiveAnalysis />)} />
           <Route path="/copilot" element={protect("/copilot", <MarketCopilot />)} />
-          <Route path="/option-chain" element={protect("/option-chain", <OptionChain />)} />
+          <Route path="/option-chain" element={<Navigate to="/market" replace />} />
           <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />
           <Route path="/jobs" element={protect("/jobs", <Jobs />)} />
           <Route path="/operations" element={protect("/operations", <Operations />)} />
           <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
           <Route path="/institutional" element={protect("/institutional", <InstitutionalDashboard />)} />
           <Route path="/investing" element={protect("/investing", <Investing />)} />
-          <Route path="/risk" element={protect("/risk", <RiskDashboard />)} />
+          <Route path="/risk" element={<Navigate to="/settings" replace />} />
           <Route path="/security" element={protect("/security", <Security />)} />
           <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
           <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />

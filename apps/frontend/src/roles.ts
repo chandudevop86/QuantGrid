@@ -22,18 +22,14 @@ const traderRoutes: Record<string, Role[]> = {
 
 const developerModeRoutes: Record<string, Role[]> = {
   "/candles": ["admin", "developer"],
-  "/backtesting": ["admin", "developer"],
-  "/option-chain": ["admin", "developer"],
   "/copilot": ["admin", "developer"],
   "/dhan-login": ["admin"],
   "/execution": ["admin", "developer"],
-  "/live": ["admin", "developer"],
   "/analysis": ["admin", "developer"],
   "/jobs": ["admin", "developer"],
   "/operations": ["admin", "developer"],
   "/institutional": ["admin", "developer"],
   "/investing": ["admin", "developer"],
-  "/risk": ["admin", "developer"],
   "/security": ["admin", "developer"],
   "/strategies": ["admin", "developer"],
   "/trade-journal": ["admin", "developer"],

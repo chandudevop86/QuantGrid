@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import Loader from "../components/Loader";
 import { useUiMode } from "../hooks/useUiMode";
@@ -300,7 +301,7 @@ export default function ProfessionalSignals() {
             <div className="form-panel signal-panel">
               <div className="form-panel-header">
                 <div>
-                  <h2>Backtest Metrics</h2>
+                  <h2>Backtest Validation</h2>
                   <p>{backtest?.job_message ?? `${backtestStrategy.toUpperCase()} / NIFTY / 1m`}</p>
                 </div>
                 <span className="status-pill">{backtest?.job_status ?? "QUEUED"} {Math.round(Number(backtest?.progress_pct ?? 0))}%</span>
@@ -322,35 +323,9 @@ export default function ProfessionalSignals() {
                   <small>Run backtest to calculate performance.</small>
                 </span>
               </div>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Point</th>
-                      <th>Equity</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(backtest?.equity_curve ?? []).slice(-5).map((point: any) => (
-                      <tr key={`equity-${point.index}`}>
-                        <td>{point.index}</td>
-                        <td>{formatMoney(point.equity)}</td>
-                      </tr>
-                    ))}
-                    {(!backtest?.equity_curve || backtest.equity_curve.length === 0) && (
-                      <tr>
-                        <td colSpan={2}>No equity curve available yet.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="dashboard-actions">
+                <Link className="refresh-button" to="/history">Open full backtest results</Link>
               </div>
-              {developerMode && (
-                <details className="technical-details" open>
-                  <summary>Backtest API Payload</summary>
-                  <pre>{JSON.stringify(localizeTimestamps(backtest ?? {}), null, 2)}</pre>
-                </details>
-              )}
             </div>
             <div className="form-panel signal-panel">
               <div className="form-panel-header">
