@@ -77,6 +77,10 @@ function formatTime(value?: string) {
   return value ? new Date(value).toLocaleString() : "Waiting for first scan";
 }
 
+function severityRank(value: SecurityStatus | SecuritySeverity) {
+  return value === "CRITICAL" ? 4 : value === "HIGH" ? 3 : value === "WARNING" ? 2 : value === "SECURE" ? 0 : 1;
+}
+
 function SecurityPostureCard({ card }: { card: SecurityCard }) {
   return (
     <article className="security-card">
@@ -153,7 +157,15 @@ export default function Security() {
   }, []);
 
   const findings = useMemo(() => [...(payload?.critical_findings ?? []), ...(payload?.warnings ?? [])], [payload]);
+  const priorityCards = useMemo(
+    () => [...(payload?.dashboard_cards ?? [])]
+      .sort((left, right) => severityRank(right.status) - severityRank(left.status) || right.finding_count - left.finding_count)
+      .slice(0, 4),
+    [payload],
+  );
   const trend = payload?.trend ?? [];
+  const highRiskCount = findings.filter((item) => item.severity === "CRITICAL" || item.severity === "HIGH").length;
+  const topAction = payload?.recommended_actions?.[0];
 
   return (
     <section className="dashboard-page">
@@ -173,6 +185,24 @@ export default function Security() {
 
       {!loading && !error && payload && (
         <>
+          <section className="security-command-strip" aria-label="Security summary">
+            <article>
+              <span>Score</span>
+              <strong>{Math.round(Number(payload.security_score))}</strong>
+              <small>{payload.passed_checks.length} controls passed</small>
+            </article>
+            <article>
+              <span>High Risk</span>
+              <strong>{highRiskCount}</strong>
+              <small>{findings.length} total active findings</small>
+            </article>
+            <article className="security-command-action">
+              <span>Top Fix</span>
+              <strong>{topAction?.title ?? "No urgent fix"}</strong>
+              <small>{topAction?.action ?? "All tracked controls are passing."}</small>
+            </article>
+          </section>
+
           <div className="security-overview">
             <article className="security-score-panel">
               <span>Overall Security Score</span>
@@ -180,7 +210,7 @@ export default function Security() {
               <p>{payload.passed_checks.length} controls passed</p>
             </article>
             <div className="security-grid">
-              {payload.dashboard_cards.map((card) => (
+              {priorityCards.map((card) => (
                 <SecurityPostureCard key={card.category} card={card} />
               ))}
             </div>

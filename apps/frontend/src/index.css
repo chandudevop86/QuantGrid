@@ -2916,6 +2916,39 @@ select {
   align-items: stretch;
 }
 
+.security-command-strip {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.6fr) minmax(150px, 0.6fr) minmax(280px, 1.8fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.security-command-strip article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0f172a;
+}
+
+.security-command-strip span,
+.security-command-strip small {
+  display: block;
+  color: #94a3b8;
+}
+
+.security-command-strip strong {
+  display: block;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.security-command-action strong {
+  font-size: 1.05rem;
+}
+
 .security-score-panel,
 .security-card,
 .security-finding,
@@ -3050,6 +3083,7 @@ select {
 }
 
 @media (max-width: 900px) {
+  .security-command-strip,
   .security-overview,
   .security-finding {
     grid-template-columns: 1fr;
