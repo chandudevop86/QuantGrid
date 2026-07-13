@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from Backend.application.redis_service import RedisService
+from Backend.application.redis_service import RedisService, RedisStatus
 
 
 class FakeRedis:
@@ -80,3 +80,41 @@ def test_distributed_lock_requires_owner_token_and_expires():
     assert service.release_lock("dhan-option-chain-fetch", "not-the-owner") is False
     assert service.release_lock("dhan-option-chain-fetch", owner) is True
     assert service.acquire_lock("dhan-option-chain-fetch", ttl_seconds=20)
+
+
+def test_redis_recovers_automatically_after_startup_fallback(monkeypatch):
+    service = RedisService()
+    fake = FakeRedis()
+    service.url = "redis://127.0.0.1:6379/0"
+    service.client = None
+    service.async_client = None
+    service._next_reconnect_at = 0.0
+    attempts = 0
+
+    def reconnect():
+        nonlocal attempts
+        attempts += 1
+        service.client = fake
+        service.async_client = object()
+        service._status = RedisStatus(True, "redis", "Redis ping ok.", True)
+        return service._status
+
+    monkeypatch.setattr(service, "configure", reconnect)
+
+    assert service.write_worker_heartbeat({"status": "RUNNING"}) is True
+    assert attempts == 1
+
+
+def test_redis_reconnect_attempts_are_rate_limited(monkeypatch):
+    service = RedisService()
+    service.url = "redis://127.0.0.1:6379/0"
+    service.client = None
+    service.async_client = None
+    service._next_reconnect_at = 999999999999.0
+    monkeypatch.setattr(
+        service,
+        "configure",
+        lambda: (_ for _ in ()).throw(AssertionError("reconnect attempted before backoff elapsed")),
+    )
+
+    assert service.cooldown_remaining("dhan-option-chain") is None

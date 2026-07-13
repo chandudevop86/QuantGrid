@@ -5,7 +5,9 @@ import json
 import logging
 import os
 import secrets
+import threading
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any, Callable, Awaitable
 
 logger = logging.getLogger("quantgrid.redis")
@@ -28,6 +30,8 @@ class RedisService:
         self.client: Any | None = None
         self.async_client: Any | None = None
         self._status = RedisStatus(False, "not_configured", "REDIS_URL is not configured.", False)
+        self._reconnect_lock = threading.Lock()
+        self._next_reconnect_at = 0.0
 
     def configure(self) -> RedisStatus:
         self.url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL")
@@ -44,20 +48,46 @@ class RedisService:
             self.client.ping()
             self.async_client = async_redis.Redis.from_url(self.url, socket_connect_timeout=0.5, socket_timeout=0.5)
             self._status = RedisStatus(True, "redis", "Redis ping ok.", True)
+            self._next_reconnect_at = 0.0
         except Exception as exc:
             logger.exception("redis_startup_validation_failed", extra={"error_type": exc.__class__.__name__})
             self.client = None
             self.async_client = None
             self._status = RedisStatus(False, "fallback", f"Redis unavailable; using fallback: {exc}", True)
+            self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
         return self._status
 
+    def _reconnect_interval_seconds(self) -> float:
+        try:
+            return max(1.0, float(os.getenv("QUANTGRID_REDIS_RECONNECT_SECONDS", "10")))
+        except (TypeError, ValueError):
+            return 10.0
+
+    def _ensure_connected(self) -> bool:
+        if self.client is not None:
+            return True
+        self.url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL") or self.url
+        if not self.url or monotonic() < self._next_reconnect_at:
+            return False
+        with self._reconnect_lock:
+            if self.client is not None:
+                return True
+            if monotonic() < self._next_reconnect_at:
+                return False
+            self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
+            return self.configure().healthy
+
     def status(self) -> dict[str, Any]:
+        self._ensure_connected()
         if self.url and self.client is not None:
             try:
                 self.client.ping()
                 self._status = RedisStatus(True, "redis", "Redis ping ok.", True)
             except Exception as exc:
                 self._status = RedisStatus(False, "fallback", f"Redis ping failed; using fallback: {exc}", True)
+                self.client = None
+                self.async_client = None
+                self._next_reconnect_at = monotonic() + self._reconnect_interval_seconds()
         return {
             "healthy": self._status.healthy,
             "mode": self._status.mode,
@@ -66,7 +96,7 @@ class RedisService:
         }
 
     async def publish_json(self, channel: str, payload: dict[str, Any]) -> bool:
-        if self.async_client is None:
+        if not self._ensure_connected() or self.async_client is None:
             return False
         try:
             await self.async_client.publish(channel, json.dumps(payload, default=str))
@@ -76,7 +106,7 @@ class RedisService:
             return False
 
     def write_worker_heartbeat(self, payload: dict[str, Any], *, ttl_seconds: int = 15) -> bool:
-        if self.client is None:
+        if not self._ensure_connected() or self.client is None:
             return False
         try:
             self.client.set(self.WORKER_HEARTBEAT_KEY, json.dumps(payload, default=str), ex=max(1, ttl_seconds))
@@ -86,7 +116,7 @@ class RedisService:
             return False
 
     def read_worker_heartbeat(self) -> dict[str, Any] | None:
-        if self.client is None:
+        if not self._ensure_connected() or self.client is None:
             return None
         try:
             value = self.client.get(self.WORKER_HEARTBEAT_KEY)
@@ -101,7 +131,7 @@ class RedisService:
             return None
 
     def start_cooldown(self, name: str, *, ttl_seconds: int) -> bool:
-        if self.client is None:
+        if not self._ensure_connected() or self.client is None:
             return False
         try:
             self.client.set(
@@ -115,7 +145,7 @@ class RedisService:
             return False
 
     def cooldown_remaining(self, name: str) -> int | None:
-        if self.client is None:
+        if not self._ensure_connected() or self.client is None:
             return None
         try:
             ttl = int(self.client.ttl(f"{self.COOLDOWN_KEY_PREFIX}{name}"))
@@ -126,7 +156,7 @@ class RedisService:
 
     def acquire_lock(self, name: str, *, ttl_seconds: int) -> str | None:
         """Return an ownership token, an empty string when busy, or None without Redis."""
-        if self.client is None:
+        if not self._ensure_connected() or self.client is None:
             return None
         token = secrets.token_urlsafe(24)
         try:
@@ -152,7 +182,7 @@ class RedisService:
             return False
 
     async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
-        if self.async_client is None:
+        if not self._ensure_connected() or self.async_client is None:
             return
         pubsub = self.async_client.pubsub()
         await pubsub.subscribe(channel)
