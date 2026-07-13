@@ -29,6 +29,10 @@ function healthOk(payload: any) {
   return payload?.status === "ok" || payload?.status === "ready" || payload?.healthy === true;
 }
 
+function healthDegraded(payload: any) {
+  return payload?.status === "degraded" || payload?.healthy === false;
+}
+
 function HealthBadge({ label, status, tone, helper }: HealthBadgeProps) {
   return (
     <span className={`health-badge health-badge-${tone}`}>
@@ -83,14 +87,16 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
   const websocketOnline = websocketConnected === true || health?.websocket?.active === true;
   const realtimeStatus = websocketOnline ? "Online" : websocketStatus === "polling" ? "Polling fallback" : "Offline";
   const redisConfigured = health?.redis?.message !== "REDIS_URL is not configured.";
+  const apiHealthy = apiReachable && healthOk(apiHealth);
+  const apiDegraded = apiReachable && !apiHealthy && healthDegraded(apiHealth);
 
   const badges = useMemo(
     () => [
       {
         label: "API",
-        status: apiReachable && healthOk(apiHealth) ? "Healthy" : "Offline",
-        tone: apiReachable && healthOk(apiHealth) ? "green" : "red",
-        helper: "/api/health",
+        status: apiHealthy ? "Healthy" : apiDegraded ? "Degraded" : "Offline",
+        tone: apiHealthy ? "green" : apiDegraded ? "yellow" : "red",
+        helper: apiDegraded ? "/api/health reachable; one subsystem needs attention" : "/api/health",
       },
       {
         label: "WebSocket",
@@ -117,7 +123,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
         helper: health?.redis?.message,
       },
     ] as HealthBadgeProps[],
-    [apiHealth, apiReachable, health, latestCandleAge, localOperations, realtimeStatus, redisConfigured, staleMarketData, websocketOnline],
+    [apiDegraded, apiHealthy, health, latestCandleAge, localOperations, realtimeStatus, redisConfigured, staleMarketData, websocketOnline],
   );
 
   const attention = badges.some((badge) => badge.tone === "red") ? "Needs attention" : badges.some((badge) => badge.tone === "yellow") ? "Review" : "Healthy";

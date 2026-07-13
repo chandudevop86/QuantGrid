@@ -30,3 +30,14 @@ def test_nginx_csp_does_not_allow_unsafe_scripts_or_wildcard_sources():
         assert "'unsafe-eval'" not in csp_line
         assert "script-src 'self' 'unsafe-inline'" not in csp_line
         assert "*" not in csp_line
+
+
+def test_nginx_websocket_proxy_forwards_auth_subprotocol():
+    for relative_path in ("deploy/nginx/quantgrid.conf", "docker/frontend-nginx.conf"):
+        content = (ROOT / relative_path).read_text(encoding="utf-8")
+        ws_block = content.split("location /ws", 1)[1].split("location /", 1)[0]
+
+        assert "proxy_http_version 1.1" in ws_block
+        assert "proxy_set_header Upgrade $http_upgrade" in ws_block
+        assert 'proxy_set_header Connection "upgrade"' in ws_block
+        assert "proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol" in ws_block

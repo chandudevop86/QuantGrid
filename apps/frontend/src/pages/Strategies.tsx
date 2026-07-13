@@ -122,7 +122,7 @@ export default function Strategies() {
         <p>{socketConnected ? "Live strategy updates are event-driven." : "WebSocket offline; using conservative fallback refresh."}</p>
       </div>
 
-      <SystemHealthWidget websocketConnected={socketConnected} compact />
+      <SystemHealthWidget websocketConnected={socketConnected} websocketStatus={socketConnected ? "online" : "polling"} compact />
 
       <div className="strategy-signal-grid">
         {strategyList.map((strategy) => {

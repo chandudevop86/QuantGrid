@@ -17,6 +17,8 @@ def test_frontend_uses_tab_scoped_storage_for_auth_token():
     assert 'localStorage.setItem("quantgrid_token", token)' not in roles
     assert "getAuthToken()" in client
     assert "getAuthToken()" in socket
+    assert 'new WebSocket(target.toString(), ["quantgrid", token])' in socket
+    assert "?token=" not in socket
 
 
 def test_legacy_persistent_token_is_migrated_and_deleted():
