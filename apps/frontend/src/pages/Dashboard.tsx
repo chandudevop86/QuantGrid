@@ -9,6 +9,8 @@ import RecentSignals from "../components/RecentSignals";
 import TradingChecklist, { type ChecklistItem } from "../components/TradingChecklist";
 import { useOperationsStatus } from "../context/OperationsStatusContext";
 import { hasAuthToken } from "../roles";
+import FeatureGate from "../components/FeatureGate";
+import { useCanAccess, useFeatureLimit } from "../context/SubscriptionContext";
 
 type ItemStatus = "pass" | "warning" | "fail";
 
@@ -29,6 +31,9 @@ function reasonText(value: unknown) {
 }
 
 export default function Dashboard() {
+  const canSeeFullLevels = useCanAccess("levels.full");
+  const canSeeVolume = useCanAccess("volume.basic");
+  const signalLimit = useFeatureLimit("signals_history_limit") ?? 5;
   const { operations, loading, error, refresh } = useOperationsStatus();
   if (!hasAuthToken()) return <section className="qg-guest-landing"><span>Risk-first NIFTY options</span><h1>Trade with discipline, not impulse.</h1><p>Sign in to see one clear market decision, the reasons behind it, and the price levels that matter.</p><aside><strong>Decision support, not a profit promise.</strong><p>QuantGrid supports structured analysis and risk management. Validate decisions and use paper mode before live execution.</p></aside></section>;
   if (loading) return <section className="qg-market-dashboard"><LoadingSkeleton /></section>;
@@ -75,9 +80,9 @@ export default function Dashboard() {
   ];
 
   return <section className="qg-market-dashboard" aria-label="Market decision dashboard">
-    <div className="qg-dashboard-primary"><DecisionCard decision={normalizeDecision(recommendation)} confidence={confidence} regime={text(regime)} risk={text(risk)} reason={text(explanation)} updatedAt={operations.updated_at} /><DecisionReasons reasons={reasons} /></div>
-    <div className="qg-dashboard-secondary"><TradingChecklist items={checklistItems} /><KeyLevelsCard levels={levels} /></div>
-    <MarketChart support={number(support)} resistance={number(resistance)} />
-    <RecentSignals />
+    <div className="qg-dashboard-primary"><DecisionCard decision={normalizeDecision(recommendation)} confidence={confidence} regime={text(regime)} risk={text(risk)} reason={text(explanation)} updatedAt={operations.updated_at} /><FeatureGate feature="decision.advanced_reasons"><DecisionReasons reasons={reasons} /></FeatureGate></div>
+    <div className="qg-dashboard-secondary"><FeatureGate feature="volume.basic"><TradingChecklist items={checklistItems} /></FeatureGate><KeyLevelsCard levels={canSeeFullLevels ? levels : levels.slice(0, 2)} /></div>
+    <MarketChart support={number(support)} resistance={number(resistance)} showAnalysis={canSeeVolume} />
+    <RecentSignals limit={signalLimit} />
   </section>;
 }

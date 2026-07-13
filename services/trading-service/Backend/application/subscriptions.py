@@ -149,7 +149,7 @@ def _snapshot(db: Session, user: User, subscription: UserSubscription | None) ->
 
 @dataclass(frozen=True)
 class SubscriptionAccess:
-    user: User
+    user: User | None
     snapshot: dict[str, Any]
 
     def can(self, feature: str) -> bool:

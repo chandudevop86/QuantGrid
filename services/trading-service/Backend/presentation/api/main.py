@@ -13,6 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.monitoring import observe_api_request
 from Backend.application.redis_service import redis_service
+from Backend.application.subscriptions import PLANS, SubscriptionAccess, subscription_for_user
 from Backend.core.config import get_settings, validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
@@ -29,6 +30,24 @@ from Backend.domain.security.models import User
 from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 from Backend.presentation.api.roles import require_roles
+
+
+def _websocket_dashboard_payload(user_id: int | None = None) -> dict:
+    from Backend.presentation.api.dashboard_api import operations
+
+    with SessionLocal() as db:
+        if user_id is not None:
+            user = db.get(User, user_id)
+            if user is None:
+                raise PermissionError("User no longer exists")
+            snapshot = subscription_for_user(db, user)
+            access = SubscriptionAccess(user=user, snapshot=snapshot)
+            return operations(user.role, access)
+        free = PLANS["free"]
+        access = SubscriptionAccess(user=None, snapshot={
+            "plan_code": "free", "effective_status": "active", "entitlements": sorted(free["entitlements"]), "limits": dict(free["limits"]),
+        })
+        return operations("viewer", access)
 
 
 def _allowed_origins() -> list[str]:
@@ -236,9 +255,7 @@ def create_app():
                         try:
                             await asyncio.wait_for(websocket.receive_text(), timeout=5)
                         except asyncio.TimeoutError:
-                            from Backend.presentation.api.dashboard_api import operations
-
-                            payload = await run_in_threadpool(operations)
+                            payload = await run_in_threadpool(_websocket_dashboard_payload)
                             await websocket.send_json({"type": "dashboard_status", "payload": payload})
                 except WebSocketDisconnect:
                     manager.disconnect(websocket)
@@ -255,6 +272,7 @@ def create_app():
                     logger.warning("websocket_rejected_invalid_user")
                     await websocket.close(code=4401, reason="Invalid user")
                     return
+                websocket_user_id = user.id
         except Exception:
             logger.warning("websocket_rejected_invalid_token")
             await websocket.close(code=4401, reason="Invalid token")
@@ -268,9 +286,7 @@ def create_app():
                 try:
                     await asyncio.wait_for(websocket.receive_text(), timeout=5)
                 except asyncio.TimeoutError:
-                    from Backend.presentation.api.dashboard_api import operations
-
-                    payload = await run_in_threadpool(operations)
+                    payload = await run_in_threadpool(_websocket_dashboard_payload, websocket_user_id)
                     await websocket.send_json({"type": "dashboard_status", "payload": payload})
         except WebSocketDisconnect:
             manager.disconnect(websocket)

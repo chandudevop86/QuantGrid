@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import RequireRole from "./components/RequireRole";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import AppLayout from "./layouts/AppLayout";
+import RestrictedRoute from "./components/RestrictedRoute";
 
 const AdminNotifications = lazy(() => import("./pages/AdminNotifications"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
@@ -31,33 +32,37 @@ function protect(path: string, page: React.ReactNode) {
   return <RequireRole path={path}>{page}</RequireRole>;
 }
 
+function subscribe(path: string, feature: string, page: React.ReactNode) {
+  return protect(path, <RestrictedRoute feature={feature}>{page}</RestrictedRoute>);
+}
+
 export default function App() {
   return <BrowserRouter><AppLayout><Suspense fallback={<LoadingSkeleton />}><Routes>
     <Route path="/" element={protect("/", <Dashboard />)} />
-    <Route path="/market" element={protect("/market", <OptionChain />)} />
+    <Route path="/market" element={subscribe("/market", "options.basic", <OptionChain />)} />
     <Route path="/paper-trades" element={protect("/paper-trades", <PaperTrades />)} />
-    <Route path="/history" element={protect("/history", <Backtesting />)} />
-    <Route path="/settings" element={protect("/settings", <RiskDashboard />)} />
+    <Route path="/history" element={subscribe("/history", "backtest.basic", <Backtesting />)} />
+    <Route path="/settings" element={subscribe("/settings", "risk.advanced", <RiskDashboard />)} />
     <Route path="/subscription" element={protect("/subscription", <Subscription />)} />
-    <Route path="/candles" element={protect("/candles", <Candles />)} />
+    <Route path="/candles" element={subscribe("/candles", "chart.advanced", <Candles />)} />
     <Route path="/backtesting" element={<Navigate to="/history" replace />} />
-    <Route path="/execution" element={protect("/execution", <Execution />)} />
+    <Route path="/execution" element={subscribe("/execution", "paper_trade.automated", <Execution />)} />
     <Route path="/live" element={<Navigate to="/strategies" replace />} />
     <Route path="/analysis" element={<Navigate to="/strategies" replace />} />
-    <Route path="/copilot" element={protect("/copilot", <MarketCopilot />)} />
+    <Route path="/copilot" element={subscribe("/copilot", "dashboard.advanced", <MarketCopilot />)} />
     <Route path="/option-chain" element={<Navigate to="/market" replace />} />
     <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />
     <Route path="/jobs" element={protect("/jobs", <Jobs />)} />
     <Route path="/operations" element={protect("/operations", <Operations />)} />
-    <Route path="/signals" element={protect("/signals", <ProfessionalSignals />)} />
-    <Route path="/institutional" element={protect("/institutional", <InstitutionalDashboard />)} />
+    <Route path="/signals" element={subscribe("/signals", "signals.recent_25", <ProfessionalSignals />)} />
+    <Route path="/institutional" element={subscribe("/institutional", "institutional.flow", <InstitutionalDashboard />)} />
     <Route path="/investing" element={protect("/investing", <Investing />)} />
     <Route path="/risk" element={<Navigate to="/settings" replace />} />
     <Route path="/security" element={protect("/security", <Security />)} />
-    <Route path="/strategies" element={protect("/strategies", <Strategies />)} />
-    <Route path="/trade-journal" element={protect("/trade-journal", <TradeJournal />)} />
-    <Route path="/trading-engine" element={protect("/trading-engine", <TradingEngine />)} />
-    <Route path="/trade" element={protect("/trade", <Trade />)} />
+    <Route path="/strategies" element={subscribe("/strategies", "strategy.performance", <Strategies />)} />
+    <Route path="/trade-journal" element={subscribe("/trade-journal", "export.csv", <TradeJournal />)} />
+    <Route path="/trading-engine" element={subscribe("/trading-engine", "paper_trade.automated", <TradingEngine />)} />
+    <Route path="/trade" element={subscribe("/trade", "paper_trade.manual", <Trade />)} />
     <Route path="/admin/users" element={protect("/admin/users", <AdminUsers />)} />
     <Route path="/admin/notifications" element={protect("/admin/notifications", <AdminNotifications />)} />
     <Route path="*" element={<Navigate to="/" replace />} />

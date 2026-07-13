@@ -1,39 +1,41 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { canAccessRoute, getCurrentRole, hasAuthToken, type Role } from "../roles";
+import { useSubscription } from "../context/SubscriptionContext";
 
 type SidebarProps = { collapsed: boolean; onNavigate: () => void };
-type NavItem = { to: string; label: string; icon: string; mobile?: boolean };
+type NavItem = { to: string; label: string; icon: string; mobile?: boolean; entitlement?: string };
 
 const primaryItems: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: "grid", mobile: true },
-  { to: "/market", label: "Market", icon: "pulse", mobile: true },
-  { to: "/strategies", label: "Strategies", icon: "history" },
-  { to: "/trade", label: "Orders", icon: "trade", mobile: true },
-  { to: "/paper-trades", label: "Positions", icon: "grid", mobile: true },
-  { to: "/trade-journal", label: "History", icon: "history" },
-  { to: "/settings", label: "Risk", icon: "settings" },
+  { to: "/", label: "Dashboard", icon: "grid", mobile: true, entitlement: "dashboard.basic" },
+  { to: "/market", label: "Market", icon: "pulse", mobile: true, entitlement: "options.basic" },
+  { to: "/strategies", label: "Strategies", icon: "history", entitlement: "strategy.performance" },
+  { to: "/trade", label: "Orders", icon: "trade", mobile: true, entitlement: "paper_trade.manual" },
+  { to: "/paper-trades", label: "Positions", icon: "grid", mobile: true, entitlement: "paper_trade.manual" },
+  { to: "/trade-journal", label: "History", icon: "history", entitlement: "export.csv" },
+  { to: "/settings", label: "Risk", icon: "settings", entitlement: "risk.advanced" },
   { to: "/subscription", label: "Settings", icon: "settings" },
 ];
 const advancedItems: NavItem[] = [
-  { to: "/signals", label: "Live Analysis", icon: "pulse" },
-  { to: "/candles", label: "Candles", icon: "pulse" },
-  { to: "/copilot", label: "Market Copilot", icon: "spark" },
-  { to: "/execution", label: "Execution", icon: "pulse" },
-  { to: "/history", label: "Backtest Results", icon: "history" },
+  { to: "/signals", label: "Live Analysis", icon: "pulse", entitlement: "signals.recent_25" },
+  { to: "/candles", label: "Candles", icon: "pulse", entitlement: "chart.advanced" },
+  { to: "/copilot", label: "Market Copilot", icon: "spark", entitlement: "dashboard.advanced" },
+  { to: "/execution", label: "Execution", icon: "pulse", entitlement: "paper_trade.automated" },
+  { to: "/history", label: "Backtest Results", icon: "history", entitlement: "backtest.basic" },
   { to: "/jobs", label: "Jobs", icon: "history" },
-  { to: "/institutional", label: "Institutional", icon: "grid" },
+  { to: "/institutional", label: "Institutional", icon: "grid", entitlement: "institutional.flow" },
   { to: "/investing", label: "Investing", icon: "trade" },
-  { to: "/trading-engine", label: "Trading Engine", icon: "settings" },
+  { to: "/trading-engine", label: "Trading Engine", icon: "settings", entitlement: "paper_trade.automated" },
   { to: "/security", label: "Security", icon: "settings" },
 ];
 const adminItems: NavItem[] = [
-  { to: "/admin/users", label: "Users", icon: "grid" },
-  { to: "/operations", label: "System status", icon: "pulse" },
-  { to: "/dhan-login", label: "Broker setup", icon: "trade" },
+  { to: "/admin/users", label: "Users", icon: "grid", entitlement: "admin.users" },
+  { to: "/operations", label: "System status", icon: "pulse", entitlement: "admin.system" },
+  { to: "/dhan-login", label: "Broker setup", icon: "trade", entitlement: "admin.broker" },
 ];
 
 export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
+  const { canAccess, isLoading } = useSubscription();
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -48,9 +50,10 @@ export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
   }, []);
   if (!authenticated) return null;
 
-  const allowedPrimary = primaryItems.filter((item) => canAccessRoute(role, item.to));
-  const allowedAdvanced = advancedItems.filter((item) => canAccessRoute(role, item.to));
-  const allowedAdmin = adminItems.filter((item) => canAccessRoute(role, item.to));
+  const allowed = (item: NavItem) => canAccessRoute(role, item.to) && (!item.entitlement || canAccess(item.entitlement));
+  const allowedPrimary = primaryItems.filter(allowed);
+  const allowedAdvanced = advancedItems.filter(allowed);
+  const allowedAdmin = adminItems.filter(allowed);
   const navigate = () => { setMobileMoreOpen(false); onNavigate(); };
   const renderLink = (item: NavItem, mobilePanel = false) => (
     <NavLink key={`${mobilePanel ? "mobile" : "desktop"}-${item.to}`} to={item.to} end={item.to === "/"} onClick={navigate} data-mobile={item.mobile ? "true" : "false"} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
@@ -58,7 +61,7 @@ export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
     </NavLink>
   );
 
-  return <aside className={`sidebar qg-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Application navigation">
+  return <aside className={`sidebar qg-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Application navigation" aria-busy={isLoading}>
     <nav className="sidebar-nav" aria-label="Primary navigation">
       {allowedPrimary.map((item) => renderLink(item))}
       {allowedAdvanced.length > 0 && <div className="qg-admin-nav qg-advanced-nav"><button type="button" className="qg-admin-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}><span>Advanced</span><span aria-hidden="true">{advancedOpen ? "−" : "+"}</span></button>{advancedOpen && <div>{allowedAdvanced.map((item) => renderLink(item))}</div>}</div>}

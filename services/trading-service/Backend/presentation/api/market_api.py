@@ -729,7 +729,7 @@ def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, wa
 @router.get("/price")
 def get_price(
     symbol: str = "NIFTY",
-    _access=Depends(require_entitlement("options.basic")),
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
     return get_ltp(symbol, _role=_role)
 
@@ -793,12 +793,14 @@ def get_option_chain(
     symbol: str,
     strikes_each_side: int = 5,
     step: int = 50,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _role: str | None = None,
+    _access=Depends(require_entitlement("options.basic")),
 ):
     strikes_each_side = max(1, min(int(strikes_each_side), 10))
     step = max(1, int(step))
     try:
-        price_payload = get_price(symbol, _role=_access.user.role)
+        access_role = _access.user.role if hasattr(_access, "user") and _access.user is not None else _role
+        price_payload = get_price(symbol, _role=access_role)
         price = float(price_payload.get("price") or 0.0)
     except Exception as exc:
         logger.exception("option_chain_price_fetch_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})

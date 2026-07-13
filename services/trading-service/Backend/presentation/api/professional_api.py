@@ -24,6 +24,7 @@ from Backend.application.signal_validation import validate_signals
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.presentation.api.roles import require_roles
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
 from pydantic import BaseModel
 
 
@@ -273,7 +274,7 @@ def _empty_signals(symbol: str, *, reason: str | None = None) -> dict:
 def latest_signals(
     symbol: str = "NIFTY",
     strategy: str | None = None,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    access: SubscriptionAccess = Depends(subscription_access),
 ):
     try:
         one_minute = _clean_candles(get_candles(symbol, interval="1m", period="1d", limit=100))
@@ -288,6 +289,8 @@ def latest_signals(
         logger.exception("latest_signals_service_init_failed", extra={"error_type": exc.__class__.__name__})
         return _empty_signals(symbol, reason=f"Trading service is unavailable ({exc.__class__.__name__}); no signals generated.")
     strategies = [strategy] if strategy else service.trading_engine.strategy_engine.available()
+    if not access.can("strategy.multiple"):
+        strategies = strategies[:1]
 
     active = []
     rejected = []
@@ -355,11 +358,19 @@ def latest_signals(
             for entry in stale_signals
         )
 
+    limit = access.limit("signals_history_limit") or 5
+    remaining = limit
+    limited_active = active[:remaining]
+    remaining -= len(limited_active)
+    limited_rejected = rejected[:remaining]
+    remaining -= len(limited_rejected)
+    limited_stale = stale[:remaining]
     return {
         "symbol": symbol.upper(),
-        "active_signals": active,
-        "rejected_signals": rejected,
-        "stale_signals": stale,
+        "active_signals": limited_active,
+        "rejected_signals": limited_rejected,
+        "stale_signals": limited_stale,
+        "history_limit": limit,
         "latest_candle_time": one_minute[-1]["timestamp"] if one_minute else None,
     }
 

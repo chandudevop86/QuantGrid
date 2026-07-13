@@ -14,9 +14,9 @@ def test_routes_are_code_split_and_dashboard_includes_recent_signals():
     assert 'import { lazy, Suspense } from "react"' in app
     assert app.count("lazy(() => import(") >= 20
     assert "<Suspense fallback={<LoadingSkeleton />}" in app
-    assert "<RecentSignals />" in dashboard
+    assert "<RecentSignals limit={signalLimit} />" in dashboard
     assert "api.latestSignals()" in recent
-    assert "slice(0, 5)" in recent
+    assert "slice(0, Math.max(1, limit))" in recent
     assert "Loading recent signals" in recent
     assert "No recent signals" in recent
     assert "Recent signals could not be loaded" in recent

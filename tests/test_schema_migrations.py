@@ -46,5 +46,5 @@ def test_versioned_migrations_record_baseline_and_compatibility():
                 f"SELECT version FROM {schema_migrations.MIGRATION_TABLE} ORDER BY version"
             )
         ).scalars().all()
-    assert versions == [schema_migrations.BASELINE_VERSION, schema_migrations.COMPATIBILITY_VERSION]
+    assert versions == [schema_migrations.BASELINE_VERSION, schema_migrations.COMPATIBILITY_VERSION, schema_migrations.SUBSCRIPTION_ENTITLEMENTS_VERSION]
     assert "execution_mode" in {column["name"] for column in inspect(engine).get_columns("orders")}

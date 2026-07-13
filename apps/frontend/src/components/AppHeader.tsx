@@ -7,6 +7,7 @@ import { getMarketStatusLabel } from "../utils/marketStatus";
 import AlertPopover from "./AlertPopover";
 import StatusBadge from "./StatusBadge";
 import { marketInstruments, useMarketSelection, type MarketSymbol } from "../context/MarketSelectionContext";
+import SubscriptionBadge from "./SubscriptionBadge";
 
 export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }) {
   const { operations } = useOperationsStatus();
@@ -77,6 +78,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
         </select>
       </label>
       <div className="qg-header-actions">
+        <span className="qg-plan-status"><SubscriptionBadge /></span>
         <span className="qg-header-status qg-market-status"><StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}><span className="qg-status-prefix">Market </span>{marketStatus === "LIVE" ? "Open" : "Closed"}</StatusBadge></span>
         <span className="qg-header-status qg-broker-status"><StatusBadge tone={brokerConnected === true ? "positive" : brokerConnected === false ? "danger" : "neutral"}><span className="qg-status-prefix">Broker </span>{brokerConnected === true ? "Connected" : brokerConnected === false ? "Disconnected" : "Restricted"}</StatusBadge></span>
         <div className="qg-mode-control" role="group" aria-label="Trading mode"><button type="button" className={mode === "paper" ? "active" : ""} onClick={() => setCurrentMode("paper")}>Paper</button><button type="button" className={mode === "live" ? "active live" : ""} onClick={() => setCurrentMode("live")}>Live</button></div>

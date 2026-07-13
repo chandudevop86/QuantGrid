@@ -86,9 +86,10 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     with engine.begin() as connection:
         applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
         if SUBSCRIPTION_ENTITLEMENTS_VERSION not in applied:
+            primary_key = "SERIAL PRIMARY KEY" if engine.dialect.name == "postgresql" else "INTEGER PRIMARY KEY"
             connection.execute(text(
                 "CREATE TABLE IF NOT EXISTS user_entitlement_overrides ("
-                "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                f"id {primary_key}, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
                 "entitlement_key VARCHAR(120) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, limit_value INTEGER, "
                 "reason VARCHAR(255) NOT NULL, expires_at TIMESTAMP, created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, "
                 "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"

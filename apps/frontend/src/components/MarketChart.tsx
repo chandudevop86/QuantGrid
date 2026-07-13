@@ -5,14 +5,14 @@ import EmptyState from "./EmptyState";
 import ErrorState from "./ErrorState";
 import { useMarketSelection } from "../context/MarketSelectionContext";
 
-type MarketChartProps = { support?: number; resistance?: number };
+type MarketChartProps = { support?: number; resistance?: number; showAnalysis?: boolean };
 
 const WIDTH = 900;
 const PRICE_HEIGHT = 230;
 const VOLUME_TOP = 250;
 const VOLUME_HEIGHT = 46;
 
-export default function MarketChart({ support, resistance }: MarketChartProps) {
+export default function MarketChart({ support, resistance, showAnalysis = false }: MarketChartProps) {
   const { symbol, label } = useMarketSelection();
   const decisionSupport = symbol === "NIFTY" ? support : undefined;
   const decisionResistance = symbol === "NIFTY" ? resistance : undefined;
@@ -62,7 +62,7 @@ export default function MarketChart({ support, resistance }: MarketChartProps) {
     <article className="qg-card qg-chart-card">
       <div className="qg-section-heading qg-chart-heading">
         <div><span>{label} · 5 minute</span><h2>Market chart</h2></div>
-        <div className="qg-chart-legend" aria-label="Chart legend"><span className="price">Price</span><span className="vwap">VWAP</span><span className="support">Support</span><span className="resistance">Resistance</span></div>
+        <div className="qg-chart-legend" aria-label="Chart legend"><span className="price">Price</span>{showAnalysis && <span className="vwap">VWAP</span>}<span className="support">Support</span><span className="resistance">Resistance</span></div>
       </div>
       {loading && <div className="qg-chart-loading" role="status">Loading chart…</div>}
       {!loading && error && <ErrorState message={error} onRetry={() => void load()} />}
@@ -82,10 +82,10 @@ export default function MarketChart({ support, resistance }: MarketChartProps) {
               return <g key={`${candle.timestamp}-${index}`} className={positive ? "qg-candle-up" : "qg-candle-down"}>
                 <line x1={x} x2={x} y1={chart.priceY(candle.high)} y2={chart.priceY(candle.low)} />
                 <rect x={x - Math.max(2, chart.xStep * .28)} y={Math.min(open, close)} width={Math.max(4, chart.xStep * .56)} height={Math.max(2, Math.abs(close - open))} rx="1" />
-                <rect className="qg-volume-bar" x={x - Math.max(2, chart.xStep * .3)} y={VOLUME_TOP + VOLUME_HEIGHT - volumeHeight} width={Math.max(4, chart.xStep * .6)} height={volumeHeight} />
+                {showAnalysis && <rect className="qg-volume-bar" x={x - Math.max(2, chart.xStep * .3)} y={VOLUME_TOP + VOLUME_HEIGHT - volumeHeight} width={Math.max(4, chart.xStep * .6)} height={volumeHeight} />}
               </g>;
             })}
-            <polyline className="qg-vwap-line" points={chart.vwap} />
+            {showAnalysis && <polyline className="qg-vwap-line" points={chart.vwap} />}
           </svg>
           <div className="qg-chart-axis"><span>{chart.max.toFixed(0)}</span><span>{((chart.max + chart.min) / 2).toFixed(0)}</span><span>{chart.min.toFixed(0)}</span></div>
         </div>

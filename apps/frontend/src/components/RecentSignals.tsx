@@ -45,19 +45,19 @@ function signalRows(payload: any): SignalRow[] {
   }));
   return [...active, ...rejected, ...stale]
     .sort((a, b) => Date.parse(b.timestamp ?? "") - Date.parse(a.timestamp ?? ""))
-    .slice(0, 5);
+    ;
 }
 
-export default function RecentSignals() {
+export default function RecentSignals({ limit = 5 }: { limit?: number }) {
   const [rows, setRows] = useState<SignalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setRows(signalRows(await api.latestSignals())); }
+    try { setRows(signalRows(await api.latestSignals()).slice(0, Math.max(1, limit))); }
     catch (caught: any) { setError(caught?.message ?? "Recent signals could not be loaded."); }
     finally { setLoading(false); }
-  }, []);
+  }, [limit]);
   useEffect(() => { void load(); }, [load]);
 
   return <article className="qg-card qg-recent-signals" aria-labelledby="recent-signals-title">

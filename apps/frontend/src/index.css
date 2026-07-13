@@ -3821,6 +3821,9 @@ body { background: var(--qg-bg); color: var(--qg-text); }
 .qg-signal-list time { color: var(--qg-muted); font-size: 11px; }
 .qg-state-panel { padding: 28px; }.qg-state-panel p { margin: 8px 0 0; color: var(--qg-muted); }.qg-state-panel button { margin-top: 16px; padding: 7px 14px; }
 .qg-error-state { border-color: #642626; }
+.qg-upgrade-prompt { max-width: 620px; margin: 32px auto; }
+.qg-upgrade-prompt h2 { margin: 8px 0 0; }
+.qg-upgrade-prompt a { display: inline-flex; margin-top: 18px; min-height: 40px; align-items: center; padding: 8px 14px; border-radius: 8px; background: var(--qg-teal); color: #031513; font-weight: 800; text-decoration: none; }
 .qg-dashboard-skeleton { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
 .qg-skeleton { min-height: 260px; border: 1px solid var(--qg-border); border-radius: 10px; background: var(--qg-surface); opacity: .65; }.qg-skeleton-hero { min-height: 320px; }
 
