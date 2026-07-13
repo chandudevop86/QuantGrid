@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
 
@@ -16,14 +16,12 @@ const refreshMs = 15000;
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [source, setSource] = useState<string | null>(null);
-  const [volumeStatus, setVolumeStatus] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedInterval, setSelectedInterval] = useState(intervals[0].value);
-  const [storeStatus, setStoreStatus] = useState<any>(null);
 
   const loadCandles = useCallback((showInitialLoading = false) => {
     if (showInitialLoading) {
@@ -39,13 +37,8 @@ export default function Candles() {
       .then((data) => {
         setCandles(Array.isArray(data?.candles) ? data.candles : []);
         setSource(data?.source ?? null);
-        setVolumeStatus(data?.volume_status ?? null);
         setWarning(data?.warning ?? null);
         setLastRefreshed(new Date());
-        return api.marketStoreStatus("NIFTY", selectedInterval);
-      })
-      .then((status) => {
-        setStoreStatus(status);
       })
       .catch((err: any) => {
         const message = err?.message === "Network Error"
@@ -69,15 +62,6 @@ export default function Candles() {
     return () => window.clearInterval(refreshTimer);
   }, [loadCandles]);
 
-  const latest = useMemo(() => candles[candles.length - 1], [candles]);
-  const latestVolume =
-    volumeStatus === "not_reported_for_index"
-      ? "N/A"
-      : latest?.volume?.toLocaleString() ?? "-";
-  const volumeHelper =
-    volumeStatus === "not_reported_for_index"
-      ? "Index volume not reported"
-      : source ?? "Market API";
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 15s";
@@ -86,44 +70,17 @@ export default function Candles() {
     <section className="dashboard-page">
       <div className="page-heading">
         <h1>Candles</h1>
-        <p>Market candle visualization for NIFTY live data.</p>
+        <p>NIFTY price action across selectable market intervals.</p>
       </div>
 
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {warning && !error && <div className="alert alert-warning" role="status">{warning}</div>}
 
-      <div className="metric-grid">
-        <div className="metric-card">
-          <span className="metric-label">Symbol</span>
-          <strong className="metric-value">NIFTY</strong>
-          <span className="metric-helper">{candles.length} candles loaded</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Latest Close</span>
-          <strong className="metric-value">{latest ? latest.close : "-"}</strong>
-          <span className="metric-helper">{latest ? new Date(latest.timestamp).toLocaleString() : "Waiting for data"}</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Latest Volume</span>
-          <strong className="metric-value">{latestVolume}</strong>
-          <span className="metric-helper">{volumeHelper}</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Stored Live Data</span>
-          <strong className="metric-value">{storeStatus?.candles ?? candles.length}</strong>
-          <span className="metric-helper">
-            {storeStatus?.latest_candle_at
-              ? `Latest ${new Date(storeStatus.latest_candle_at).toLocaleTimeString()}`
-              : "SQLite market store"}
-          </span>
-        </div>
-      </div>
-
       <div className="form-panel chart-panel">
         <div className="form-panel-header">
           <div>
-            <h2>Price Action</h2>
-            <p>{loading ? "Loading candles..." : refreshLabel}</p>
+            <h2>NIFTY Candles</h2>
+            <p>{loading ? "Loading candles..." : `${candles.length} candles · ${refreshLabel}`}</p>
           </div>
           <div className="chart-controls">
             <div className="timeline-toggle" aria-label="Candle timeline">
