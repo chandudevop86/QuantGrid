@@ -86,3 +86,26 @@ def test_data_quality_dashboard_endpoint_returns_reports(app_client):
     assert "overall_quality_score" in payload
     assert isinstance(payload["reports"], list)
     assert {item["subject"] for item in payload["reports"]} >= {"candles", "provider", "option_chain", "fundamentals"}
+
+
+def test_data_quality_failures_do_not_expose_upstream_secrets(monkeypatch):
+    from Backend.application import data_quality_service
+
+    secret = "redis://user:password@private-host:6379"
+    monkeypatch.setattr(
+        data_quality_service,
+        "get_market_data_service",
+        lambda: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+    monkeypatch.setattr(
+        data_quality_service,
+        "_option_chain_payload",
+        lambda _symbol: (_ for _ in ()).throw(RuntimeError(secret)),
+    )
+
+    payload = data_quality_service.build_data_quality_dashboard()
+    reports = {report["subject"]: report for report in payload["reports"]}
+
+    assert reports["provider"]["errors"] == ["provider_health_unavailable"]
+    assert reports["option_chain"]["errors"] == ["option_chain_unavailable"]
+    assert secret not in str(payload)

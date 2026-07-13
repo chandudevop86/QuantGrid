@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import base64
+import asyncio
 from io import BytesIO
 from urllib.error import HTTPError
+
+from fastapi import HTTPException
 
 from Backend.infrastructure.broker import dhan_status
 from Backend.presentation.api.broker_api import broker_status
@@ -220,4 +223,29 @@ def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
         headers=trader_headers,
     )
     assert allowed.status_code == 200
+
+
+def test_broker_upstream_errors_do_not_expose_credentials(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    secret = "https://token:password@broker.internal/orders"
+
+    class FailingBroker:
+        async def cancel_order(self, _order_id):
+            raise RuntimeError(secret)
+
+    monkeypatch.setattr(broker_api, "broker_client_for_mode", lambda _mode: FailingBroker())
+
+    async def scenario():
+        try:
+            await broker_api.cancel_order("order-1", _role="admin", execution_mode="live")
+        except HTTPException as exc:
+            assert exc.status_code == 502
+            assert exc.detail["code"] == "broker_upstream_unavailable"
+            assert exc.detail["operation"] == "cancel_order"
+            assert secret not in str(exc.detail)
+        else:
+            raise AssertionError("broker failure should return a sanitized HTTP error")
+
+    asyncio.run(scenario())
 

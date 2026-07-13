@@ -49,6 +49,59 @@ def test_backtesting_module_returns_cost_model_assumptions():
     assert "entry_delay_seconds" in cost_model
     assert "liquidity_filter" in cost_model
     assert "expiry_behavior" in cost_model
+    assert cost_model["applied_to_results"] is True
+    assert cost_model["effective_slippage_per_side_bps"] == 7
+
+
+def test_backtesting_module_applies_configured_cost_model_to_engine(monkeypatch):
+    from Backend.application import quant_modules
+
+    captured = {}
+
+    class FakeResult:
+        def to_dict(self):
+            return {
+                "total_trades": 0,
+                "win_rate": 0,
+                "gross_pnl": 0,
+                "total_costs": 0,
+                "net_pnl": 0,
+                "pnl": 0,
+                "expectancy": 0,
+                "max_drawdown": 0,
+                "sharpe_ratio": 0,
+                "rejected_signal_count": 0,
+                "average_latency_ms": 0,
+                "trades": [],
+            }
+
+    class FakeEngine:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, **_kwargs):
+            return FakeResult()
+
+    monkeypatch.setattr(quant_modules, "BacktestEngine", FakeEngine)
+
+    result = quant_modules.backtesting_module(
+        {
+            "symbol": "NIFTY",
+            "brokerage_per_order": 12,
+            "brokerage_bps": 1.5,
+            "taxes_bps": 3,
+            "slippage_bps": 4,
+            "spread_bps": 6,
+            "entry_delay_seconds": 2,
+        }
+    )
+
+    assert captured["brokerage_per_order"] == 12
+    assert captured["brokerage_bps"] == 1.5
+    assert captured["taxes_bps"] == 3
+    assert captured["latency_ms"] == 2000
+    assert captured["slippage_model"].config.fixed_bps == 7
+    assert result["cost_model"]["effective_slippage_per_side_bps"] == 7
 
 
 def test_backtesting_module_honors_max_candles_cap():

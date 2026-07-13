@@ -14,6 +14,7 @@ from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from Backend.presentation.api.roles import current_user, require_roles
+from Backend.presentation.api.upstream_errors import upstream_service_error
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -66,9 +67,9 @@ async def cancel_order(
     try:
         broker_result = await broker_client_for_mode(execution_mode).cancel_order(str(broker_order_id))
     except Exception as exc:
-        updated, previous = transition_order(local_order_id, "failed", status_reason=f"Broker cancel failed: {exc}")
+        updated, previous = transition_order(local_order_id, "failed", status_reason="broker_cancel_unavailable")
         _audit_transition(db, request, actor, updated, previous)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker cancel failed: {exc}") from exc
+        raise upstream_service_error("broker", "cancel_order", exc) from exc
 
     next_status = broker_status_to_order_status(broker_result.status, confirmed=broker_result.confirmed)
     if next_status not in {"cancelled", "failed", "rejected"}:

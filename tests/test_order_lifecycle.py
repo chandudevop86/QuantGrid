@@ -161,6 +161,41 @@ def test_order_cancel_api_transitions_and_audits(monkeypatch):
     assert audit.status == "cancelled"
 
 
+def test_order_cancel_failure_does_not_persist_or_return_broker_secrets(monkeypatch):
+    from fastapi import HTTPException
+    from Backend.presentation.api import orders_api
+
+    secret = "https://token:password@broker.internal/cancel"
+    transitions = []
+
+    class FailingBroker:
+        async def cancel_order(self, _order_id):
+            raise RuntimeError(secret)
+
+    monkeypatch.setattr(orders_api, "get_order", lambda _order_id: {"broker_order_id": "broker-1"})
+    monkeypatch.setattr(orders_api, "broker_client_for_mode", lambda _mode: FailingBroker())
+    monkeypatch.setattr(
+        orders_api,
+        "transition_order",
+        lambda order_id, status, status_reason: transitions.append((order_id, status, status_reason)) or ({"local_order_id": order_id, "status": status}, "submitted"),
+    )
+    monkeypatch.setattr(orders_api, "_audit_transition", lambda *_args, **_kwargs: None)
+
+    async def scenario():
+        try:
+            await orders_api.cancel_order("local-1", request=None, actor=None, _role="admin", execution_mode="live", db=None)
+        except HTTPException as exc:
+            assert exc.detail["code"] == "broker_upstream_unavailable"
+            assert secret not in str(exc.detail)
+        else:
+            raise AssertionError("broker cancellation failure should raise")
+
+    asyncio.run(scenario())
+
+    assert transitions == [("local-1", "failed", "broker_cancel_unavailable")]
+    assert secret not in str(transitions)
+
+
 def test_order_read_apis_return_lifecycle_fields(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
     from Backend.application import order_store

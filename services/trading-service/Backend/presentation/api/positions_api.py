@@ -10,6 +10,7 @@ from Backend.application.trade_exit_engine import evaluate_exit_rule, exit_all_p
 from Backend.core.database import get_db
 from Backend.domain.security.models import User
 from Backend.presentation.api.roles import current_user, require_roles
+from Backend.presentation.api.upstream_errors import upstream_service_error
 
 
 router = APIRouter(prefix="/positions", tags=["positions"])
@@ -76,7 +77,7 @@ async def run_exit_monitor_now(
             execution_mode=execution_mode,
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Exit monitor failed: {exc}") from exc
+        raise upstream_service_error("broker", "exit_monitor", exc) from exc
 
 
 @router.post("/exit-monitor/jobs")
@@ -114,7 +115,7 @@ async def exit_single_position(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Position exit failed: {exc}") from exc
+        raise upstream_service_error("broker", "exit_position", exc) from exc
 
 
 @router.post("/exit-all")

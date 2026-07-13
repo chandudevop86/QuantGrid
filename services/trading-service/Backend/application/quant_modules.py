@@ -16,6 +16,7 @@ from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.paper_trade_store import list_paper_trades, risk_status
 from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.risk import GlobalRiskManager
+from Backend.trading_system.slippage import SlippageConfig, SlippageModel
 
 
 logger = logging.getLogger("quantgrid.option_chain")
@@ -429,7 +430,21 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     if max_candles > 0 and len(candles) > max_candles:
         candles = candles[-max_candles:]
     cost_model = _backtest_cost_model(payload)
-    engine = BacktestEngine(risk_manager=GlobalRiskManager())
+    effective_slippage_bps = cost_model["slippage_bps"] + cost_model["spread_bps"] / 2.0
+    engine = BacktestEngine(
+        risk_manager=GlobalRiskManager(),
+        slippage_model=SlippageModel(
+            SlippageConfig(
+                mode="fixed",
+                fixed_bps=effective_slippage_bps,
+                max_slippage_bps=max(effective_slippage_bps, 0.0),
+            )
+        ),
+        brokerage_per_order=cost_model["brokerage_per_order"],
+        brokerage_bps=cost_model["brokerage_bps"],
+        taxes_bps=cost_model["taxes_bps"],
+        latency_ms=cost_model["entry_delay_seconds"] * 1000,
+    )
     result = engine.run(
         candles=candles,
         strategy_name=str(payload.get("strategy_name") or "amd"),
@@ -546,8 +561,10 @@ def _professional_backtest_metrics(
 
 
 def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
-    return {
+    model = {
         "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
+        "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
+        "taxes_bps": float(payload.get("taxes_bps", 2.5)),
         "slippage_bps": float(payload.get("slippage_bps", 5.0)),
         "spread_bps": float(payload.get("spread_bps", 8.0)),
         "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
@@ -557,6 +574,9 @@ def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
         "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
         "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
     }
+    model["effective_slippage_per_side_bps"] = model["slippage_bps"] + model["spread_bps"] / 2.0
+    model["applied_to_results"] = True
+    return model
 
 
 def _backtest_period_years(candles: list[dict[str, Any]]) -> float:

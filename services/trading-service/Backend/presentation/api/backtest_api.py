@@ -16,12 +16,18 @@ class BacktestStartRequest(BaseModel):
     symbol: str = "NIFTY"
     strategy_name: str = "amd"
     strategies: list[str] = Field(default_factory=lambda: ["amd", "breakout", "mean_reversion", "supply_demand"])
-    capital: float = 100000
-    risk_pct: float = 1.0
-    rr_ratio: float = 2.0
-    min_score: float = 0.0
-    max_candles: int | None = 80
-    expected_seconds: float = 45.0
+    capital: float = Field(default=100000, gt=0)
+    risk_pct: float = Field(default=1.0, gt=0, le=10)
+    rr_ratio: float = Field(default=2.0, gt=0, le=20)
+    min_score: float = Field(default=0.0, ge=0)
+    max_candles: int | None = Field(default=80, ge=10, le=100000)
+    expected_seconds: float = Field(default=45.0, gt=0, le=3600)
+    brokerage_per_order: float = Field(default=20.0, ge=0)
+    brokerage_bps: float = Field(default=0.0, ge=0, le=1000)
+    taxes_bps: float = Field(default=2.5, ge=0, le=1000)
+    slippage_bps: float = Field(default=5.0, ge=0, le=1000)
+    spread_bps: float = Field(default=8.0, ge=0, le=1000)
+    entry_delay_seconds: int = Field(default=60, ge=0, le=3600)
     candles: list[dict[str, Any]] | None = Field(default=None)
 
 

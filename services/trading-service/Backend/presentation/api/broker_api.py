@@ -16,6 +16,7 @@ from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import cached_dhan_profile, check_dhan_profile
 from Backend.presentation.api.roles import current_user, require_roles
+from Backend.presentation.api.upstream_errors import upstream_service_error
 from sqlalchemy.orm import Session
 
 
@@ -258,7 +259,7 @@ async def cancel_order(
     try:
         result = await broker_client_for_mode(execution_mode).cancel_order(broker_order_id)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker cancel failed: {exc}") from exc
+        raise upstream_service_error("broker", "cancel_order", exc) from exc
     return result.to_dict()
 
 
@@ -271,7 +272,7 @@ async def get_order_status(
     try:
         result = await broker_client_for_mode(execution_mode).get_order_status(broker_order_id)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker status failed: {exc}") from exc
+        raise upstream_service_error("broker", "get_order_status", exc) from exc
     return result.to_dict()
 
 
@@ -283,7 +284,7 @@ async def get_positions(
     try:
         return {"positions": await broker_client_for_mode(execution_mode).get_positions()}
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker positions failed: {exc}") from exc
+        raise upstream_service_error("broker", "get_positions", exc) from exc
 
 
 @router.get("/holdings")
@@ -294,7 +295,7 @@ async def get_holdings(
     try:
         return {"holdings": await broker_client_for_mode(execution_mode).get_holdings()}
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker holdings failed: {exc}") from exc
+        raise upstream_service_error("broker", "get_holdings", exc) from exc
 
 
 @router.post("/reconcile")
@@ -313,7 +314,7 @@ async def reconcile_broker(
             request=request,
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Broker reconciliation failed: {exc}") from exc
+        raise upstream_service_error("broker", "reconcile", exc) from exc
 
 
 @router.post("/reconcile/jobs")

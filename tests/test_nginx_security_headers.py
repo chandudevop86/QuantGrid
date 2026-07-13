@@ -41,3 +41,15 @@ def test_nginx_websocket_proxy_forwards_auth_subprotocol():
         assert "proxy_set_header Upgrade $http_upgrade" in ws_block
         assert 'proxy_set_header Connection "upgrade"' in ws_block
         assert "proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol" in ws_block
+
+
+def test_api_responses_include_defense_in_depth_csp(app_client):
+    response = app_client.get("/health")
+
+    assert response.status_code == 200
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'self'" in policy
+    assert "object-src 'none'" in policy
+    assert "frame-ancestors 'none'" in policy
+    assert "script-src 'self'" in policy
+    assert "'unsafe-eval'" not in policy

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from Backend.application.fno_narrative_service import _option_chain_payload
@@ -13,6 +14,8 @@ from app.validation.data_quality import (
     validate_option_chain_rows,
     validate_provider_quality,
 )
+
+logger = logging.getLogger("quantgrid.data_quality")
 
 
 def build_data_quality_dashboard(symbol: str = "NIFTY", interval: str = "1m") -> dict[str, Any]:
@@ -47,13 +50,14 @@ def build_data_quality_dashboard(symbol: str = "NIFTY", interval: str = "1m") ->
             ),
         )
     except Exception as exc:
+        logger.warning("data_quality_provider_health_failed", extra={"error_type": exc.__class__.__name__})
         provider_report = DataQualityReport(
             subject="provider",
             status="FAIL",
             quality_score=0,
             source="unknown",
             rows_checked=0,
-            errors=[f"provider health unavailable: {exc}"],
+            errors=["provider_health_unavailable"],
         )
     reports.append(provider_report)
 
@@ -64,13 +68,14 @@ def build_data_quality_dashboard(symbol: str = "NIFTY", interval: str = "1m") ->
             source=str(chain_payload.get("source") or "unknown"),
         )
     except Exception as exc:
+        logger.warning("data_quality_option_chain_failed", extra={"error_type": exc.__class__.__name__})
         option_report = DataQualityReport(
             subject="option_chain",
             status="FAIL",
             quality_score=0,
             source="unknown",
             rows_checked=0,
-            errors=[f"option chain unavailable: {exc}"],
+            errors=["option_chain_unavailable"],
         )
     reports.append(option_report)
 
