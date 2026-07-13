@@ -76,7 +76,7 @@ export default function Dashboard() {
 
   return <section className="qg-market-dashboard" aria-label="Market decision dashboard">
     <div className="qg-dashboard-primary"><DecisionCard decision={normalizeDecision(recommendation)} confidence={confidence} regime={text(regime)} risk={text(risk)} reason={text(explanation)} updatedAt={operations.updated_at} /><DecisionReasons reasons={reasons} /></div>
-    <div className="qg-dashboard-secondary"><KeyLevelsCard levels={levels} /><TradingChecklist items={checklistItems} /></div>
+    <div className="qg-dashboard-secondary"><TradingChecklist items={checklistItems} /><KeyLevelsCard levels={levels} /></div>
     <MarketChart support={number(support)} resistance={number(resistance)} />
     <RecentSignals />
   </section>;

@@ -57,3 +57,17 @@ class UserSubscription(Base):
     provider_subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class UserEntitlementOverride(Base):
+    __tablename__ = "user_entitlement_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    entitlement_key: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    limit_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

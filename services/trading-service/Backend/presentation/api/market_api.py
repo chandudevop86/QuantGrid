@@ -39,6 +39,7 @@ from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.volume_analysis import analyze_volume
+from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
 
 router = APIRouter(tags=["market"])
@@ -728,7 +729,7 @@ def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, wa
 @router.get("/price")
 def get_price(
     symbol: str = "NIFTY",
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _access=Depends(require_entitlement("options.basic")),
 ):
     return get_ltp(symbol, _role=_role)
 
@@ -797,7 +798,7 @@ def get_option_chain(
     strikes_each_side = max(1, min(int(strikes_each_side), 10))
     step = max(1, int(step))
     try:
-        price_payload = get_price(symbol, _role=_role)
+        price_payload = get_price(symbol, _role=_access.user.role)
         price = float(price_payload.get("price") or 0.0)
     except Exception as exc:
         logger.exception("option_chain_price_fetch_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})

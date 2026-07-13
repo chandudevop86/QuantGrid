@@ -32,6 +32,7 @@ from Backend.application.trading_engine_upgrade import (
     submit_paper_basket,
     trading_engine_dashboard,
 )
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
 from Backend.domain.engine.execution_engine import ExecutionEngine
 from Backend.domain.execution_constraints import (
     apply_order_constraints,
@@ -1043,9 +1044,12 @@ async def auto_paper_order(
     request: Request,
     engine: ExecutionEngine = Depends(get_engine),
     actor: User = Depends(require_trade_execute),
+    access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
 ):
+    if not access.can("paper_trade.automated"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": "paper_trade.automated", "current_plan": access.snapshot["plan_code"].upper(), "message": "Automated paper trading requires a Pro or Premium plan."})
     symbol = payload.symbol.upper()
     from Backend.application.kill_switch import kill_switch_status
 
@@ -1228,9 +1232,12 @@ async def enqueue_auto_paper_order(
     payload: AutoPaperExecutionRequest,
     request: Request,
     actor: User = Depends(require_trade_execute),
+    access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
 ):
+    if not access.can("paper_trade.automated"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": "paper_trade.automated", "current_plan": access.snapshot["plan_code"].upper(), "message": "Automated paper trading requires a Pro or Premium plan."})
     if execution_mode != "paper":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auto-paper jobs are paper-only.")
 
@@ -1263,9 +1270,13 @@ async def place_order(
     request: Request,
     engine: ExecutionEngine = Depends(get_engine),
     actor: User = Depends(require_trade_execute),
+    access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
 ):
+    required_feature = "live_trade.execute" if execution_mode == "live" else "paper_trade.manual"
+    if not access.can(required_feature):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": required_feature, "current_plan": access.snapshot["plan_code"].upper(), "message": "Your active subscription does not include this execution mode."})
     write_audit_log(
         db,
         action="execution_triggered",

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from Backend.application.backtest_jobs import cancel_backtest_job, get_backtest_job, list_backtest_jobs, start_backtest_job
 from Backend.presentation.api.roles import require_roles
+from Backend.application.subscriptions import require_entitlement
 
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -34,7 +35,7 @@ class BacktestStartRequest(BaseModel):
 @router.post("/start")
 def start_backtest(
     payload: BacktestStartRequest,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.basic")),
 ):
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     return start_backtest_job(payload_data)
@@ -43,7 +44,7 @@ def start_backtest(
 @router.get("/history")
 def backtest_history(
     limit: int = 20,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.basic")),
 ):
     return {"jobs": list_backtest_jobs(limit=limit)}
 
@@ -51,7 +52,7 @@ def backtest_history(
 @router.get("/{job_id}")
 def backtest_status(
     job_id: str,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.basic")),
 ):
     job = get_backtest_job(job_id)
     if job is None:
@@ -62,7 +63,7 @@ def backtest_status(
 @router.post("/{job_id}/cancel")
 def cancel_backtest(
     job_id: str,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.basic")),
 ):
     job = cancel_backtest_job(job_id)
     if job is None:

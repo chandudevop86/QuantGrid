@@ -18,6 +18,7 @@ from Backend.application.quant_modules import (
     trade_journal_summary,
 )
 from Backend.presentation.api.roles import require_roles
+from Backend.application.subscriptions import require_entitlement
 
 
 router = APIRouter(prefix="/modules", tags=["modules"])
@@ -50,7 +51,7 @@ def option_chain_module(
     symbol: str,
     strikes_each_side: int = 5,
     step: int = 50,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _access=Depends(require_entitlement("options.basic")),
 ):
     try:
         return _module_option_chain_payload(
@@ -68,7 +69,7 @@ def live_nse_option_chain_module(
     symbol: str,
     strikes_each_side: int = 8,
     step: int = 50,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _access=Depends(require_entitlement("options.advanced")),
 ):
     try:
         return _module_option_chain_payload(live_nse_option_chain(symbol, strikes_each_side=strikes_each_side, step=step))
@@ -86,7 +87,7 @@ def historical_option_chain_module(
     symbol: str,
     periods: int = 12,
     step: int = 50,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _access=Depends(require_entitlement("options.advanced")),
 ):
     return historical_option_chain(symbol, periods=periods, step=step)
 
@@ -94,7 +95,7 @@ def historical_option_chain_module(
 @router.post("/backtesting")
 def run_backtesting_module(
     payload: BacktestModuleRequest,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.basic")),
 ):
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     return backtesting_module(payload_data)
@@ -103,21 +104,21 @@ def run_backtesting_module(
 @router.post("/backtesting/comparison")
 def run_backtesting_comparison(
     payload: BacktestComparisonRequest,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    _access=Depends(require_entitlement("backtest.advanced")),
 ):
     payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     return backtesting_comparison(payload_data)
 
 
 @router.get("/risk-engine")
-def get_risk_engine_module(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
+def get_risk_engine_module(_access=Depends(require_entitlement("risk.advanced"))):
     return risk_engine_summary()
 
 
 @router.get("/trade-journal")
 def get_trade_journal_module(
     limit: int = 100,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+    _access=Depends(require_entitlement("export.csv")),
 ):
     return trade_journal_summary(limit=max(1, min(int(limit), 500)))
 

@@ -6,9 +6,11 @@ import { useOperationsStatus } from "../context/OperationsStatusContext";
 import { getMarketStatusLabel } from "../utils/marketStatus";
 import AlertPopover from "./AlertPopover";
 import StatusBadge from "./StatusBadge";
+import { marketInstruments, useMarketSelection, type MarketSymbol } from "../context/MarketSelectionContext";
 
 export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }) {
   const { operations } = useOperationsStatus();
+  const { symbol, selectSymbol } = useMarketSelection();
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const [username, setUsername] = useState("");
@@ -68,10 +70,15 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
     <header className="qg-app-header">
       <button type="button" className="qg-menu-button" onClick={onMenuToggle} aria-label="Toggle navigation">☰</button>
       <div className="qg-header-brand"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></div>
-      <div className="qg-header-market"><span>Workspace</span><strong>NIFTY Options</strong></div>
+      <label className="qg-header-market">
+        <span>Selected market</span>
+        <select aria-label="Selected market or instrument" value={symbol} onChange={(event) => selectSymbol(event.target.value as MarketSymbol)}>
+          {marketInstruments.map((instrument) => <option key={instrument.symbol} value={instrument.symbol}>{instrument.label}</option>)}
+        </select>
+      </label>
       <div className="qg-header-actions">
-        <StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}>Market {marketStatus === "LIVE" ? "Open" : "Closed"}</StatusBadge>
-        <StatusBadge tone={brokerConnected === true ? "positive" : brokerConnected === false ? "danger" : "neutral"}>Broker {brokerConnected === true ? "Connected" : brokerConnected === false ? "Disconnected" : "Restricted"}</StatusBadge>
+        <span className="qg-header-status qg-market-status"><StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}><span className="qg-status-prefix">Market </span>{marketStatus === "LIVE" ? "Open" : "Closed"}</StatusBadge></span>
+        <span className="qg-header-status qg-broker-status"><StatusBadge tone={brokerConnected === true ? "positive" : brokerConnected === false ? "danger" : "neutral"}><span className="qg-status-prefix">Broker </span>{brokerConnected === true ? "Connected" : brokerConnected === false ? "Disconnected" : "Restricted"}</StatusBadge></span>
         <div className="qg-mode-control" role="group" aria-label="Trading mode"><button type="button" className={mode === "paper" ? "active" : ""} onClick={() => setCurrentMode("paper")}>Paper</button><button type="button" className={mode === "live" ? "active live" : ""} onClick={() => setCurrentMode("live")}>Live</button></div>
         <AlertPopover alerts={alerts} open={alertsOpen} onToggle={() => setAlertsOpen((value) => !value)} />
         <div className="qg-user-menu"><button type="button" className="qg-header-button" aria-expanded={userOpen} onClick={() => setUserOpen((value) => !value)}><span className="qg-user-avatar">{roleLabels[role][0]}</span><span>{roleLabels[role]}</span></button>{userOpen && <div className="qg-user-popover"><strong>{roleLabels[role]}</strong><span>Authenticated session</span><button type="button" onClick={() => { clearCurrentAuth(); setAuthenticated(false); }}>Sign out</button></div>}</div>

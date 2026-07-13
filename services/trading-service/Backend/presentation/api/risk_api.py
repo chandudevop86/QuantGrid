@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from Backend.application.kill_switch import activate_kill_switch, deactivate_kill_switch, kill_switch_status
 from Backend.application.portfolio_risk import build_portfolio_risk_dashboard
+from Backend.application.subscriptions import require_entitlement
 from Backend.core.database import get_db
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -32,7 +33,7 @@ def portfolio_risk_dashboard(
     entry_price: float | None = None,
     stop_loss: float | None = None,
     atr_multiplier: float = 1.5,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    _access=Depends(require_entitlement("risk.advanced")),
 ):
     return build_portfolio_risk_dashboard(
         symbol,

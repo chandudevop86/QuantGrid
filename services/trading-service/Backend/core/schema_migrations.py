@@ -51,6 +51,7 @@ COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
 MIGRATION_TABLE = "quantgrid_schema_migrations"
 BASELINE_VERSION = "0001_metadata_baseline"
 COMPATIBILITY_VERSION = "0002_legacy_columns"
+SUBSCRIPTION_ENTITLEMENTS_VERSION = "0003_subscription_entitlements"
 
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
@@ -81,6 +82,20 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                 text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
                 {"version": COMPATIBILITY_VERSION},
             )
+
+    with engine.begin() as connection:
+        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
+        if SUBSCRIPTION_ENTITLEMENTS_VERSION not in applied:
+            connection.execute(text(
+                "CREATE TABLE IF NOT EXISTS user_entitlement_overrides ("
+                "id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                "entitlement_key VARCHAR(120) NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, limit_value INTEGER, "
+                "reason VARCHAR(255) NOT NULL, expires_at TIMESTAMP, created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, "
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_user_entitlement_overrides_user_id ON user_entitlement_overrides (user_id)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_user_entitlement_overrides_key ON user_entitlement_overrides (entitlement_key)"))
+            connection.execute(text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"), {"version": SUBSCRIPTION_ENTITLEMENTS_VERSION})
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+from copy import deepcopy
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -21,6 +22,7 @@ from Backend.application.market_data_store import latest_candles, market_data_su
 from Backend.application.notifications import alert_job_created
 from Backend.application.paper_trade_store import risk_status
 from Backend.application.redis_service import redis_service
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
 from Backend.application.monitoring import observe_api_request, observe_market_data_age, observe_risk_block, observe_trading_decision
 from Backend.core.config import get_settings
 from Backend.core.database import SessionLocal, get_db
@@ -66,17 +68,54 @@ def _present_job(job: dict) -> dict:
 
 
 @router.get("/summary", response_model=ProductDashboardSummary)
-def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
-    return _product_summary(operations(_role))
+def summary(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    access: SubscriptionAccess = Depends(subscription_access),
+):
+    return _product_summary(operations(_role, access))
 
 
 @compatibility_router.get("/product/dashboard-summary", response_model=ProductDashboardSummary)
 def product_dashboard_summary(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    access: SubscriptionAccess = Depends(subscription_access),
 ):
     """Canonical product route backed by the existing dashboard summary adapter."""
 
-    return summary(_role)
+    return summary(_role, access)
+
+
+def _filter_operations(payload: dict, access: SubscriptionAccess) -> dict:
+    """Remove restricted sections before serialization; the browser never receives them."""
+    filtered = deepcopy(payload)
+    decision = filtered.get("decision") or {}
+    snapshot = decision.get("factor_snapshot") or {}
+    final = snapshot.get("final_decision") or {}
+    if not access.can("decision.advanced_reasons"):
+        for key in ("supporting_factors", "opposing_factors", "warnings"):
+            decision.pop(key, None)
+            final.pop(key, None)
+        final.pop("explainability", None)
+        final.pop("block_reasons", None)
+    if not access.can("levels.full"):
+        for key in ("entry_zone", "stop_loss", "target", "invalidation_level", "trade_plan"):
+            decision.pop(key, None)
+            final.pop(key, None)
+        support_resistance = (snapshot.get("checklist") or {}).get("support_resistance")
+        if isinstance(support_resistance, dict):
+            for key in ("entry_zone", "stop_loss", "target", "invalidation_level"):
+                support_resistance.pop(key, None)
+    if not access.can("volume.basic"):
+        snapshot.pop("volume_analysis", None)
+        checklist = snapshot.get("checklist") or {}
+        checklist.pop("volume", None)
+        checklist.pop("ema", None)
+    if not access.can("dashboard.advanced"):
+        decision.pop("recommendation_metrics", None)
+        filtered.pop("observability", None)
+        filtered.pop("diagnostics", None)
+        filtered.pop("backtest_context", None)
+    return filtered
 
 
 def _product_summary(payload: dict) -> dict:
@@ -243,7 +282,10 @@ def _dashboard_candles_by_interval(symbol: str) -> dict[str, list[dict]]:
 
 
 @router.get("/operations")
-def operations(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
+def operations(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    access: SubscriptionAccess = Depends(subscription_access),
+):
     started_at = perf_counter()
     settings = get_settings()
     candles_by_interval = _dashboard_candles_by_interval("NIFTY")
@@ -328,7 +370,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
         },
     )
 
-    return {
+    payload = {
         "updated_at": utc_now(),
         "decision": decision.to_dict() | {
             "decision_id": pipeline_result.decision_id,
@@ -407,11 +449,15 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             "message": "Run a backtest or replay to attach historical confidence to this strategy.",
         },
     }
+    return _filter_operations(payload, access)
 
 
 @compatibility_router.get("/operations/status")
-def operations_status_alias(_role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops"))):
-    return operations(_role)
+def operations_status_alias(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    access: SubscriptionAccess = Depends(subscription_access),
+):
+    return operations(_role, access)
 
 
 @router.post("/live-analysis/jobs")

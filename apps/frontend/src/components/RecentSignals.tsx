@@ -9,6 +9,7 @@ type SignalRow = {
   id: string;
   strategy: string;
   side: string;
+  confidence?: number;
   status: "active" | "rejected" | "stale";
   detail: string;
   timestamp?: string;
@@ -19,6 +20,7 @@ function signalRows(payload: any): SignalRow[] {
     id: `active-${signal.id ?? signal.timestamp ?? index}`,
     strategy: signal.strategy_name ?? signal.strategy ?? "Strategy",
     side: signal.side ?? signal.signal ?? "Waiting",
+    confidence: Number(signal.confidence ?? signal.score ?? signal.signal_score),
     status: "active" as const,
     detail: signal.reason ?? "Passed signal validation",
     timestamp: signal.timestamp ?? signal.signal_time,
@@ -27,6 +29,7 @@ function signalRows(payload: any): SignalRow[] {
     id: `rejected-${item.id ?? item.signal?.timestamp ?? index}`,
     strategy: item.signal?.strategy_name ?? item.strategy_name ?? "Strategy",
     side: item.signal?.side ?? item.side ?? "No trade",
+    confidence: Number(item.signal?.confidence ?? item.signal?.score ?? item.decision?.confidence),
     status: "rejected" as const,
     detail: item.decision?.reason ?? item.reason ?? "Did not pass validation",
     timestamp: item.signal?.timestamp ?? item.timestamp,
@@ -35,11 +38,14 @@ function signalRows(payload: any): SignalRow[] {
     id: `stale-${item.id ?? item.signal?.timestamp ?? index}`,
     strategy: item.signal?.strategy_name ?? item.strategy_name ?? "Strategy",
     side: item.signal?.side ?? item.side ?? "Expired",
+    confidence: Number(item.signal?.confidence ?? item.signal?.score ?? item.decision?.confidence),
     status: "stale" as const,
     detail: item.decision?.reason ?? "Signal is no longer current",
     timestamp: item.signal?.timestamp ?? item.timestamp,
   }));
-  return [...active, ...rejected, ...stale].slice(0, 5);
+  return [...active, ...rejected, ...stale]
+    .sort((a, b) => Date.parse(b.timestamp ?? "") - Date.parse(a.timestamp ?? ""))
+    .slice(0, 5);
 }
 
 export default function RecentSignals() {
@@ -59,6 +65,14 @@ export default function RecentSignals() {
     {loading && <div className="qg-signals-loading" role="status">Loading recent signals…</div>}
     {!loading && error && <ErrorState message={error} onRetry={() => void load()} />}
     {!loading && !error && rows.length === 0 && <EmptyState title="No recent signals" message="Qualified, rejected, and stale signals will appear here when available." />}
-    {!loading && !error && rows.length > 0 && <ul className="qg-signal-list">{rows.map((row) => <li key={row.id}><div><strong>{row.strategy}</strong><span>{row.detail}</span></div><div><StatusBadge tone={row.status === "active" ? "positive" : row.status === "rejected" ? "danger" : "warning"}>{row.status}</StatusBadge><strong>{row.side}</strong>{row.timestamp && <time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}</div></li>)}</ul>}
+    {!loading && !error && rows.length > 0 && <div className="qg-signal-table" role="table" aria-label="Five most recent signals">
+      <div className="qg-signal-header" role="row"><span role="columnheader">Time</span><span role="columnheader">Decision</span><span role="columnheader">Confidence</span><span role="columnheader">Status</span></div>
+      <ul className="qg-signal-list">{rows.map((row) => <li key={row.id} role="row" title={row.detail}>
+        <time role="cell" data-label="Time" dateTime={row.timestamp}>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</time>
+        <strong role="cell" data-label="Decision">{row.side}</strong>
+        <span role="cell" data-label="Confidence">{Number.isFinite(row.confidence) ? `${Math.round(Number(row.confidence))}%` : "—"}</span>
+        <span role="cell" data-label="Status"><StatusBadge tone={row.status === "active" ? "positive" : row.status === "rejected" ? "danger" : "warning"}>{row.status}</StatusBadge></span>
+      </li>)}</ul>
+    </div>}
   </article>;
 }
