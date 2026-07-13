@@ -51,10 +51,3 @@ def test_app_stack_documents_safe_env_defaults():
     assert "REDIS_URL=redis://redis:6379/0" in env_example
     assert "VITE_API_URL=/api" in env_example
     assert "VITE_WS_URL=/ws" in env_example
-
-
-def test_database_deploy_script_exposes_migrate_action():
-    script = (ROOT / "deploy" / "scripts" / "database.sh").read_text(encoding="utf-8")
-
-    assert "check|init|migrate)" in script
-    assert "Usage: $0 {check|init|migrate}" in script

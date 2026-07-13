@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import base64
+import hashlib
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -11,6 +13,8 @@ from urllib.request import Request, urlopen
 
 
 DHAN_PROFILE_URL = "https://api.dhan.co/v2/profile"
+_PROFILE_CACHE_LOCK = threading.Lock()
+_PROFILE_CACHE: dict[str, Any] = {"key": None, "expires_at": 0.0, "status": None}
 
 
 def _masked(value: str | None) -> str | None:
@@ -135,4 +139,26 @@ def check_dhan_profile(timeout: float = 8.0) -> dict[str, Any]:
         client_id=str(payload.get("dhanClientId") or client_id or ""),
     )
     status["account_name"] = payload.get("clientName")
+    return status
+
+
+def cached_dhan_profile(timeout: float = 3.0, max_age_seconds: float = 30.0) -> dict[str, Any]:
+    """Return recent profile health without repeatedly calling Dhan from dashboard polling."""
+    credentials = dhan_credentials()
+    identity = "\0".join((credentials["client_id"] or "", credentials["access_token"] or ""))
+    cache_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    now = time.monotonic()
+
+    with _PROFILE_CACHE_LOCK:
+        cached = _PROFILE_CACHE["status"]
+        if _PROFILE_CACHE["key"] == cache_key and now < float(_PROFILE_CACHE["expires_at"]):
+            return dict(cached)
+
+    status = check_dhan_profile(timeout=timeout)
+    with _PROFILE_CACHE_LOCK:
+        _PROFILE_CACHE.update(
+            key=cache_key,
+            expires_at=now + max(0.0, float(max_age_seconds)),
+            status=dict(status),
+        )
     return status

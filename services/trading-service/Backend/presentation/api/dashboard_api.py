@@ -26,6 +26,7 @@ from Backend.core.database import SessionLocal, get_db
 from Backend.domain.engine.strategy_engine import StrategyEngine
 from Backend.domain.security.audit import list_audit_events, write_audit_log
 from Backend.domain.security.models import User
+from Backend.infrastructure.broker.dhan_status import cached_dhan_profile
 from Backend.presentation.api.auth import current_user
 from Backend.presentation.api.roles import require_roles
 from Backend.presentation.api.websocket_manager import manager
@@ -248,6 +249,17 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
             db.close()
 
     execution_mode = "LIVE" if settings.live_trading_enabled else "PAPER"
+    if settings.broker_provider == "dhan":
+        broker_health = cached_dhan_profile()
+        broker_health["session_verified"] = bool(broker_health.get("connected"))
+    else:
+        broker_health = {
+            "configured": settings.broker_configured,
+            "connected": False,
+            "session_verified": False,
+            "provider": settings.broker_provider or "paper",
+            "message": "Real-money broker is not configured.",
+        }
     risk_blocked = (
         risk["trades_today"] >= risk["max_trades_per_day"]
         or risk["consecutive_losses"] >= risk["max_consecutive_losses"]
@@ -314,17 +326,7 @@ def operations(_role: str = Depends(require_roles("admin", "developer", "trader"
                 "active": len(manager.active_connections) > 0,
                 "connections": len(manager.active_connections),
             },
-            "broker": {
-                "configured": settings.broker_configured,
-                "connected": False,
-                "session_verified": False,
-                "provider": settings.broker_provider or "paper",
-                "message": (
-                    "Broker credentials configured; session not verified by this dashboard check."
-                    if settings.broker_configured
-                    else "Real-money broker is not configured."
-                ),
-            },
+            "broker": broker_health,
             "background_worker": _worker_status(),
             "market_data": {
                 "healthy": market_store["candles"] > 0,

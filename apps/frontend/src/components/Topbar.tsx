@@ -33,6 +33,7 @@ export default function Topbar() {
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const [operations, setOperations] = useState<any>(null);
+  const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAlerts, setShowAlerts] = useState(false);
 
@@ -61,20 +62,33 @@ export default function Topbar() {
   useEffect(() => {
     if (!isAuthenticated) {
       setMarketStatus("CLOSED");
+      setBrokerStatus(null);
       return;
     }
 
     let active = true;
 
     const loadMarketStatus = async () => {
-      try {
-        const response = await api.operationsStatus();
-        if (active) {
-          setOperations(response);
-          setMarketStatus(getMarketStatusLabel(response?.market_status));
-        }
-      } catch {
-        if (active) setMarketStatus("CLOSED");
+      const [operationsResult, brokerResult] = await Promise.allSettled([
+        api.operationsStatus(),
+        api.brokerStatus(),
+      ]);
+      if (!active) return;
+
+      if (operationsResult.status === "fulfilled") {
+        setOperations(operationsResult.value);
+        setMarketStatus(getMarketStatusLabel(operationsResult.value?.market_status));
+      } else {
+        setMarketStatus("CLOSED");
+      }
+      if (brokerResult.status === "fulfilled") {
+        setBrokerStatus(brokerResult.value);
+      } else {
+        setBrokerStatus({
+          connected: false,
+          error: "status_unavailable",
+          message: "Broker status could not be verified.",
+        });
       }
     };
 
@@ -115,7 +129,12 @@ export default function Topbar() {
     setRole("viewer");
     setIsAuthenticated(false);
   };
-  const brokerConnected = Boolean(operations?.system_health?.broker?.connected);
+  const brokerConnected = Boolean(brokerStatus?.connected);
+  const brokerAlert = brokerConnected
+    ? null
+    : brokerStatus?.error === "token_expired"
+      ? "Dhan access token expired. Save a fresh token in Broker Login; orders remain in paper mode."
+      : brokerStatus?.message || "Broker is not connected; orders remain in paper mode.";
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
   const searchableRoutes = [
     ["Market decision overview", "/"], ["Options market chain", "/market"], ["Qualified setups signals", "/signals"],
@@ -138,7 +157,7 @@ export default function Topbar() {
   };
   const alerts = [
     !systemReady ? "System health requires review." : null,
-    !brokerConnected ? "Broker is not connected; orders remain in paper mode." : null,
+    brokerAlert,
     marketStatus !== "LIVE" ? `Market status is ${marketStatus.toLowerCase()}.` : null,
     mode === "live" ? "Live trading mode is enabled." : null,
   ].filter(Boolean) as string[];

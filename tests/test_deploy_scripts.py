@@ -54,7 +54,8 @@ def test_deploy_and_restart_validate_database_before_backend_restart():
 def test_database_script_exposes_expected_check_command_without_duplicate_schema_logic():
     database = _text("database.sh")
 
-    assert "check|init)" in database
+    assert "check|init|migrate)" in database
+    assert "Usage: $0 {check|init|migrate}" in database
     assert "check_database" in database
     assert "Backend.tools.check_database" not in database
     assert "CREATE TABLE" not in database

@@ -91,6 +91,28 @@ def test_dhan_status_validates_profile_without_enabling_real_orders(monkeypatch)
     assert status["account_name"] == "Paper User"
 
 
+def test_dhan_profile_cache_reuses_health_and_invalidates_for_new_credentials(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-one")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "1234567890")
+    calls = 0
+
+    def profile_check(timeout=8.0):
+        nonlocal calls
+        calls += 1
+        return {"provider": "dhan", "connected": True, "timeout": timeout}
+
+    monkeypatch.setattr(dhan_status, "check_dhan_profile", profile_check)
+
+    first = dhan_status.cached_dhan_profile(timeout=1.5)
+    second = dhan_status.cached_dhan_profile(timeout=1.5)
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-two")
+    third = dhan_status.cached_dhan_profile(timeout=1.5)
+
+    assert first == second
+    assert third["connected"] is True
+    assert calls == 2
+
+
 def test_broker_status_keeps_real_money_orders_disabled(monkeypatch):
     monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "dhan")
     monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-123456789")

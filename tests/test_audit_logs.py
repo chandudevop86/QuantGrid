@@ -41,7 +41,11 @@ def test_audit_log_sanitizes_nested_secrets(app_client):
 
 
 def test_audit_schema_columns_have_central_migration_ownership():
-    from Backend.core.schema_migrations import COMPATIBILITY_COLUMNS, _statement_for_dialect
+    from Backend.core.schema_migrations import (
+        COMPATIBILITY_COLUMNS,
+        POSTGRES_MIGRATION_LOCK_ID,
+        _statement_for_dialect,
+    )
 
     additions = COMPATIBILITY_COLUMNS["audit_logs"]
 
@@ -55,3 +59,5 @@ def test_audit_schema_columns_have_central_migration_ownership():
         "IF NOT EXISTS" not in _statement_for_dialect(statement, "sqlite")
         for statement in additions.values()
     )
+    assert isinstance(POSTGRES_MIGRATION_LOCK_ID, int)
+    assert -(2**63) <= POSTGRES_MIGRATION_LOCK_ID < 2**63

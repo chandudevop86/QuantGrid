@@ -6,6 +6,9 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
+POSTGRES_MIGRATION_LOCK_ID = 684_817_513_202_606_01
+
+
 COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
     "audit_logs": {
         "actor_role": "ALTER TABLE audit_logs ADD COLUMN actor_role VARCHAR(32)",
@@ -47,26 +50,30 @@ COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
     """Apply the small, idempotent upgrades that predate versioned migrations."""
-    inspector = inspect(engine)
-    existing_tables = set(inspector.get_table_names())
-    pending: list[str] = []
-
-    for table in tables:
-        additions = COMPATIBILITY_COLUMNS.get(table)
-        if additions is None:
-            raise ValueError(f"Unknown compatibility migration table: {table}")
-        if table not in existing_tables:
-            continue
-        existing_columns = {column["name"] for column in inspector.get_columns(table)}
-        pending.extend(
-            _statement_for_dialect(statement, engine.dialect.name)
-            for column, statement in additions.items()
-            if column not in existing_columns
-        )
-
-    if not pending:
-        return
     with engine.begin() as connection:
+        dialect = engine.dialect.name
+        if dialect == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_MIGRATION_LOCK_ID},
+            )
+
+        inspector = inspect(connection)
+        existing_tables = set(inspector.get_table_names())
+        pending: list[str] = []
+        for table in tables:
+            additions = COMPATIBILITY_COLUMNS.get(table)
+            if additions is None:
+                raise ValueError(f"Unknown compatibility migration table: {table}")
+            if table not in existing_tables:
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table)}
+            pending.extend(
+                _statement_for_dialect(statement, dialect)
+                for column, statement in additions.items()
+                if column not in existing_columns
+            )
+
         for statement in pending:
             connection.execute(text(statement))
 
