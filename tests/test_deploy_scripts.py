@@ -108,6 +108,17 @@ def test_redis_script_avoids_legacy_compose_containerconfig_failure():
     assert "--remove-orphans" not in redis
 
 
+def test_systemd_production_env_uses_host_redis_address():
+    production_env = (ROOT / "services" / "trading-service" / ".env.production.example").read_text(encoding="utf-8")
+    backend_unit = (ROOT / "deploy" / "systemd" / "quantgrid-backend.service").read_text(encoding="utf-8")
+    worker_unit = (ROOT / "deploy" / "systemd" / "quantgrid-worker.service").read_text(encoding="utf-8")
+
+    assert "REDIS_URL=redis://127.0.0.1:6379/0" in production_env
+    assert "REDIS_URL=redis://redis:6379/0" not in production_env
+    assert "EnvironmentFile=/root/QuantGrid/services/trading-service/.env" in backend_unit
+    assert "EnvironmentFile=/root/QuantGrid/services/trading-service/.env" in worker_unit
+
+
 def test_restart_installs_missing_systemd_units_before_restart():
     common = _text("common.sh")
     backend = _text("backend.sh")
