@@ -21,8 +21,10 @@ import {
   type Role,
 } from "../roles";
 import { getMarketStatusClass, getMarketStatusLabel, type MarketStatusLabel } from "../utils/marketStatus";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 
 export default function Topbar() {
+  const { operations } = useOperationsStatus();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [username, setUsername] = useState("");
@@ -32,7 +34,6 @@ export default function Topbar() {
   const [marketStatus, setMarketStatus] = useState<MarketStatusLabel>("CLOSED");
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
-  const [operations, setOperations] = useState<any>(null);
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAlerts, setShowAlerts] = useState(false);
@@ -68,19 +69,12 @@ export default function Topbar() {
 
     let active = true;
 
-    const loadMarketStatus = async () => {
-      const [operationsResult, brokerResult] = await Promise.allSettled([
-        api.operationsStatus(),
-        api.brokerStatus(),
-      ]);
+    const loadBrokerStatus = async () => {
+      const brokerResult = await Promise.resolve(api.brokerStatus()).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason }),
+      );
       if (!active) return;
-
-      if (operationsResult.status === "fulfilled") {
-        setOperations(operationsResult.value);
-        setMarketStatus(getMarketStatusLabel(operationsResult.value?.market_status));
-      } else {
-        setMarketStatus("CLOSED");
-      }
       if (brokerResult.status === "fulfilled") {
         setBrokerStatus(brokerResult.value);
       } else {
@@ -92,14 +86,18 @@ export default function Topbar() {
       }
     };
 
-    void loadMarketStatus();
-    const intervalId = window.setInterval(loadMarketStatus, 30000);
+    void loadBrokerStatus();
+    const intervalId = window.setInterval(loadBrokerStatus, 30000);
 
     return () => {
       active = false;
       window.clearInterval(intervalId);
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    setMarketStatus(getMarketStatusLabel(operations?.market_status));
+  }, [operations]);
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();

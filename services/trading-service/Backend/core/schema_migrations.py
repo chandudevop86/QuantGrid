@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.schema import MetaData
 
 
 POSTGRES_MIGRATION_LOCK_ID = 684_817_513_202_606_01
@@ -46,6 +47,37 @@ COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
         "source": "ALTER TABLE trade_journal ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'manual'",
     },
 }
+
+MIGRATION_TABLE = "quantgrid_schema_migrations"
+BASELINE_VERSION = "0001_metadata_baseline"
+COMPATIBILITY_VERSION = "0002_legacy_columns"
+
+
+def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
+    """Own schema initialization and legacy upgrades behind a durable version ledger."""
+
+    # Existing deployments predate a migration framework. Treat their SQLAlchemy
+    # schema as the explicit baseline, then version every subsequent upgrade.
+    metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.execute(text(
+            f"CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} ("
+            "version VARCHAR(80) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
+        ))
+        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
+        if BASELINE_VERSION not in applied:
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                {"version": BASELINE_VERSION},
+            )
+
+    if COMPATIBILITY_VERSION not in applied:
+        apply_compatibility_migrations(engine, COMPATIBILITY_COLUMNS)
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                {"version": COMPATIBILITY_VERSION},
+            )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

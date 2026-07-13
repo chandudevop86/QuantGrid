@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 
 type HealthTone = "green" | "yellow" | "red";
 
@@ -44,13 +45,14 @@ function HealthBadge({ label, status, tone, helper }: HealthBadgeProps) {
 }
 
 export default function SystemHealthWidget({ operations, websocketConnected, websocketStatus, compact = false }: SystemHealthWidgetProps) {
+  const sharedStatus = useOperationsStatus();
   const [apiHealth, setApiHealth] = useState<any>(null);
-  const [localOperations, setLocalOperations] = useState<any>(operations ?? null);
+  const [localOperations, setLocalOperations] = useState<any>(operations ?? sharedStatus.operations ?? null);
   const [apiReachable, setApiReachable] = useState(false);
 
   useEffect(() => {
-    if (operations) setLocalOperations(operations);
-  }, [operations]);
+    setLocalOperations(operations ?? sharedStatus.operations ?? null);
+  }, [operations, sharedStatus.operations]);
 
   useEffect(() => {
     let active = true;
@@ -59,7 +61,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
       try {
         const [health, status] = await Promise.all([
           api.health(),
-          operations ? Promise.resolve(operations) : api.operationsStatus(),
+          Promise.resolve(operations ?? sharedStatus.operations),
         ]);
         if (!active) return;
         setApiHealth(health);
@@ -77,7 +79,7 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
       active = false;
       window.clearInterval(id);
     };
-  }, [operations]);
+  }, [operations, sharedStatus.operations]);
 
   const health = localOperations?.system_health;
   const market = localOperations?.market_status;

@@ -8,7 +8,6 @@ from fastapi import Request
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from Backend.core.schema_migrations import apply_compatibility_migrations
 from Backend.domain.security.models import AuditLog, User
 
 
@@ -84,7 +83,6 @@ def request_id(request: Request | None) -> str | None:
 
 
 def ensure_audit_schema(db: Session) -> None:
-    apply_compatibility_migrations(db.get_bind(), ("audit_logs",))
 
 
 def write_audit_log(

@@ -29,10 +29,7 @@ def utc_now() -> str:
 
 def init_order_store() -> None:
     from Backend.core import database
-    from Backend.core.schema_migrations import apply_compatibility_migrations
-
     database.init_database()
-    apply_compatibility_migrations(database.engine, ("orders",))
 
 
 def create_order(payload: dict[str, Any]) -> dict[str, Any]:

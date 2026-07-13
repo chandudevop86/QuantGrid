@@ -283,12 +283,14 @@ def test_init_database_retries_postgres_service_name_on_localhost(monkeypatch):
     calls = []
     rebuilt_urls = []
 
-    def fake_create_all(bind):
+    def fake_apply_migrations(bind, metadata):
         calls.append(bind)
         if len(calls) == 1:
             raise OperationalError(None, None, Exception("failed to resolve host 'postgres'"))
 
-    monkeypatch.setattr(database.Base.metadata, "create_all", fake_create_all)
+    from Backend.core import schema_migrations
+
+    monkeypatch.setattr(schema_migrations, "apply_versioned_migrations", fake_apply_migrations)
     monkeypatch.setattr(database, "_rebuild_engine", rebuilt_urls.append)
 
     database.init_database()

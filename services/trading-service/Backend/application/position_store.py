@@ -347,10 +347,7 @@ def _use_sqlite() -> bool:
 
 def _init_db_store() -> None:
     from Backend.core import database
-    from Backend.core.schema_migrations import apply_compatibility_migrations
-
     database.init_database()
-    apply_compatibility_migrations(database.engine, ("positions",))
 
 
 def _position_row(payload: dict[str, Any]) -> dict[str, Any]:

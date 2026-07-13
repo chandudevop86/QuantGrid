@@ -1,6 +1,7 @@
 import Sidebar from "../components/Sidebar";
 import MarketStatusBanner from "../components/MarketStatusBanner";
 import Topbar from "../components/Topbar";
+import { OperationsStatusProvider } from "../context/OperationsStatusContext";
 
 type AppLayoutProps = {
   children: React.ReactNode;
@@ -8,7 +9,7 @@ type AppLayoutProps = {
 
 export default function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="app-shell">
+    <OperationsStatusProvider><div className="app-shell">
       <Sidebar />
 
       <main className="app-main">
@@ -17,6 +18,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
         <div className="app-content">{children}</div>
       </main>
-    </div>
+    </div></OperationsStatusProvider>
   );
 }

@@ -1,9 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
-import { api } from "../api";
 import Loader from "../components/Loader";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 import { hasAuthToken } from "../roles";
-import { createSocket } from "../socket";
 import { getMarketStatusClass, getMarketStatusLabel } from "../utils/marketStatus";
 
 type Decision = {
@@ -161,11 +160,8 @@ function fallbackDecision(): Decision {
 }
 
 export default function Dashboard() {
-  const [operations, setOperations] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { operations, loading, error, socketStatus } = useOperationsStatus();
   const [isAuthenticated, setIsAuthenticated] = useState(hasAuthToken());
-  const [socketStatus, setSocketStatus] = useState<"online" | "offline" | "polling">("offline");
 
   useEffect(() => {
     const syncAuth = () => setIsAuthenticated(hasAuthToken());
@@ -176,69 +172,6 @@ export default function Dashboard() {
       window.removeEventListener("storage", syncAuth);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setOperations(null);
-      setLoading(false);
-      return;
-    }
-
-    let active = true;
-    let socket: WebSocket | null = null;
-    let fallbackId: number | null = null;
-
-    const load = async () => {
-      try {
-        const data = await api.operationsStatus();
-        if (!active) return;
-        setOperations(data);
-        setError(null);
-      } catch {
-        if (active) setError("Dashboard API is not available yet.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-
-    const startFallback = () => {
-      if (fallbackId !== null) return;
-      setSocketStatus("polling");
-      fallbackId = window.setInterval(load, 15000);
-    };
-
-    void load();
-    socket = createSocket();
-    socket.onopen = () => {
-      setSocketStatus("online");
-      if (fallbackId !== null) {
-        window.clearInterval(fallbackId);
-        fallbackId = null;
-      }
-    };
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message?.type === "dashboard_status" && message?.payload) {
-          setOperations(message.payload);
-        }
-      } catch {
-        setError("Received an invalid dashboard status update.");
-      }
-    };
-    socket.onerror = () => socket?.close();
-    socket.onclose = () => {
-      if (!active) return;
-      setSocketStatus("offline");
-      startFallback();
-    };
-
-    return () => {
-      active = false;
-      if (fallbackId !== null) window.clearInterval(fallbackId);
-      socket?.close();
-    };
-  }, [isAuthenticated]);
 
   const decision = { ...fallbackDecision(), ...(operations?.decision ?? {}) };
   const market = operations?.market_status;

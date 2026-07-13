@@ -55,15 +55,17 @@ def init_database() -> None:
     import Backend.domain.security.models  # noqa: F401
     import Backend.domain.trading_store_models  # noqa: F401
 
+    from Backend.core.schema_migrations import apply_versioned_migrations
+
     try:
-        Base.metadata.create_all(bind=engine)
+        apply_versioned_migrations(engine, Base.metadata)
     except OperationalError as exc:
         settings = get_settings()
         fallback_url = _localhost_database_url(settings.database_url)
         if not fallback_url or not _is_unresolved_postgres_host_error(exc):
             raise
         _rebuild_engine(fallback_url)
-        Base.metadata.create_all(bind=engine)
+        apply_versioned_migrations(engine, Base.metadata)
 
 
 def get_db() -> Generator[Session, None, None]:

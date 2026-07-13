@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 
-const refreshMs = 30000;
 const staleWarningMinutes = 10;
 
 function formatIstTime(date: Date) {
@@ -39,33 +38,12 @@ function formatAge(age: number | null) {
 }
 
 export default function MarketStatusBanner() {
-  const [operations, setOperations] = useState<any>(null);
+  const { operations, error } = useOperationsStatus();
   const [now, setNow] = useState(new Date());
-  const [error, setError] = useState(false);
 
   useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const data = await api.operationsStatus();
-        if (!active) return;
-        setOperations(data);
-        setError(false);
-      } catch {
-        if (active) setError(true);
-      }
-    };
-
-    void load();
-    const refreshId = window.setInterval(load, refreshMs);
     const clockId = window.setInterval(() => setNow(new Date()), 1000);
-
-    return () => {
-      active = false;
-      window.clearInterval(refreshId);
-      window.clearInterval(clockId);
-    };
+    return () => window.clearInterval(clockId);
   }, []);
 
   const market = operations?.market_status;
