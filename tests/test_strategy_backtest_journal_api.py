@@ -29,6 +29,7 @@ def test_strategy_backtest_api_returns_card_metrics(app_client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["input"]["strategy"] == "breakout"
+    assert payload["input"]["candles"] <= payload["input"]["max_candles"] == 200
     assert payload["metrics"]["total_trades"] > 0
     assert {"total_trades", "win_rate", "pnl", "max_drawdown", "sharpe_ratio", "expectancy"} <= set(payload["metrics"])
     assert payload["metrics"]["recent_accuracy"] == payload["metrics"]["win_rate"]

@@ -127,10 +127,11 @@ def backtest_strategy(
     capital: float = 100_000,
     risk_pct: float = 1,
     rr_ratio: float = 2,
+    max_candles: int = Query(default=200, ge=50, le=1000),
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
 ):
     try:
-        candles = _clean_candles(get_candles(symbol, interval=interval, period=period, limit=500))
+        candles = _clean_candles(get_candles(symbol, interval=interval, period=period, limit=max_candles))
     except Exception as exc:
         logger.exception(
             "backtest_candle_load_failed",
@@ -144,6 +145,7 @@ def backtest_strategy(
         )
         candles = _sample_backtest_candles(symbol, interval)
     candles = _filter_candles_by_date(candles, start_date, end_date)
+    candles = candles[-max_candles:]
     result = BacktestEngine().run(
         strategy=strategy,
         symbol=symbol,
@@ -162,6 +164,7 @@ def backtest_strategy(
         "start_date": start_date,
         "end_date": end_date,
         "candles": len(candles),
+        "max_candles": max_candles,
     }
     return report
 
