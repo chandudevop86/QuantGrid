@@ -3210,6 +3210,164 @@ select {
   .guest-disclaimer { display: grid; gap: 8px; }
 }
 
+/* Institutional command-center layout inspired by the approved dashboard reference. */
+:root {
+  --command-cyan: #22d3ee;
+  --command-green: #20e3a2;
+  --command-panel: #071426;
+  --command-panel-2: #0a182b;
+  --command-line: rgba(84, 128, 178, .25);
+}
+
+body {
+  background:
+    radial-gradient(circle at 68% 0%, rgba(20, 75, 128, .12), transparent 34%),
+    #030b17;
+}
+
+.app-shell { grid-template-columns: 188px minmax(0, 1fr); }
+.sidebar {
+  width: 188px;
+  padding: 14px 12px 12px;
+  border-right-color: rgba(78, 117, 165, .28);
+  background: linear-gradient(180deg, #061120 0%, #040c18 100%);
+}
+.brand { min-height: 45px; margin-bottom: 14px; padding: 0 2px 12px; border-bottom: 1px solid var(--command-line); }
+.brand-mark { width: 34px; height: 34px; border-color: rgba(34, 211, 238, .55); box-shadow: 0 0 20px rgba(34, 211, 238, .13); }
+.brand strong { font-size: 16px; }
+.brand span { font-size: 8px; letter-spacing: .11em; }
+.sidebar-label { margin: 8px 7px 4px; color: #617793; font-size: 8px; letter-spacing: .15em; }
+.sidebar-section-label { margin-top: 10px; padding-top: 10px; }
+.sidebar-nav { gap: 2px; }
+.nav-link { min-height: 31px; padding: 6px 8px; border-radius: 6px; color: #a8b8ca; font-size: 10px; }
+.nav-link.active {
+  border-color: rgba(34, 211, 238, .28);
+  background: linear-gradient(90deg, rgba(10, 123, 151, .42), rgba(10, 94, 121, .18));
+  color: #e8fbff;
+  box-shadow: inset 2px 0 var(--command-cyan);
+}
+.nav-icon { width: 17px; height: 17px; }
+.sidebar-footer { padding: 11px 10px; border-radius: 8px; background: #09172a; }
+
+.topbar {
+  min-height: 58px;
+  padding: 8px 16px;
+  border-bottom-color: var(--command-line);
+  background: rgba(4, 13, 26, .96);
+}
+.topbar-title { min-width: 154px; padding-right: 14px; border-right: 1px solid var(--command-line); }
+.topbar-eyebrow { color: var(--command-cyan) !important; font-size: 8px !important; letter-spacing: .12em; }
+.topbar-title strong { font-size: 13px; }
+.topbar-search { max-width: 340px; }
+.topbar-search input { min-height: 35px; border-radius: 7px; background: #061122; font-size: 10px; }
+.topbar-system-group .market-status-badge,
+.topbar-system-group .terminal-pill { min-height: 25px; padding: 4px 8px; border: 1px solid rgba(32, 227, 162, .14); border-radius: 5px; background: rgba(4, 120, 87, .12); color: #9cf5d3; font-size: 9px; }
+.workspace-controls .mode-toggle { min-height: 31px; padding: 2px; border-color: var(--command-line); background: #050e1c; }
+.workspace-controls .mode-toggle button { min-height: 25px; padding: 3px 10px; font-size: 9px; }
+.workspace-controls .mode-toggle button.active { border-color: #00d4cf; background: rgba(13, 148, 136, .2); color: #e6ffff; }
+
+.market-banner {
+  min-height: 34px;
+  padding: 5px 18px;
+  border-bottom-color: var(--command-line);
+  background: #071426;
+  font-size: 9px;
+}
+.market-banner strong { color: var(--command-green); font-size: 9px; }
+.market-banner span { padding-left: 12px; border-left: 1px solid var(--command-line); color: #8296ad; }
+
+.app-content { padding: 14px 16px 18px; }
+.dashboard-page { max-width: none; }
+.decision-dashboard { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
+.decision-dashboard > .page-heading,
+.decision-dashboard > .loader,
+.decision-dashboard > .skeleton-grid,
+.decision-dashboard > .error-text,
+.decision-dashboard > .dashboard-advanced-details,
+.decision-dashboard > .guest-hero-panel,
+.decision-dashboard > .guest-section,
+.decision-dashboard > .guest-disclaimer { grid-column: 1 / -1; }
+.decision-dashboard > .product-dashboard-section:nth-of-type(1) { grid-column: span 7; }
+.decision-dashboard > .product-dashboard-section:nth-of-type(2) { grid-column: span 5; }
+.decision-dashboard > .product-dashboard-section:nth-of-type(3) { grid-column: span 7; }
+.decision-dashboard > .product-dashboard-section:nth-of-type(4) { grid-column: span 5; }
+.decision-dashboard > .product-dashboard-section:nth-of-type(5) { grid-column: 1 / -1; }
+
+.dashboard-heading { min-height: 44px; padding: 0 2px; }
+.dashboard-heading .page-eyebrow { color: var(--command-cyan); font-size: 8px; letter-spacing: .14em; }
+.dashboard-heading h1 { font-size: 22px; }
+.dashboard-heading p { margin-top: 3px; font-size: 10px; }
+.decision-status { padding: 6px 10px; border-radius: 5px; font-size: 9px; }
+
+.product-dashboard-section {
+  gap: 11px;
+  padding: 14px;
+  border-color: var(--command-line);
+  border-radius: 7px;
+  background: linear-gradient(145deg, rgba(10, 24, 43, .97), rgba(5, 15, 29, .98));
+  box-shadow: inset 0 1px rgba(135, 184, 235, .035), 0 10px 30px rgba(0, 0, 0, .15);
+}
+.product-dashboard-section:first-of-type { border-color: rgba(34, 211, 238, .58); background: linear-gradient(135deg, rgba(7, 40, 56, .96), #071426 55%); }
+.section-number { width: 23px; height: 23px; border-radius: 5px; font-size: 8px; }
+.section-header h2 { color: var(--command-cyan); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.section-header > span { font-size: 8px; }
+
+.market-snapshot-bar { border-radius: 6px; background: rgba(2, 10, 20, .74); }
+.market-snapshot-item { min-height: 43px; padding: 7px 10px; }
+.market-snapshot-item small { font-size: 7px; }
+.market-snapshot-item strong { font-size: 10px; }
+.decision-card { min-height: 176px; padding: 22px !important; border-radius: 7px; background: rgba(3, 13, 25, .55) !important; }
+.decision-card::before { opacity: .25; }
+.decision-copy > strong { font-size: clamp(38px, 4vw, 58px) !important; letter-spacing: .015em; }
+.decision-copy p { max-width: 470px; color: #a9b9ca; font-size: 12px; }
+.confidence-card { min-width: 136px; border-color: var(--command-line); background: #071426; }
+.confidence-card > strong { font-size: 28px; }
+
+.decision-grid-compact,
+.trade-plan-grid,
+.system-trust-grid { border-radius: 6px; border-color: var(--command-line); background: var(--command-line); }
+.decision-grid-compact > span,
+.trade-plan-grid > span,
+.system-trust-grid > span { min-height: 55px; padding: 9px 11px; background: #061224; }
+.decision-grid-compact small,
+.trade-plan-grid small,
+.system-trust-grid small { font-size: 7px; }
+.decision-grid-compact strong,
+.trade-plan-grid strong,
+.system-trust-grid strong { font-size: 11px; }
+.system-trust-grid { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+
+.narrative-card { gap: 10px; padding: 12px; border-radius: 6px; background: rgba(3, 11, 23, .68); }
+.narrative-card > p { font-size: 11px; }
+.narrative-columns { grid-template-columns: 1fr; gap: 8px; }
+.narrative-columns > div { min-height: 0; padding: 10px; border-radius: 5px; }
+.narrative-columns strong { font-size: 9px; }
+.narrative-columns span { font-size: 9px; }
+.no-trade-panel { min-height: 150px; padding: 18px; border-radius: 6px; }
+.no-trade-panel > strong { font-size: 15px; }
+.no-trade-panel p,
+.no-trade-panel ul { font-size: 10px; }
+.key-levels-table th,
+.key-levels-table td { padding: 8px 9px; font-size: 9px; }
+.dashboard-advanced-details { border-radius: 7px; }
+
+@media (max-width: 1180px) {
+  .app-shell { grid-template-columns: 168px minmax(0, 1fr); }
+  .sidebar { width: 168px; }
+  .decision-dashboard > .product-dashboard-section:nth-of-type(n) { grid-column: 1 / -1; }
+  .system-trust-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { width: 100%; }
+  .decision-dashboard { display: grid; grid-template-columns: 1fr; }
+  .decision-dashboard > * { grid-column: 1 !important; }
+  .system-trust-grid { grid-template-columns: 1fr 1fr; }
+  .decision-card { min-height: 0; }
+  .decision-copy > strong { font-size: 34px !important; }
+}
+
 /* Authenticated decision workspace: five-section product hierarchy */
 .product-dashboard-section {
   display: grid;
