@@ -384,6 +384,25 @@ def test_dhan_option_rows_honors_shared_redis_cooldown(monkeypatch):
         market_api._dhan_option_rows("NIFTY", [23400])
 
 
+def test_dhan_option_rows_does_not_fetch_when_another_process_owns_lock(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token")
+    market_api._DHAN_OPTION_CACHE.clear()
+    market_api._DHAN_OPTION_COOLDOWN_UNTIL = 0.0
+    monkeypatch.setattr(market_api.redis_service, "cooldown_remaining", lambda name: None)
+    monkeypatch.setattr(market_api.redis_service, "acquire_lock", lambda name, ttl_seconds: "")
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_provider_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("duplicate Dhan fetch")),
+    )
+
+    with pytest.raises(RuntimeError, match="already in progress"):
+        market_api._dhan_option_rows("NIFTY", [23400])
+
+
 def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
     from conftest import TEST_SECRET, reset_backend_modules
 

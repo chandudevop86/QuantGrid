@@ -9,7 +9,7 @@ ACTION="${1:-check}"
 case "${ACTION}" in
   start)
     cd "${APP_DIR}"
-    run docker compose -f docker-compose.yml up -d redis
+    compose_run -f docker-compose.yml up -d redis
     ;;
   check)
     if command -v redis-cli >/dev/null 2>&1; then
@@ -20,7 +20,7 @@ case "${ACTION}" in
     ;;
   status)
     cd "${APP_DIR}"
-    run docker compose -f docker-compose.yml ps redis
+    compose_run -f docker-compose.yml ps redis
     ;;
   *)
     echo "Usage: $0 {start|check|status}" >&2

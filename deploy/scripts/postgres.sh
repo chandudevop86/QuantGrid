@@ -14,14 +14,14 @@ case "${ACTION}" in
       exit 1
     fi
     cd "${APP_DIR}"
-    run docker compose -f docker-compose.yml up -d postgres
+    compose_run -f docker-compose.yml up -d postgres
     ;;
   check)
     check_database
     ;;
   status)
     cd "${APP_DIR}"
-    run docker compose -f docker-compose.yml ps postgres
+    compose_run -f docker-compose.yml ps postgres
     ;;
   *)
     echo "Usage: $0 {start|check|status}" >&2

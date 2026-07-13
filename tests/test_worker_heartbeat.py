@@ -10,9 +10,12 @@ class FakeRedis:
         self.values: dict[str, str] = {}
         self.ttl_values: dict[str, int] = {}
 
-    def set(self, key: str, value: str, ex: int):
+    def set(self, key: str, value: str, ex: int, nx: bool = False):
+        if nx and key in self.values:
+            return False
         self.values[key] = value
         self.ttl_values[key] = ex
+        return True
 
     def get(self, key: str):
         value = self.values.get(key)
@@ -20,6 +23,13 @@ class FakeRedis:
 
     def ttl(self, key: str):
         return self.ttl_values.get(key, -2)
+
+    def eval(self, _script: str, _key_count: int, key: str, token: str):
+        if self.values.get(key) != token:
+            return 0
+        del self.values[key]
+        self.ttl_values.pop(key, None)
+        return 1
 
 
 def test_worker_heartbeat_round_trip_uses_expiring_redis_key():
@@ -56,3 +66,17 @@ def test_provider_cooldown_falls_back_when_redis_is_unavailable():
 
     assert service.start_cooldown("dhan-option-chain", ttl_seconds=300) is False
     assert service.cooldown_remaining("dhan-option-chain") is None
+
+
+def test_distributed_lock_requires_owner_token_and_expires():
+    service = RedisService()
+    fake = FakeRedis()
+    service.client = fake
+
+    owner = service.acquire_lock("dhan-option-chain-fetch", ttl_seconds=20)
+
+    assert owner
+    assert service.acquire_lock("dhan-option-chain-fetch", ttl_seconds=20) == ""
+    assert service.release_lock("dhan-option-chain-fetch", "not-the-owner") is False
+    assert service.release_lock("dhan-option-chain-fetch", owner) is True
+    assert service.acquire_lock("dhan-option-chain-fetch", ttl_seconds=20)

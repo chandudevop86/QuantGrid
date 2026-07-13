@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
 
@@ -21,6 +22,7 @@ class RedisStatus:
 class RedisService:
     WORKER_HEARTBEAT_KEY = "quantgrid:worker:heartbeat"
     COOLDOWN_KEY_PREFIX = "quantgrid:cooldown:"
+    LOCK_KEY_PREFIX = "quantgrid:lock:"
     def __init__(self) -> None:
         self.url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL")
         self.client: Any | None = None
@@ -121,6 +123,33 @@ class RedisService:
         except Exception as exc:
             logger.warning("redis_cooldown_read_failed", extra={"name": name, "error_type": exc.__class__.__name__})
             return None
+
+    def acquire_lock(self, name: str, *, ttl_seconds: int) -> str | None:
+        """Return an ownership token, an empty string when busy, or None without Redis."""
+        if self.client is None:
+            return None
+        token = secrets.token_urlsafe(24)
+        try:
+            acquired = self.client.set(
+                f"{self.LOCK_KEY_PREFIX}{name}",
+                token,
+                ex=max(1, int(ttl_seconds)),
+                nx=True,
+            )
+            return token if acquired else ""
+        except Exception as exc:
+            logger.warning("redis_lock_acquire_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            return None
+
+    def release_lock(self, name: str, token: str) -> bool:
+        if self.client is None or not token:
+            return False
+        script = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+        try:
+            return bool(self.client.eval(script, 1, f"{self.LOCK_KEY_PREFIX}{name}", token))
+        except Exception as exc:
+            logger.warning("redis_lock_release_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            return False
 
     async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
         if self.async_client is None:

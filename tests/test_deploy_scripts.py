@@ -72,6 +72,29 @@ def test_health_check_waits_and_prints_backend_diagnostics():
     assert 'journalctl -u "${SERVICE_NAME}"' in common
 
 
+def test_compose_scripts_support_plugin_and_standalone_commands():
+    common = _text("common.sh")
+    redis = _text("redis.sh")
+    postgres = _text("postgres.sh")
+
+    assert "docker compose version" in common
+    assert "command -v docker-compose" in common
+    assert 'run docker compose "$@"' in common
+    assert 'run docker-compose "$@"' in common
+    assert "compose_run -f docker-compose.yml" in redis
+    assert "compose_run -f docker-compose.yml" in postgres
+
+
+def test_redis_compose_is_not_blocked_by_unrelated_postgres_interpolation():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    postgres = _text("postgres.sh")
+
+    assert "POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}" in compose
+    assert '${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD' not in compose
+    assert 'if [[ -z "${POSTGRES_PASSWORD:-}" ]]' in postgres
+    assert "Set POSTGRES_PASSWORD before starting local Postgres." in postgres
+
+
 def test_restart_installs_missing_systemd_units_before_restart():
     common = _text("common.sh")
     backend = _text("backend.sh")

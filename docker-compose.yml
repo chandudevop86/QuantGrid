@@ -23,7 +23,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-quant}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD before starting postgres}
+      # Keep interpolation optional so Compose v1 can start unrelated services such as Redis.
+      # deploy/scripts/postgres.sh still refuses to start Postgres without an explicit password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-quantgrid}
     ports:
       - "127.0.0.1:5432:5432"

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/root/QuantGrid}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/common.sh"
 
 if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
   echo "Set POSTGRES_PASSWORD before starting Postgres." >&2
@@ -9,5 +10,5 @@ if [[ -z "${POSTGRES_PASSWORD:-}" ]]; then
 fi
 
 cd "${APP_DIR}"
-docker compose -f docker-compose.yml up -d postgres
-docker compose -f docker-compose.yml ps postgres
+compose_run -f docker-compose.yml up -d postgres
+compose_run -f docker-compose.yml ps postgres

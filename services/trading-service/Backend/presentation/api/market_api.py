@@ -48,6 +48,7 @@ _DHAN_OPTION_LOCK = threading.Lock()
 _DHAN_OPTION_CACHE: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]], str | None]] = {}
 _DHAN_OPTION_COOLDOWN_UNTIL = 0.0
 _DHAN_OPTION_COOLDOWN_NAME = "dhan-option-chain"
+_DHAN_OPTION_FETCH_LOCK_NAME = "dhan-option-chain-fetch"
 
 
 def latest_verified_option_context(symbol: str = "NIFTY") -> dict[str, dict[str, Any]]:
@@ -633,6 +634,9 @@ def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, A
         if cached and now < cached[0]:
             return deepcopy(cached[1]), cached[2]
 
+        lock_token = redis_service.acquire_lock(_DHAN_OPTION_FETCH_LOCK_NAME, ttl_seconds=20)
+        if lock_token == "":
+            raise RuntimeError("Dhan option-chain refresh is already in progress. Retry after 5 seconds.")
         try:
             security_id, exchange_segment = _dhan_underlying(symbol)
             base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
@@ -652,6 +656,9 @@ def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, A
                 redis_service.start_cooldown(_DHAN_OPTION_COOLDOWN_NAME, ttl_seconds=cooldown)
                 raise RuntimeError(f"Dhan rate limit reached; cooldown activated. Retry after {cooldown} seconds.") from exc
             raise
+        finally:
+            if lock_token:
+                redis_service.release_lock(_DHAN_OPTION_FETCH_LOCK_NAME, lock_token)
 
         rows = []
         for strike in strikes:

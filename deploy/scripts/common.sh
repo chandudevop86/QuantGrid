@@ -25,6 +25,19 @@ run() {
   "$@"
 }
 
+compose_run() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    run docker compose "$@"
+    return
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    run docker-compose "$@"
+    return
+  fi
+  echo "Docker Compose is unavailable. Install the docker-compose-plugin or docker-compose." >&2
+  return 127
+}
+
 require_file() {
   if [[ ! -f "$1" ]]; then
     echo "Missing required file: $1" >&2
