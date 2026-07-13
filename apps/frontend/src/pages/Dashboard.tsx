@@ -5,6 +5,7 @@ import ErrorState from "../components/ErrorState";
 import KeyLevelsCard from "../components/KeyLevelsCard";
 import LoadingSkeleton from "../components/LoadingSkeleton";
 import MarketChart from "../components/MarketChart";
+import RecentSignals from "../components/RecentSignals";
 import TradingChecklist, { type ChecklistItem } from "../components/TradingChecklist";
 import { useOperationsStatus } from "../context/OperationsStatusContext";
 import { hasAuthToken } from "../roles";
@@ -77,5 +78,6 @@ export default function Dashboard() {
     <div className="qg-dashboard-primary"><DecisionCard decision={normalizeDecision(recommendation)} confidence={confidence} regime={text(regime)} risk={text(risk)} reason={text(explanation)} updatedAt={operations.updated_at} /><DecisionReasons reasons={reasons} /></div>
     <div className="qg-dashboard-secondary"><KeyLevelsCard levels={levels} /><TradingChecklist items={checklistItems} /></div>
     <MarketChart support={number(support)} resistance={number(resistance)} />
+    <RecentSignals />
   </section>;
 }
