@@ -695,6 +695,21 @@ def test_market_data_service_memory_cache_fresh_and_stale(monkeypatch):
     assert provider.calls == 1
 
 
+def test_market_data_cache_uses_shared_redis_and_keeps_memory_fallback(monkeypatch):
+    from Backend.application import market_data_service
+
+    service = object.__new__(market_data_service.MarketDataService)
+    service.ttl = 5
+    writes = []
+    monkeypatch.setattr(market_data_service.redis_service, "set_json", lambda key, value, ttl_seconds: writes.append((key, value, ttl_seconds)) or True)
+    monkeypatch.setattr(market_data_service.redis_service, "get_json", lambda _key: None)
+
+    service._cache_set("quantgrid:market:test", {"price": 100})
+
+    assert writes == [("quantgrid:market:test", {"price": 100}, 5)]
+    assert service._cache_get("quantgrid:market:test") == {"price": 100}
+
+
 def test_live_candle_validation_rejects_non_ist_timezone(monkeypatch):
     from Backend.application.candle_validation import validate_live_candle
 

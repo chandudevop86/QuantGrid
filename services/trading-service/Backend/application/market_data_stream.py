@@ -37,10 +37,10 @@ async def stop_market_data_stream() -> None:
 
 async def _market_data_loop(symbols: list[str]) -> None:
     interval = max(1, int(os.getenv("QUANTGRID_MARKET_STREAM_POLL_SECONDS", "3")))
+    service = get_market_data_service()
     while True:
         for symbol in symbols:
             try:
-                service = get_market_data_service()
                 tick = await asyncio.to_thread(service.get_ltp, symbol, mode="paper")
                 await publish_tick(tick)
             except Exception as exc:

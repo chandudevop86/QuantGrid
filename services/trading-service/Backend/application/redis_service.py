@@ -107,6 +107,32 @@ class RedisService:
             self._mark_connection_failed()
             return False
 
+    def get_json(self, key: str) -> Any | None:
+        if not self._ensure_connected() or self.client is None:
+            return None
+        try:
+            value = self.client.get(key)
+            if value is None:
+                return None
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
+            return json.loads(value)
+        except Exception as exc:
+            logger.warning("redis_json_read_failed", extra={"error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
+            return None
+
+    def set_json(self, key: str, payload: Any, *, ttl_seconds: int) -> bool:
+        if not self._ensure_connected() or self.client is None:
+            return False
+        try:
+            self.client.set(key, json.dumps(payload, default=str), ex=max(1, int(ttl_seconds)))
+            return True
+        except Exception as exc:
+            logger.warning("redis_json_write_failed", extra={"error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
+            return False
+
     def write_worker_heartbeat(self, payload: dict[str, Any], *, ttl_seconds: int = 15) -> bool:
         if not self._ensure_connected() or self.client is None:
             return False

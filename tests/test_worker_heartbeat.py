@@ -49,6 +49,17 @@ def test_worker_heartbeat_round_trip_uses_expiring_redis_key():
     assert service.read_worker_heartbeat() == payload
 
 
+def test_json_cache_round_trip_uses_shared_expiring_redis_key():
+    service = RedisService()
+    fake = FakeRedis()
+    service.client = fake
+    payload = {"symbol": "NIFTY", "price": 25000.5}
+
+    assert service.set_json("quantgrid:market:test", payload, ttl_seconds=5) is True
+    assert service.get_json("quantgrid:market:test") == payload
+    assert fake.ttl_values["quantgrid:market:test"] == 5
+
+
 def test_worker_heartbeat_is_unavailable_without_redis():
     service = RedisService()
 

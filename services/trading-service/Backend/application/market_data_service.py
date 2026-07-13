@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -12,6 +11,7 @@ from Backend.application.monitoring import (
     observe_market_data_error,
     observe_market_data_tick,
 )
+from Backend.application.redis_service import redis_service
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
 from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
@@ -27,23 +27,10 @@ def cache_ttl_seconds() -> int:
         return 5
 
 
-def redis_client() -> Any | None:
-    url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL")
-    if not url:
-        return None
-    try:
-        import redis
-
-        return redis.Redis.from_url(url, socket_connect_timeout=0.2, socket_timeout=0.2)
-    except Exception:
-        return None
-
-
 class MarketDataService:
     def __init__(self, provider: MarketDataProvider | None = None) -> None:
         self.settings = get_settings()
         self.provider = provider or select_market_data_provider(self.settings.market_data_provider)
-        self.cache = redis_client()
         self.ttl = cache_ttl_seconds()
 
     def get_ltp(self, symbol: str, *, mode: str = "paper") -> dict[str, Any]:
@@ -200,9 +187,9 @@ class MarketDataService:
         return "quantgrid:market:" + ":".join([self.provider.provider_name, *parts])
 
     def _cache_get(self, key: str, *, allow_expired: bool = False) -> Any | None:
-        if self.cache is not None:
-            raw = self.cache.get(key)
-            return json.loads(raw.decode("utf-8")) if raw else None
+        cached = redis_service.get_json(key)
+        if cached is not None:
+            return cached
         item = _MEMORY_CACHE.get(key)
         if not item:
             return None
@@ -213,9 +200,7 @@ class MarketDataService:
         return value
 
     def _cache_set(self, key: str, value: Any) -> None:
-        if self.cache is not None:
-            self.cache.setex(key, self.ttl, json.dumps(value))
-            return
+        redis_service.set_json(key, value, ttl_seconds=self.ttl)
         _MEMORY_CACHE[key] = (datetime.now(timezone.utc).timestamp() + self.ttl, value)
 
 
