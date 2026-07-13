@@ -85,7 +85,7 @@ def request_id(request: Request | None) -> str | None:
 def ensure_audit_schema(db: Session) -> None:
 
 
-def write_audit_log(
+ def write_audit_log(
     db: Session,
     *,
     action: str,
