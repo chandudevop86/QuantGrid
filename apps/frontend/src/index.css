@@ -3688,7 +3688,20 @@ body {
 body { background: var(--qg-bg); color: var(--qg-text); }
 .app-shell { min-height: 100vh; background: var(--qg-bg); }
 .app-main { min-width: 0; }
-.app-content { padding: 28px; }
+.app-content { position: relative; isolation: isolate; padding: 28px; }
+.app-content::before {
+  position: fixed;
+  z-index: -1;
+  top: 50%;
+  left: calc(50% + 110px);
+  width: min(38vw, 520px);
+  aspect-ratio: 1;
+  background: url("/quantgrid-logo.svg") center / contain no-repeat;
+  content: "";
+  opacity: .025;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
 
 .qg-sidebar.sidebar {
   position: sticky; top: 0; width: 220px; flex: 0 0 220px; height: 100vh;
@@ -3814,6 +3827,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 @media (max-width: 760px) {
   .app-main { padding-bottom: 72px; }
   .app-content { padding: 16px 12px; }
+  .app-content::before { left: 50%; width: min(68vw, 340px); opacity: .02; }
   .qg-app-header { position: sticky; min-height: 60px; padding: 8px 12px; gap: 8px; }
   .qg-menu-button, .qg-header-market, .qg-status-badge, .qg-user-menu .qg-header-button > span:not(.qg-user-avatar), .qg-alert-menu .qg-header-button > span:nth-child(2) { display: none; }
   .qg-header-actions { width: 100%; justify-content: flex-end; }
