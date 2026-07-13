@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import base64
 import asyncio
+import os
 from io import BytesIO
 from urllib.error import HTTPError
 
@@ -199,6 +200,9 @@ def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
     from conftest import admin_headers
 
     monkeypatch.setattr(broker_api, "check_dhan_profile", lambda: {"provider": "dhan", "connected": True, "error": None})
+    monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "existing-provider")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "existing-client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "existing-token")
 
     create = app_client.post(
         "/admin/users/create",
@@ -216,6 +220,9 @@ def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
         headers=trader_headers,
     )
     assert denied.status_code == 403
+    assert os.environ["QUANTGRID_BROKER_PROVIDER"] == "existing-provider"
+    assert os.environ["QUANTGRID_BROKER_CLIENT_ID"] == "existing-client"
+    assert os.environ["QUANTGRID_BROKER_ACCESS_TOKEN"] == "existing-token"
 
     allowed = app_client.post(
         "/broker/dhan/login",

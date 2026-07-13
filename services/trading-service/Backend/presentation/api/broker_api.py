@@ -216,12 +216,14 @@ def dhan_option_chain_status(
 
 @router.post("/dhan/login")
 def dhan_login(payload: DhanLoginRequest, _role: str = Depends(require_roles("admin", "trader", "ops"))):
+    if payload.persist and _role not in {"admin", "ops"}:
+        # Authorize before mutating process-wide credentials. A rejected request
+        # must not alter the broker used by other sessions in this process.
+        raise HTTPException(status_code=403, detail="Only admins or ops can persist global Dhan credentials.")
     os.environ["QUANTGRID_BROKER_PROVIDER"] = "dhan"
     os.environ["QUANTGRID_BROKER_CLIENT_ID"] = payload.client_id.strip()
     os.environ["QUANTGRID_BROKER_ACCESS_TOKEN"] = payload.access_token.strip()
     if payload.persist:
-        if _role not in {"admin", "ops"}:
-            raise HTTPException(status_code=403, detail="Only admins or ops can persist global Dhan credentials.")
         _write_env_values(
             _env_file_path(),
             {

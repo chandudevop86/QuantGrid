@@ -6,14 +6,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_dashboard_renders_canonical_trade_confidence_factor_trace_in_advanced_panel():
+def test_dashboard_renders_canonical_confidence_and_explainability_without_duplicate_gauges():
     dashboard = (ROOT / "apps/frontend/src/pages/Dashboard.tsx").read_text(encoding="utf-8")
+    decision_card = (ROOT / "apps/frontend/src/components/DecisionCard.tsx").read_text(encoding="utf-8")
+    decision_reasons = (ROOT / "apps/frontend/src/components/DecisionReasons.tsx").read_text(encoding="utf-8")
 
-    assert "Trade Confidence Factors" in dashboard
-    assert "trade_confidence?.meaning" in dashboard
-    assert "trade_confidence?.factors" in dashboard
-    assert "factor.contribution" in dashboard
-    assert "factor.weight" in dashboard
-    assert "factor.source" in dashboard
-    assert "formatTime(factor.timestamp)" in dashboard
-    assert dashboard.index("Trade Confidence Factors") > dashboard.index('summary>Advanced evidence and diagnostics')
+    assert "finalDecision.trade_confidence?.score" in dashboard
+    assert "finalDecision.explainability?.plain_english" in dashboard
+    assert "finalDecision.block_reasons" in dashboard
+    assert "supporting_factors" in dashboard
+    assert "opposing_factors" in dashboard
+    assert "Confidence" in decision_card
+    assert "Math.round(confidence)" in decision_card
+    assert "reasons.slice(0, 4)" in decision_reasons
+    assert "Trade Confidence Factors" not in dashboard

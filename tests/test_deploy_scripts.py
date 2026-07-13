@@ -178,3 +178,25 @@ def test_scripts_do_not_hardcode_secrets_or_live_trading_enablement():
     ]
     for marker in forbidden:
         assert marker not in combined
+
+
+def test_production_deploy_script_is_safe_and_supports_rollback():
+    script = _text("deploy-production.sh")
+
+    assert "set -Eeuo pipefail" in script
+    assert 'APP_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"' in script
+    assert "--skip-tests" in script
+    assert "--skip-pull" in script
+    assert "--dry-run" in script
+    assert "--rollback" in script
+    assert "git diff --name-only --diff-filter=U" in script
+    assert 'git merge --ff-only "origin/${EXPECTED_BRANCH}"' in script
+    assert "Backend.tools.check_database" not in script
+    assert "check_database" in script
+    assert 'systemctl_run restart "${SERVICE_NAME}" "${WORKER_SERVICE_NAME}"' in script
+    assert 'health_check "${BASE_URL}/health"' in script
+    assert "QUANTGRID_ENABLE_LIVE_TRADING=true" not in script
+    assert "BROKER_LIVE_ENABLED=true" not in script
+    assert "git reset --hard" not in script
+    assert "git clean" not in script
+    assert "rm -rf" not in script

@@ -13,7 +13,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from Backend.application.monitoring import observe_api_request
 from Backend.application.redis_service import redis_service
-from Backend.core.config import validate_security_config
+from Backend.core.config import get_settings, validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
@@ -200,7 +200,19 @@ def create_app():
                 "broadcast_mode": redis_status.get("mode", "fallback"),
             },
         }
-        return {"status": "ok" if all(item.get("healthy", False) for item in services.values()) else "degraded", "services": services}
+        settings = get_settings()
+        status_value = "ok" if all(item.get("healthy", False) for item in services.values()) else "degraded"
+        return {
+            "status": status_value,
+            "environment": settings.environment,
+            "database": "connected" if db_status["healthy"] else "unavailable",
+            "trading_mode": "live" if settings.live_trading_enabled and settings.broker_live_enabled else "paper",
+            "market_data_provider": {
+                "name": settings.market_data_provider,
+                "status": "available" if services["market_data"]["healthy"] else "degraded",
+            },
+            "services": services,
+        }
 
     @app.get("/metrics")
     def metrics(_role: str = Depends(require_roles("admin", "ops"))):

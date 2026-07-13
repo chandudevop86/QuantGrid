@@ -8,12 +8,16 @@ Type=simple
 WorkingDirectory=/root/QuantGrid/services/trading-service
 EnvironmentFile=/root/QuantGrid/services/trading-service/.env
 ExecStart=/root/venv/bin/python -m Backend.application.worker --poll-interval 1
-Restart=always
+Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT
+TimeoutStartSec=60
 TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
+UMask=0077
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

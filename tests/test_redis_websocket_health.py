@@ -131,6 +131,10 @@ def test_health_reports_redis_fallback_when_unconfigured(app_client, monkeypatch
     response = app_client.get("/health")
 
     assert response.status_code == 200
+    assert response.json()["database"] == "connected"
+    assert response.json()["trading_mode"] == "paper"
+    assert response.json()["environment"] == "local"
+    assert response.json()["market_data_provider"]["status"] in {"available", "degraded"}
     redis = response.json()["services"]["redis"]
     assert redis["mode"] in {"fallback", "redis"}
     assert "healthy" in redis

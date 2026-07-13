@@ -11,12 +11,16 @@ Environment=QUANTGRID_ENV=production
 Environment=QUANTGRID_FORCE_HTTPS=true
 Environment=QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET=false
 ExecStart=/root/venv/bin/uvicorn Backend.presentation.api.main:app --host 127.0.0.1 --port 8000
-Restart=always
+Restart=on-failure
 RestartSec=5
 KillSignal=SIGINT
+TimeoutStartSec=60
 TimeoutStopSec=30
 NoNewPrivileges=true
 PrivateTmp=true
+UMask=0077
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
