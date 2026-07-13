@@ -25,6 +25,18 @@ class ConnectionManager:
         if self._subscriber_task is None or self._subscriber_task.done():
             self._subscriber_task = loop.create_task(redis_service.subscribe_json(self.channel, self._broadcast_local))
 
+    async def shutdown(self) -> None:
+        task = self._subscriber_task
+        self._subscriber_task = None
+        self.loop = None
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
     async def connect(self, websocket: WebSocket, *, subprotocol: str | None = None) -> bool:
         if len(self.active_connections) >= self.max_connections:
             await websocket.close(code=1013, reason="WebSocket capacity reached")

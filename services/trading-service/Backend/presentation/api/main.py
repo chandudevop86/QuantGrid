@@ -17,7 +17,7 @@ from Backend.core.config import validate_security_config
 from Backend.core.database import SessionLocal
 from Backend.application.job_store import init_job_store
 from Backend.application.market_data_store import init_market_data_store
-from Backend.application.market_data_stream import start_market_data_stream
+from Backend.application.market_data_stream import start_market_data_stream, stop_market_data_stream
 from Backend.application.order_store import init_order_store
 from Backend.application.paper_trade_store import init_paper_trade_store
 from Backend.application.position_store import init_position_store
@@ -87,7 +87,11 @@ async def _startup() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _startup()
-    yield
+    try:
+        yield
+    finally:
+        await stop_market_data_stream()
+        await manager.shutdown()
 
 
 def create_app():

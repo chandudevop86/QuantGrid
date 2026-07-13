@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 
 def test_websocket_subscriber_starts_even_when_redis_is_initially_unavailable(monkeypatch):
     from Backend.presentation.api.websocket_manager import ConnectionManager
@@ -25,6 +27,24 @@ def test_websocket_subscriber_starts_even_when_redis_is_initially_unavailable(mo
     manager.set_loop(FakeLoop())
 
     assert len(created) == 1
+
+
+def test_websocket_shutdown_cancels_and_clears_subscriber():
+    from Backend.presentation.api.websocket_manager import ConnectionManager
+
+    async def scenario():
+        manager = ConnectionManager()
+        task = asyncio.create_task(asyncio.Event().wait())
+        manager._subscriber_task = task
+        manager.loop = asyncio.get_running_loop()
+
+        await manager.shutdown()
+
+        assert task.cancelled()
+        assert manager._subscriber_task is None
+        assert manager.loop is None
+
+    asyncio.run(scenario())
 
 
 def test_health_reports_redis_fallback_when_unconfigured(app_client, monkeypatch):
