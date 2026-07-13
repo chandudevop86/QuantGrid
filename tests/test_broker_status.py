@@ -129,6 +129,26 @@ def test_broker_status_keeps_real_money_orders_disabled(monkeypatch):
     assert status["real_money_orders_enabled"] is False
 
 
+def test_broker_status_uses_shared_profile_cache(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "dhan")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token-123456789")
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "1234567890")
+    monkeypatch.setattr(
+        broker_api,
+        "cached_dhan_profile",
+        lambda: {"provider": "dhan", "configured": True, "connected": True},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "check_dhan_profile",
+        lambda: (_ for _ in ()).throw(AssertionError("status route bypassed shared cache")),
+    )
+
+    assert broker_api.broker_status()["connected"] is True
+
+
 def test_dhan_option_chain_status_reports_data_api_failure(monkeypatch):
     from Backend.presentation.api import broker_api, market_api
 

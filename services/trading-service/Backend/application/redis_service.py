@@ -20,6 +20,7 @@ class RedisStatus:
 
 class RedisService:
     WORKER_HEARTBEAT_KEY = "quantgrid:worker:heartbeat"
+    COOLDOWN_KEY_PREFIX = "quantgrid:cooldown:"
     def __init__(self) -> None:
         self.url = os.getenv("REDIS_URL") or os.getenv("QUANTGRID_REDIS_URL")
         self.client: Any | None = None
@@ -95,6 +96,30 @@ class RedisService:
             return payload if isinstance(payload, dict) else None
         except Exception as exc:
             logger.warning("redis_worker_heartbeat_read_failed", extra={"error_type": exc.__class__.__name__})
+            return None
+
+    def start_cooldown(self, name: str, *, ttl_seconds: int) -> bool:
+        if self.client is None:
+            return False
+        try:
+            self.client.set(
+                f"{self.COOLDOWN_KEY_PREFIX}{name}",
+                "1",
+                ex=max(1, int(ttl_seconds)),
+            )
+            return True
+        except Exception as exc:
+            logger.warning("redis_cooldown_write_failed", extra={"name": name, "error_type": exc.__class__.__name__})
+            return False
+
+    def cooldown_remaining(self, name: str) -> int | None:
+        if self.client is None:
+            return None
+        try:
+            ttl = int(self.client.ttl(f"{self.COOLDOWN_KEY_PREFIX}{name}"))
+            return ttl if ttl > 0 else None
+        except Exception as exc:
+            logger.warning("redis_cooldown_read_failed", extra={"name": name, "error_type": exc.__class__.__name__})
             return None
 
     async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:

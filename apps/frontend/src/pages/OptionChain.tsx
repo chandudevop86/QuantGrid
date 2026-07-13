@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 
-const refreshMs = 15000;
+const refreshMs = 60000;
 
 function formatNumber(value: unknown) {
   const numeric = Number(value);
@@ -87,13 +87,15 @@ export default function OptionChain() {
 
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
-    : "Auto refresh every 15s";
+    : "Auto refresh every 60s";
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
   const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
   const providerWarning = String(chain?.warning ?? chain?.provider_warning ?? chain?.fallback_detail ?? "");
   const providerDiagnostics = chain?.provider_diagnostics;
   const likelyCauses = Array.isArray(providerDiagnostics?.likely_causes) ? providerDiagnostics.likely_causes : [];
   const suggestedActions = Array.isArray(providerDiagnostics?.suggested_actions) ? providerDiagnostics.suggested_actions : [];
+  const rateLimited = providerDiagnostics?.code === "dhan_rate_limited";
+  const retryAfterSeconds = Number(providerDiagnostics?.retry_after_seconds ?? 0);
   const chainUnavailable =
     chain?.source === "option-chain-unavailable"
     || chain?.provider_available === false
@@ -116,9 +118,9 @@ export default function OptionChain() {
           type="button"
           className="refresh-button"
           onClick={() => void loadChain(false)}
-          disabled={loading || refreshing}
+          disabled={loading || refreshing || rateLimited}
         >
-          {refreshing ? "Refreshing" : "Refresh"}
+          {refreshing ? "Refreshing" : rateLimited ? "Cooldown active" : "Refresh"}
         </button>
       </div>
 
@@ -140,6 +142,12 @@ export default function OptionChain() {
         </div>
       )}
       {chain?.warning && !error && <div className="alert alert-warning" role="status">{chain.warning}</div>}
+      {rateLimited && (
+        <div className="alert alert-warning" role="status">
+          Dhan rate-limit protection is active. Manual refresh is disabled
+          {retryAfterSeconds > 0 ? ` for approximately ${retryAfterSeconds} seconds` : " temporarily"}.
+        </div>
+      )}
       {chainUnavailable && providerDiagnostics && (
         <div className="dashboard-section">
           <div className="section-header">

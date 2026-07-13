@@ -14,7 +14,7 @@ from Backend.application.job_queue import enqueue_job
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_client_for_mode
-from Backend.infrastructure.broker.dhan_status import check_dhan_profile
+from Backend.infrastructure.broker.dhan_status import cached_dhan_profile, check_dhan_profile
 from Backend.presentation.api.roles import current_user, require_roles
 from sqlalchemy.orm import Session
 
@@ -171,7 +171,7 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
     provider = settings.broker_provider or "none"
 
     if provider == "dhan":
-        status = check_dhan_profile()
+        status = cached_dhan_profile()
     elif provider == "none":
         status = {
             "provider": "none",

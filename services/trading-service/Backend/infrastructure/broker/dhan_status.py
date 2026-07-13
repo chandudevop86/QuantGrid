@@ -153,12 +153,10 @@ def cached_dhan_profile(timeout: float = 3.0, max_age_seconds: float = 30.0) -> 
         cached = _PROFILE_CACHE["status"]
         if _PROFILE_CACHE["key"] == cache_key and now < float(_PROFILE_CACHE["expires_at"]):
             return dict(cached)
-
-    status = check_dhan_profile(timeout=timeout)
-    with _PROFILE_CACHE_LOCK:
+        status = check_dhan_profile(timeout=timeout)
         _PROFILE_CACHE.update(
             key=cache_key,
             expires_at=now + max(0.0, float(max_age_seconds)),
             status=dict(status),
         )
-    return status
+        return status

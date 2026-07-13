@@ -2,8 +2,30 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from io import BytesIO
 from types import SimpleNamespace
+from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
+
+import pytest
+
+
+def test_dhan_nested_provider_error_preserves_code_and_message():
+    from Backend.presentation.api import market_api
+
+    error = HTTPError(
+        "https://api.dhan.co/v2/optionchain",
+        429,
+        "Too Many Requests",
+        {},
+        BytesIO(b'{"data":{"805":"Too many requests. Further requests may result in the user being blocked."},"status":"failed"}'),
+    )
+
+    detail = market_api._dhan_http_error_detail(error)
+
+    assert "805" in detail
+    assert "Too many requests" in detail
+    assert "access-token" not in detail.lower()
 
 
 def test_yahoo_market_data_provider_selected(monkeypatch):
@@ -288,6 +310,78 @@ def test_option_chain_prefers_dhan_provider(monkeypatch):
     assert atm_row["ce"]["greeks"]["delta"] == 0.52
     assert atm_row["pe"]["greeks"]["delta"] == -0.48
     assert atm_row["ce"]["bid"]["price"] == 101.0
+
+
+def test_dhan_option_rows_cache_prevents_duplicate_provider_calls(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("QUANTGRID_OPTION_CHAIN_CACHE_SECONDS", "60")
+    market_api._DHAN_OPTION_CACHE.clear()
+    market_api._DHAN_OPTION_COOLDOWN_UNTIL = 0.0
+    calls = 0
+
+    def provider(path, body):
+        nonlocal calls
+        calls += 1
+        if path == "optionchain/expirylist":
+            return {"status": "success", "data": {"data": ["2026-12-31"]}}
+        return {"status": "success", "data": {"data": {"oc": {}}}}
+
+    monkeypatch.setattr(market_api, "_dhan_option_provider_payload", provider)
+
+    first = market_api._dhan_option_rows("NIFTY", [23400])
+    second = market_api._dhan_option_rows("NIFTY", [23400])
+
+    assert first == second
+    assert calls == 2
+
+
+def test_dhan_429_activates_cooldown_without_retrying_provider(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token")
+    monkeypatch.setenv("QUANTGRID_DHAN_429_COOLDOWN_SECONDS", "300")
+    market_api._DHAN_OPTION_CACHE.clear()
+    market_api._DHAN_OPTION_COOLDOWN_UNTIL = 0.0
+    calls = 0
+
+    def rate_limited(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("Dhan option-chain API failed with HTTP 429: Too many requests")
+
+    monkeypatch.setattr(market_api, "_dhan_option_provider_payload", rate_limited)
+
+    with pytest.raises(RuntimeError, match="cooldown activated"):
+        market_api._dhan_option_rows("NIFTY", [23400])
+    with pytest.raises(RuntimeError, match="cooldown is active"):
+        market_api._dhan_option_rows("NIFTY", [23400])
+
+    assert calls == 1
+    diagnostics = market_api._option_chain_diagnostics("Dhan option-chain cooldown is active. Retry after 299 seconds.")
+    assert diagnostics["code"] == "dhan_rate_limited"
+    assert diagnostics["retry_after_seconds"] == 299
+
+
+def test_dhan_option_rows_honors_shared_redis_cooldown(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setenv("QUANTGRID_BROKER_CLIENT_ID", "client")
+    monkeypatch.setenv("QUANTGRID_BROKER_ACCESS_TOKEN", "token")
+    market_api._DHAN_OPTION_CACHE.clear()
+    market_api._DHAN_OPTION_COOLDOWN_UNTIL = 0.0
+    monkeypatch.setattr(market_api.redis_service, "cooldown_remaining", lambda name: 120)
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_provider_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Dhan called during shared cooldown")),
+    )
+
+    with pytest.raises(RuntimeError, match="cooldown is active"):
+        market_api._dhan_option_rows("NIFTY", [23400])
 
 
 def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):

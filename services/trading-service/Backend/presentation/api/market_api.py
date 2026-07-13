@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import hashlib
+import math
+import re
+import threading
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import quote
@@ -12,6 +18,7 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from Backend.application.candle_validation import validate_live_candle
+from Backend.application.redis_service import redis_service
 from Backend.application.market_data_service import get_market_data_service
 from Backend.application.market_data_store import (
     latest_candles,
@@ -37,6 +44,10 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
 _LATEST_OPTION_CONTEXT: dict[str, dict[str, dict[str, Any]]] = {}
+_DHAN_OPTION_LOCK = threading.Lock()
+_DHAN_OPTION_CACHE: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]], str | None]] = {}
+_DHAN_OPTION_COOLDOWN_UNTIL = 0.0
+_DHAN_OPTION_COOLDOWN_NAME = "dhan-option-chain"
 
 
 def latest_verified_option_context(symbol: str = "NIFTY") -> dict[str, dict[str, Any]]:
@@ -369,6 +380,16 @@ def _dhan_failure_message(payload: Any) -> str | None:
         return f"Dhan option-chain API rejected the request ({code}): {message}"
     if message:
         return f"Dhan option-chain API rejected the request: {message}"
+    data = payload.get("data")
+    if isinstance(data, dict):
+        provider_errors = [
+            (str(error_code), str(error_message).strip())
+            for error_code, error_message in data.items()
+            if error_message not in {None, ""} and not isinstance(error_message, (dict, list))
+        ]
+        if provider_errors:
+            details = "; ".join(f"{error_code}: {error_message}" for error_code, error_message in provider_errors)
+            return f"Dhan option-chain API rejected the request ({details})"
     # None of the known key shapes matched -- rather than silently discarding the payload
     # (which is exactly what produced the unhelpful "rejected the request." generic message
     # before), show the raw payload so the actual reason is visible.
@@ -385,7 +406,17 @@ def _option_chain_diagnostics(message: str | None, *, provider: str = "dhan") ->
     suggested_actions: list[str] = []
     code = "provider_unavailable"
 
-    if "without an error message" in lower or "raw remarks" in lower:
+    retry_match = re.search(r"retry after (\d+) seconds", lower)
+    retry_after_seconds = int(retry_match.group(1)) if retry_match else None
+
+    if "429" in lower or "too many requests" in lower or "cooldown" in lower:
+        code = "dhan_rate_limited"
+        likely_causes = ["Dhan Option Chain request frequency exceeded the provider limit."]
+        suggested_actions = [
+            "Do not repeatedly refresh Option Chain while cooldown is active.",
+            "Wait for the displayed cooldown to expire; QuantGrid will retry automatically.",
+        ]
+    elif "without an error message" in lower or "raw remarks" in lower:
         code = "dhan_data_api_or_ip_whitelist"
         likely_causes = [
             "Dhan profile login can be valid while Option Chain/Data API access is not enabled.",
@@ -428,6 +459,7 @@ def _option_chain_diagnostics(message: str | None, *, provider: str = "dhan") ->
         "live_rows_available": False,
         "likely_causes": likely_causes,
         "suggested_actions": suggested_actions,
+        "retry_after_seconds": retry_after_seconds,
     }
 
 
@@ -582,28 +614,58 @@ def _dhan_leg_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
-    security_id, exchange_segment = _dhan_underlying(symbol)
-    base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
-    expiry_payload =_dhan_option_provider_payload("optionchain/expirylist", base_body)
-    expiry_values = _dhan_expiry_values(expiry_payload)
-    expiry = next((str(item) for item in expiry_values if item), None)
-    if not expiry:
-        raise RuntimeError("Dhan did not return an option-chain expiry.")
+    global _DHAN_OPTION_COOLDOWN_UNTIL
 
-    chain_payload = _dhan_option_provider_payload("optionchain", base_body | {"Expiry": expiry})
-    option_chain = _dhan_option_chain(chain_payload)
+    credentials = dhan_credentials()
+    identity = "\0".join((credentials["client_id"] or "", credentials["access_token"] or ""))
+    credential_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    cache_key = (symbol.upper(), tuple(strikes), credential_key)
 
-    rows = []
-    for strike in strikes:
-        strike_payload = _dhan_strike_payload(option_chain, strike)
-        call = strike_payload.get("ce") or strike_payload.get("CE") or {}
-        put = strike_payload.get("pe") or strike_payload.get("PE") or {}
-        rows.append({
-            "strike": strike,
-            "ce": _dhan_leg_payload(call) if isinstance(call, dict) else {},
-            "pe": _dhan_leg_payload(put) if isinstance(put, dict) else {},
-        })
-    return rows, expiry
+    with _DHAN_OPTION_LOCK:
+        now = monotonic()
+        shared_remaining = redis_service.cooldown_remaining(_DHAN_OPTION_COOLDOWN_NAME)
+        if shared_remaining:
+            _DHAN_OPTION_COOLDOWN_UNTIL = max(_DHAN_OPTION_COOLDOWN_UNTIL, now + shared_remaining)
+        if now < _DHAN_OPTION_COOLDOWN_UNTIL:
+            remaining = max(1, math.ceil(_DHAN_OPTION_COOLDOWN_UNTIL - now))
+            raise RuntimeError(f"Dhan option-chain cooldown is active. Retry after {remaining} seconds.")
+        cached = _DHAN_OPTION_CACHE.get(cache_key)
+        if cached and now < cached[0]:
+            return deepcopy(cached[1]), cached[2]
+
+        try:
+            security_id, exchange_segment = _dhan_underlying(symbol)
+            base_body = {"UnderlyingScrip": security_id, "UnderlyingSeg": exchange_segment}
+            expiry_payload = _dhan_option_provider_payload("optionchain/expirylist", base_body)
+            expiry_values = _dhan_expiry_values(expiry_payload)
+            expiry = next((str(item) for item in expiry_values if item), None)
+            if not expiry:
+                raise RuntimeError("Dhan did not return an option-chain expiry.")
+
+            chain_payload = _dhan_option_provider_payload("optionchain", base_body | {"Expiry": expiry})
+            option_chain = _dhan_option_chain(chain_payload)
+        except Exception as exc:
+            detail = str(exc).lower()
+            if "429" in detail or "too many requests" in detail:
+                cooldown = max(60, int(os.getenv("QUANTGRID_DHAN_429_COOLDOWN_SECONDS", "300")))
+                _DHAN_OPTION_COOLDOWN_UNTIL = monotonic() + cooldown
+                redis_service.start_cooldown(_DHAN_OPTION_COOLDOWN_NAME, ttl_seconds=cooldown)
+                raise RuntimeError(f"Dhan rate limit reached; cooldown activated. Retry after {cooldown} seconds.") from exc
+            raise
+
+        rows = []
+        for strike in strikes:
+            strike_payload = _dhan_strike_payload(option_chain, strike)
+            call = strike_payload.get("ce") or strike_payload.get("CE") or {}
+            put = strike_payload.get("pe") or strike_payload.get("PE") or {}
+            rows.append({
+                "strike": strike,
+                "ce": _dhan_leg_payload(call) if isinstance(call, dict) else {},
+                "pe": _dhan_leg_payload(put) if isinstance(put, dict) else {},
+            })
+        ttl = max(15, int(os.getenv("QUANTGRID_OPTION_CHAIN_CACHE_SECONDS", "60")))
+        _DHAN_OPTION_CACHE[cache_key] = (monotonic() + ttl, deepcopy(rows), expiry)
+        return rows, expiry
 
 
 def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
