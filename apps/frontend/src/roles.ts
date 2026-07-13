@@ -55,12 +55,10 @@ export function getAuthToken(): string | null {
   const sessionToken = window.sessionStorage.getItem("quantgrid_token");
   if (sessionToken) return sessionToken;
 
-  const legacyToken = window.localStorage.getItem("quantgrid_token");
-  if (legacyToken) {
-    window.sessionStorage.setItem("quantgrid_token", legacyToken);
-    window.localStorage.removeItem("quantgrid_token");
-  }
-  return legacyToken;
+  // Persistent browser tokens are no longer trusted. Remove the legacy value
+  // instead of promoting it into the active tab-scoped session.
+  window.localStorage.removeItem("quantgrid_token");
+  return null;
 }
 
 function decodeAuthClaims(): AuthClaims | null {

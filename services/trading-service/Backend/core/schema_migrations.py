@@ -56,9 +56,12 @@ COMPATIBILITY_VERSION = "0002_legacy_columns"
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
 
-    # Existing deployments predate a migration framework. Treat their SQLAlchemy
-    # schema as the explicit baseline, then version every subsequent upgrade.
-    metadata.create_all(bind=engine)
+    # Existing deployments predate a migration framework. Bootstrap that legacy
+    # baseline exactly once; after the ledger exists, startup must not create new
+    # model tables implicitly. Future schema changes belong in explicit versions.
+    baseline_required = MIGRATION_TABLE not in set(inspect(engine).get_table_names())
+    if baseline_required:
+        metadata.create_all(bind=engine)
     with engine.begin() as connection:
         connection.execute(text(
             f"CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} ("

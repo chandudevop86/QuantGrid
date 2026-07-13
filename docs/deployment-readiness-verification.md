@@ -25,6 +25,7 @@ Date: 2026-07-13
 - Test rollback, backup creation, and database restore in staging.
 - Keep live trading disabled until every operational item above is evidenced and approved.
 
-## Dependency review note
+## Dependency review
 
-The full npm development audit still reports advisories through the Vite 5/esbuild development-server chain. Clearing them requires a breaking Vite upgrade. They do not affect the built production dependency audit, which currently reports zero vulnerabilities. Plan the Vite upgrade as a separately tested maintenance change.
+- Frontend production and development dependencies report zero known npm vulnerabilities after the Vite 6 and Vitest 4 maintenance upgrade.
+- Python service requirements report zero known vulnerabilities through `pip-audit`.

@@ -1,22 +1,19 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 
 export default function Operations() {
-  const [operations, setOperations] = useState<any>(null);
+  const { operations, loading, error: operationsError } = useOperationsStatus();
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     const load = () => {
-      Promise.all([
-        api.operationsStatus(),
-        api.auditTrail().catch(() => ({ events: [] })),
-      ])
-        .then(([data, auditData]) => {
+      api.auditTrail()
+        .then((auditData) => {
           if (!isMounted) return;
-          setOperations(data);
           setAuditEvents(Array.isArray(auditData?.events) ? auditData.events : []);
           setError(null);
         })
@@ -61,8 +58,8 @@ export default function Operations() {
         <p>Production health, feed freshness, and trading telemetry.</p>
       </div>
 
-      {!operations && !error && <Loader label="Loading operations..." />}
-      {error && <p className="error-text">{error}</p>}
+      {loading && !operations && <Loader label="Loading operations..." />}
+      {(error || operationsError) && <p className="error-text">{error || operationsError}</p>}
 
       {operations && (
         <>

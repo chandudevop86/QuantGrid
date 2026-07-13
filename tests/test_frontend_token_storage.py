@@ -21,10 +21,10 @@ def test_frontend_uses_tab_scoped_storage_for_auth_token():
     assert "?token=" not in socket
 
 
-def test_legacy_persistent_token_is_migrated_and_deleted():
+def test_legacy_persistent_token_is_deleted_without_reuse():
     roles = (ROOT / "apps/frontend/src/roles.ts").read_text(encoding="utf-8")
     helper = roles.split("export function getAuthToken()", 1)[1].split("function decodeAuthClaims", 1)[0]
 
-    assert 'localStorage.getItem("quantgrid_token")' in helper
-    assert 'sessionStorage.setItem("quantgrid_token", legacyToken)' in helper
     assert 'localStorage.removeItem("quantgrid_token")' in helper
+    assert 'localStorage.getItem("quantgrid_token")' not in helper
+    assert "return null" in helper

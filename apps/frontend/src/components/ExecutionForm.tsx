@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { getCurrentMode, getCurrentUiMode, type UiMode } from "../mode";
 import { api } from "../services/api";
+import { useOperationsStatus } from "../context/OperationsStatusContext";
 
 export default function ExecutionForm() {
+  const { operations } = useOperationsStatus();
   const [result, setResult] = useState<any>(null);
   const [signal, setSignal] = useState<any>(null);
-  const [operations, setOperations] = useState<any>(null);
   const [uiMode, setUiMode] = useState<UiMode>(getCurrentUiMode());
   const [tradingMode, setTradingMode] = useState(getCurrentMode());
   const [loading, setLoading] = useState(false);
@@ -67,11 +68,9 @@ export default function ExecutionForm() {
   };
 
   useEffect(() => {
-    const refreshOperations = () => api.operationsStatus().then(setOperations).catch(() => undefined);
     const syncMode = () => setTradingMode(getCurrentMode());
     const syncUiMode = () => setUiMode(getCurrentUiMode());
 
-    refreshOperations();
     window.addEventListener("quantgrid-mode-change", syncMode);
     window.addEventListener("quantgrid-ui-mode-change", syncUiMode);
     window.addEventListener("storage", syncMode);
