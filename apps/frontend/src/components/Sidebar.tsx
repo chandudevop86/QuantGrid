@@ -14,6 +14,7 @@ export default function Sidebar() {
     { to: "/paper-trades", label: "Paper Portfolio", icon: "trade" },
     { to: "/history", label: "Backtest Results", icon: "history" },
     { to: "/settings", label: "Risk Controls", icon: "settings" },
+    { to: "/subscription", label: "Plan & Access", icon: "settings" },
   ];
   const advancedItems = [
     { to: "/analysis", label: "Live Analysis", icon: "spark" },

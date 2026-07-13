@@ -34,6 +34,7 @@ TRACKED_ACTIONS = {
     "user_created",
     "password_changed",
     "password_reset",
+    "subscription_assigned",
 }
 
 ACTION_LABELS = {
@@ -58,6 +59,7 @@ ACTION_LABELS = {
     "user_created": "User created",
     "password_changed": "Password changed",
     "password_reset": "Password changed",
+    "subscription_assigned": "Subscription updated",
 }
 
 

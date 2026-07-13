@@ -16,6 +16,7 @@ def test_default_navigation_uses_unambiguous_product_labels():
         'to: "/paper-trades", label: "Paper Portfolio"',
         'to: "/history", label: "Backtest Results"',
         'to: "/settings", label: "Risk Controls"',
+        'to: "/subscription", label: "Plan & Access"',
     }
     assert all(item in sidebar for item in expected)
     assert 'label: "Risk & Settings"' not in sidebar
@@ -27,7 +28,7 @@ def test_default_navigation_remains_focused_and_advanced_routes_remain_available
     default_block = sidebar.split("const navItems = [", 1)[1].split("];", 1)[0]
     advanced_block = sidebar.split("const advancedItems = [", 1)[1].split("];", 1)[0]
 
-    assert default_block.count("{ to:") == 6
+    assert default_block.count("{ to:") == 7
     assert 'to: "/operations"' in advanced_block
     assert 'to: "/security"' in advanced_block
     assert 'to: "/strategies"' in advanced_block

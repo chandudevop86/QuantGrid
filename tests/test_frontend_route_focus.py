@@ -13,7 +13,7 @@ def _roles_source() -> str:
 
 def test_trader_navigation_stays_focused_on_decision_workflow():
     source = _roles_source()
-    for route in ("/", "/market", "/signals", "/paper-trades", "/history", "/settings"):
+    for route in ("/", "/market", "/signals", "/paper-trades", "/history", "/settings", "/subscription"):
         assert f'"{route}": ["admin", "developer", "trader", "analyst", "viewer", "ops"]' in source
 
 

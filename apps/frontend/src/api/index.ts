@@ -79,6 +79,11 @@ export const api = {
   changeUserPassword: (userId: number, oldPassword: string | null, newPassword: string) =>
     API.post(`/admin/users/${userId}/change-password`, { old_password: oldPassword, new_password: newPassword }).then((res) => res.data),
   deleteUser: (userId: number) => API.delete(`/admin/users/${userId}`).then((res) => res.data),
+  subscriptionPlans: () => API.get("/subscriptions/plans").then((res) => res.data),
+  mySubscription: () => API.get("/subscriptions/me").then((res) => res.data),
+  adminSubscriptions: () => API.get("/subscriptions/admin/users").then((res) => res.data),
+  assignSubscription: (userId: number, payload: { plan_code: string; status: string; period_days: number; cancel_at_period_end?: boolean }) =>
+    API.put(`/subscriptions/admin/users/${userId}`, payload).then((res) => res.data),
   health: () =>
     API.get("/api/health")
       .then((res) => res.data)

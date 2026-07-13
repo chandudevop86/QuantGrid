@@ -326,6 +326,9 @@ def create_app():
     from Backend.presentation.api.security_api import router as security_router
     app.include_router(security_router)
 
+    from Backend.presentation.api.subscriptions_api import router as subscriptions_router
+    app.include_router(subscriptions_router)
+
     return app
 
 

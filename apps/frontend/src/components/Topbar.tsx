@@ -139,6 +139,7 @@ export default function Topbar() {
   const searchableRoutes = [
     ["Market decision overview", "/"], ["Options market chain", "/market"], ["Qualified setups signals", "/signals"],
     ["Paper portfolio positions", "/paper-trades"], ["Backtest results", "/history"], ["Risk controls", "/settings"],
+    ["Subscription plan and access", "/subscription"],
     ["Live analysis", "/analysis"], ["Order ticket", "/trade"], ["Execution", "/execution"],
     ["Strategies", "/strategies"], ["Operations", "/operations"], ["Security", "/security"],
     ["Candles", "/candles"], ["Market copilot", "/copilot"], ["Jobs", "/jobs"],

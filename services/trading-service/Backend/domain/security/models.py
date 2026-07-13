@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from Backend.core.database import Base
@@ -40,3 +40,20 @@ class AuditLog(Base):
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class UserSubscription(Base):
+    __tablename__ = "user_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
+    plan_code: Mapped[str] = mapped_column(String(32), default="free", nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="active", nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    provider_customer_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

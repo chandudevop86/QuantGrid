@@ -18,6 +18,7 @@ const traderRoutes: Record<string, Role[]> = {
   "/paper-trades": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/history": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
   "/settings": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
+  "/subscription": ["admin", "developer", "trader", "analyst", "viewer", "ops"],
 };
 
 const developerModeRoutes: Record<string, Role[]> = {

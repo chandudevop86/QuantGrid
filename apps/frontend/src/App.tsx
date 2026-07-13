@@ -19,6 +19,7 @@ import ProfessionalSignals from "./pages/ProfessionalSignals";
 import RiskDashboard from "./pages/RiskDashboard";
 import Security from "./pages/Security";
 import Strategies from "./pages/Strategies";
+import Subscription from "./pages/Subscription";
 import Trade from "./pages/Trade";
 import TradeJournal from "./pages/TradeJournal";
 import PaperTrades from "./pages/PaperTrades";
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/paper-trades" element={protect("/paper-trades", <PaperTrades />)} />
           <Route path="/history" element={protect("/history", <Backtesting />)} />
           <Route path="/settings" element={protect("/settings", <RiskDashboard />)} />
+          <Route path="/subscription" element={protect("/subscription", <Subscription />)} />
           <Route path="/candles" element={protect("/candles", <Candles />)} />
           <Route path="/backtesting" element={<Navigate to="/history" replace />} />
           <Route path="/execution" element={protect("/execution", <Execution />)} />
