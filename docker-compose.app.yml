@@ -27,6 +27,29 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    restart: "no"
+    command: ["python", "-m", "Backend.tools.check_database"]
+    env_file:
+      - services/trading-service/.env
+    environment:
+      QUANTGRID_ENV: ${QUANTGRID_ENV:-local}
+      QUANTGRID_AUTH_SECRET: ${QUANTGRID_AUTH_SECRET:?Set QUANTGRID_AUTH_SECRET before starting the app stack}
+      QUANTGRID_ALLOW_DEV_SEED_USERS: ${QUANTGRID_ALLOW_DEV_SEED_USERS:-false}
+      QUANTGRID_USERS: ${QUANTGRID_USERS:-}
+      ALLOW_SAMPLE_MARKET_DATA: ${ALLOW_SAMPLE_MARKET_DATA:-false}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid}
+      JOB_STORE_DB_FILE: /app/data/dashboard_jobs.sqlite3
+      MARKET_DATA_DB_FILE: /app/data/market_data.sqlite3
+    volumes:
+      - app_backend_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build:
       context: .
@@ -50,8 +73,8 @@ services:
     volumes:
       - app_backend_data:/app/data
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:

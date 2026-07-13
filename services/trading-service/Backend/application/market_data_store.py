@@ -283,10 +283,9 @@ def _use_sqlite() -> bool:
 
 
 def _init_db_store() -> None:
-    from Backend.core.database import Base, engine
-    import Backend.domain.trading_store_models  # noqa: F401
+    from Backend.core.database import init_database
 
-    Base.metadata.create_all(bind=engine)
+    init_database()
 
 
 def _db_store_price_tick(payload: dict[str, Any]) -> None:

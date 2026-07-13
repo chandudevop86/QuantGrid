@@ -7,12 +7,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_app_compose_includes_full_local_stack_with_healthchecks():
     compose = (ROOT / "docker-compose.app.yml").read_text(encoding="utf-8")
 
-    for service in ("backend:", "worker:", "frontend:", "postgres:", "redis:"):
+    for service in ("backend:", "worker:", "frontend:", "postgres:", "redis:", "migrate:"):
         assert service in compose
 
     assert compose.count("healthcheck:") >= 4
     assert "docker/backend.Dockerfile" in compose
     assert '"Backend.application.worker"' in compose
+    assert 'command: ["python", "-m", "Backend.tools.check_database"]' in compose
+    assert "condition: service_completed_successfully" in compose
     assert "docker/frontend.Dockerfile" in compose
     assert "VITE_API_URL: ${VITE_API_URL:-/api}" in compose
     assert "VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}" in compose
@@ -49,3 +51,10 @@ def test_app_stack_documents_safe_env_defaults():
     assert "REDIS_URL=redis://redis:6379/0" in env_example
     assert "VITE_API_URL=/api" in env_example
     assert "VITE_WS_URL=/ws" in env_example
+
+
+def test_database_deploy_script_exposes_migrate_action():
+    script = (ROOT / "deploy" / "scripts" / "database.sh").read_text(encoding="utf-8")
+
+    assert "check|init|migrate)" in script
+    assert "Usage: $0 {check|init|migrate}" in script

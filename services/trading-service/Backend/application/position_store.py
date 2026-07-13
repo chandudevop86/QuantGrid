@@ -346,25 +346,11 @@ def _use_sqlite() -> bool:
 
 
 def _init_db_store() -> None:
-    from sqlalchemy import inspect, text
+    from Backend.core import database
+    from Backend.core.schema_migrations import apply_compatibility_migrations
 
-    from Backend.core.database import Base, engine
-    import Backend.domain.trading_store_models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("positions")}
-    additions = {
-        "exit_price": "ALTER TABLE positions ADD COLUMN exit_price FLOAT",
-        "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
-        "trailing_stop_loss": "ALTER TABLE positions ADD COLUMN trailing_stop_loss FLOAT",
-        "trailing_stop_pct": "ALTER TABLE positions ADD COLUMN trailing_stop_pct FLOAT",
-        "pending_exit_correlation_id": "ALTER TABLE positions ADD COLUMN pending_exit_correlation_id VARCHAR(120)",
-        "pending_exit_broker_order_id": "ALTER TABLE positions ADD COLUMN pending_exit_broker_order_id VARCHAR(120)",
-    }
-    with engine.begin() as connection:
-        for column, statement in additions.items():
-            if column not in columns:
-                connection.execute(text(statement))
+    database.init_database()
+    apply_compatibility_migrations(database.engine, ("positions",))
 
 
 def _position_row(payload: dict[str, Any]) -> dict[str, Any]:

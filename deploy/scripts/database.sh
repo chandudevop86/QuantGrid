@@ -7,11 +7,11 @@ source "${SCRIPT_DIR}/common.sh"
 ACTION="${1:-check}"
 
 case "${ACTION}" in
-  check|init)
+  check|init|migrate)
     check_database
     ;;
   *)
-    echo "Usage: $0 {check|init}" >&2
+    echo "Usage: $0 {check|init|migrate}" >&2
     echo "Use postgres.sh for database service start/status operations." >&2
     exit 2
     ;;

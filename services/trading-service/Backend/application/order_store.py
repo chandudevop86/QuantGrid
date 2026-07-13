@@ -28,26 +28,11 @@ def utc_now() -> str:
 
 
 def init_order_store() -> None:
-    from sqlalchemy import inspect, text
+    from Backend.core import database
+    from Backend.core.schema_migrations import apply_compatibility_migrations
 
-    from Backend.core.database import Base, engine
-    import Backend.domain.trading_store_models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("orders")}
-    additions = {
-        "stop_loss": "ALTER TABLE orders ADD COLUMN stop_loss FLOAT",
-        "target": "ALTER TABLE orders ADD COLUMN target FLOAT",
-        "trailing_stop_loss": "ALTER TABLE orders ADD COLUMN trailing_stop_loss FLOAT",
-        "trailing_stop_pct": "ALTER TABLE orders ADD COLUMN trailing_stop_pct FLOAT",
-        "execution_mode": "ALTER TABLE orders ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'paper' NOT NULL",
-        "broker_status": "ALTER TABLE orders ADD COLUMN broker_status VARCHAR(80)",
-        "order_key": "ALTER TABLE orders ADD COLUMN order_key VARCHAR(160)",
-    }
-    with engine.begin() as connection:
-        for column, statement in additions.items():
-            if column not in columns:
-                connection.execute(text(statement))
+    database.init_database()
+    apply_compatibility_migrations(database.engine, ("orders",))
 
 
 def create_order(payload: dict[str, Any]) -> dict[str, Any]:

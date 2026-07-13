@@ -456,35 +456,11 @@ def _use_sqlite() -> bool:
 
 
 def _init_db_store() -> None:
-    from sqlalchemy import inspect, text
+    from Backend.core import database
+    from Backend.core.schema_migrations import apply_compatibility_migrations
 
-    from Backend.core.database import Base, engine
-    import Backend.domain.trading_store_models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("paper_trades")}
-    additions = {
-        "broker_status": "ALTER TABLE paper_trades ADD COLUMN broker_status VARCHAR(80)",
-        "raw_safe_broker_response": "ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT",
-        "trailing_stop_loss": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_loss FLOAT",
-        "trailing_stop_pct": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_pct FLOAT",
-    }
-    with engine.begin() as connection:
-        for column, statement in additions.items():
-            if column not in columns:
-                connection.execute(text(statement))
-        journal_columns = {column["name"] for column in inspect(engine).get_columns("trade_journal")}
-        journal_additions = {
-            "status": "ALTER TABLE trade_journal ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'recorded'",
-            "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
-            "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
-            "source": "ALTER TABLE trade_journal ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'manual'",
-        }
-        for column, statement in journal_additions.items():
-            if column not in journal_columns:
-                connection.execute(text(statement))
-    import Backend.domain.trading_store_models  # noqa: F401
-    Base.metadata.create_all(bind=engine)
+    database.init_database()
+    apply_compatibility_migrations(database.engine, ("paper_trades", "trade_journal"))
 
 
 def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:

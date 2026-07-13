@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from sqlalchemy import inspect, text
+from sqlalchemy.engine import Engine
+
+
+COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
+    "audit_logs": {
+        "actor_role": "ALTER TABLE audit_logs ADD COLUMN actor_role VARCHAR(32)",
+        "status": "ALTER TABLE audit_logs ADD COLUMN status VARCHAR(40)",
+        "request_id": "ALTER TABLE audit_logs ADD COLUMN request_id VARCHAR(80)",
+        "reason": "ALTER TABLE audit_logs ADD COLUMN reason VARCHAR(255)",
+    },
+    "orders": {
+        "stop_loss": "ALTER TABLE orders ADD COLUMN stop_loss FLOAT",
+        "target": "ALTER TABLE orders ADD COLUMN target FLOAT",
+        "trailing_stop_loss": "ALTER TABLE orders ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE orders ADD COLUMN trailing_stop_pct FLOAT",
+        "execution_mode": "ALTER TABLE orders ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'paper' NOT NULL",
+        "broker_status": "ALTER TABLE orders ADD COLUMN broker_status VARCHAR(80)",
+        "order_key": "ALTER TABLE orders ADD COLUMN order_key VARCHAR(160)",
+    },
+    "positions": {
+        "exit_price": "ALTER TABLE positions ADD COLUMN exit_price FLOAT",
+        "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
+        "trailing_stop_loss": "ALTER TABLE positions ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE positions ADD COLUMN trailing_stop_pct FLOAT",
+        "pending_exit_correlation_id": "ALTER TABLE positions ADD COLUMN pending_exit_correlation_id VARCHAR(120)",
+        "pending_exit_broker_order_id": "ALTER TABLE positions ADD COLUMN pending_exit_broker_order_id VARCHAR(120)",
+    },
+    "paper_trades": {
+        "broker_status": "ALTER TABLE paper_trades ADD COLUMN broker_status VARCHAR(80)",
+        "raw_safe_broker_response": "ALTER TABLE paper_trades ADD COLUMN raw_safe_broker_response TEXT",
+        "trailing_stop_loss": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_loss FLOAT",
+        "trailing_stop_pct": "ALTER TABLE paper_trades ADD COLUMN trailing_stop_pct FLOAT",
+    },
+    "trade_journal": {
+        "status": "ALTER TABLE trade_journal ADD COLUMN status VARCHAR(40) NOT NULL DEFAULT 'recorded'",
+        "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
+        "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
+        "source": "ALTER TABLE trade_journal ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'manual'",
+    },
+}
+
+
+def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
+    """Apply the small, idempotent upgrades that predate versioned migrations."""
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    pending: list[str] = []
+
+    for table in tables:
+        additions = COMPATIBILITY_COLUMNS.get(table)
+        if additions is None:
+            raise ValueError(f"Unknown compatibility migration table: {table}")
+        if table not in existing_tables:
+            continue
+        existing_columns = {column["name"] for column in inspector.get_columns(table)}
+        pending.extend(
+            _statement_for_dialect(statement, engine.dialect.name)
+            for column, statement in additions.items()
+            if column not in existing_columns
+        )
+
+    if not pending:
+        return
+    with engine.begin() as connection:
+        for statement in pending:
+            connection.execute(text(statement))
+
+
+def _statement_for_dialect(statement: str, dialect: str) -> str:
+    if dialect == "postgresql":
+        return statement.replace(" ADD COLUMN ", " ADD COLUMN IF NOT EXISTS ", 1)
+    return statement

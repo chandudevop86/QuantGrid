@@ -40,10 +40,18 @@ def test_audit_log_sanitizes_nested_secrets(app_client):
     assert stored["result"]["nested"][0]["password"] == "[redacted]"
 
 
-def test_audit_schema_uses_postgres_safe_migration_sql():
-    from Backend.domain.security.audit import _audit_column_additions
+def test_audit_schema_columns_have_central_migration_ownership():
+    from Backend.core.schema_migrations import COMPATIBILITY_COLUMNS, _statement_for_dialect
 
-    additions = _audit_column_additions("postgresql")
+    additions = COMPATIBILITY_COLUMNS["audit_logs"]
 
-    assert all("IF NOT EXISTS" in statement for statement in additions.values())
-    assert all("PRAGMA" not in statement for statement in additions.values())
+    assert set(additions) == {"actor_role", "status", "request_id", "reason"}
+    assert all(statement.startswith("ALTER TABLE audit_logs ADD COLUMN") for statement in additions.values())
+    assert all(
+        "ADD COLUMN IF NOT EXISTS" in _statement_for_dialect(statement, "postgresql")
+        for statement in additions.values()
+    )
+    assert all(
+        "IF NOT EXISTS" not in _statement_for_dialect(statement, "sqlite")
+        for statement in additions.values()
+    )

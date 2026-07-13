@@ -165,11 +165,10 @@ def _use_sqlite() -> bool:
 
 
 def _db_init_kill_switch_store() -> None:
-    from Backend.core.database import Base, SessionLocal, engine
+    from Backend.core.database import SessionLocal, init_database
     from Backend.domain.trading_store_models import RiskStateRecord
-    import Backend.domain.trading_store_models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    init_database()
     with SessionLocal() as db:
         row = db.get(RiskStateRecord, 1)
         if row is None:
