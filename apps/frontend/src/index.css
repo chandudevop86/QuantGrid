@@ -2279,6 +2279,39 @@ select {
   box-shadow: 0 0 18px rgba(248, 113, 113, 0.2);
 }
 
+.candles-page {
+  min-height: calc(100vh - 150px);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.candles-page .chart-panel {
+  display: flex;
+  min-height: calc(100vh - 270px);
+  flex-direction: column;
+}
+
+.candles-page .candle-chart {
+  flex: 1;
+  min-height: 460px;
+}
+
+.candles-page .candle-plot {
+  min-height: 430px;
+  height: 100%;
+}
+
+.candles-page .candle-column {
+  height: auto;
+  min-height: 390px;
+}
+
+@media (max-height: 760px) {
+  .candles-page .chart-panel { min-height: 430px; }
+  .candles-page .candle-chart { min-height: 350px; }
+  .candles-page .candle-plot { min-height: 320px; }
+  .candles-page .candle-column { min-height: 285px; }
+}
+
 .empty-state {
   display: grid;
   place-items: center;

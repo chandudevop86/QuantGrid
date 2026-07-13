@@ -26,7 +26,7 @@ export default function CandleChart({ candles }: CandleChartProps) {
   const maxPrice = Math.max(...prices);
   const priceRange = Math.max(maxPrice - minPrice, 1);
 
-  const yFor = (price: number) => 8 + ((maxPrice - price) / priceRange) * 118;
+  const yFor = (price: number) => 6 + ((maxPrice - price) / priceRange) * 82;
 
   return (
     <div className="candle-chart" role="img" aria-label="NIFTY candlestick chart">
@@ -55,15 +55,15 @@ export default function CandleChart({ candles }: CandleChartProps) {
               <div
                 className="candle-wick"
                 style={{
-                  top: `${highY}px`,
-                  height: `${Math.max(lowY - highY, 1)}px`,
+                  top: `${highY}%`,
+                  height: `${Math.max(lowY - highY, 0.8)}%`,
                 }}
               />
               <div
                 className={`candle-body${isUp ? " up" : " down"}`}
                 style={{
-                  top: `${bodyTop}px`,
-                  height: `${bodyHeight}px`,
+                  top: `${bodyTop}%`,
+                  height: `${Math.max(bodyHeight, 1.6)}%`,
                 }}
               />
               <span>{time}</span>

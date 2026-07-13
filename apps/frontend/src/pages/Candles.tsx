@@ -67,7 +67,7 @@ export default function Candles() {
     : "Auto refresh every 15s";
 
   return (
-    <section className="dashboard-page">
+    <section className="dashboard-page candles-page">
       <div className="page-heading">
         <h1>Candles</h1>
         <p>NIFTY price action across selectable market intervals.</p>
