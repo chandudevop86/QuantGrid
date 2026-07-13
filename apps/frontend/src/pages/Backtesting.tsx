@@ -7,7 +7,8 @@ const quickStrategies = ["amd", "breakout", "mean_reversion", "supply_demand"];
 type BacktestRun = {
   strategy: string;
   symbol?: string;
-  metrics?: Record<string, number | string | null>;
+  metrics?: Record<string, unknown>;
+  cost_model?: Record<string, unknown>;
   equity_curve?: Array<{ index: number; equity: number; time?: string }>;
   recent_outcomes?: Array<Record<string, unknown>>;
 };
@@ -199,6 +200,8 @@ export default function Backtesting() {
     return payload?.runs?.find((run) => run.strategy === selected) ?? bestRun(payload);
   }, [payload, selected]);
   const metrics = selectedRun?.metrics ?? {};
+  const costModel = selectedRun?.cost_model ?? {};
+  const rejectionReasons = Object.entries((metrics.rejection_reasons as Record<string, number> | undefined) ?? {});
   const ranked = payload?.ranked ?? [];
   const curve = selectedRun?.equity_curve ?? [];
   const active = isActiveJob(job);
@@ -275,6 +278,11 @@ export default function Backtesting() {
 
       {!loading && !error && payload && (
         <>
+          {number(metrics.total_trades) === 0 && (
+            <div className="alert alert-warning" role="status">
+              No eligible trades were produced for this strategy. Performance ratios are not meaningful; review rejected signals and use more historical data.
+            </div>
+          )}
           <div className="metric-grid">
             <article className="metric-card">
               <span className="metric-label">CAGR</span>
@@ -284,7 +292,7 @@ export default function Backtesting() {
             <article className="metric-card">
               <span className="metric-label">Win Rate</span>
               <strong className="metric-value">{formatPercent(metrics.win_rate_pct ?? number(metrics.win_rate) * 100)}</strong>
-              <span className="metric-helper">{metrics.total_trades ?? 0} total trades</span>
+              <span className="metric-helper">{formatNumber(metrics.total_trades, 0)} total trades</span>
             </article>
             <article className="metric-card">
               <span className="metric-label">Max Drawdown</span>
@@ -302,11 +310,36 @@ export default function Backtesting() {
               <span className="metric-helper">Gross profit / gross loss</span>
             </article>
             <article className="metric-card">
-              <span className="metric-label">Average P/L</span>
-              <strong className="metric-value">{formatMoney(metrics.average_pnl)}</strong>
-              <span className="metric-helper">Win {formatMoney(metrics.average_profit)} / Loss {formatMoney(metrics.average_loss)}</span>
+              <span className="metric-label">Net P/L</span>
+              <strong className="metric-value">{formatMoney(metrics.net_pnl ?? metrics.pnl)}</strong>
+              <span className="metric-helper">Gross {formatMoney(metrics.gross_pnl)} - costs {formatMoney(metrics.total_costs)}</span>
+            </article>
+            <article className="metric-card">
+              <span className="metric-label">Rejected Signals</span>
+              <strong className="metric-value">{formatNumber(metrics.rejected_signal_count, 0)}</strong>
+              <span className="metric-helper">{rejectionReasons.length ? rejectionReasons.map(([reason, count]) => `${titleCase(reason)} ${count}`).join(" | ") : "No recorded rejections"}</span>
             </article>
           </div>
+
+          <section className="dashboard-section">
+            <div className="form-panel">
+              <div className="form-panel-header">
+                <div>
+                  <h2>Applied Execution Assumptions</h2>
+                  <p>Brokerage, taxes, spread, and slippage are included in net performance. Entry delay is reported as latency and does not shift fills yet.</p>
+                </div>
+                <span className={`status-pill ${costModel.applied_to_results ? "" : "error"}`}>
+                  {costModel.applied_to_results ? "Applied" : "Unverified"}
+                </span>
+              </div>
+              <div className="signal-trade-grid">
+                <span><small>Brokerage</small><strong>{formatMoney(costModel.brokerage_per_order)}</strong><small>Per order</small></span>
+                <span><small>Taxes</small><strong>{formatNumber(costModel.taxes_bps)} bps</strong><small>On turnover</small></span>
+                <span><small>Slippage + Spread</small><strong>{formatNumber(costModel.effective_slippage_per_side_bps)} bps</strong><small>Applied per side</small></span>
+                <span><small>Entry Delay</small><strong>{formatDuration(costModel.entry_delay_seconds)}</strong><small>Recorded only; fill not shifted</small></span>
+              </div>
+            </div>
+          </section>
 
           <section className="dashboard-section">
             <div className="section-header">
@@ -338,7 +371,7 @@ export default function Backtesting() {
                       <td>{formatNumber(run.metrics?.sharpe_ratio)}</td>
                       <td>{formatNumber(run.metrics?.profit_factor)}</td>
                       <td>{formatPercent(number(run.metrics?.max_drawdown) * 100)}</td>
-                      <td>{run.metrics?.total_trades ?? 0}</td>
+                      <td>{formatNumber(run.metrics?.total_trades, 0)}</td>
                       <td>{formatMoney(run.metrics?.net_pnl ?? run.metrics?.pnl)}</td>
                     </tr>
                   ))}

@@ -473,6 +473,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "max_drawdown",
             "sharpe_ratio",
             "rejected_signal_count",
+            "rejection_reasons",
             "average_latency_ms",
         )
     }
@@ -576,6 +577,8 @@ def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
     }
     model["effective_slippage_per_side_bps"] = model["slippage_bps"] + model["spread_bps"] / 2.0
     model["applied_to_results"] = True
+    model["applied_components"] = ["brokerage", "brokerage_bps", "taxes", "slippage", "spread"]
+    model["entry_delay_application"] = "recorded_as_latency_not_fill_shift"
     return model
 
 

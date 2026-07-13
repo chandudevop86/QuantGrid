@@ -58,11 +58,12 @@ class BacktestMetrics:
     net_pnl: float = 0.0
     expectancy: float = 0.0
     rejected_signal_count: int = 0
+    rejection_reasons: dict[str, int] = field(default_factory=dict)
     average_latency_ms: float = 0.0
     rr_distribution: list[float] = field(default_factory=list)
     trades: list[dict[str, Any]] = field(default_factory=list)
 
-    def summary(self) -> dict[str, float | int]:
+    def summary(self) -> dict[str, Any]:
         return {
             "total_trades": self.total_trades,
             "win_rate": self.win_rate,
@@ -74,6 +75,7 @@ class BacktestMetrics:
             "net_pnl": self.net_pnl,
             "expectancy": self.expectancy,
             "rejected_signal_count": self.rejected_signal_count,
+            "rejection_reasons": dict(self.rejection_reasons),
             "average_latency_ms": self.average_latency_ms,
         }
 
@@ -143,6 +145,7 @@ class BacktestEngine:
         quantity = 0
         seen_signal_keys: set[tuple[str, datetime, str]] = set()
         rejected_signal_count = 0
+        rejection_reasons: dict[str, int] = {}
 
         for index in range(1, len(frame)):
             row = frame.iloc[index]
@@ -171,12 +174,19 @@ class BacktestEngine:
             )
             for signal in candidate_signals:
                 key = (signal.symbol, signal.signal_time, signal.side)
-                if key in seen_signal_keys or self._score(signal) < min_score:
+                if key in seen_signal_keys:
+                    rejected_signal_count += 1
+                    _increment_reason(rejection_reasons, "duplicate_signal")
                     continue
                 seen_signal_keys.add(key)
+                if self._score(signal) < min_score:
+                    rejected_signal_count += 1
+                    _increment_reason(rejection_reasons, "below_min_score")
+                    continue
                 valid, reason = self.risk_manager.validate_signal(signal, now=pd.Timestamp(row["timestamp"]).to_pydatetime())
                 if not valid:
                     rejected_signal_count += 1
+                    _increment_reason(rejection_reasons, _reason_key(reason))
                     self.logger.info("backtest_signal_rejected", {"symbol": symbol, "reason": reason, "event": "backtest_signal_rejected"})
                     continue
                 open_signal = signal
@@ -207,7 +217,12 @@ class BacktestEngine:
             trades.append(trade)
             equity_curve.append(equity_curve[-1] + trade.pnl)
 
-        return self._metrics(trades, equity_curve, rejected_signal_count=rejected_signal_count)
+        return self._metrics(
+            trades,
+            equity_curve,
+            rejected_signal_count=rejected_signal_count,
+            rejection_reasons=rejection_reasons,
+        )
 
     def _try_exit(
         self,
@@ -313,6 +328,7 @@ class BacktestEngine:
         equity_curve: list[float],
         *,
         rejected_signal_count: int = 0,
+        rejection_reasons: dict[str, int] | None = None,
     ) -> BacktestMetrics:
         total = len(trades)
         wins = sum(1 for trade in trades if trade.pnl > 0)
@@ -333,6 +349,7 @@ class BacktestEngine:
             net_pnl=round(float(pnl), 2),
             expectancy=round(float(pnl) / total, 2) if total else 0.0,
             rejected_signal_count=rejected_signal_count,
+            rejection_reasons=dict(rejection_reasons or {}),
             average_latency_ms=round(float(avg_latency), 2),
             rr_distribution=[trade.rr for trade in trades],
             trades=[trade.to_dict() for trade in trades],
@@ -410,3 +427,12 @@ def _float_env(name: str, value: float | int | None, default: float) -> float:
     if raw in {None, ""}:
         return float(default)
     return float(raw)
+
+
+def _increment_reason(reasons: dict[str, int], reason: str) -> None:
+    reasons[reason] = reasons.get(reason, 0) + 1
+
+
+def _reason_key(reason: Any) -> str:
+    normalized = str(reason or "risk_rejected").strip().lower().replace(" ", "_")
+    return normalized[:80] or "risk_rejected"

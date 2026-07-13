@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from Backend.app.backtesting.metrics import calculate_metrics
 from Backend.app.backtesting.models import BacktestTrade
 from Backend.application.quant_modules import backtesting_module
+from Backend.domain.models.signal import StrategySignal
+from Backend.trading_system.backtesting import BacktestEngine as CanonicalBacktestEngine
 
 
 def _trade(pnl: float, outcome: str) -> BacktestTrade:
@@ -113,3 +117,63 @@ def test_backtesting_module_honors_max_candles_cap():
     result = backtesting_module({"symbol": "NIFTY", "candles": candles, "max_candles": 5})
 
     assert result["payload"]["candles"] == 5
+
+
+def test_legacy_backtest_api_adapter_uses_canonical_engine_without_synthetic_fallback(monkeypatch):
+    from Backend.app.backtesting import engine as legacy_engine
+
+    class CanonicalResult:
+        trades = []
+        rejected_signal_count = 3
+        rejection_reasons = {"below_min_score": 3}
+
+    class FakeCanonicalEngine:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self, **_kwargs):
+            return CanonicalResult()
+
+    monkeypatch.setattr(legacy_engine, "CanonicalBacktestEngine", FakeCanonicalEngine)
+
+    result = legacy_engine.BacktestEngine().run(
+        strategy="amd",
+        symbol="NIFTY",
+        candles=[
+            {"timestamp": "2026-07-04T09:15:00+05:30", "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000}
+        ],
+    )
+
+    assert result.trades == []
+    assert result.metrics["rejected_signal_count"] == 3
+    assert result.metrics["rejection_reasons"] == {"below_min_score": 3}
+    assert result.metrics["simulation_engine"] == "canonical_trading_system"
+    assert result.metrics["synthetic_trade_fallback"] is False
+
+
+def test_canonical_backtest_reports_duplicate_and_low_score_rejections():
+    candles = [
+        {"timestamp": f"2026-07-04T09:{15 + index:02d}:00", "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000}
+        for index in range(3)
+    ]
+    signal = StrategySignal(
+        strategy_name="test",
+        symbol="NIFTY",
+        side="BUY",
+        entry_price=100,
+        stop_loss=95,
+        target_price=110,
+        signal_time=datetime.fromisoformat("2026-07-04T09:15:00"),
+        metadata={"score": 5},
+    )
+
+    result = CanonicalBacktestEngine().run(
+        candles=candles,
+        signals=[signal, signal],
+        strategy_name="test",
+        symbol="NIFTY",
+        min_score=10,
+    )
+
+    assert result.rejected_signal_count == 2
+    assert result.rejection_reasons == {"below_min_score": 1, "duplicate_signal": 1}
