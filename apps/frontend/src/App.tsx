@@ -20,8 +20,10 @@ const Operations = lazy(() => import("./pages/Operations"));
 const OptionChain = lazy(() => import("./pages/OptionChain"));
 const PaperTrades = lazy(() => import("./pages/PaperTrades"));
 const ProfessionalSignals = lazy(() => import("./pages/ProfessionalSignals"));
+const PublicPlans = lazy(() => import("./pages/PublicPlans"));
 const RiskDashboard = lazy(() => import("./pages/RiskDashboard"));
 const Security = lazy(() => import("./pages/Security"));
+const Signup = lazy(() => import("./pages/Signup"));
 const Strategies = lazy(() => import("./pages/Strategies"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const Trade = lazy(() => import("./pages/Trade"));
@@ -39,6 +41,8 @@ function subscribe(path: string, feature: string, page: React.ReactNode) {
 export default function App() {
   return <BrowserRouter><AppLayout><Suspense fallback={<LoadingSkeleton />}><Routes>
     <Route path="/" element={protect("/", <Dashboard />)} />
+    <Route path="/plans" element={<PublicPlans />} />
+    <Route path="/signup" element={<Signup />} />
     <Route path="/market" element={subscribe("/market", "options.basic", <OptionChain />)} />
     <Route path="/paper-trades" element={protect("/paper-trades", <PaperTrades />)} />
     <Route path="/history" element={subscribe("/history", "backtest.basic", <Backtesting />)} />

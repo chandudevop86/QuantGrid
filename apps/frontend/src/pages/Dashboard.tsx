@@ -11,6 +11,7 @@ import { useOperationsStatus } from "../context/OperationsStatusContext";
 import { hasAuthToken } from "../roles";
 import FeatureGate from "../components/FeatureGate";
 import { useCanAccess, useFeatureLimit } from "../context/SubscriptionContext";
+import { Link } from "react-router-dom";
 
 type ItemStatus = "pass" | "warning" | "fail";
 
@@ -35,7 +36,7 @@ export default function Dashboard() {
   const canSeeVolume = useCanAccess("volume.basic");
   const signalLimit = useFeatureLimit("signals_history_limit") ?? 5;
   const { operations, loading, error, refresh } = useOperationsStatus();
-  if (!hasAuthToken()) return <section className="qg-guest-landing"><span>Risk-first NIFTY options</span><h1>Trade with discipline, not impulse.</h1><p>Sign in to see one clear market decision, the reasons behind it, and the price levels that matter.</p><aside><strong>Decision support, not a profit promise.</strong><p>QuantGrid supports structured analysis and risk management. Validate decisions and use paper mode before live execution.</p></aside></section>;
+  if (!hasAuthToken()) return <section className="qg-guest-landing"><span>Risk-first NIFTY options</span><h1>Trade with discipline, not impulse.</h1><p>Sign in to see one clear market decision, the reasons behind it, and the price levels that matter.</p><div className="qg-guest-actions"><Link to="/plans">Compare plans</Link></div><aside><strong>Decision support, not a profit promise.</strong><p>QuantGrid supports structured analysis and risk management. Validate decisions and use paper mode before live execution.</p></aside></section>;
   if (loading) return <section className="qg-market-dashboard"><LoadingSkeleton /></section>;
   if (error) return <section className="qg-market-dashboard"><ErrorState message={error} onRetry={() => void refresh()} /></section>;
   if (!operations?.decision) return <section className="qg-market-dashboard"><EmptyState title="No market decision yet" message="The decision will appear after the analysis pipeline publishes a qualified market snapshot." /></section>;

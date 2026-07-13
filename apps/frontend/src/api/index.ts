@@ -69,6 +69,8 @@ export type SignalPayload = {
 export const api = {
   login: (payload: { username: string; password: string }) =>
     API.post("/auth/login", payload).then((res) => res.data),
+  register: (payload: { username: string; password: string }) =>
+    API.post("/auth/register", payload).then((res) => res.data),
   createUser: (payload: { username: string; password: string; role: string }) =>
     API.post("/admin/users/create", payload).then((res) => res.data),
   listUsers: () => API.get("/admin/users").then((res) => res.data),

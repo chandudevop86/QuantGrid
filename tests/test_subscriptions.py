@@ -63,6 +63,19 @@ def test_non_admin_cannot_assign_subscription(app_client):
     assert response.status_code == 403
 
 
+def test_public_signup_creates_only_a_free_viewer_account(app_client):
+    response = app_client.post("/auth/register", json={"username": "new-subscriber", "password": "Subscriber1!"})
+    assert response.status_code == 200
+    assert response.json()["role"] == "viewer"
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    mine = app_client.get("/subscriptions/me", headers=headers)
+    assert mine.status_code == 200
+    assert mine.json()["plan_code"] == "free"
+    assert "live_trade.execute" not in mine.json()["entitlements"]
+    duplicate = app_client.post("/auth/register", json={"username": "new-subscriber", "password": "Subscriber1!"})
+    assert duplicate.status_code == 409
+
+
 def _create_user_headers(app_client, username: str) -> tuple[int, dict[str, str]]:
     admin = admin_headers(app_client)
     created = app_client.post("/admin/users/create", json={"username": username, "password": "Subscriber1!", "role": "trader"}, headers=admin)

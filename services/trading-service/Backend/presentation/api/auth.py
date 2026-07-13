@@ -30,6 +30,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegistrationRequest(BaseModel):
+    username: str
+    password: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -246,6 +251,31 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
     rate_limiter.clear(_rate_key("login", request_ip(request), username))
     write_audit_log(db, action="login_success", actor=user, target_type="user", target_id=user.id, request=request)
+    token, expires_at = create_token(user)
+    return TokenResponse(access_token=token, role=user.role, expires_at=expires_at)
+
+
+@router.post("/register")
+def register(payload: RegistrationRequest, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
+    username = payload.username.strip()
+    rate_limiter.check(_rate_key("register", request_ip(request)), limit=5, window_seconds=3600)
+    if not username or len(username) > 80:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username must be between 1 and 80 characters.")
+    try:
+        validate_password_policy(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if _find_user_by_username(db, username) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already registered.")
+    user = User(username=username, password_hash=hash_password(payload.password), role="viewer")
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already registered.") from exc
+    db.refresh(user)
+    write_audit_log(db, action="user_registered", actor=user, target_type="user", target_id=user.id, request=request, metadata={"plan_code": "free"})
     token, expires_at = create_token(user)
     return TokenResponse(access_token=token, role=user.role, expires_at=expires_at)
 

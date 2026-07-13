@@ -8,6 +8,7 @@ import AlertPopover from "./AlertPopover";
 import StatusBadge from "./StatusBadge";
 import { marketInstruments, useMarketSelection, type MarketSymbol } from "../context/MarketSelectionContext";
 import SubscriptionBadge from "./SubscriptionBadge";
+import { Link } from "react-router-dom";
 
 export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }) {
   const { operations } = useOperationsStatus();
@@ -65,7 +66,7 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
   const alerts = [brokerConnected === false ? brokerMessage : null, marketStatus !== "LIVE" ? `Market is ${marketStatus.toLowerCase()}.` : null, !systemReady ? "System health requires review." : null, mode === "live" ? "Live trading mode is enabled." : null].filter(Boolean) as string[];
 
-  if (!authenticated) return <header className="qg-app-header qg-login-header"><div className="qg-header-brand"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></div><form onSubmit={login}><input aria-label="Username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" /><input aria-label="Password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" /><button type="submit">Login</button>{authError && <span role="alert">{authError}</span>}</form></header>;
+  if (!authenticated) return <header className="qg-app-header qg-login-header"><div className="qg-header-brand"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></div><div className="qg-public-header-actions"><Link to="/plans">View plans</Link><Link to="/signup">Create account</Link><form onSubmit={login}><input aria-label="Username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Username" /><input aria-label="Password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Password" type="password" /><button type="submit">Login</button>{authError && <span role="alert">{authError}</span>}</form></div></header>;
 
   return (
     <header className="qg-app-header">
