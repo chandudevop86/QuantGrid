@@ -3,115 +3,152 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    from prometheus_client import Counter, Gauge, Histogram
+    from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 except Exception:  # pragma: no cover - optional production dependency
     Counter = None  # type: ignore[assignment]
     Gauge = None  # type: ignore[assignment]
     Histogram = None  # type: ignore[assignment]
+    REGISTRY = None  # type: ignore[assignment]
 
 
 if Counter and Gauge and Histogram:
-    candle_validation_total = Counter(
+    def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
+        try:
+            return metric_type(name, documentation, labels)
+        except ValueError:
+            names_to_collectors = getattr(REGISTRY, "_names_to_collectors", {}) if REGISTRY is not None else {}
+            lookup_names = [name]
+            if metric_type is Counter and name.endswith("_total"):
+                base_name = name.removesuffix("_total")
+                lookup_names.extend([base_name, f"{base_name}_total", f"{base_name}_created"])
+            for lookup_name in lookup_names:
+                existing = names_to_collectors.get(lookup_name)
+                if existing is not None:
+                    return existing
+            raise
+
+    candle_validation_total = _metric(
+        Counter,
         "candle_validation_total",
         "Candle validation decisions.",
         ("status", "valid"),
     )
-    candle_feed_delay_seconds = Gauge(
+    candle_feed_delay_seconds = _metric(
+        Gauge,
         "candle_feed_delay_seconds",
         "Latest market data feed delay in seconds.",
         ("status",),
     )
-    paper_orders_total = Counter(
+    paper_orders_total = _metric(
+        Counter,
         "paper_orders_total",
         "Paper order submissions.",
         ("status", "strategy", "symbol"),
     )
-    rejected_orders_total = Counter(
+    rejected_orders_total = _metric(
+        Counter,
         "rejected_orders_total",
         "Rejected order attempts.",
         ("reason", "mode"),
     )
-    rejected_signals_total = Counter(
+    rejected_signals_total = _metric(
+        Counter,
         "rejected_signals_total",
         "Rejected signal decisions.",
         ("strategy", "reason"),
     )
-    signal_generation_total = Counter(
+    signal_generation_total = _metric(
+        Counter,
         "signal_generation_total",
         "Signal generation attempts.",
         ("strategy", "status"),
     )
-    strategy_executions_total = Counter(
+    strategy_executions_total = _metric(
+        Counter,
         "strategy_executions_total",
         "Strategy execution attempts.",
         ("strategy", "status"),
     )
-    strategy_signals_total = Counter(
+    strategy_signals_total = _metric(
+        Counter,
         "strategy_signals_total",
         "Signals emitted by strategy executions.",
         ("strategy",),
     )
-    failed_strategy_executions_total = Counter(
+    failed_strategy_executions_total = _metric(
+        Counter,
         "failed_strategy_executions_total",
         "Failed strategy executions.",
         ("strategy", "error_type"),
     )
-    option_chain_fetch_failures_total = Counter(
+    option_chain_fetch_failures_total = _metric(
+        Counter,
         "option_chain_fetch_failures_total",
         "Option-chain provider fetch failures.",
         ("provider", "reason"),
     )
-    option_chain_failures_total = Counter(
+    option_chain_failures_total = _metric(
+        Counter,
         "option_chain_failures_total",
         "Option-chain failures.",
         ("provider", "reason"),
     )
-    websocket_disconnect_total = Counter(
+    websocket_disconnect_total = _metric(
+        Counter,
         "websocket_disconnect_total",
         "WebSocket disconnects.",
         ("reason",),
     )
-    market_data_age_seconds = Gauge(
+    market_data_age_seconds = _metric(
+        Gauge,
         "market_data_age_seconds",
         "Latest market data age in seconds.",
         ("symbol", "interval"),
     )
-    api_request_latency_seconds = Histogram(
+    api_request_latency_seconds = _metric(
+        Histogram,
         "api_request_latency_seconds",
         "API request latency in seconds.",
         ("method", "path", "status_code"),
     )
-    market_data_ticks_total = Counter(
+    market_data_ticks_total = _metric(
+        Counter,
         "market_data_ticks_total",
         "Market data ticks received.",
         ("provider", "symbol"),
     )
-    market_data_provider_errors_total = Counter(
+    market_data_provider_errors_total = _metric(
+        Counter,
         "market_data_provider_errors_total",
         "Market data provider errors.",
         ("provider", "operation"),
     )
-    market_data_feed_delay_seconds = Gauge(
+    market_data_feed_delay_seconds = _metric(
+        Gauge,
         "market_data_feed_delay_seconds",
         "Market data feed delay in seconds.",
         ("provider", "symbol"),
     )
-    market_data_cache_hits_total = Counter(
+    market_data_cache_hits_total = _metric(
+        Counter,
         "market_data_cache_hits_total",
         "Market data cache hits.",
         ("provider", "kind"),
     )
-    market_data_cache_misses_total = Counter(
+    market_data_cache_misses_total = _metric(
+        Counter,
         "market_data_cache_misses_total",
         "Market data cache misses.",
         ("provider", "kind"),
     )
-    trading_decisions_total = Counter(
+    trading_decisions_total = _metric(
+        Counter,
         "trading_decisions_total",
         "Dashboard trading decisions.",
         ("recommendation", "data_status", "blocked"),
     )
-    risk_blocks_total = Counter(
+    risk_blocks_total = _metric(
+        Counter,
         "risk_blocks_total",
         "Risk blocks by reason.",
         ("reason",),

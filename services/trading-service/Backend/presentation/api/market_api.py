@@ -378,6 +378,59 @@ def _dhan_failure_message(payload: Any) -> str | None:
     return None
 
 
+def _option_chain_diagnostics(message: str | None, *, provider: str = "dhan") -> dict[str, Any]:
+    text = str(message or "")
+    lower = text.lower()
+    likely_causes: list[str] = []
+    suggested_actions: list[str] = []
+    code = "provider_unavailable"
+
+    if "without an error message" in lower or "raw remarks" in lower:
+        code = "dhan_data_api_or_ip_whitelist"
+        likely_causes = [
+            "Dhan profile login can be valid while Option Chain/Data API access is not enabled.",
+            "Dhan may be rejecting this server because the outbound/static IP is not whitelisted.",
+            "A newly enabled Dhan Data API subscription may not have propagated yet.",
+        ]
+        suggested_actions = [
+            "Open Dhan web console and confirm Data APIs / Option Chain are enabled for this account.",
+            "Whitelist this server's outbound public IP in DhanHQ before retrying.",
+            "Regenerate and save a fresh Dhan access token after entitlement or IP whitelist changes.",
+        ]
+    elif "client id" in lower and "does not match" in lower:
+        code = "dhan_client_id_mismatch"
+        likely_causes = ["The saved client ID belongs to a different Dhan account than the access token."]
+        suggested_actions = ["Update QUANTGRID_BROKER_CLIENT_ID to the dhanClientId shown by Dhan profile.", "Save a fresh token for the same account."]
+    elif "token" in lower or "401" in lower or "403" in lower:
+        code = "dhan_auth_or_entitlement_rejected"
+        likely_causes = [
+            "The access token is expired or invalid.",
+            "The account lacks Dhan Data API / Option Chain entitlement.",
+            "The server IP is not whitelisted with Dhan.",
+        ]
+        suggested_actions = [
+            "Save a fresh Dhan access token.",
+            "Confirm Dhan Data APIs / Option Chain entitlement.",
+            "Confirm Dhan IP whitelist contains this server's outbound IP.",
+        ]
+    else:
+        suggested_actions = [
+            "Retry after checking Dhan Data API status.",
+            "Confirm client ID, access token, Data API entitlement, and IP whitelist.",
+        ]
+
+    return {
+        "provider": provider,
+        "status": "BLOCKED",
+        "code": code,
+        "message": text,
+        "profile_login_can_pass": provider == "dhan",
+        "live_rows_available": False,
+        "likely_causes": likely_causes,
+        "suggested_actions": suggested_actions,
+    }
+
+
 def _ensure_dhan_success(payload: dict[str, Any]) -> dict[str, Any]:
     if str(payload.get("status") or "").lower() == "failure":
         raise RuntimeError(
@@ -405,10 +458,18 @@ def _dhan_sdk_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _dhan_option_provider_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
-    try:
-        return _dhan_sdk_option_payload(path, body)
-    except DhanSdkUnavailable:
-        return _dhan_option_payload(path, body)
+    if _dhan_sdk_enabled():
+        try:
+            return _dhan_sdk_option_payload(path, body)
+        except DhanSdkUnavailable:
+            pass
+    return _dhan_option_payload(path, body)
+
+
+def _dhan_sdk_enabled() -> bool:
+    if os.getenv("DHAN_USE_SDK", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    return getattr(dhan_sdk_client, "__module__", "") != "Backend.infrastructure.market_data.dhan_sdk"
 
 
 def _first_present(payload: dict[str, Any], *keys: str) -> Any:
@@ -701,6 +762,7 @@ def get_option_chain(
     expiry = None
     warning = "Live option-chain provider unavailable. Option-chain rows are hidden until provider data is available."
     provider_available = False
+    provider_diagnostics = None
 
     try:
         rows, expiry = _dhan_option_rows(symbol, strikes)
@@ -708,12 +770,23 @@ def get_option_chain(
             source = "dhan-option-chain"
             warning = None
             provider_available = True
+            provider_diagnostics = {
+                "provider": "dhan",
+                "status": "OK",
+                "code": "live_option_chain_available",
+                "message": "Dhan option-chain rows are available.",
+                "live_rows_available": True,
+                "likely_causes": [],
+                "suggested_actions": [],
+            }
         else:
             rows = _derived_option_rows(strikes)
             warning = "Dhan option-chain returned no matching strikes. Option-chain rows are hidden until provider data is available."
+            provider_diagnostics = _option_chain_diagnostics(warning)
     except Exception as dhan_exc:
         logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "dhan", "error_type": dhan_exc.__class__.__name__})
         observe_option_chain_failure("dhan", dhan_exc.__class__.__name__)
+        provider_diagnostics = _option_chain_diagnostics(str(dhan_exc))
         try:
             rows, expiry = _yahoo_option_rows(symbol, strikes)
         except Exception as yahoo_exc:
@@ -762,6 +835,7 @@ def get_option_chain(
         "expiry": expiry,
         "source": source,
         "warning": warning,
+        "provider_diagnostics": provider_diagnostics,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "rows": rows,
         "live_rows_available": provider_available and bool(rows),

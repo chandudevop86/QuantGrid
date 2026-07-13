@@ -14,9 +14,14 @@ def test_test_group_runner_is_used_by_ci_and_jenkins():
     assert '--pattern' in runner
     assert "stdout=subprocess.PIPE" in runner
     assert 'encoding="utf-8"' in runner
+    assert "verbose=args.verbose" in runner
+    assert "Print stdout for passing pytest groups" in runner
+    assert "Pytest group {index} passed." in runner
     assert 'PYTHONIOENCODING", "utf-8"' in runner
     assert "--cov-append" in runner
     assert '"coverage", "report"' in runner
+    assert "--test-timeout" in runner
+    assert "--timeout-method=thread" in runner
     assert "python scripts/run_test_groups.py" in workflow
     assert "python scripts/run_test_groups.py" in jenkinsfile
 

@@ -91,6 +91,9 @@ export default function OptionChain() {
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
   const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
   const providerWarning = String(chain?.warning ?? chain?.provider_warning ?? chain?.fallback_detail ?? "");
+  const providerDiagnostics = chain?.provider_diagnostics;
+  const likelyCauses = Array.isArray(providerDiagnostics?.likely_causes) ? providerDiagnostics.likely_causes : [];
+  const suggestedActions = Array.isArray(providerDiagnostics?.suggested_actions) ? providerDiagnostics.suggested_actions : [];
   const chainUnavailable =
     chain?.source === "option-chain-unavailable"
     || chain?.provider_available === false
@@ -137,6 +140,45 @@ export default function OptionChain() {
         </div>
       )}
       {chain?.warning && !error && <div className="alert alert-warning" role="status">{chain.warning}</div>}
+      {chainUnavailable && providerDiagnostics && (
+        <div className="dashboard-section">
+          <div className="section-header">
+            <h2>Dhan Diagnostics</h2>
+            <span>{providerDiagnostics.code ?? "provider blocked"}</span>
+          </div>
+          <div className="metric-grid">
+            <div className="metric-card">
+              <span className="metric-label">Provider</span>
+              <strong className="metric-value">{providerDiagnostics.provider ?? "dhan"}</strong>
+              <span className="metric-helper">Status: {providerDiagnostics.status ?? "BLOCKED"}</span>
+            </div>
+            <div className="metric-card">
+              <span className="metric-label">Profile Login</span>
+              <strong className="metric-value">{providerDiagnostics.profile_login_can_pass ? "Can Pass" : "Unknown"}</strong>
+              <span className="metric-helper">Profile success does not guarantee Option Chain access</span>
+            </div>
+            <div className="metric-card">
+              <span className="metric-label">Live Rows</span>
+              <strong className="metric-value">{providerDiagnostics.live_rows_available ? "Available" : "Unavailable"}</strong>
+              <span className="metric-helper">OI, PCR, max pain hidden until live rows return</span>
+            </div>
+          </div>
+          <div className="alert alert-warning" role="status">
+            <strong>Likely causes</strong>
+            <ul>
+              {(likelyCauses.length ? likelyCauses : ["Dhan Data API / Option Chain access is not available for this request."]).map((item: string) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+            <strong>Next actions</strong>
+            <ul>
+              {(suggestedActions.length ? suggestedActions : ["Check Dhan entitlement, IP whitelist, client ID, and token."]).map((item: string) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <div className="metric-grid">
         <div className="metric-card">

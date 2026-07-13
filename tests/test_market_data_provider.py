@@ -461,8 +461,49 @@ def test_option_chain_reports_dhan_token_rejected(monkeypatch):
     assert result["fallback_message"] == result["warning"]
     assert result["pcr"] is None
     assert result["max_pain"] is None
+    assert result["provider_diagnostics"]["status"] == "BLOCKED"
+    assert result["provider_diagnostics"]["live_rows_available"] is False
     assert "save a fresh token" in result["warning"]
     assert "HTTP Error 401" not in result["warning"]
+
+
+def test_option_chain_null_dhan_remarks_returns_operator_diagnostics(monkeypatch):
+    from conftest import TEST_SECRET, reset_backend_modules
+
+    monkeypatch.setenv("QUANTGRID_ENV", "test")
+    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    reset_backend_modules()
+
+    from Backend.presentation.api import market_api
+
+    null_remarks_message = (
+        "Dhan option-chain API rejected the request without an error message. "
+        "Profile login can still pass in this state; verify that Dhan Data APIs / "
+        "Option Chain are enabled for this account and that this server's outbound "
+        'IP is whitelisted. Raw remarks: {"error_code": null, "error_type": null, "error_message": null}'
+    )
+    monkeypatch.setattr(market_api, "get_price", lambda symbol, _role=None: {"price": 23400})
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(null_remarks_message)),
+    )
+    monkeypatch.setattr(
+        market_api,
+        "_yahoo_option_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("Yahoo unavailable")),
+    )
+
+    result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
+
+    diagnostics = result["provider_diagnostics"]
+    assert result["source"] == "option-chain-unavailable"
+    assert diagnostics["code"] == "dhan_data_api_or_ip_whitelist"
+    assert diagnostics["profile_login_can_pass"] is True
+    assert any("Option Chain" in item for item in diagnostics["likely_causes"])
+    assert any("outbound public IP" in item for item in diagnostics["suggested_actions"])
+    assert result["data_quality"]["message"] == result["warning"]
 
 
 def test_option_chain_falls_back_when_price_provider_is_unavailable(monkeypatch):
