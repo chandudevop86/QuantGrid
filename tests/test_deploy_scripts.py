@@ -95,6 +95,19 @@ def test_redis_compose_is_not_blocked_by_unrelated_postgres_interpolation():
     assert "Set POSTGRES_PASSWORD before starting local Postgres." in postgres
 
 
+def test_redis_script_avoids_legacy_compose_containerconfig_failure():
+    redis = _text("redis.sh")
+
+    assert "compose_v2_available" in redis
+    assert "start_standalone_redis" in redis
+    assert '--name "${REDIS_CONTAINER_NAME}"' in redis
+    assert "--restart unless-stopped" in redis
+    assert "-p 127.0.0.1:6379:6379" in redis
+    assert "redis:7-alpine" in redis
+    assert 'docker exec "${REDIS_CONTAINER_NAME}" redis-cli ping' in redis
+    assert "--remove-orphans" not in redis
+
+
 def test_restart_installs_missing_systemd_units_before_restart():
     common = _text("common.sh")
     backend = _text("backend.sh")
