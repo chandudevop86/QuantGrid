@@ -2228,8 +2228,8 @@ select {
 .candle-plot {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(42px, 1fr);
-  gap: 8px;
+  grid-auto-columns: minmax(10px, 1fr);
+  gap: var(--candle-gap, 3px);
   min-width: 0;
   min-height: 158px;
   padding: 12px 14px 30px;
@@ -2238,7 +2238,7 @@ select {
 
 .candle-column {
   position: relative;
-  min-width: 38px;
+  min-width: 10px;
   height: 140px;
 }
 
@@ -2264,8 +2264,8 @@ select {
 .candle-body {
   position: absolute;
   left: 50%;
-  width: 14px;
-  border-radius: 4px;
+  width: var(--candle-width, 8px);
+  border-radius: 2px;
   transform: translateX(-50%);
 }
 
@@ -2303,6 +2303,40 @@ select {
 .candles-page .candle-column {
   height: auto;
   min-height: 390px;
+}
+
+.candle-zoom {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: 1px solid var(--command-line, #27364a);
+  border-radius: 8px;
+  background: #030b18;
+}
+
+.candle-zoom button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(34, 211, 238, .28);
+  border-radius: 6px;
+  background: rgba(8, 145, 178, .12);
+  color: #baf7ff;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.candle-zoom button:disabled { opacity: .35; cursor: not-allowed; }
+.candle-zoom label { color: #8ea3bb; font-size: 9px; white-space: nowrap; }
+.candle-zoom label strong { color: #e5f8ff; font-size: 10px; }
+.candle-zoom input { width: 88px; accent-color: #14b8a6; cursor: pointer; }
+
+@media (max-width: 900px) {
+  .chart-controls { flex-wrap: wrap; }
+  .candle-zoom { order: 2; width: 100%; }
+  .candle-zoom input { flex: 1; }
 }
 
 @media (max-height: 760px) {

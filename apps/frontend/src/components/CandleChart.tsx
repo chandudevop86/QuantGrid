@@ -25,11 +25,18 @@ export default function CandleChart({ candles }: CandleChartProps) {
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
   const priceRange = Math.max(maxPrice - minPrice, 1);
+  const candleWidth = candles.length <= 20 ? 18 : candles.length <= 40 ? 12 : candles.length <= 70 ? 8 : 6;
+  const candleGap = candles.length <= 20 ? 5 : candles.length <= 50 ? 3 : 2;
+  const labelEvery = Math.max(1, Math.ceil(candles.length / 10));
+  const chartStyle = {
+    "--candle-width": `${candleWidth}px`,
+    "--candle-gap": `${candleGap}px`,
+  } as CSSProperties;
 
   const yFor = (price: number) => 6 + ((maxPrice - price) / priceRange) * 82;
 
   return (
-    <div className="candle-chart" role="img" aria-label="NIFTY candlestick chart">
+    <div className="candle-chart" role="img" aria-label="NIFTY candlestick chart" style={chartStyle}>
       <div className="price-axis">
         <span>{maxPrice.toFixed(2)}</span>
         <span>{((maxPrice + minPrice) / 2).toFixed(2)}</span>
@@ -37,7 +44,7 @@ export default function CandleChart({ candles }: CandleChartProps) {
       </div>
 
       <div className="candle-plot">
-        {candles.map((candle) => {
+        {candles.map((candle, index) => {
           const isUp = candle.close >= candle.open;
           const highY = yFor(candle.high);
           const lowY = yFor(candle.low);
@@ -66,7 +73,7 @@ export default function CandleChart({ candles }: CandleChartProps) {
                   height: `${Math.max(bodyHeight, 1.6)}%`,
                 }}
               />
-              <span>{time}</span>
+              {index % labelEvery === 0 && <span>{time}</span>}
             </div>
           );
         })}
@@ -74,3 +81,4 @@ export default function CandleChart({ candles }: CandleChartProps) {
     </div>
   );
 }
+import type { CSSProperties } from "react";

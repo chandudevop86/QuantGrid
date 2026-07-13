@@ -12,6 +12,8 @@ const intervals = [
 ];
 
 const refreshMs = 15000;
+const minVisibleCandles = 10;
+const maxVisibleCandles = 100;
 
 export default function Candles() {
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -22,6 +24,7 @@ export default function Candles() {
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedInterval, setSelectedInterval] = useState(intervals[0].value);
+  const [visibleCount, setVisibleCount] = useState(40);
 
   const loadCandles = useCallback((showInitialLoading = false) => {
     if (showInitialLoading) {
@@ -65,6 +68,12 @@ export default function Candles() {
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 15s";
+  const zoomMaximum = Math.max(minVisibleCandles, Math.min(maxVisibleCandles, candles.length || maxVisibleCandles));
+  const clampedVisibleCount = Math.min(visibleCount, zoomMaximum);
+  const visibleCandles = candles.slice(-clampedVisibleCount);
+  const changeZoom = (next: number) => {
+    setVisibleCount(Math.max(minVisibleCandles, Math.min(zoomMaximum, next)));
+  };
 
   return (
     <section className="dashboard-page candles-page">
@@ -83,6 +92,21 @@ export default function Candles() {
             <p>{loading ? "Loading candles..." : `${candles.length} candles · ${refreshLabel}`}</p>
           </div>
           <div className="chart-controls">
+            <div className="candle-zoom" role="group" aria-label="Candle zoom controls">
+              <button type="button" onClick={() => changeZoom(clampedVisibleCount + 10)} disabled={clampedVisibleCount >= zoomMaximum} aria-label="Zoom out to show more candles">−</button>
+              <label htmlFor="candle-zoom-range">Zoom <strong>{clampedVisibleCount}</strong></label>
+              <input
+                id="candle-zoom-range"
+                type="range"
+                min={minVisibleCandles}
+                max={zoomMaximum}
+                step="10"
+                value={clampedVisibleCount}
+                onChange={(event) => changeZoom(Number(event.target.value))}
+                aria-valuetext={`${clampedVisibleCount} candles visible`}
+              />
+              <button type="button" onClick={() => changeZoom(clampedVisibleCount - 10)} disabled={clampedVisibleCount <= minVisibleCandles} aria-label="Zoom in to show fewer candles">+</button>
+            </div>
             <div className="timeline-toggle" aria-label="Candle timeline">
               {intervals.map((item) => (
                 <button
@@ -109,7 +133,7 @@ export default function Candles() {
           </div>
         </div>
 
-        <CandleChart candles={candles} />
+        <CandleChart candles={visibleCandles} />
       </div>
     </section>
   );
