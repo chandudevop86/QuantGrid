@@ -5,7 +5,17 @@ import "./index.css";
 import App from "./App";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      staleTime: 10_000,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: false,
+      retry: (attempt, error: any) => {
+        const status = error?.response?.status;
+        return attempt < 1 && (!status || status >= 500);
+      },
+    },
+  },
 });
 
 type AppErrorBoundaryProps = {
@@ -36,14 +46,10 @@ class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundary
             <div>
               <p className="eyebrow">Dashboard startup failed</p>
               <h1>QuantGrid could not finish loading.</h1>
-              <p>
-                Refresh the page. If this repeats, open the browser console and send the
-                error shown there.
-              </p>
-              <pre>{this.state.error.message}</pre>
-              <button type="button" onClick={() => window.location.reload()}>
-                Reload dashboard
-              </button>
+              <p>Try recovering the interface first. If this repeats, reload the dashboard and contact support with the time of the error.</p>
+              {import.meta.env.DEV && <pre>{this.state.error.message}</pre>}
+              <button type="button" onClick={() => this.setState({ error: null })}>Try again</button>
+              <button type="button" onClick={() => window.location.reload()}>Reload dashboard</button>
             </div>
           </section>
         </main>

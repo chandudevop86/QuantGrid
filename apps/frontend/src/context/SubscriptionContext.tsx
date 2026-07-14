@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { hasAuthToken } from "../roles";
+import { getCurrentRole, hasAuthToken } from "../roles";
 
 export type SubscriptionSnapshot = {
   plan_code: string;
@@ -17,6 +17,7 @@ type SubscriptionValue = {
   subscriptionStatus: string;
   expiresAt: string | null;
   entitlements: Set<string>;
+  isSubscriptionExempt: boolean;
   canAccess: (feature: string) => boolean;
   featureLimit: (key: string) => number | null;
   isLoading: boolean;
@@ -32,6 +33,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [error, setError] = useState<string | null>(null);
   const refreshSubscription = useCallback(async () => {
     if (!hasAuthToken()) { setSubscription(null); setLoading(false); return; }
+    // Administrators are platform operators, not subscribers. Keep this check at the
+    // entitlement boundary so every existing feature gate and route inherits it.
+    if (getCurrentRole() === "admin") {
+      setSubscription(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try { setSubscription(await api.mySubscription()); setError(null); }
     catch { setSubscription(null); setError("Subscription access could not be verified."); }
@@ -42,12 +51,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     window.addEventListener("quantgrid-role-change", refreshSubscription);
     return () => window.removeEventListener("quantgrid-role-change", refreshSubscription);
   }, [refreshSubscription]);
+  const isSubscriptionExempt = hasAuthToken() && getCurrentRole() === "admin";
   const entitlements = useMemo(() => new Set(subscription?.entitlements ?? []), [subscription]);
   const value = useMemo<SubscriptionValue>(() => ({
-    subscription, currentPlan: subscription?.plan_name ?? "Unverified", subscriptionStatus: subscription?.effective_status ?? "unknown",
-    expiresAt: subscription?.current_period_end ?? null, entitlements, canAccess: (feature) => entitlements.has(feature),
-    featureLimit: (key) => subscription?.limits?.[key] ?? null, isLoading, error, refreshSubscription,
-  }), [subscription, entitlements, isLoading, error, refreshSubscription]);
+    subscription, currentPlan: isSubscriptionExempt ? "Administrator" : subscription?.plan_name ?? "Unverified", subscriptionStatus: isSubscriptionExempt ? "exempt" : subscription?.effective_status ?? "unknown",
+    expiresAt: isSubscriptionExempt ? null : subscription?.current_period_end ?? null, entitlements, isSubscriptionExempt,
+    canAccess: (feature) => isSubscriptionExempt || entitlements.has(feature),
+    featureLimit: (key) => isSubscriptionExempt ? Number.POSITIVE_INFINITY : subscription?.limits?.[key] ?? null, isLoading, error, refreshSubscription,
+  }), [subscription, entitlements, isSubscriptionExempt, isLoading, error, refreshSubscription]);
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }
 
