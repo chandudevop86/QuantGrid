@@ -10,6 +10,7 @@ const primaryItems: NavItem[] = [
   { to: "/", label: "Dashboard", icon: "grid", mobile: true, entitlement: "dashboard.basic" },
   { to: "/market", label: "Market", icon: "pulse", mobile: true, entitlement: "options.basic" },
   { to: "/strategies", label: "Strategies", icon: "history", entitlement: "strategy.performance" },
+  { to: "/strategy-builder", label: "Strategy Builder", icon: "spark", entitlement: "strategy.performance" },
   { to: "/trade", label: "Orders", icon: "trade", mobile: true, entitlement: "paper_trade.manual" },
   { to: "/paper-trades", label: "Positions", icon: "grid", mobile: true, entitlement: "paper_trade.manual" },
   { to: "/trade-journal", label: "History", icon: "history", entitlement: "export.csv" },
@@ -20,6 +21,7 @@ const advancedItems: NavItem[] = [
   { to: "/signals", label: "Live Analysis", icon: "pulse", entitlement: "signals.recent_25" },
   { to: "/candles", label: "Candles", icon: "pulse", entitlement: "chart.advanced" },
   { to: "/copilot", label: "Market Copilot", icon: "spark", entitlement: "dashboard.advanced" },
+  { to: "/ai-scanner", label: "AI Scanner", icon: "spark", entitlement: "signals.recent_25" },
   { to: "/execution", label: "Execution", icon: "pulse", entitlement: "paper_trade.automated" },
   { to: "/history", label: "Backtest Results", icon: "history", entitlement: "backtest.basic" },
   { to: "/jobs", label: "Jobs", icon: "history" },
@@ -31,6 +33,7 @@ const advancedItems: NavItem[] = [
 const adminItems: NavItem[] = [
   { to: "/admin/users", label: "Users", icon: "grid", entitlement: "admin.users" },
   { to: "/operations", label: "System status", icon: "pulse", entitlement: "admin.system" },
+  { to: "/management", label: "Management hub", icon: "settings", entitlement: "admin.system" },
   { to: "/dhan-login", label: "Broker setup", icon: "trade", entitlement: "admin.broker" },
 ];
 

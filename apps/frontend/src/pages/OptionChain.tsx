@@ -29,6 +29,10 @@ function changeTone(value: unknown) {
   return Number.isFinite(numeric) && numeric !== 0 ? (numeric > 0 ? "is-positive" : "is-negative") : "";
 }
 
+function greekValue(leg: any, name: "delta" | "gamma" | "theta" | "vega") {
+  return optionValue(leg?.greeks, name) ?? optionValue(leg, name);
+}
+
 function enrichOptionChain(data: any) {
   const rows = Array.isArray(data?.rows) ? data.rows : [];
   const totalCallOi = rows.reduce((sum: number, row: any) => sum + Number(row?.ce?.oi ?? 0), 0);
@@ -171,6 +175,17 @@ export default function OptionChain() {
     return ordered.slice(Math.max(0, atmIndex - strikeWindow), atmIndex + strikeWindow + 1);
   }, [providerRows, atmStrike, strikeWindow]);
   const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
+  const derivatives = useMemo(() => {
+    if (!providerRows.length) return null;
+    const aggregate = providerRows.reduce((totals: { callOi: number; putOi: number; callChange: number; putChange: number; iv: number[]; callWall: any; putWall: any }, row: any) => {
+      const callOi = Number(row.ce?.oi ?? 0), putOi = Number(row.pe?.oi ?? 0);
+      const callWall = callOi > Number(totals.callWall?.ce?.oi ?? 0) ? row : totals.callWall;
+      const putWall = putOi > Number(totals.putWall?.pe?.oi ?? 0) ? row : totals.putWall;
+      const ivs = [optionValue(row.ce, "iv", "implied_volatility"), optionValue(row.pe, "iv", "implied_volatility")].map(Number).filter(Number.isFinite);
+      return { callOi: totals.callOi + callOi, putOi: totals.putOi + putOi, callChange: totals.callChange + Number(optionValue(row.ce, "change_oi", "chg_oi", "oi_change") ?? 0), putChange: totals.putChange + Number(optionValue(row.pe, "change_oi", "chg_oi", "oi_change") ?? 0), iv: [...totals.iv, ...ivs], callWall, putWall };
+    }, { callOi: 0, putOi: 0, callChange: 0, putChange: 0, iv: [] as number[], callWall: null, putWall: null });
+    return { ...aggregate, averageIv: aggregate.iv.length ? aggregate.iv.reduce((total, value) => total + value, 0) / aggregate.iv.length : null };
+  }, [providerRows]);
 
   return (
     <section className="dashboard-page">
@@ -273,6 +288,13 @@ export default function OptionChain() {
         <div className="option-chain-source"><span className={isProviderBacked ? "status-dot is-live" : "status-dot"} />{isProviderBacked ? "Live provider" : "Provider unavailable"}<small>{refreshLabel}</small></div>
       </div>
 
+      {derivatives && <section className="option-derivatives-grid" aria-label="Open interest and implied volatility analysis">
+        <article><span>Call OI wall</span><strong>{formatNumber(derivatives.callWall?.strike)}</strong><small>{formatNumber(derivatives.callWall?.ce?.oi)} contracts · potential resistance</small></article>
+        <article><span>Put OI wall</span><strong>{formatNumber(derivatives.putWall?.strike)}</strong><small>{formatNumber(derivatives.putWall?.pe?.oi)} contracts · potential support</small></article>
+        <article><span>Net OI build-up</span><strong className={derivatives.putChange - derivatives.callChange >= 0 ? "is-positive" : "is-negative"}>{formatNumber(Math.abs(derivatives.putChange - derivatives.callChange))}</strong><small>{derivatives.putChange - derivatives.callChange >= 0 ? "Put-side build-up" : "Call-side build-up"} · calls {formatNumber(derivatives.callChange)} / puts {formatNumber(derivatives.putChange)}</small></article>
+        <article><span>Average IV</span><strong>{derivatives.averageIv === null ? "-" : `${derivatives.averageIv.toFixed(2)}%`}</strong><small>{formatNumber(derivatives.callOi + derivatives.putOi)} total open interest</small></article>
+      </section>}
+
       <div className="dashboard-section option-chain-primary">
         <div className="section-header">
           <div><span className="metric-label">Live chain</span><h2>{chain?.source === "live-nse-chain" ? "NSE NIFTY Option Chain" : "NIFTY Option Chain"}</h2></div>
@@ -367,6 +389,10 @@ export default function OptionChain() {
               <div><span>IV</span><strong>{formatNumber(optionValue(selectedContract.leg, "iv", "implied_volatility"))}</strong></div>
               <div><span>Bid</span><strong>{formatNumber(selectedContract.leg?.bid?.price)}</strong></div>
               <div><span>Ask</span><strong>{formatNumber(selectedContract.leg?.ask?.price)}</strong></div>
+              <div><span>Delta</span><strong>{formatNumber(greekValue(selectedContract.leg, "delta"))}</strong></div>
+              <div><span>Gamma</span><strong>{formatNumber(greekValue(selectedContract.leg, "gamma"))}</strong></div>
+              <div><span>Theta</span><strong>{formatNumber(greekValue(selectedContract.leg, "theta"))}</strong></div>
+              <div><span>Vega</span><strong>{formatNumber(greekValue(selectedContract.leg, "vega"))}</strong></div>
             </div>
 
             <div className="option-contract-chart-head">

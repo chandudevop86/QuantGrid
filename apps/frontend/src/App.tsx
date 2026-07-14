@@ -7,6 +7,7 @@ import RestrictedRoute from "./components/RestrictedRoute";
 
 const AdminNotifications = lazy(() => import("./pages/AdminNotifications"));
 const AdminUsers = lazy(() => import("./pages/AdminUsers"));
+const AiScanner = lazy(() => import("./pages/AiScanner"));
 const Backtesting = lazy(() => import("./pages/Backtesting"));
 const Candles = lazy(() => import("./pages/Candles"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -16,6 +17,7 @@ const InstitutionalDashboard = lazy(() => import("./pages/InstitutionalDashboard
 const Investing = lazy(() => import("./pages/Investing"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const MarketCopilot = lazy(() => import("./pages/MarketCopilot"));
+const ManagementHub = lazy(() => import("./pages/ManagementHub"));
 const Operations = lazy(() => import("./pages/Operations"));
 const OptionChain = lazy(() => import("./pages/OptionChain"));
 const PaperTrades = lazy(() => import("./pages/PaperTrades"));
@@ -25,6 +27,7 @@ const RiskDashboard = lazy(() => import("./pages/RiskDashboard"));
 const Security = lazy(() => import("./pages/Security"));
 const Signup = lazy(() => import("./pages/Signup"));
 const Strategies = lazy(() => import("./pages/Strategies"));
+const StrategyBuilder = lazy(() => import("./pages/StrategyBuilder"));
 const Subscription = lazy(() => import("./pages/Subscription"));
 const Trade = lazy(() => import("./pages/Trade"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
@@ -54,16 +57,19 @@ export default function App() {
     <Route path="/live" element={<Navigate to="/strategies" replace />} />
     <Route path="/analysis" element={<Navigate to="/strategies" replace />} />
     <Route path="/copilot" element={subscribe("/copilot", "dashboard.advanced", <MarketCopilot />)} />
+    <Route path="/ai-scanner" element={subscribe("/ai-scanner", "signals.recent_25", <AiScanner />)} />
     <Route path="/option-chain" element={<Navigate to="/market" replace />} />
     <Route path="/dhan-login" element={protect("/dhan-login", <DhanLogin />)} />
     <Route path="/jobs" element={protect("/jobs", <Jobs />)} />
     <Route path="/operations" element={protect("/operations", <Operations />)} />
+    <Route path="/management" element={protect("/management", <ManagementHub />)} />
     <Route path="/signals" element={subscribe("/signals", "signals.recent_25", <ProfessionalSignals />)} />
     <Route path="/institutional" element={subscribe("/institutional", "institutional.flow", <InstitutionalDashboard />)} />
     <Route path="/investing" element={protect("/investing", <Investing />)} />
     <Route path="/risk" element={<Navigate to="/settings" replace />} />
     <Route path="/security" element={protect("/security", <Security />)} />
     <Route path="/strategies" element={subscribe("/strategies", "strategy.performance", <Strategies />)} />
+    <Route path="/strategy-builder" element={subscribe("/strategy-builder", "strategy.performance", <StrategyBuilder />)} />
     <Route path="/trade-journal" element={subscribe("/trade-journal", "export.csv", <TradeJournal />)} />
     <Route path="/trading-engine" element={subscribe("/trading-engine", "paper_trade.automated", <TradingEngine />)} />
     <Route path="/trade" element={subscribe("/trade", "paper_trade.manual", <Trade />)} />

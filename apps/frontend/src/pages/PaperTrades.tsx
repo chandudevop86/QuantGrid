@@ -106,6 +106,13 @@ export default function PaperTrades() {
   const unrealizedPnl = finiteOr(summary.unrealized_pnl, positions.reduce((total, row) => total + positionPnl(row), 0));
   const realizedPnl = finiteOr(summary.realized_pnl, closedPositions.reduce((total, row) => total + positionPnl(row, true), 0));
   const totalPnl = finiteOr(summary.todays_pnl, unrealizedPnl + realizedPnl);
+  const grossExposure = positions.reduce((total, row) => total + Math.abs(Number(row.quantity) || 0) * Math.abs(Number(row.current_price ?? row.entry_price ?? row.entry) || 0), 0);
+  const closedWithPnl = closedPositions.filter((row) => Number.isFinite(positionPnl(row, true)));
+  const winners = closedWithPnl.filter((row) => positionPnl(row, true) > 0).length;
+  const winRate = closedWithPnl.length ? (winners / closedWithPnl.length) * 100 : 0;
+  const averageClosedPnl = closedWithPnl.length ? realizedPnl / closedWithPnl.length : 0;
+  const capital = finiteOr(summary.capital ?? summary.available_capital, 0);
+  const utilisation = capital > 0 ? Math.min((grossExposure / capital) * 100, 100) : null;
 
   const closePosition = async () => {
     if (!closingPosition?.id) return;
@@ -166,6 +173,15 @@ export default function PaperTrades() {
           <div><span>Exposure</span><strong>{money(summary.current_exposure)}</strong></div>
           <span className={`position-mode-badge ${mode}`}>{mode === "paper" ? "Paper mode" : "Live mode"}</span>
         </section>
+
+        <section className="portfolio-insight-grid" aria-label="Portfolio performance snapshot">
+          <article className="portfolio-insight-card"><span>Gross exposure</span><strong>{money(grossExposure)}</strong><small>{positions.length} open instrument{positions.length === 1 ? "" : "s"} across the active account</small></article>
+          <article className="portfolio-insight-card"><span>Capital utilisation</span><strong>{utilisation === null ? "—" : `${utilisation.toFixed(1)}%`}</strong><small>{capital > 0 ? `${money(capital)} allocated capital` : "Capital allocation is not available"}</small><i><b style={{ width: `${utilisation ?? 0}%` }} /></i></article>
+          <article className="portfolio-insight-card"><span>Closed-trade win rate</span><strong>{closedWithPnl.length ? `${winRate.toFixed(1)}%` : "—"}</strong><small>{closedWithPnl.length ? `${winners} winners from ${closedWithPnl.length} completed trades` : "Awaiting completed trades"}</small></article>
+          <article className="portfolio-insight-card"><span>Average realized P&amp;L</span><strong className={averageClosedPnl >= 0 ? "is-positive" : "is-negative"}>{closedWithPnl.length ? money(averageClosedPnl) : "—"}</strong><small>Per completed position today</small></article>
+        </section>
+
+        <nav className="portfolio-workflow-links" aria-label="Portfolio workflow"><a href="/trade">Open order terminal <span>↗</span></a><a href="/trade-journal">Review trade history <span>↗</span></a></nav>
 
         <div className="position-toolbar">
           <label className="position-search"><span className="sr-only">Search positions</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search instrument, side, product or order ID" /></label>
