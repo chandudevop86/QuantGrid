@@ -70,6 +70,26 @@ sudo systemctl reload nginx
 bash deploy/scripts/production_frontend.sh check
 ```
 
+For a client-owned hostname, render the checked configuration during installation:
+
+```bash
+DOMAIN=trade.example.com WWW_DOMAIN=www.trade.example.com CERT_NAME=trade.example.com \
+  bash deploy/scripts/nginx.sh install https
+```
+
+The installer accepts hostname characters only, renders to a temporary file, validates with `nginx -t`, and reloads only after validation. Unknown HTTP hosts are rejected instead of being reflected into redirects.
+
+Verify certificate renewal and expiry monitoring during every production handover:
+
+```bash
+sudo certbot renew --dry-run
+sudo systemctl status certbot.timer --no-pager
+openssl s_client -connect trade.example.com:443 -servername trade.example.com </dev/null 2>/dev/null \
+  | openssl x509 -noout -dates -issuer -subject
+```
+
+Alert before the certificate has fewer than 30 days remaining. Record the renewal dry-run and alert-delivery evidence in the release record.
+
 The HTTPS config redirects all HTTP traffic to HTTPS after ACME challenges and sets HSTS, X-Frame-Options,
 X-Content-Type-Options, and Referrer-Policy headers. Production browsers should show a secure lock icon.
 Do not point a production browser session at `http://<server-ip>:8000`; HTTPS frontends cannot call HTTP APIs without
