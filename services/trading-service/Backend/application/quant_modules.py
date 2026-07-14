@@ -60,14 +60,18 @@ def _round_to_step(value: float, step: int) -> int:
     return int(round(value / step) * step)
 
 
-def _latest_underlying_price(symbol: str, fallback: float = 22500.0) -> float:
+def _latest_underlying_price(symbol: str, fallback: float | None = None) -> float:
     tick = latest_price_tick(symbol)
     if tick and tick.get("price"):
         return float(tick["price"])
     candles = latest_candles(symbol, "1m", 1) or latest_candles(symbol, "5m", 1)
     if candles:
-        return float(candles[-1].get("close") or fallback)
-    return fallback
+        close = candles[-1].get("close")
+        if close is not None:
+            return float(close)
+    if fallback is not None:
+        return fallback
+    raise RuntimeError(f"No stored provider price is available for {symbol.upper()}.")
 
 
 def _max_pain(rows: list[dict[str, Any]]) -> int | None:
@@ -235,22 +239,31 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
 
 def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
     return _option_chain_compat_payload({
-        **payload,
         "module": "live_nse_option_chain",
-        "source": "synthetic-demo-chain",
-        "synthetic": True,
+        "symbol": payload.get("symbol") or "NIFTY",
+        "underlying_price": None,
+        "atm_strike": None,
+        "expiry": None,
+        "step": payload.get("step") or 50,
+        "source": "option-chain-unavailable",
+        "synthetic": False,
+        "provider_available": False,
         "fallback_reason": exc.__class__.__name__,
-        "provider_warning": "Live NSE option-chain provider unavailable; using synthetic fallback data.",
+        "provider_warning": "Live NSE option-chain provider unavailable. No option-chain values are being shown.",
         "fallback_detail": str(exc),
+        "pcr": None,
+        "max_pain": None,
+        "rows": [],
         "signals": {
             "bias": "NEUTRAL",
-            "reason": "Live NSE option-chain is unavailable; synthetic fallback is for display only.",
-            "total_call_oi": int(sum(float(row["ce"].get("oi") or 0) for row in payload["rows"])),
-            "total_put_oi": int(sum(float(row["pe"].get("oi") or 0) for row in payload["rows"])),
-            "pcr": payload.get("pcr"),
-            "atm_strike": payload.get("atm_strike"),
-            "max_pain": payload.get("max_pain"),
+            "reason": "Live NSE option-chain is unavailable.",
+            "total_call_oi": 0,
+            "total_put_oi": 0,
+            "pcr": None,
+            "atm_strike": None,
+            "max_pain": None,
         },
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     })
 
 
@@ -265,17 +278,19 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
         support = max(below, key=lambda row: float(row.get("pe", {}).get("oi") or 0)).get("strike")
     if above:
         resistance = max(above, key=lambda row: float(row.get("ce", {}).get("oi") or 0)).get("strike")
-    pcr = float(payload.get("pcr") or 0.0)
+    raw_pcr = payload.get("pcr")
+    pcr = float(raw_pcr) if raw_pcr is not None else None
     max_pain = payload.get("max_pain")
-    spot = float(payload.get("underlying_price") or payload.get("spot") or 0.0)
-    if pcr >= 1.15 and max_pain and spot >= float(max_pain):
+    raw_spot = payload.get("underlying_price") if payload.get("underlying_price") is not None else payload.get("spot")
+    spot = float(raw_spot) if raw_spot is not None else None
+    if pcr is not None and spot is not None and pcr >= 1.15 and max_pain and spot >= float(max_pain):
         signal = "BUY_CE"
-    elif pcr <= 0.85 and max_pain and spot <= float(max_pain):
+    elif pcr is not None and spot is not None and pcr <= 0.85 and max_pain and spot <= float(max_pain):
         signal = "BUY_PE"
     else:
         signal = "NO_TRADE"
     raw_source = str(payload.get("source") or "")
-    source = "live" if raw_source in {"live", "live-nse-chain"} else raw_source or "synthetic-demo-chain"
+    source = "live" if raw_source in {"live", "live-nse-chain"} else raw_source or "option-chain-unavailable"
     return {
         **payload,
         "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
@@ -293,139 +308,50 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
-    step = max(1, int(step))
-    strikes_each_side = max(1, min(int(strikes_each_side), 12))
-    spot = _latest_underlying_price(symbol)
-    atm = _round_to_step(spot, step)
-    expiry_date = (datetime.now(timezone.utc) + timedelta(days=7)).date().isoformat()
-    time_to_expiry = 7 / 365
-    volatility = 0.18
-    rate = 0.06
-    rows: list[dict[str, Any]] = []
-
-    for offset in range(-strikes_each_side, strikes_each_side + 1):
-        strike = atm + offset * step
-        distance = abs(strike - spot)
-        intrinsic_call = max(spot - strike, 0.0)
-        intrinsic_put = max(strike - spot, 0.0)
-        time_value = max(12.0, 95.0 * exp(-distance / max(step * 4, 1)))
-        call_oi = int(90000 + max(offset, 0) * 17500 + distance * 80)
-        put_oi = int(90000 + max(-offset, 0) * 17500 + distance * 80)
-        rows.append(
-            {
-                "strike": strike,
-                "ce": {
-                    "ltp": round(intrinsic_call + time_value, 2),
-                    "oi": call_oi,
-                    "volume": int(call_oi * 0.18),
-                    "iv": volatility,
-                    "greeks": _black_scholes_greeks(
-                        option_type="call",
-                        spot=spot,
-                        strike=strike,
-                        time_to_expiry=time_to_expiry,
-                        volatility=volatility,
-                        rate=rate,
-                    ),
-                },
-                "pe": {
-                    "ltp": round(intrinsic_put + time_value, 2),
-                    "oi": put_oi,
-                    "volume": int(put_oi * 0.18),
-                    "iv": volatility,
-                    "greeks": _black_scholes_greeks(
-                        option_type="put",
-                        spot=spot,
-                        strike=strike,
-                        time_to_expiry=time_to_expiry,
-                        volatility=volatility,
-                        rate=rate,
-                    ),
-                },
-            }
-        )
-
-    total_call_oi = sum(float(row["ce"]["oi"] or 0) for row in rows)
-    total_put_oi = sum(float(row["pe"]["oi"] or 0) for row in rows)
     return _option_chain_compat_payload({
         "module": "option_chain_engine",
         "symbol": symbol.upper(),
-        "underlying_price": round(spot, 2),
-        "atm_strike": atm,
-        "expiry": expiry_date,
-        "step": step,
-        "source": "synthetic-demo-chain",
-        "synthetic": True,
-        "pcr": round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0,
-        "max_pain": _max_pain(rows),
-        "greek_model": "black_scholes_demo",
+        "underlying_price": None,
+        "atm_strike": None,
+        "expiry": None,
+        "step": max(1, int(step)),
+        "source": "option-chain-unavailable",
+        "synthetic": False,
+        "provider_available": False,
+        "provider_warning": "Synthetic option-chain generation is disabled. Use a live option-chain provider.",
+        "pcr": None,
+        "max_pain": None,
+        "greek_model": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "rows": rows,
+        "rows": [],
     })
 
 
 def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
-    periods = max(1, min(int(periods), 48))
-    base_price = _latest_underlying_price(symbol)
     now = datetime.now(timezone.utc)
-    snapshots: list[dict[str, Any]] = []
-
-    for index in range(periods):
-        age = periods - index - 1
-        synthetic_price = base_price + ((index % 5) - 2) * 18 - age * 1.75
-        atm = _round_to_step(synthetic_price, step)
-        call_oi = 950000 + index * 7200 + max(synthetic_price - atm, 0) * 120
-        put_oi = 940000 + (periods - index) * 6500 + max(atm - synthetic_price, 0) * 120
-        pcr = put_oi / call_oi if call_oi else 0.0
-        snapshots.append(
-            {
-                "timestamp": (now - timedelta(minutes=5 * age)).isoformat(),
-                "underlying_price": round(synthetic_price, 2),
-                "atm_strike": atm,
-                "pcr": round(pcr, 3),
-                "max_pain": atm + (step if pcr > 1.05 else -step if pcr < 0.95 else 0),
-                "call_oi": int(call_oi),
-                "put_oi": int(put_oi),
-            }
-        )
-
     return {
         "module": "historical_option_chain",
         "symbol": symbol.upper(),
-        "source": "synthetic-historical-chain",
+        "source": "historical-option-chain-unavailable",
         "interval": "5m",
-        "snapshots": snapshots,
+        "snapshots": [],
+        "provider_available": False,
+        "warning": "Synthetic history is disabled. Historical snapshots will appear after live option-chain storage is configured.",
         "updated_at": now.isoformat(),
     }
 
 
-def _sample_candles(symbol: str) -> list[dict[str, Any]]:
-    candles = latest_candles(symbol, "5m", 160)
-    if candles:
-        return candles
-    base = _latest_underlying_price(symbol)
-    now = datetime.now(timezone.utc) - timedelta(minutes=5 * 80)
-    generated = []
-    for index in range(80):
-        close = base + ((index % 9) - 4) * 12 + index * 1.5
-        generated.append(
-            {
-                "timestamp": (now + timedelta(minutes=5 * index)).isoformat(),
-                "open": close - 8,
-                "high": close + 18,
-                "low": close - 18,
-                "close": close,
-                "volume": 1000 + index * 10,
-            }
-        )
-    return generated
+def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
+    return latest_candles(symbol, "5m", 160)
 
 
 def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or {}
     symbol = str(payload.get("symbol") or "NIFTY").upper()
     capital = float(payload.get("capital") or 100000)
-    candles = payload.get("candles") or _sample_candles(symbol)
+    candles = payload.get("candles") or _stored_provider_candles(symbol)
+    if not candles:
+        raise ValueError(f"Backtest requires provider-backed candles for {symbol}; synthetic candle generation is disabled.")
     max_candles = int(payload.get("max_candles") or 0)
     if max_candles > 0 and len(candles) > max_candles:
         candles = candles[-max_candles:]
@@ -708,9 +634,23 @@ def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
 
 
 def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        backtesting = backtesting_module(payload)
+    except ValueError as exc:
+        backtesting = {
+            "module": "backtesting",
+            "source": "provider-data-unavailable",
+            "available": False,
+            "warning": str(exc),
+            "metrics": {},
+            "cost_model": _backtest_cost_model(payload or {}),
+            "equity_curve": [],
+            "recent_outcomes": [],
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
     return {
         "option_chain": option_chain_engine(),
-        "backtesting": backtesting_module(payload),
+        "backtesting": backtesting,
         "risk_engine": risk_engine_summary(),
         "trade_journal": trade_journal_summary(),
     }

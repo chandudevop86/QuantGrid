@@ -153,12 +153,13 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["source"] == "synthetic"
+    assert payload["source"] == "option-chain-unavailable"
     assert {"underlying", "spot", "expiry", "ATM", "atm", "pcr", "max_pain", "support", "resistance", "signal"} <= set(payload)
-    assert payload["synthetic"] is True
+    assert payload["synthetic"] is False
+    assert payload["rows"] == []
 
 
-def test_synthetic_option_chain_response_contract(app_client):
+def test_option_chain_response_contract_never_generates_synthetic_rows(app_client):
     headers = admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY", headers=headers)
@@ -166,8 +167,10 @@ def test_synthetic_option_chain_response_contract(app_client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["underlying"] == "NIFTY"
-    assert payload["source"] == "synthetic"
-    assert payload["signal"] in {"BUY_CE", "BUY_PE", "NO_TRADE"}
+    assert payload["source"] == "option-chain-unavailable"
+    assert payload["synthetic"] is False
+    assert payload["rows"] == []
+    assert payload["signal"] == "NO_TRADE"
 
 
 def test_signals_alias_reuses_latest_handler(app_client):

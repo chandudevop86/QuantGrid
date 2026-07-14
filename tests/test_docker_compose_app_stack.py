@@ -22,7 +22,7 @@ def test_app_compose_includes_full_local_stack_with_healthchecks():
     assert "postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid" in compose
     assert "redis://redis:6379/0" in compose
     assert "QUANTGRID_AUTH_SECRET:?Set QUANTGRID_AUTH_SECRET" in compose
-    assert "ALLOW_SAMPLE_MARKET_DATA:-false" in compose
+    assert "ALLOW_SAMPLE_MARKET_DATA" not in compose
     assert "QUANTGRID_ALLOW_DEV_SEED_USERS:-false" in compose
     assert "http://127.0.0.1:8000/health" in compose
     assert '"127.0.0.1:5432:5432"' in compose

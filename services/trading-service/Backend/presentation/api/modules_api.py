@@ -41,8 +41,6 @@ class BacktestComparisonRequest(BacktestModuleRequest):
 
 
 def _module_option_chain_payload(payload: dict[str, Any], *, legacy_source: bool = False) -> dict[str, Any]:
-    if legacy_source and payload.get("source") == "synthetic-demo-chain":
-        return {**payload, "source": "synthetic", "data_source": "synthetic-demo-chain"}
     return payload
 
 

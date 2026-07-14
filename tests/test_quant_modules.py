@@ -11,10 +11,11 @@ def test_quant_modules_dashboard_exposes_four_modules(app_client):
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"option_chain", "backtesting", "risk_engine", "trade_journal"}
-    assert payload["option_chain"]["source"] == "synthetic-demo-chain"
+    assert payload["option_chain"]["source"] == "option-chain-unavailable"
     assert "pcr" in payload["option_chain"]
     assert "max_pain" in payload["option_chain"]
-    assert "equity_curve" in payload["backtesting"]
+    assert payload["backtesting"]["equity_curve"] == []
+    assert payload["backtesting"]["available"] is False
     assert payload["risk_engine"]["state"] in {"normal", "halted"}
     assert "win_rate" in payload["trade_journal"]
 
@@ -66,7 +67,7 @@ def test_backtesting_comparison_ranks_strategy_runs(app_client):
     assert "equity_curve" in payload["runs"][0]
 
 
-def test_historical_option_chain_module_returns_snapshots(app_client):
+def test_historical_option_chain_module_reports_unavailable_without_synthetic_snapshots(app_client):
     headers = admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY/historical", headers=headers)
@@ -74,9 +75,9 @@ def test_historical_option_chain_module_returns_snapshots(app_client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["module"] == "historical_option_chain"
-    assert payload["source"] == "synthetic-historical-chain"
-    assert len(payload["snapshots"]) == 12
-    assert {"timestamp", "underlying_price", "atm_strike", "pcr", "max_pain"} <= set(payload["snapshots"][0])
+    assert payload["source"] == "historical-option-chain-unavailable"
+    assert payload["provider_available"] is False
+    assert payload["snapshots"] == []
 
 
 def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatch):
@@ -125,11 +126,13 @@ def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, mo
     assert response.status_code == 200
     payload = response.json()
     assert payload["module"] == "live_nse_option_chain"
-    assert payload["source"] == "synthetic-demo-chain"
-    assert payload["underlying_price"] > 0
-    assert payload["pcr"] is not None
+    assert payload["source"] == "option-chain-unavailable"
+    assert payload["underlying_price"] is None
+    assert payload["pcr"] is None
+    assert payload["rows"] == []
+    assert payload["provider_available"] is False
     assert payload["fallback_reason"] == "RuntimeError"
-    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable; using synthetic fallback data."
+    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable. No option-chain values are being shown."
     assert "NSE blocked request" in payload["fallback_detail"]
 
 
@@ -148,9 +151,10 @@ def test_live_nse_option_chain_function_falls_back_on_http_403(monkeypatch):
     payload = quant_modules.live_nse_option_chain("NIFTY")
 
     assert payload["module"] == "live_nse_option_chain"
-    assert payload["source"] == "synthetic-demo-chain"
+    assert payload["source"] == "option-chain-unavailable"
+    assert payload["rows"] == []
     assert payload["fallback_reason"] == "HTTPError"
-    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable; using synthetic fallback data."
+    assert payload["provider_warning"] == "Live NSE option-chain provider unavailable. No option-chain values are being shown."
     assert "HTTP Error 403" in payload["fallback_detail"]
 
 def test_backtesting_comparison_ranks_traded_runs_above_no_trade_placeholders(monkeypatch):

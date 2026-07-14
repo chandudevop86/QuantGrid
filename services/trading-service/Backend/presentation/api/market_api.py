@@ -39,7 +39,6 @@ from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
 from Backend.infrastructure.market_data.dhan_provider import _normalize_candles
 from Backend.presentation.api.roles import require_roles
-from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.volume_analysis import analyze_volume
 from Backend.application.subscriptions import require_entitlement
@@ -64,10 +63,6 @@ DHAN_UNDERLYING_DEFAULTS: dict[str, tuple[int, str]] = {
     "BANKNIFTY": (25, "IDX_I"),
     "FINNIFTY": (27, "IDX_I"),
 }
-
-
-def _allow_sample_market_data() -> bool:
-    return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def _market_data_unavailable(exc: Exception) -> HTTPException:
@@ -139,25 +134,6 @@ def _validate_live_price_payload(payload: dict[str, Any]) -> None:
     exchange_timezone = str(payload.get("exchange_timezone") or "")
     if exchange_timezone != "Asia/Kolkata":
         raise RuntimeError(f"Live market data timestamp timezone must be Asia/Kolkata; got {exchange_timezone or 'unknown'}.")
-
-
-def _sample_candles(symbol: str, limit: int = 20) -> list[dict[str, Any]]:
-    start = datetime.now(timezone.utc) - timedelta(minutes=limit - 1)
-    candles = []
-
-    for index in range(limit):
-        open_price = 22440 + index * 3
-        candles.append({
-            "symbol": symbol.upper(),
-            "timestamp": (start + timedelta(minutes=index)).isoformat(),
-            "open": open_price,
-            "high": open_price + 8,
-            "low": open_price - 6,
-            "close": open_price + 4,
-            "volume": 1000 + index * 125,
-        })
-
-    return candles
 
 
 def _candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> list[dict[str, Any]]:
@@ -697,40 +673,40 @@ def _derived_option_rows(strikes: list[int]) -> list[dict[str, Any]]:
 
 
 def _fallback_option_chain(symbol: str, *, strikes_each_side: int, step: int, warning: str) -> dict[str, Any]:
-    payload = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
     return {
-        "symbol": payload["symbol"],
-        "underlying_price": payload["underlying_price"],
-        "spot": payload["underlying_price"],
-        "atm_strike": payload["atm_strike"],
-        "ATM": payload["atm_strike"],
-        "atm": payload["atm_strike"],
-        "step": payload["step"],
-        "expiry": payload["expiry"],
-        "source": payload["source"],
+        "symbol": symbol.upper(),
+        "underlying_price": None,
+        "spot": None,
+        "atm_strike": None,
+        "ATM": None,
+        "atm": None,
+        "step": step,
+        "expiry": None,
+        "source": "option-chain-unavailable",
         "warning": warning,
-        "updated_at": payload["updated_at"],
-        "rows": payload["rows"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "rows": [],
         "live_rows_available": False,
+        "provider_available": False,
         "fallback_message": warning,
         "data_quality": {
-            "status": "synthetic_fallback",
-            "reason": "market_price_unavailable",
+            "status": "unavailable",
+            "reason": "live_provider_unavailable",
             "message": warning,
         },
-        "pcr": payload.get("pcr"),
-        "PCR": payload.get("pcr"),
-        "max_pain": payload.get("max_pain"),
-        "support": payload.get("support"),
-        "resistance": payload.get("resistance"),
+        "pcr": None,
+        "PCR": None,
+        "max_pain": None,
+        "support": None,
+        "resistance": None,
         "signals": {
             "bias": "NEUTRAL",
             "reason": warning,
-            "total_call_oi": int(sum(float(row["ce"].get("oi") or 0) for row in payload["rows"])),
-            "total_put_oi": int(sum(float(row["pe"].get("oi") or 0) for row in payload["rows"])),
-            "pcr": payload.get("pcr"),
-            "atm_strike": payload["atm_strike"],
-            "max_pain": payload.get("max_pain"),
+            "total_call_oi": 0,
+            "total_put_oi": 0,
+            "pcr": None,
+            "atm_strike": None,
+            "max_pain": None,
         },
     }
 
@@ -781,20 +757,7 @@ def get_ltp(
         if cached:
             cached["warning"] = "Live market data provider is unavailable; served latest stored live price."
             return cached
-        if not _allow_sample_market_data():
-            raise _market_data_unavailable(exc) from exc
-        latest = _sample_candles(symbol, limit=1)[-1]
-        return {
-            "provider": "sample",
-            "symbol": symbol.upper(),
-            "market_symbol": _market_symbol(symbol),
-            "ltp": latest["close"],
-            "price": latest["close"],
-            "change_pct": None,
-            "timestamp": latest["timestamp"],
-            "source": "sample-fallback",
-            "warning": f"Live market data unavailable: {exc}",
-        }
+        raise _market_data_unavailable(exc) from exc
 
 
 @router.get("/option-chain/{symbol}")
@@ -819,13 +782,13 @@ def get_option_chain(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
-                warning=f"Live market price unavailable: {exc}. Showing synthetic option-chain fallback.",
+                warning=f"Live market price unavailable: {exc}. Option-chain data is unavailable.",
             )
         return _fallback_option_chain(
             symbol,
             strikes_each_side=strikes_each_side,
             step=step,
-            warning=f"Live market price unavailable: {exc}. Showing synthetic option-chain fallback.",
+            warning=f"Live market price unavailable: {exc}. Option-chain data is unavailable.",
         )
     if price <= 0:
         if get_settings().live_trading_enabled:
@@ -834,7 +797,7 @@ def get_option_chain(
             symbol,
             strikes_each_side=strikes_each_side,
             step=step,
-            warning="Current market price is unavailable. Showing synthetic option-chain fallback.",
+            warning="Current market price is unavailable. Option-chain data is unavailable.",
         )
 
     atm = _nearest_strike(price, step)
@@ -1168,8 +1131,7 @@ def get_candles(
         # precisely how candles can get stuck hours stale during open market hours without
         # anyone noticing until they see the age warning on the dashboard: the failure
         # producing that staleness was invisible. Log it server-side and include the real
-        # reason in the response, matching the sample-fallback branch below (which already
-        # does this correctly).
+        # reason in the response so provider outages cannot silently resemble fresh data.
         logger.warning(
             "live_candle_fetch_failed_serving_cache",
             extra={"symbol": symbol, "interval": interval, "error_type": exc.__class__.__name__, "error": str(exc)},
@@ -1178,22 +1140,7 @@ def get_candles(
         if cached:
             cached["warning"] = f"Live market data provider is unavailable ({exc.__class__.__name__}: {exc}); served latest stored live candles."
             return cached
-        if not _allow_sample_market_data():
-            raise _market_data_unavailable(exc) from exc
-        sample_candles = _sample_candles(symbol, limit=min(limit, 100))
-        valid_sample_candles, data_quality = validate_candles(sample_candles, source="sample-fallback")
-        return {
-            "symbol": symbol.upper(),
-            "market_symbol": _market_symbol(symbol),
-            "interval": interval,
-            "period": period,
-            "source": "sample-fallback",
-            "volume_status": "reported",
-            "warning": f"Live market data unavailable: {exc}",
-            "candles": valid_sample_candles,
-            "validation": validate_live_candle(valid_sample_candles, interval=interval, source="sample-fallback").model_dump(),
-            "data_quality": data_quality.model_dump(),
-        }
+        raise _market_data_unavailable(exc) from exc
 
 
 @router.get("/validation/{symbol}")

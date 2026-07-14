@@ -9,6 +9,13 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.backtesting import BacktestEngine as CanonicalBacktestEngine
 
 
+def _provider_candles():
+    return [
+        {"timestamp": f"2026-07-04T09:{index:02d}:00+00:00", "open": 100 + index, "high": 102 + index, "low": 98 + index, "close": 101 + index, "volume": 1000}
+        for index in range(20)
+    ]
+
+
 def _trade(pnl: float, outcome: str) -> BacktestTrade:
     return BacktestTrade(
         strategy="test",
@@ -44,7 +51,7 @@ def test_backtest_metrics_calculation():
 
 
 def test_backtesting_module_returns_cost_model_assumptions():
-    result = backtesting_module({"symbol": "NIFTY", "brokerage_per_order": 15, "slippage_bps": 3})
+    result = backtesting_module({"symbol": "NIFTY", "brokerage_per_order": 15, "slippage_bps": 3, "candles": _provider_candles()})
 
     cost_model = result["cost_model"]
     assert cost_model["brokerage_per_order"] == 15
@@ -97,6 +104,7 @@ def test_backtesting_module_applies_configured_cost_model_to_engine(monkeypatch)
             "slippage_bps": 4,
             "spread_bps": 6,
             "entry_delay_seconds": 2,
+            "candles": _provider_candles(),
         }
     )
 

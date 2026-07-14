@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -18,10 +17,6 @@ YAHOO_SYMBOLS = {
     "BANKNIFTY": "^NSEBANK",
     "NIFTYBANK": "^NSEBANK",
 }
-
-
-def allow_sample_market_data() -> bool:
-    return os.getenv("ALLOW_SAMPLE_MARKET_DATA", "false").strip().lower() in {"1", "true", "yes"}
 
 
 def market_data_unavailable(exc: Exception) -> HTTPException:
@@ -55,25 +50,6 @@ def fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") 
         raise RuntimeError(str(error))
 
     return result[0]
-
-
-def sample_candles(symbol: str, limit: int) -> list[dict[str, Any]]:
-    start = datetime.now(timezone.utc) - timedelta(minutes=limit - 1)
-    rows = []
-
-    for index in range(limit):
-        open_price = 22440 + index * 2
-        rows.append({
-            "symbol": symbol.upper(),
-            "timestamp": (start + timedelta(minutes=index)).isoformat(),
-            "open": open_price,
-            "high": open_price + 8,
-            "low": open_price - 6,
-            "close": open_price + 3,
-            "volume": 1000 + index * 75,
-        })
-
-    return rows
 
 
 def candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> list[dict[str, Any]]:
@@ -143,18 +119,7 @@ def price(symbol: str):
             "exchange_timezone": meta.get("timezone"),
         }
     except Exception as exc:
-        if not allow_sample_market_data():
-            raise market_data_unavailable(exc) from exc
-        latest = sample_candles(symbol, 1)[-1]
-        return {
-            "symbol": symbol.upper(),
-            "market_symbol": market_symbol(symbol),
-            "price": latest["close"],
-            "change_pct": None,
-            "timestamp": latest["timestamp"],
-            "source": "sample-fallback",
-            "warning": f"Live market data unavailable: {exc}",
-        }
+        raise market_data_unavailable(exc) from exc
 
 
 @app.get("/candles/{symbol}")
@@ -178,15 +143,4 @@ def candles(symbol: str, interval: str = "1m", period: str = "1d", limit: int = 
             "candles": rows,
         }
     except Exception as exc:
-        if not allow_sample_market_data():
-            raise market_data_unavailable(exc) from exc
-        return {
-            "symbol": symbol.upper(),
-            "market_symbol": market_symbol(symbol),
-            "interval": interval,
-            "period": period,
-            "source": "sample-fallback",
-            "volume_status": "reported",
-            "warning": f"Live market data unavailable: {exc}",
-            "candles": sample_candles(symbol, limit),
-        }
+        raise market_data_unavailable(exc) from exc

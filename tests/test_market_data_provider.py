@@ -637,13 +637,15 @@ def test_option_chain_falls_back_when_price_provider_is_unavailable(monkeypatch)
 
     result = market_api.get_option_chain("NIFTY", strikes_each_side=1, _role="viewer")
 
-    assert result["source"] == "synthetic-demo-chain"
+    assert result["source"] == "option-chain-unavailable"
     assert result["live_rows_available"] is False
-    assert result["data_quality"]["reason"] == "market_price_unavailable"
+    assert result["provider_available"] is False
+    assert result["data_quality"]["reason"] == "live_provider_unavailable"
     assert result["fallback_message"] == result["warning"]
-    assert result["underlying_price"] > 0
-    assert result["pcr"] is not None
-    assert result["max_pain"] is not None
+    assert result["underlying_price"] is None
+    assert result["pcr"] is None
+    assert result["max_pain"] is None
+    assert result["rows"] == []
     assert "price feed down" in result["warning"]
 
 

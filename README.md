@@ -97,8 +97,8 @@ python -m Backend.tools.check_database
 The check command creates missing auth/audit tables and prints the active
 database dialect without exposing the database password.
 
-Market data fails closed by default. Set `ALLOW_SAMPLE_MARKET_DATA=true` only for
-offline demos where generated fallback prices and candles are acceptable.
+Market data fails closed. QuantGrid never generates fallback prices, candles, or
+option-chain rows; provider outages are reported as unavailable.
 
 Execution is paper-only unless live trading is explicitly enabled. The current
 API rejects live execution because no live broker order adapter is wired into the
@@ -340,6 +340,5 @@ This starts Kafka, Zookeeper, Redis, and Postgres for the local services.
 Set `POSTGRES_PASSWORD` before starting the stack.
 
 AWS 3-tier Terraform lives in `infra/terraform/aws`; see `infra/terraform/aws/README.md` before planning or applying infrastructure.
-
 
 
