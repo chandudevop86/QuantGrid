@@ -7,7 +7,7 @@ source "${SCRIPT_DIR}/common.sh"
 ACTION="${1:-test}"
 MODE="${2:-http}"
 SITE_NAME="${SITE_NAME:-quantgrid}"
-DOMAIN="${DOMAIN:-chandudevopai.shop}"
+DOMAIN="${DOMAIN:-quantgrid.info.shop}"
 WWW_DOMAIN="${WWW_DOMAIN:-www.${DOMAIN}}"
 CERT_NAME="${CERT_NAME:-${DOMAIN}}"
 
@@ -21,8 +21,8 @@ render_config() {
   validate_hostname "${WWW_DOMAIN}"
   validate_hostname "${CERT_NAME}"
   sed \
-    -e "s/www\.chandudevopai\.shop/${WWW_DOMAIN}/g" \
-    -e "s/chandudevopai\.shop/${DOMAIN}/g" \
+    -e "s/www\.quantgrid.info\.shop/${WWW_DOMAIN}/g" \
+    -e "s/quantgrid.info\.shop/${DOMAIN}/g" \
     -e "s#/etc/letsencrypt/live/${DOMAIN}/#/etc/letsencrypt/live/${CERT_NAME}/#g" \
     "${source}" >"${target}"
 }
