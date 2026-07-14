@@ -3285,6 +3285,40 @@ select {
   .guest-disclaimer { display: grid; gap: 8px; }
 }
 
+/* Focused order ticket */
+.trade-page { max-width: 1180px; margin-inline: auto; gap: 14px; }
+.trade-heading { align-items: end; padding: 4px 2px 2px; }
+.trade-heading h1 { margin: 2px 0 0; font-size: clamp(28px, 3vw, 38px); }
+.trade-heading > p { max-width: 360px; margin: 0 0 5px; text-align: right; }
+.trade-ticket { padding: 0; overflow: hidden; border-color: #24364b; background: #0c1727; }
+.trade-ticket .form-panel-header { min-height: 88px; padding: 18px 20px; border-bottom: 1px solid #223247; background: #0a1523; }
+.trade-ticket .form-panel-header h2 { margin: 3px 0; font-size: 27px; font-variant-numeric: tabular-nums; }
+.trade-ticket .side-selector { margin: 16px 20px 0; }
+.trade-ticket .side-selector button { min-height: 46px; border-radius: 7px; }
+.trade-order-summary { grid-template-columns: repeat(5, 1fr); margin: 14px 20px 0; overflow: hidden; border: 1px solid #223247; border-radius: 8px; background: #08111f; }
+.trade-order-summary span { min-height: 72px; padding: 13px 16px; border: 0; border-right: 1px solid #223247; border-radius: 0; background: transparent; }
+.trade-order-summary span:last-child { border-right: 0; }
+.trade-order-summary strong { font-size: 18px; }
+.trade-ticket .risk-control-grid { margin: 18px 20px 0; gap: 12px; }
+.trade-ticket .risk-control-grid label { gap: 7px; color: #b8c6d8; }
+.trade-ticket .risk-control-grid input { min-height: 48px; border-radius: 7px; background: #07111e; font-size: 15px; }
+.lot-quantity-control { display: grid; grid-template-columns: 44px minmax(90px, 1fr) 44px; overflow: hidden; border: 1px solid #34465f; border-radius: 7px; background: #07111e; }
+.lot-quantity-control input { width: 100%; border: 0 !important; border-right: 1px solid #26384f !important; border-left: 1px solid #26384f !important; border-radius: 0 !important; text-align: center; }
+.lot-quantity-control button { min-height: 48px; border: 0; background: #0f1e30; color: #9ff7ea; font-size: 20px; font-weight: 800; }
+.lot-quantity-control button:hover { background: #123b3a; }
+.trade-ticket .risk-box { margin: 16px 20px 0; padding: 15px 16px; border-color: #223247; border-radius: 8px; background: #08111f; }
+.trade-ticket > .primary-action { width: calc(100% - 40px); min-height: 52px; margin: 18px 20px 0; border-radius: 7px; font-size: 15px; }
+.trade-ticket > .refresh-button { width: calc(100% - 40px); margin: 8px 20px 20px; }
+.trade-ticket > .alert, .trade-ticket > .technical-details { margin-inline: 20px; }
+
+@media (max-width: 760px) {
+  .trade-heading { align-items: flex-start; flex-direction: column; }
+  .trade-heading > p { text-align: left; }
+  .trade-order-summary { grid-template-columns: repeat(2, 1fr); }
+  .trade-order-summary span { border-bottom: 1px solid #223247; }
+  .trade-ticket .risk-control-grid { grid-template-columns: 1fr; }
+}
+
 /* Institutional command-center layout inspired by the approved dashboard reference. */
 :root {
   --command-cyan: #22d3ee;

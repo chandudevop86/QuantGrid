@@ -9,9 +9,9 @@ from Backend.domain.models.signal import StrategySignal
 
 
 DEFAULT_LOT_SIZES = {
-    "NIFTY": 75,
-    "NIFTY50": 75,
-    "NIFTY_50": 75,
+    "NIFTY": 65,
+    "NIFTY50": 65,
+    "NIFTY_50": 65,
     "BANKNIFTY": 35,
     "NIFTYBANK": 35,
     "FINNIFTY": 65,

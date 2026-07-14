@@ -120,7 +120,7 @@ orders.
 Paper execution applies broker-style sizing safeguards before simulation:
 
 ```bash
-QUANTGRID_LOT_SIZE_NIFTY=75
+QUANTGRID_LOT_SIZE_NIFTY=65
 QUANTGRID_MAX_ORDER_NOTIONAL=1000000
 QUANTGRID_MARGIN_MULTIPLIER=1
 QUANTGRID_ROUND_DOWN_TO_LOT=true
@@ -340,7 +340,6 @@ This starts Kafka, Zookeeper, Redis, and Postgres for the local services.
 Set `POSTGRES_PASSWORD` before starting the stack.
 
 AWS 3-tier Terraform lives in `infra/terraform/aws`; see `infra/terraform/aws/README.md` before planning or applying infrastructure.
-
 
 
 

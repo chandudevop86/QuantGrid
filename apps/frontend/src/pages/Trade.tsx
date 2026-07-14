@@ -18,11 +18,14 @@ type OrderDraft = {
 };
 
 const numberInput = (value: number) => (Number.isFinite(value) && value > 0 ? String(value) : "");
+const formatNumberForTrade = (value: number) => Number.isFinite(value) && value > 0
+  ? value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  : "—";
 const parsedPositive = (value: string) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 };
-const lotSizeForSymbol = (symbol: string) => (symbol === "NIFTY" ? 75 : 1);
+const lotSizeForSymbol = (symbol: string) => (symbol === "NIFTY" ? 65 : 1);
 const roundDownToLot = (quantity: number | null, lotSize: number) => {
   if (!quantity || quantity <= 0) return 0;
   return Math.floor(quantity / lotSize) * lotSize;
@@ -42,7 +45,7 @@ export default function Trade() {
   const [tslMode, setTslMode] = useState<TslMode>("percent");
   const [trailingStopInput, setTrailingStopInput] = useState("");
   const [trailingPctInput, setTrailingPctInput] = useState("0.5");
-  const [quantityInput, setQuantityInput] = useState("75");
+  const [quantityInput, setQuantityInput] = useState("65");
   const [mode, setMode] = useState<TradingMode>(getCurrentMode());
   const [brokerStatus, setBrokerStatus] = useState<any>(null);
   const [pendingLiveOrder, setPendingLiveOrder] = useState<OrderDraft | null>(null);
@@ -80,6 +83,11 @@ export default function Trade() {
   const requestedQuantity = parsedPositive(quantityInput);
   const lotSize = lotSizeForSymbol(order.symbol);
   const roundedQuantity = roundDownToLot(requestedQuantity, lotSize);
+  const lots = roundedQuantity > 0 ? roundedQuantity / lotSize : 0;
+  const adjustLots = (delta: number) => {
+    const nextLots = Math.max(1, lots + delta || 1);
+    setQuantityInput(String(nextLots * lotSize));
+  };
 
   const loadPrice = async () => {
     try {
@@ -239,17 +247,18 @@ export default function Trade() {
   };
 
   return (
-    <section className="dashboard-page">
-      <div className="page-heading">
-        <h1>Trade</h1>
-        <p>{isLive ? "Place a manually confirmed live order through the execution API." : "Place a manual paper trade through the execution API."}</p>
+    <section className="dashboard-page trade-page">
+      <div className="page-heading trade-heading">
+        <div><span className="page-eyebrow">Order ticket</span><h1>{isLive ? "Live Order" : "Paper Order"}</h1></div>
+        <p>{isLive ? "Review and confirm a broker order." : "Test the setup without risking real money."}</p>
       </div>
 
-      <div className="form-panel execution-panel">
+      <div className="form-panel execution-panel trade-ticket">
         <div className="form-panel-header">
           <div>
-            <h2>{isLive ? "Manual Live Order" : "Manual Paper Order"}</h2>
-            <p>{priceLoading ? "Loading live NIFTY price..." : `Live price from ${marketSource ?? "Market API"}`}</p>
+            <span className="metric-label">NIFTY 50 · 1 lot = 65</span>
+            <h2>{priceLoading ? "Loading price…" : formatNumberForTrade(order.entry)}</h2>
+            <p>{marketSource ?? "Market API"}</p>
           </div>
           <span className="environment-badge">{mode.toUpperCase()} {side}</span>
         </div>
@@ -308,22 +317,14 @@ export default function Trade() {
           </button>
         </div>
 
-        <div className="order-summary">
+        <div className="order-summary trade-order-summary">
           <span>
             <strong>{order.symbol}</strong>
             Symbol
           </span>
           <span>
-            <strong>{order.entry}</strong>
-            Entry
-          </span>
-          <span>
-            <strong>{requestedQuantity ?? "-"}</strong>
-            Qty
-          </span>
-          <span>
             <strong>{roundedQuantity || "-"}</strong>
-            Rounded Qty
+            {lots || 0} {lots === 1 ? "lot" : "lots"}
           </span>
           <span>
             <strong>{order.stop}</strong>
@@ -348,15 +349,12 @@ export default function Trade() {
         <div className="risk-control-grid">
           <label>
             Quantity
-            <input
-              type="number"
-              inputMode="numeric"
-              value={quantityInput}
-              onChange={(event) => setQuantityInput(event.target.value)}
-              min="1"
-              step="75"
-            />
-            <small className="input-helper">Lot size {lotSize}; rounded quantity {roundedQuantity || "-"}</small>
+            <div className="lot-quantity-control">
+              <button type="button" onClick={() => adjustLots(-1)} aria-label="Remove one lot">−</button>
+              <input type="number" inputMode="numeric" value={quantityInput} onChange={(event) => setQuantityInput(event.target.value)} min={lotSize} step={lotSize} />
+              <button type="button" onClick={() => adjustLots(1)} aria-label="Add one lot">+</button>
+            </div>
+            <small className="input-helper">{lots || 0} {lots === 1 ? "lot" : "lots"} × {lotSize} units</small>
           </label>
           <label>
             Stop Loss

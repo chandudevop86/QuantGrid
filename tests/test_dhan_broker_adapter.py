@@ -127,13 +127,13 @@ def test_dhan_place_order_rejects_unsafe_security_id(monkeypatch, env_value, exp
     from Backend.infrastructure.broker import dhan_order_adapter
 
     with pytest.raises(dhan_order_adapter.BrokerAdapterError, match=expected):
-        asyncio.run(dhan_order_adapter.DhanBrokerClient().place_order(Order(symbol="NIFTY", side="BUY", quantity=75, price=100)))
+        asyncio.run(dhan_order_adapter.DhanBrokerClient().place_order(Order(symbol="NIFTY", side="BUY", quantity=65, price=100)))
 
 
 @pytest.mark.parametrize(
     ("side", "quantity", "expected"),
     [
-        ("HOLD", 75, "side must be BUY or SELL"),
+        ("HOLD", 65, "side must be BUY or SELL"),
         ("BUY", 0, "quantity must be greater than zero"),
     ],
 )

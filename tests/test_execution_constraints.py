@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from Backend.domain.execution_constraints import (
     ExecutionConstraintConfig,
+    lot_size_for_symbol,
     round_quantity_to_lot,
     validate_execution_constraints,
 )
@@ -13,7 +14,7 @@ from Backend.domain.models.signal import StrategySignal
 def _signal(quantity: int, entry: float = 100.0) -> StrategySignal:
     return StrategySignal(
         strategy_name="test",
-        symbol="NIFTY",
+        symbol="TEST",
         side="BUY",
         entry_price=entry,
         stop_loss=95,
@@ -25,6 +26,12 @@ def _signal(quantity: int, entry: float = 100.0) -> StrategySignal:
 
 def test_round_quantity_to_lot_rounds_down():
     assert round_quantity_to_lot(1821, 75) == 1800
+
+
+def test_current_nifty_market_lot_is_65():
+    assert lot_size_for_symbol("NIFTY") == 65
+    assert lot_size_for_symbol("NIFTY50") == 65
+    assert round_quantity_to_lot(75, lot_size_for_symbol("NIFTY")) == 65
 
 
 def test_execution_constraints_reject_below_one_lot():
