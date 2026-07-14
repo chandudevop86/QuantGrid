@@ -59,7 +59,12 @@ EOF
       run sudo unlink /etc/nginx/sites-enabled/default
     fi
     run sudo nginx -t
-    run sudo systemctl reload nginx
+    if sudo systemctl is-active --quiet nginx; then
+      run sudo systemctl reload nginx
+    else
+      log "Nginx is stopped; starting it with the validated ${MODE} configuration"
+      run sudo systemctl start nginx
+    fi
     log "Installed Nginx config for ${DOMAIN} (${MODE})"
     ;;
   reload)
