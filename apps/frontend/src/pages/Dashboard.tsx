@@ -79,8 +79,23 @@ export default function Dashboard() {
     { label: "Target", value: text(finalDecision.trade_plan?.target ?? finalDecision.target ?? decision.target) },
     { label: "Invalidation", value: text(finalDecision.trade_plan?.invalidation_level ?? finalDecision.invalidation_level ?? supportResistance.invalidation_level ?? decision.invalidation_level) },
   ];
+  const actionLabel = normalizeDecision(recommendation);
+  const marketState = String(regime).replace(/_/g, " ");
+  const updated = operations.updated_at ? new Date(operations.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Awaiting update";
 
   return <section className="qg-market-dashboard" aria-label="Market decision dashboard">
+    <header className="sahi-command-header">
+      <div className="sahi-instrument"><span className="terminal-kicker">Market command center</span><strong>NIFTY 50</strong><span>Cash · NSE</span></div>
+      <div className="sahi-market-state"><span className="market-live-dot" aria-hidden="true" /><div><small>Decision engine</small><b>{actionLabel}</b></div></div>
+      <div className="sahi-market-state"><div><small>Last evaluation</small><b>{updated}</b></div></div>
+      <Link className="sahi-execute-link" to="/trade">Open terminal <span aria-hidden="true">↗</span></Link>
+    </header>
+    <section className="sahi-risk-strip" aria-label="Market snapshot">
+      <span><small>Confidence</small><b>{confidence.toFixed(0)}%</b></span>
+      <span><small>Market regime</small><b>{marketState}</b></span>
+      <span><small>Risk level</small><b className={String(risk).toLowerCase() === "high" ? "is-risk" : ""}>{text(risk)}</b></span>
+      <span><small>Trade plan</small><b>{actionLabel === "NO TRADE" ? "Stand aside" : `${actionLabel} setup`}</b></span>
+    </section>
     <div className="qg-dashboard-primary"><DecisionCard decision={normalizeDecision(recommendation)} confidence={confidence} regime={text(regime)} risk={text(risk)} reason={text(explanation)} updatedAt={operations.updated_at} /><FeatureGate feature="decision.advanced_reasons"><DecisionReasons reasons={reasons} /></FeatureGate></div>
     <div className="qg-dashboard-secondary"><FeatureGate feature="volume.basic"><TradingChecklist items={checklistItems} /></FeatureGate><KeyLevelsCard levels={canSeeFullLevels ? levels : levels.slice(0, 2)} /></div>
     <MarketChart support={number(support)} resistance={number(resistance)} showAnalysis={canSeeVolume} />
