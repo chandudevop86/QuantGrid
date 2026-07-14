@@ -31,6 +31,19 @@ case "${ACTION}" in
   install)
     if [[ "${MODE}" == "https" ]]; then
       SOURCE="${APP_DIR}/deploy/nginx/quantgrid.conf"
+      CERT_DIR="/etc/letsencrypt/live/${CERT_NAME}"
+      if [[ ! -r "${CERT_DIR}/fullchain.pem" || ! -r "${CERT_DIR}/privkey.pem" ]]; then
+        cat >&2 <<EOF
+TLS certificate files are missing for ${CERT_NAME}.
+
+Bootstrap HTTP first, issue the certificate, then enable HTTPS:
+  bash deploy/scripts/nginx.sh install http
+  sudo certbot certonly --webroot -w /var/www/certbot \
+    -d ${DOMAIN} -d ${WWW_DOMAIN}
+  bash deploy/scripts/nginx.sh install https
+EOF
+        exit 1
+      fi
     else
       SOURCE="${APP_DIR}/deploy/nginx/quantgrid-http.conf"
     fi
