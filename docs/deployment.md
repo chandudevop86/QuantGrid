@@ -78,6 +78,7 @@ DOMAIN=trade.example.com WWW_DOMAIN=www.trade.example.com CERT_NAME=trade.exampl
 ```
 
 The installer accepts hostname characters only, renders to a temporary file, validates with `nginx -t`, and reloads only after validation. Unknown HTTP hosts are rejected instead of being reflected into redirects.
+It also disables Ubuntu's `/etc/nginx/sites-enabled/default` symlink when present, because QuantGrid owns the hardened default listeners and Nginx otherwise rejects the duplicate `default_server` declaration.
 
 Verify certificate renewal and expiry monitoring during every production handover:
 

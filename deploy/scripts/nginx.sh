@@ -41,6 +41,10 @@ case "${ACTION}" in
     run sudo mkdir -p /var/www/certbot
     run sudo install -m 0644 "${TEMP_CONFIG}" "/etc/nginx/sites-available/${SITE_NAME}"
     run sudo ln -sf "/etc/nginx/sites-available/${SITE_NAME}" "/etc/nginx/sites-enabled/${SITE_NAME}"
+    if [[ -L /etc/nginx/sites-enabled/default ]]; then
+      log "Disabling Ubuntu's default Nginx site to avoid duplicate default_server listeners"
+      run sudo unlink /etc/nginx/sites-enabled/default
+    fi
     run sudo nginx -t
     run sudo systemctl reload nginx
     log "Installed Nginx config for ${DOMAIN} (${MODE})"

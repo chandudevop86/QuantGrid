@@ -108,4 +108,6 @@ def test_nginx_installer_validates_and_renders_client_domain():
     assert "CERT_NAME=" in installer
     assert "mktemp" in installer
     assert "nginx -t" in installer
+    assert "-L /etc/nginx/sites-enabled/default" in installer
+    assert "sudo unlink /etc/nginx/sites-enabled/default" in installer
     assert 'exec bash "${SCRIPT_DIR}/nginx.sh" install' in legacy
