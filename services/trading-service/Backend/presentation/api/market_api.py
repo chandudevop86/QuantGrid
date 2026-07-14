@@ -1028,10 +1028,34 @@ def get_option_candles(
     security_id: str,
     interval: str = "1m",
     limit: int = 120,
+    symbol: str = "NIFTY",
+    strike: float | None = None,
+    side: str | None = None,
     _access=Depends(require_entitlement("options.basic")),
 ):
     """Return provider-backed candles for one active NSE index-option contract."""
     normalized_security_id = str(security_id or "").strip()
+    if normalized_security_id.lower() == "resolve":
+        normalized_side = str(side or "").strip().lower()
+        if strike is None or normalized_side not in {"ce", "pe"}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Strike and option side are required to resolve the Dhan contract.",
+            )
+        try:
+            resolved_rows, _expiry = _dhan_option_rows(symbol, [int(round(strike))])
+            resolved_leg = resolved_rows[0].get(normalized_side, {}) if resolved_rows else {}
+            normalized_security_id = str(resolved_leg.get("security_id") or "").strip()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Dhan could not resolve this option contract: {exc}",
+            ) from exc
+        if not normalized_security_id:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Dhan returned the option quote without a contract security ID. Update the backend and Dhan SDK, then refresh the chain.",
+            )
     if not normalized_security_id.isdigit():
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A valid Dhan option security ID is required.")
     if interval not in _OPTION_CANDLE_INTERVALS:

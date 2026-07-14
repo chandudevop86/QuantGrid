@@ -41,7 +41,14 @@ describe("NIFTY option chain", () => {
     const trigger = await screen.findByRole("button", { name: "View NIFTY 24500 CE candles" });
     fireEvent.click(trigger);
     expect(await screen.findByRole("dialog", { name: "NIFTY 24,500 CE" })).toBeVisible();
-    await waitFor(() => expect(api.optionCandles).toHaveBeenCalledWith("41012", "1m"));
+    await waitFor(() => expect(api.optionCandles).toHaveBeenCalledWith("41012", "1m", { symbol: "NIFTY", strike: 24500, side: "CE" }));
     expect(screen.getByRole("img", { name: "NIFTY candlestick chart" })).toBeVisible();
+  });
+
+  it("asks the backend to resolve a contract when the chain omits its security ID", async () => {
+    api.optionChain.mockResolvedValueOnce({ source: "live-nse-chain", symbol: "NIFTY", atm_strike: 24500, expiry: "2026-07-14", rows: [{ strike: 24500, ce: { ltp: 100 }, pe: { ltp: 90 } }] });
+    render(<OptionChain />);
+    fireEvent.click(await screen.findByRole("button", { name: "View NIFTY 24500 PE candles" }));
+    await waitFor(() => expect(api.optionCandles).toHaveBeenCalledWith("", "1m", { symbol: "NIFTY", strike: 24500, side: "PE" }));
   });
 });

@@ -955,3 +955,19 @@ def test_option_contract_candles_use_nse_fno_optidx(monkeypatch):
     assert captured["oi"] is True
     assert result["source"] == "dhan-option-candles"
     assert result["candles"][0]["close"] == 103
+
+
+def test_option_contract_candles_resolve_missing_security_id(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    class FakeDhan:
+        def intraday_minute_data(self, **kwargs):
+            assert kwargs["security_id"] == "42529"
+            return {"timestamp": [1783991100], "open": [100], "high": [105], "low": [98], "close": [103], "volume": [500]}
+
+    monkeypatch.setattr(market_api, "_dhan_option_rows", lambda symbol, strikes: ([{"strike": 24500, "ce": {"security_id": 42529}, "pe": {}}], "2026-07-14"))
+    monkeypatch.setattr(market_api, "dhan_sdk_client", lambda: FakeDhan())
+
+    result = market_api.get_option_candles("resolve", symbol="NIFTY", strike=24500, side="CE", _access=object())
+
+    assert result["security_id"] == "42529"

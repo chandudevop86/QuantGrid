@@ -115,13 +115,13 @@ export default function OptionChain() {
   useEffect(() => {
     if (!selectedContract) return;
     setContractCandles([]);
-    if (!selectedContract.securityId) {
-      setContractError("Dhan did not provide a security ID for this contract, so real candles cannot be requested.");
-      return;
-    }
     setContractLoading(true);
     setContractError(null);
-    api.optionCandles(selectedContract.securityId, contractInterval)
+    api.optionCandles(selectedContract.securityId, contractInterval, {
+      symbol: String(chain?.symbol ?? "NIFTY"),
+      strike: selectedContract.strike,
+      side: selectedContract.side,
+    })
       .then((payload: any) => setContractCandles(Array.isArray(payload?.candles) ? payload.candles : []))
       .catch((err: any) => setContractError(err?.response?.data?.detail ?? err?.message ?? "Live option candles are unavailable."))
       .finally(() => setContractLoading(false));

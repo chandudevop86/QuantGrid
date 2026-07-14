@@ -113,8 +113,10 @@ export const api = {
   getPrice: () => API.get("/market/price").then((res) => res.data),
   optionChain: (symbol = "NIFTY") =>
     API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
-  optionCandles: (securityId: string, interval = "1m") =>
-    API.get(`/market/option-candles/${securityId}`, { params: { interval, limit: 160 } }).then((res) => res.data),
+  optionCandles: (securityId: string, interval = "1m", contract?: { symbol?: string; strike?: number; side?: "CE" | "PE" }) =>
+    API.get(`/market/option-candles/${securityId || "resolve"}`, {
+      params: { interval, limit: 160, symbol: contract?.symbol, strike: contract?.strike, side: contract?.side },
+    }).then((res) => res.data),
   optionChainEngine: (symbol = "NIFTY") =>
     API.get(`/modules/option-chain/${symbol}`).then((res) => res.data),
   liveNseOptionChain: (symbol = "NIFTY") =>
