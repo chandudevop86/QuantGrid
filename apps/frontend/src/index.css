@@ -385,6 +385,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .decision-grid, .execution-safety-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
+.position-side { display: inline-flex; min-width: 48px; justify-content: center; padding: 4px 7px; border-radius: 5px; background: #102235; color: #c8d7e8; font-size: 10px; font-weight: 800; }
+.position-side.buy { background: rgba(20, 184, 166, .12); color: #5eead4; }
+.position-side.sell { background: rgba(239, 68, 68, .12); color: #fca5a5; }
+.position-exit-button { min-height: 34px; padding: 0 12px; border: 1px solid #7f1d1d; border-radius: 6px; background: rgba(127, 29, 29, .12); color: #fca5a5; font-size: 11px; font-weight: 800; }
+.position-exit-button:hover { border-color: #ef4444; background: rgba(239, 68, 68, .18); color: #fee2e2; }
+.position-exit-button:disabled { cursor: not-allowed; opacity: .45; }
+.position-exit-modal { max-width: 650px; }
+.close-position-action { background: #b91c1c; }
+.close-position-action:hover { background: #dc2626; }
+.table td.is-positive { color: #34d399; }
+.table td.is-negative { color: #f87171; }
+
 /* Keep legacy pages visually consistent with the simplified shell. */
 .metric-card, .status-panel, .system-health-widget, .form-panel, .table-wrap,
 .decision-card, .narrative-card, .checklist-panel {

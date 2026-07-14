@@ -193,6 +193,8 @@ export const api = {
   positionSummary: () => API.get("/positions/summary").then((res) => res.data),
   openPositions: () => API.get("/positions/open").then((res) => res.data),
   closedPositions: () => API.get("/positions/closed").then((res) => res.data),
+  exitPosition: (positionId: number, payload: { reason: string; exit_price?: number }) =>
+    API.post(`/positions/${positionId}/exit`, payload).then((res) => res.data),
   backtestStrategy: (strategy: string) =>
     API.get(`/api/strategies/${strategy}/backtest`)
       .then((res) => res.data)
