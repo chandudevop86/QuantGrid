@@ -3925,3 +3925,71 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 430px) {
   .qg-mode-control button { min-width: 46px; padding-inline: 7px; }
 }
+
+/* Compact broker-style option chain. QuantGrid colors and data-safety rules remain unchanged. */
+.option-chain-command { display: grid; grid-template-columns: minmax(170px, .9fr) minmax(150px, .7fr) minmax(460px, 2.4fr) auto; align-items: stretch; overflow: hidden; border: 1px solid var(--qg-border, #223246); border-radius: 8px; background: #0b1624; }
+.option-chain-command > * { min-width: 0; padding: 14px 16px; border-right: 1px solid var(--qg-border, #223246); }
+.option-chain-command > *:last-child { border-right: 0; }
+.option-chain-symbol, .option-chain-expiry, .option-chain-source { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.option-chain-symbol strong { font-size: 16px; }
+.option-chain-spot { color: #f8fafc; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.option-chain-expiry strong { font-size: 14px; }
+.option-chain-stats { display: grid; grid-template-columns: repeat(5, minmax(70px, 1fr)); margin: 0; }
+.option-chain-stats div { display: grid; align-content: center; gap: 5px; padding: 0 12px; border-right: 1px solid var(--qg-border, #223246); }
+.option-chain-stats div:last-child { border-right: 0; }
+.option-chain-stats dt { color: #7f91a7; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.option-chain-stats dd { margin: 0; color: #f8fafc; font-size: 14px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.option-chain-source { position: relative; padding-left: 34px !important; color: #b7c5d7; font-size: 11px; white-space: nowrap; }
+.option-chain-source small { color: #70839a; }
+.status-dot { position: absolute; left: 16px; width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; }
+.status-dot.is-live { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .12); }
+.option-chain-primary { padding: 0; overflow: hidden; }
+.option-chain-primary .section-header { min-height: 64px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--qg-border, #223246); }
+.option-chain-primary .section-header h2 { margin: 2px 0 0; font-size: 17px; }
+.option-chain-range { display: flex; align-items: center; gap: 5px; }
+.option-chain-range > span { margin-right: 4px; color: #7f91a7; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.option-chain-range button { min-height: 32px; padding: 0 10px; border: 1px solid #26384d; border-radius: 6px; background: #0a1320; color: #94a3b8; font-size: 11px; font-weight: 700; }
+.option-chain-range button:hover, .option-chain-range button.active { border-color: #14b8a6; background: #0f3b3a; color: #ccfbf1; }
+.option-chain-wrap { max-height: 650px; overflow: auto; border: 0; border-radius: 0; background: #07111d; }
+.option-chain-table { width: 100%; min-width: 1040px; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.option-chain-table th, .option-chain-table td { height: 42px; padding: 7px 10px; border-right: 1px solid #172638; border-bottom: 1px solid #172638; font-size: 11px; text-align: right; }
+.option-chain-table thead th { position: sticky; z-index: 3; background: #0d1a29; color: #8294aa; }
+.option-chain-table thead tr:first-child th { top: 0; height: 34px; }
+.option-chain-table thead tr:nth-child(2) th { top: 34px; }
+.option-chain-table .option-side-heading { color: #9db0c5; font-size: 10px; letter-spacing: .12em; text-align: center; }
+.option-chain-table .option-side-heading:first-child { border-top: 2px solid #22c55e; }
+.option-chain-table .option-side-heading:last-child { border-top: 2px solid #ef4444; }
+.option-chain-table .option-strike-heading, .option-chain-table .option-strike-cell, .option-chain-table th:nth-child(6) { border-right: 1px solid #385069; border-left: 1px solid #385069; background: #111f2f; text-align: center; }
+.option-chain-table td:nth-child(3), .option-chain-table th:nth-child(3) { border-left: 0; background: inherit; }
+.option-chain-table tbody tr:hover td { background: #102135; }
+.option-chain-table tbody tr.call-itm td:nth-child(-n+5), .option-chain-table tbody tr.put-itm td:nth-child(n+7) { background: #0d2330; }
+.option-chain-table tbody tr.call-itm:hover td:nth-child(-n+5), .option-chain-table tbody tr.put-itm:hover td:nth-child(n+7) { background: #123044; }
+.option-chain-table .option-strike-cell { position: relative; color: #e5edf7; font-size: 12px; }
+.option-strike-cell span { display: inline-flex; margin-left: 6px; padding: 2px 4px; border-radius: 4px; background: #0f766e; color: #ecfeff; font-size: 8px; letter-spacing: .05em; }
+.option-chain-table .option-atm-row td { border-top: 1px solid #14b8a6; border-bottom: 1px solid #14b8a6; background: rgba(20, 184, 166, .08); color: #e6fffb; }
+.option-chain-table td strong { display: block; color: #f8fafc; font-size: 12px; }
+.option-chain-table td small { display: block; min-height: 12px; margin-top: 2px; color: #71839a; font-size: 9px; }
+.option-chain-table .is-positive { color: #22c55e; }
+.option-chain-table .is-negative { color: #ef6b6b; }
+.option-chain-history { padding: 0; overflow: hidden; }
+.option-chain-history summary { display: flex; min-height: 52px; padding: 0 16px; align-items: center; justify-content: space-between; cursor: pointer; color: #dce7f3; font-weight: 750; }
+.option-chain-history summary small { color: #71839a; font-size: 10px; font-weight: 600; }
+.option-chain-history[open] summary { border-bottom: 1px solid var(--qg-border, #223246); }
+
+@media (max-width: 1100px) {
+  .option-chain-command { grid-template-columns: 1fr 1fr; }
+  .option-chain-command > * { border-bottom: 1px solid var(--qg-border, #223246); }
+  .option-chain-stats { grid-column: 1 / -1; order: 3; }
+  .option-chain-source { order: 4; }
+}
+
+@media (max-width: 700px) {
+  .option-chain-command { grid-template-columns: 1fr 1fr; }
+  .option-chain-command > * { padding: 12px; }
+  .option-chain-stats { grid-template-columns: repeat(3, 1fr); }
+  .option-chain-stats div { min-height: 54px; border-bottom: 1px solid var(--qg-border, #223246); }
+  .option-chain-primary .section-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .option-chain-range { width: 100%; overflow-x: auto; }
+  .option-chain-range button { flex: 0 0 auto; min-height: 40px; }
+  .option-chain-wrap { max-height: 70vh; }
+}

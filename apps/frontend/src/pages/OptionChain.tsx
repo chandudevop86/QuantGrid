@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 
 const refreshMs = 60000;
@@ -6,6 +6,19 @@ const refreshMs = 60000;
 function formatNumber(value: unknown) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "-";
+}
+
+function optionValue(option: any, ...keys: string[]) {
+  for (const key of keys) {
+    const value = option?.[key];
+    if (value !== undefined && value !== null) return value;
+  }
+  return undefined;
+}
+
+function changeTone(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric !== 0 ? (numeric > 0 ? "is-positive" : "is-negative") : "";
 }
 
 function enrichOptionChain(data: any) {
@@ -41,6 +54,7 @@ export default function OptionChain() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [strikeWindow, setStrikeWindow] = useState(5);
 
   const loadChain = useCallback((showInitialLoading = false) => {
     if (showInitialLoading) {
@@ -104,7 +118,16 @@ export default function OptionChain() {
       && /token|rejected|unavailable|fresh token|option-chain provider/i.test(providerWarning)
     );
   const historyIsSynthetic = String(history?.source ?? "").includes("synthetic");
-  const visibleRows = usingSynthetic || chainUnavailable ? [] : chain?.rows ?? [];
+  const providerRows = usingSynthetic || chainUnavailable ? [] : chain?.rows ?? [];
+  const atmStrike = Number(chain?.ATM ?? chain?.atm_strike ?? 0);
+  const visibleRows = useMemo(() => {
+    if (!providerRows.length || !atmStrike) return providerRows;
+    const ordered = [...providerRows].sort((a: any, b: any) => Number(a?.strike ?? 0) - Number(b?.strike ?? 0));
+    const atmIndex = ordered.reduce((best: number, row: any, index: number) => (
+      Math.abs(Number(row?.strike ?? 0) - atmStrike) < Math.abs(Number(ordered[best]?.strike ?? 0) - atmStrike) ? index : best
+    ), 0);
+    return ordered.slice(Math.max(0, atmIndex - strikeWindow), atmIndex + strikeWindow + 1);
+  }, [providerRows, atmStrike, strikeWindow]);
   const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
 
   return (
@@ -188,133 +211,73 @@ export default function OptionChain() {
         </div>
       )}
 
-      <div className="metric-grid">
-        <div className="metric-card">
+      <div className="option-chain-command" aria-label="Option chain summary">
+        <div className="option-chain-symbol">
           <span className="metric-label">Underlying</span>
-          <strong className="metric-value">{chain?.underlying ?? chain?.symbol ?? "NIFTY"}</strong>
-          <span className="metric-helper">Source: {chain?.source ?? "synthetic"}</span>
+          <strong>{chain?.underlying ?? chain?.symbol ?? "NIFTY 50"}</strong>
+          <span className="option-chain-spot">{usingSynthetic ? "-" : formatNumber(chain?.spot ?? chain?.underlying_price)}</span>
         </div>
-        <div className="metric-card">
-          <span className="metric-label">Current Price</span>
-          <strong className="metric-value">{usingSynthetic ? "-" : formatNumber(chain?.spot ?? chain?.underlying_price)}</strong>
-          <span className="metric-helper">{refreshLabel}</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">ATM Strike</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.ATM ?? chain?.atm_strike ?? "-"}</strong>
-          <span className="metric-helper">Step {chain?.step ?? 50}</span>
-        </div>
-        <div className="metric-card">
+        <div className="option-chain-expiry">
           <span className="metric-label">Expiry</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.expiry ?? "-"}</strong>
-          <span className="metric-helper">{isProviderBacked ? "Provider chain" : chainUnavailable ? "Provider unavailable" : chain ? "Fallback hidden" : "No chain loaded"}</span>
+          <strong>{usingSynthetic || chainUnavailable ? "Unavailable" : chain?.expiry ?? "-"}</strong>
         </div>
-        <div className="metric-card">
-          <span className="metric-label">PCR</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.pcr)}</strong>
-          <span className="metric-helper">Put/call open interest</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Max Pain</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.max_pain ?? "-"}</strong>
-          <span className="metric-helper">{chain?.greek_model ?? "Greeks unavailable"}</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Support</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.support ?? "-"}</strong>
-          <span className="metric-helper">Highest put OI below ATM</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Resistance</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "-" : chain?.resistance ?? "-"}</strong>
-          <span className="metric-helper">Highest call OI above ATM</span>
-        </div>
-        <div className="metric-card">
-          <span className="metric-label">Real Signal</span>
-          <strong className="metric-value">{usingSynthetic || chainUnavailable ? "NO_LIVE_DATA" : chain?.signal ?? chain?.signals?.bias ?? "NO_TRADE"}</strong>
-          <span className="metric-helper">{chain?.signals?.reason ?? "PCR / OI / max pain"}</span>
-        </div>
+        <dl className="option-chain-stats">
+          <div><dt>ATM</dt><dd>{usingSynthetic || chainUnavailable ? "-" : chain?.ATM ?? chain?.atm_strike ?? "-"}</dd></div>
+          <div><dt>PCR</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.pcr)}</dd></div>
+          <div><dt>Max pain</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.max_pain)}</dd></div>
+          <div><dt>Support</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.support)}</dd></div>
+          <div><dt>Resistance</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.resistance)}</dd></div>
+        </dl>
+        <div className="option-chain-source"><span className={isProviderBacked ? "status-dot is-live" : "status-dot"} />{isProviderBacked ? "Live provider" : "Provider unavailable"}<small>{refreshLabel}</small></div>
       </div>
 
-      <div className="dashboard-section">
+      <div className="dashboard-section option-chain-primary">
         <div className="section-header">
-          <h2>Historical Chain</h2>
-          <span>{history?.source ?? "Synthetic history"}</span>
-        </div>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Underlying</th>
-                <th>ATM</th>
-                <th>PCR</th>
-                <th>Max Pain</th>
-                <th>Call OI</th>
-                <th>Put OI</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleHistory.slice().reverse().map((row: any) => (
-                <tr key={row.timestamp}>
-                  <td>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString() : "-"}</td>
-                  <td>{formatNumber(row.underlying_price)}</td>
-                  <td>{row.atm_strike ?? "-"}</td>
-                  <td>{formatNumber(row.pcr)}</td>
-                  <td>{row.max_pain ?? "-"}</td>
-                  <td>{formatNumber(row.call_oi)}</td>
-                  <td>{formatNumber(row.put_oi)}</td>
-                </tr>
-              ))}
-              {visibleHistory.length === 0 && (
-                <tr>
-                  <td colSpan={7}>
-                    {historyIsSynthetic ? "Synthetic historical chain hidden." : "Historical chain data is not available yet."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="dashboard-section">
-        <div className="section-header">
-          <h2>{chain?.source === "live-nse-chain" ? "Live NSE Chain" : "NIFTY Option Chain"}</h2>
-          <span>{loading ? "Loading" : refreshing ? "Refreshing" : "Ready"}</span>
+          <div><span className="metric-label">Live chain</span><h2>{chain?.source === "live-nse-chain" ? "NSE NIFTY Option Chain" : "NIFTY Option Chain"}</h2></div>
+          <div className="option-chain-range" aria-label="Visible strikes">
+            <span>Strikes</span>
+            {[5, 10, 20].map((count) => <button type="button" className={strikeWindow === count ? "active" : ""} key={count} onClick={() => setStrikeWindow(count)}>ATM ±{count}</button>)}
+          </div>
         </div>
         <div className="table-wrap option-chain-wrap">
-          <table className="table option-chain-table">
+          <table className="table option-chain-table" aria-label="NIFTY option chain calls and puts">
             <thead>
               <tr>
-                <th>CE LTP</th>
-                <th>CE OI</th>
-                <th>CE Vol</th>
-                <th>CE Delta</th>
-                <th>Strike</th>
-                <th>PE Delta</th>
-                <th>PE Vol</th>
-                <th>PE OI</th>
-                <th>PE LTP</th>
+                <th className="option-side-heading" colSpan={5}>CALLS</th>
+                <th className="option-strike-heading">STRIKE</th>
+                <th className="option-side-heading" colSpan={5}>PUTS</th>
+              </tr>
+              <tr className="option-column-headings">
+                <th>OI</th><th>Chg OI</th><th>Volume</th><th>IV</th><th>LTP</th>
+                <th>Price</th>
+                <th>LTP</th><th>IV</th><th>Volume</th><th>Chg OI</th><th>OI</th>
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row: any) => (
-                <tr key={row.strike} className={row.strike === chain?.atm_strike ? "option-atm-row" : ""}>
-                  <td>{formatNumber(row.ce?.ltp)}</td>
+              {visibleRows.map((row: any) => {
+                const strike = Number(row.strike);
+                const callChangeOi = optionValue(row.ce, "change_oi", "chg_oi", "oi_change");
+                const putChangeOi = optionValue(row.pe, "change_oi", "chg_oi", "oi_change");
+                const callLtpChange = optionValue(row.ce, "change", "ltp_change", "price_change");
+                const putLtpChange = optionValue(row.pe, "change", "ltp_change", "price_change");
+                const isAtm = strike === atmStrike;
+                return <tr key={row.strike} className={`${isAtm ? "option-atm-row" : ""}${strike < atmStrike ? " call-itm" : strike > atmStrike ? " put-itm" : ""}`}>
                   <td>{formatNumber(row.ce?.oi)}</td>
+                  <td className={changeTone(callChangeOi)}>{formatNumber(callChangeOi)}</td>
                   <td>{formatNumber(row.ce?.volume)}</td>
-                  <td>{formatNumber(row.ce?.greeks?.delta)}</td>
-                  <td><strong>{row.strike}</strong></td>
-                  <td>{formatNumber(row.pe?.greeks?.delta)}</td>
+                  <td>{formatNumber(optionValue(row.ce, "iv", "implied_volatility"))}</td>
+                  <td><strong>{formatNumber(row.ce?.ltp)}</strong><small className={changeTone(callLtpChange)}>{formatNumber(callLtpChange)}</small></td>
+                  <td className="option-strike-cell"><strong>{formatNumber(row.strike)}</strong>{isAtm && <span>ATM</span>}</td>
+                  <td><strong>{formatNumber(row.pe?.ltp)}</strong><small className={changeTone(putLtpChange)}>{formatNumber(putLtpChange)}</small></td>
+                  <td>{formatNumber(optionValue(row.pe, "iv", "implied_volatility"))}</td>
                   <td>{formatNumber(row.pe?.volume)}</td>
+                  <td className={changeTone(putChangeOi)}>{formatNumber(putChangeOi)}</td>
                   <td>{formatNumber(row.pe?.oi)}</td>
-                  <td>{formatNumber(row.pe?.ltp)}</td>
-                </tr>
-              ))}
+                </tr>;
+              })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={9}>
+                  <td colSpan={11}>
                     {usingSynthetic
                       ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data."
                       : chainUnavailable
@@ -327,6 +290,21 @@ export default function OptionChain() {
           </table>
         </div>
       </div>
+
+      <details className="dashboard-section option-chain-history">
+        <summary><span>Historical chain</span><small>{history?.source ?? "History unavailable"}</small></summary>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Time</th><th>Underlying</th><th>ATM</th><th>PCR</th><th>Max Pain</th><th>Call OI</th><th>Put OI</th></tr></thead>
+            <tbody>
+              {visibleHistory.slice().reverse().map((row: any) => <tr key={row.timestamp}>
+                <td>{row.timestamp ? new Date(row.timestamp).toLocaleTimeString() : "-"}</td><td>{formatNumber(row.underlying_price)}</td><td>{row.atm_strike ?? "-"}</td><td>{formatNumber(row.pcr)}</td><td>{row.max_pain ?? "-"}</td><td>{formatNumber(row.call_oi)}</td><td>{formatNumber(row.put_oi)}</td>
+              </tr>)}
+              {visibleHistory.length === 0 && <tr><td colSpan={7}>{historyIsSynthetic ? "Synthetic historical chain hidden." : "Historical chain data is not available yet."}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }
