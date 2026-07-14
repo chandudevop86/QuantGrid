@@ -916,3 +916,42 @@ def test_option_chain_snapshot_builds_verified_context_only_from_live_provider()
     assert verified["iv"]["value"] == 15
     assert unavailable["pcr"]["available"] is False
     assert unavailable["pcr"]["live_suitable"] is False
+
+
+def test_dhan_leg_keeps_contract_security_id():
+    from Backend.presentation.api.market_api import _dhan_leg_payload
+
+    leg = _dhan_leg_payload({"security_id": 42529, "last_price": 132.8, "oi": 3096145})
+
+    assert leg["security_id"] == 42529
+    assert leg["ltp"] == 132.8
+
+
+def test_option_contract_candles_use_nse_fno_optidx(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    captured = {}
+
+    class FakeDhan:
+        def intraday_minute_data(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "timestamp": [1783991100],
+                "open": [100],
+                "high": [105],
+                "low": [98],
+                "close": [103],
+                "volume": [500],
+            }
+
+    monkeypatch.setattr(market_api, "dhan_sdk_client", lambda: FakeDhan())
+
+    result = market_api.get_option_candles("42529", interval="5m", limit=100, _access=object())
+
+    assert captured["security_id"] == "42529"
+    assert captured["exchange_segment"] == "NSE_FNO"
+    assert captured["instrument_type"] == "OPTIDX"
+    assert captured["interval"] == 5
+    assert captured["oi"] is True
+    assert result["source"] == "dhan-option-candles"
+    assert result["candles"][0]["close"] == 103

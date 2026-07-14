@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import CandleChart, { type Candle } from "../components/CandleChart";
 
 const refreshMs = 60000;
+
+type SelectedContract = {
+  side: "CE" | "PE";
+  strike: number;
+  securityId: string;
+  leg: any;
+};
 
 function formatNumber(value: unknown) {
   const numeric = Number(value);
@@ -55,6 +63,11 @@ export default function OptionChain() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [strikeWindow, setStrikeWindow] = useState(5);
+  const [selectedContract, setSelectedContract] = useState<SelectedContract | null>(null);
+  const [contractInterval, setContractInterval] = useState("1m");
+  const [contractCandles, setContractCandles] = useState<Candle[]>([]);
+  const [contractLoading, setContractLoading] = useState(false);
+  const [contractError, setContractError] = useState<string | null>(null);
 
   const loadChain = useCallback((showInitialLoading = false) => {
     if (showInitialLoading) {
@@ -98,6 +111,35 @@ export default function OptionChain() {
     }, refreshMs);
     return () => window.clearInterval(timer);
   }, [loadChain]);
+
+  useEffect(() => {
+    if (!selectedContract) return;
+    setContractCandles([]);
+    if (!selectedContract.securityId) {
+      setContractError("Dhan did not provide a security ID for this contract, so real candles cannot be requested.");
+      return;
+    }
+    setContractLoading(true);
+    setContractError(null);
+    api.optionCandles(selectedContract.securityId, contractInterval)
+      .then((payload: any) => setContractCandles(Array.isArray(payload?.candles) ? payload.candles : []))
+      .catch((err: any) => setContractError(err?.response?.data?.detail ?? err?.message ?? "Live option candles are unavailable."))
+      .finally(() => setContractLoading(false));
+  }, [selectedContract, contractInterval]);
+
+  useEffect(() => {
+    if (!selectedContract) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedContract(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedContract]);
+
+  const openContract = (side: "CE" | "PE", strike: number, leg: any) => {
+    setContractInterval("1m");
+    setSelectedContract({ side, strike, leg, securityId: String(optionValue(leg, "security_id", "securityId") ?? "") });
+  };
 
   const refreshLabel = lastRefreshed
     ? `Updated ${lastRefreshed.toLocaleTimeString()}`
@@ -266,9 +308,9 @@ export default function OptionChain() {
                   <td className={changeTone(callChangeOi)}>{formatNumber(callChangeOi)}</td>
                   <td>{formatNumber(row.ce?.volume)}</td>
                   <td>{formatNumber(optionValue(row.ce, "iv", "implied_volatility"))}</td>
-                  <td><strong>{formatNumber(row.ce?.ltp)}</strong><small className={changeTone(callLtpChange)}>{formatNumber(callLtpChange)}</small></td>
+                  <td><button type="button" className="option-contract-trigger" onClick={() => openContract("CE", strike, row.ce)} aria-label={`View NIFTY ${strike} CE candles`}><strong>{formatNumber(row.ce?.ltp)}</strong><small className={changeTone(callLtpChange)}>{formatNumber(callLtpChange)}</small></button></td>
                   <td className="option-strike-cell"><strong>{formatNumber(row.strike)}</strong>{isAtm && <span>ATM</span>}</td>
-                  <td><strong>{formatNumber(row.pe?.ltp)}</strong><small className={changeTone(putLtpChange)}>{formatNumber(putLtpChange)}</small></td>
+                  <td><button type="button" className="option-contract-trigger" onClick={() => openContract("PE", strike, row.pe)} aria-label={`View NIFTY ${strike} PE candles`}><strong>{formatNumber(row.pe?.ltp)}</strong><small className={changeTone(putLtpChange)}>{formatNumber(putLtpChange)}</small></button></td>
                   <td>{formatNumber(optionValue(row.pe, "iv", "implied_volatility"))}</td>
                   <td>{formatNumber(row.pe?.volume)}</td>
                   <td className={changeTone(putChangeOi)}>{formatNumber(putChangeOi)}</td>
@@ -305,6 +347,41 @@ export default function OptionChain() {
           </table>
         </div>
       </details>
+
+      {selectedContract && (
+        <div className="option-contract-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedContract(null); }}>
+          <section className="option-contract-drawer" role="dialog" aria-modal="true" aria-labelledby="option-contract-title">
+            <header>
+              <div>
+                <span className={`option-contract-side ${selectedContract.side.toLowerCase()}`}>{selectedContract.side === "CE" ? "CALL" : "PUT"}</span>
+                <h2 id="option-contract-title">NIFTY {formatNumber(selectedContract.strike)} {selectedContract.side}</h2>
+                <p>{chain?.expiry ?? "Current expiry"} · Dhan security ID {selectedContract.securityId || "unavailable"}</p>
+              </div>
+              <button type="button" className="option-contract-close" onClick={() => setSelectedContract(null)} aria-label="Close option candles">×</button>
+            </header>
+
+            <div className="option-contract-quote" aria-label="Option quote details">
+              <div><span>LTP</span><strong>{formatNumber(selectedContract.leg?.ltp)}</strong></div>
+              <div><span>OI</span><strong>{formatNumber(selectedContract.leg?.oi)}</strong></div>
+              <div><span>Volume</span><strong>{formatNumber(selectedContract.leg?.volume)}</strong></div>
+              <div><span>IV</span><strong>{formatNumber(optionValue(selectedContract.leg, "iv", "implied_volatility"))}</strong></div>
+              <div><span>Bid</span><strong>{formatNumber(selectedContract.leg?.bid?.price)}</strong></div>
+              <div><span>Ask</span><strong>{formatNumber(selectedContract.leg?.ask?.price)}</strong></div>
+            </div>
+
+            <div className="option-contract-chart-head">
+              <div><strong>Contract candles</strong><small>Real NSE F&amp;O data supplied by Dhan</small></div>
+              <div className="option-contract-intervals" aria-label="Contract candle interval">
+                {["1m", "5m", "15m", "60m"].map((value) => <button type="button" key={value} className={contractInterval === value ? "active" : ""} onClick={() => setContractInterval(value)}>{value}</button>)}
+              </div>
+            </div>
+            <div className="option-contract-chart">
+              {contractLoading ? <div className="empty-state" role="status">Loading live option candles…</div> : contractError ? <div className="empty-state option-contract-error" role="alert">{contractError}</div> : <CandleChart candles={contractCandles} />}
+            </div>
+            <footer>Live provider data only. QuantGrid does not generate fallback candles for option contracts.</footer>
+          </section>
+        </div>
+      )}
     </section>
   );
 }

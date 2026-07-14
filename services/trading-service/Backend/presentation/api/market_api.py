@@ -37,6 +37,7 @@ from Backend.infrastructure.data.market_data_provider import (
 from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
+from Backend.infrastructure.market_data.dhan_provider import _normalize_candles
 from Backend.presentation.api.roles import require_roles
 from Backend.application.quant_modules import option_chain_engine
 from Backend.application.monitoring import observe_option_chain_failure
@@ -609,6 +610,7 @@ def _dhan_leg_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "quantity": _first_present(payload, "top_ask_quantity", "topAskQuantity", "ask_quantity", "askQuantity"),
     }
     return {
+        "security_id": _first_present(payload, "security_id", "securityId"),
         "ltp": _first_present(payload, "last_price", "lastPrice", "ltp"),
         "change": _first_present(payload, "change", "net_change", "netChange"),
         "volume": _first_present(payload, "volume", "totalTradedVolume"),
@@ -974,6 +976,9 @@ def _option_context_from_payload(payload: dict[str, Any]) -> dict[str, dict[str,
     }
 
 
+_OPTION_CANDLE_INTERVALS = {"1m": 1, "5m": 5, "15m": 15, "25m": 25, "60m": 60}
+
+
 @router.get("/signals")
 def get_signals():
     return {"signals": []}
@@ -1016,6 +1021,59 @@ def post_volume_analysis(
         delivery_data=payload.get("delivery_data") if isinstance(payload.get("delivery_data"), list) else None,
     )
     return result.to_dict()
+
+
+@router.get("/option-candles/{security_id}")
+def get_option_candles(
+    security_id: str,
+    interval: str = "1m",
+    limit: int = 120,
+    _access=Depends(require_entitlement("options.basic")),
+):
+    """Return provider-backed candles for one active NSE index-option contract."""
+    normalized_security_id = str(security_id or "").strip()
+    if not normalized_security_id.isdigit():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A valid Dhan option security ID is required.")
+    if interval not in _OPTION_CANDLE_INTERVALS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Supported intervals are 1m, 5m, 15m, 25m, and 60m.")
+
+    limit = max(1, min(int(limit), 500))
+    now = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    # Include prior sessions so the drawer still works after hours, on holidays,
+    # and before the first candle of the current trading day.
+    from_time = (now - timedelta(days=5)).replace(hour=9, minute=15, second=0, microsecond=0)
+    try:
+        raw = dhan_sdk_client().intraday_minute_data(
+            security_id=normalized_security_id,
+            exchange_segment="NSE_FNO",
+            instrument_type="OPTIDX",
+            interval=_OPTION_CANDLE_INTERVALS[interval],
+            oi=True,
+            from_date=from_time.strftime("%Y-%m-%d %H:%M:%S"),
+            to_date=now.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        if isinstance(raw, dict) and str(raw.get("status", "")).lower() == "failed":
+            raise RuntimeError(str(raw.get("remarks") or raw.get("data") or "Dhan rejected the option candle request."))
+        candles = _normalize_candles(f"OPTION-{normalized_security_id}", raw)[-limit:]
+        if not candles:
+            raise RuntimeError("Dhan returned no candles for this option contract.")
+        return {
+            "security_id": normalized_security_id,
+            "exchange_segment": "NSE_FNO",
+            "instrument": "OPTIDX",
+            "interval": interval,
+            "source": "dhan-option-candles",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "candles": candles,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("dhan_option_candles_failed", extra={"security_id": normalized_security_id, "interval": interval, "error_type": exc.__class__.__name__})
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Live option candles unavailable from Dhan: {exc}",
+        ) from exc
 
 
 @router.get("/candles/{symbol}")

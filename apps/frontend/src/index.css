@@ -4021,6 +4021,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .option-chain-history summary { display: flex; min-height: 52px; padding: 0 16px; align-items: center; justify-content: space-between; cursor: pointer; color: #dce7f3; font-weight: 750; }
 .option-chain-history summary small { color: #71839a; font-size: 10px; font-weight: 600; }
 .option-chain-history[open] summary { border-bottom: 1px solid var(--qg-border, #223246); }
+.option-contract-trigger { width: 100%; min-height: 34px; padding: 2px 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: right; cursor: pointer; }
+.option-contract-trigger:hover, .option-contract-trigger:focus-visible { background: #16344a; }
+.option-contract-backdrop { position: fixed; inset: 0; z-index: 90; display: flex; align-items: stretch; justify-content: flex-end; background: rgba(2, 8, 16, .7); }
+.option-contract-drawer { width: min(840px, 92vw); height: 100%; padding: 22px; overflow-y: auto; border-left: 1px solid #2b4158; background: #08131f; box-shadow: -12px 0 32px rgba(0, 0, 0, .35); }
+.option-contract-drawer > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 18px; border-bottom: 1px solid #223246; }
+.option-contract-drawer h2 { margin: 7px 0 0; font-size: 25px; }
+.option-contract-drawer header p, .option-contract-drawer footer { margin: 5px 0 0; color: #8294aa; font-size: 11px; }
+.option-contract-side { display: inline-flex; padding: 3px 7px; border-radius: 5px; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.option-contract-side.ce { background: #123b27; color: #86efac; }.option-contract-side.pe { background: #431b1b; color: #fca5a5; }
+.option-contract-close { flex: 0 0 42px; width: 42px; height: 42px; border: 1px solid #2b4158; border-radius: 7px; background: #0d1a29; color: #dce7f3; font-size: 25px; }
+.option-contract-quote { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 18px 0; border: 1px solid #223246; border-radius: 8px; background: #0b1624; }
+.option-contract-quote div { display: grid; gap: 5px; padding: 12px; border-right: 1px solid #223246; }.option-contract-quote div:last-child { border-right: 0; }
+.option-contract-quote span { color: #8294aa; font-size: 9px; font-weight: 700; text-transform: uppercase; }.option-contract-quote strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.option-contract-chart-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 22px 0 10px; }
+.option-contract-chart-head > div:first-child { display: grid; gap: 4px; }.option-contract-chart-head small { color: #8294aa; }
+.option-contract-intervals { display: flex; gap: 4px; }.option-contract-intervals button { min-width: 42px; min-height: 34px; border: 1px solid #26384d; border-radius: 6px; background: #0a1320; color: #94a3b8; font-weight: 700; }.option-contract-intervals button.active { border-color: #14b8a6; background: #0f3b3a; color: #ccfbf1; }
+.option-contract-chart { min-height: 420px; padding: 12px; overflow: auto; border: 1px solid #223246; border-radius: 8px; background: #050d18; }.option-contract-chart .candle-chart { min-height: 390px; }
+.option-contract-error { color: #fbbf24; line-height: 1.5; }.option-contract-drawer footer { padding-top: 12px; }
 
 @media (max-width: 1100px) {
   .option-chain-command { grid-template-columns: 1fr 1fr; }
@@ -4038,4 +4056,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .option-chain-range { width: 100%; overflow-x: auto; }
   .option-chain-range button { flex: 0 0 auto; min-height: 40px; }
   .option-chain-wrap { max-height: 70vh; }
+  .option-contract-drawer { width: 100%; padding: 16px; }
+  .option-contract-quote { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .option-contract-quote div:nth-child(3) { border-right: 0; }.option-contract-quote div:nth-child(-n+3) { border-bottom: 1px solid #223246; }
+  .option-contract-chart-head { align-items: flex-start; flex-direction: column; }
+  .option-contract-chart { min-height: 330px; }.option-contract-chart .candle-chart { min-height: 300px; }
 }

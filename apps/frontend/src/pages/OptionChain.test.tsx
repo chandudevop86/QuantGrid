@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ optionChain: vi.fn(), historicalOptionChain: vi.fn() }));
+const api = vi.hoisted(() => ({ optionChain: vi.fn(), historicalOptionChain: vi.fn(), optionCandles: vi.fn() }));
 vi.mock("../api", () => ({ api }));
 
 import OptionChain from "./OptionChain";
@@ -11,8 +11,8 @@ function rows() {
     const strike = 23900 + index * 50;
     return {
       strike,
-      ce: { ltp: 100 + index, change: index - 12, oi: 1000 + index, change_oi: index * 10, volume: 500 + index, iv: 12.5 },
-      pe: { ltp: 120 - index, change: 12 - index, oi: 1200 + index, change_oi: index * -5, volume: 600 + index, iv: 13.2 },
+      ce: { security_id: 41000 + index, ltp: 100 + index, change: index - 12, oi: 1000 + index, change_oi: index * 10, volume: 500 + index, iv: 12.5 },
+      pe: { security_id: 42000 + index, ltp: 120 - index, change: 12 - index, oi: 1200 + index, change_oi: index * -5, volume: 600 + index, iv: 13.2 },
     };
   });
 }
@@ -21,6 +21,7 @@ describe("NIFTY option chain", () => {
   beforeEach(() => {
     api.optionChain.mockResolvedValue({ source: "dhan-option-chain", symbol: "NIFTY", underlying_price: 24502.4, atm_strike: 24500, expiry: "30 Jul 2026", pcr: 1.08, max_pain: 24500, support: 24400, resistance: 24600, rows: rows() });
     api.historicalOptionChain.mockResolvedValue({ source: "dhan", snapshots: [] });
+    api.optionCandles.mockResolvedValue({ source: "dhan-option-candles", candles: [{ timestamp: "2026-07-14T09:15:00+05:30", open: 100, high: 105, low: 98, close: 103, volume: 500 }] });
   });
 
   it("renders a broker-style calls/strike/puts ladder and changes the strike window", async () => {
@@ -33,5 +34,14 @@ describe("NIFTY option chain", () => {
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(13));
     fireEvent.click(screen.getByRole("button", { name: "ATM ±10" }));
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(23));
+  });
+
+  it("opens real contract candles when an option LTP is selected", async () => {
+    render(<OptionChain />);
+    const trigger = await screen.findByRole("button", { name: "View NIFTY 24500 CE candles" });
+    fireEvent.click(trigger);
+    expect(await screen.findByRole("dialog", { name: "NIFTY 24,500 CE" })).toBeVisible();
+    await waitFor(() => expect(api.optionCandles).toHaveBeenCalledWith("41012", "1m"));
+    expect(screen.getByRole("img", { name: "NIFTY candlestick chart" })).toBeVisible();
   });
 });
