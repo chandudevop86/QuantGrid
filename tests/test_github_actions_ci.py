@@ -27,5 +27,5 @@ def test_github_actions_ci_runs_frontend_and_compose_checks():
 
     assert "npm ci" in workflow
     assert "npm run build" in workflow
-    assert "docker compose -f docker-compose.yml config" in workflow
-    assert "docker compose -f docker-compose.app.yml config" in workflow
+    assert "docker compose -f docker-compose.yml config --quiet" in workflow
+    assert "docker compose -f docker-compose.app.yml config --quiet" in workflow

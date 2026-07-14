@@ -11,6 +11,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from Backend.infrastructure.http_safety import require_https_url
+
 
 DHAN_PROFILE_URL = "https://api.dhan.co/v2/profile"
 _PROFILE_CACHE_LOCK = threading.Lock()
@@ -93,8 +95,9 @@ def check_dhan_profile(timeout: float = 8.0) -> dict[str, Any]:
             client_id=client_id,
         )
 
+    profile_url = require_https_url(DHAN_PROFILE_URL, allowed_hosts={"api.dhan.co"})
     request = Request(
-        DHAN_PROFILE_URL,
+        profile_url,
         headers={
             "access-token": access_token,
             "Accept": "application/json",
@@ -103,7 +106,7 @@ def check_dhan_profile(timeout: float = 8.0) -> dict[str, Any]:
     )
 
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         error = "invalid_token" if exc.code in {401, 403} else f"http_{exc.code}"

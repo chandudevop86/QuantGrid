@@ -56,8 +56,8 @@ ACTION_LABELS = {
     "kill_switch_deactivated": "Kill switch deactivated",
     "kill_switch_activation_denied": "Kill switch activation denied",
     "user_created": "User created",
-    "password_changed": "Password changed",
-    "password_reset": "Password changed",
+    "password_changed": "Password changed",  # nosec B105
+    "password_reset": "Password changed",  # nosec B105
     "subscription_assigned": "Subscription updated",
 }
 

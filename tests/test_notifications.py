@@ -60,7 +60,7 @@ def test_send_alert_noops_without_config(monkeypatch):
 def test_send_alert_posts_to_telegram_and_slack(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
-    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/example")
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/test/example")
 
     calls = []
 
@@ -75,8 +75,19 @@ def test_send_alert_posts_to_telegram_and_slack(monkeypatch):
     assert len(calls) == 2
     assert calls[0][0] == "https://api.telegram.org/bottoken/sendMessage"
     assert "Message" in calls[0][1]
-    assert calls[1][0] == "https://hooks.slack.test/example"
+    assert calls[1][0] == "https://hooks.slack.com/services/test/example"
     assert "Message" in calls[1][1]
+
+
+def test_send_alert_rejects_unapproved_webhook_host(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://attacker.example/webhook")
+    calls = []
+    monkeypatch.setattr(notifications.request, "urlopen", lambda *_args, **_kwargs: calls.append("called"))
+
+    notifications.send_alert("Subject", "Message")
+
+    assert calls == []
 
 
 def test_send_alert_sends_email(monkeypatch):

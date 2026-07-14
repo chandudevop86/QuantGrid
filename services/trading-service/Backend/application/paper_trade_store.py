@@ -231,7 +231,7 @@ def update_paper_trade_status(
     values.append(broker_order_id)
     with _connect() as connection:
         connection.execute(
-            f"UPDATE paper_trades SET {', '.join(updates)} WHERE broker_order_id = ?",
+            f"UPDATE paper_trades SET {', '.join(updates)} WHERE broker_order_id = ?",  # nosec B608
             values,
         )
         row = connection.execute(
@@ -373,7 +373,7 @@ def list_trade_journal(
         where = f"WHERE {' AND '.join(filters)}" if filters else ""
         values.append(max(1, min(int(limit), 500)))
         rows = connection.execute(
-            f"SELECT * FROM trade_journal {where} ORDER BY created_at DESC, id DESC LIMIT ?",
+            f"SELECT * FROM trade_journal {where} ORDER BY created_at DESC, id DESC LIMIT ?",  # nosec B608
             values,
         ).fetchall()
     journal = [dict(row) for row in rows]
@@ -440,7 +440,10 @@ def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[s
         values.append(value)
     values.append(int(entry_id))
     with _connect() as connection:
-        cursor = connection.execute(f"UPDATE trade_journal SET {', '.join(assignments)} WHERE id = ?", values)
+        cursor = connection.execute(
+            f"UPDATE trade_journal SET {', '.join(assignments)} WHERE id = ?",  # nosec B608
+            values,
+        )
         if cursor.rowcount == 0:
             raise KeyError(entry_id)
     updated = get_trade_journal_entry(entry_id)

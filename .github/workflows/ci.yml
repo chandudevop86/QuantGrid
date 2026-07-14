@@ -61,9 +61,9 @@ jobs:
       - name: Validate infrastructure docker compose config
         env:
           POSTGRES_PASSWORD: ci-postgres-password
-        run: docker compose -f docker-compose.yml config
+        run: docker compose -f docker-compose.yml config --quiet
       - name: Validate app docker compose config
-        run: docker compose -f docker-compose.app.yml config
+        run: docker compose -f docker-compose.app.yml config --quiet
 
   terraform:
     name: Terraform validation

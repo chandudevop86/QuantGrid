@@ -17,6 +17,8 @@ from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
+from Backend.infrastructure.http_safety import require_https_url
+
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.redis_service import redis_service
 from Backend.application.market_data_service import get_market_data_service
@@ -211,9 +213,12 @@ def _expiry_from_timestamp(timestamp: int | None) -> str | None:
 
 def _yahoo_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, Any]], str | None]:
     yahoo_symbol = _market_symbol(symbol)
-    url = f"https://query2.finance.yahoo.com/v7/finance/options/{quote(yahoo_symbol, safe='')}"
+    url = require_https_url(
+        f"https://query2.finance.yahoo.com/v7/finance/options/{quote(yahoo_symbol, safe='')}",
+        allowed_hosts={"query2.finance.yahoo.com"},
+    )
     request = Request(url, headers={"User-Agent": "QuantGrid/1.0"})
-    with urlopen(request, timeout=8) as response:
+    with urlopen(request, timeout=8) as response:  # nosec B310
         payload = json.loads(response.read().decode("utf-8"))
 
     result = (payload.get("optionChain", {}).get("result") or [{}])[0]
@@ -256,12 +261,13 @@ def _dhan_profile_client_id(access_token: str, timeout: float = 8.0) -> str | No
     a header and in the body), so that mismatch surfaces there as a 401 even though profile
     looked fine.
     """
+    profile_url = require_https_url("https://api.dhan.co/v2/profile", allowed_hosts={"api.dhan.co"})
     request = Request(
-        "https://api.dhan.co/v2/profile",
+        profile_url,
         headers={"access-token": access_token, "Accept": "application/json", "User-Agent": "QuantGrid/1.0"},
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
             payload = json.loads(response.read().decode("utf-8"))
     except Exception:
         return None
@@ -288,8 +294,9 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
 
     payload = dict(body)
     payload.setdefault("dhanClientId", client_id)
+    option_url = require_https_url(f"https://api.dhan.co/v2/{path}", allowed_hosts={"api.dhan.co"})
     request = Request(
-        f"https://api.dhan.co/v2/{path}",
+        option_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "access-token": access_token,
@@ -302,7 +309,7 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
     )
 
     try:
-        with urlopen(request, timeout=8) as response:
+        with urlopen(request, timeout=8) as response:  # nosec B310
             return _ensure_dhan_success(json.loads(response.read().decode("utf-8")))
     except HTTPError as exc:
         detail = _dhan_http_error_detail(exc)
@@ -636,7 +643,7 @@ def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, A
             return deepcopy(cached[1]), cached[2]
 
         lock_token = redis_service.acquire_lock(_DHAN_OPTION_FETCH_LOCK_NAME, ttl_seconds=20)
-        if lock_token == "":
+        if lock_token == "":  # nosec B105
             raise RuntimeError("Dhan option-chain refresh is already in progress. Retry after 5 seconds.")
         try:
             security_id, exchange_segment = _dhan_underlying(symbol)

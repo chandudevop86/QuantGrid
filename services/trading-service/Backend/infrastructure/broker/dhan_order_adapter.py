@@ -11,6 +11,7 @@ from Backend.domain.models.order import Order
 from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
+from Backend.infrastructure.http_safety import require_https_url
 
 
 DHAN_BASE_URL = "https://api.dhan.co/v2"
@@ -205,8 +206,9 @@ class DhanBrokerClient:
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
+        url = require_https_url(f"{DHAN_BASE_URL}{path}", allowed_hosts={"api.dhan.co"})
         request = Request(
-            f"{DHAN_BASE_URL}{path}",
+            url,
             data=body,
             method=method,
             headers={
@@ -217,7 +219,7 @@ class DhanBrokerClient:
             },
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout) as response:  # nosec B310
                 text = response.read().decode("utf-8")
                 return json.loads(text) if text else {}
         except HTTPError as exc:

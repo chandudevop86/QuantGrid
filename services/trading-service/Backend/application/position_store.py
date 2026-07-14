@@ -239,7 +239,7 @@ def update_open_position(position_id: int, payload: dict[str, Any]) -> dict[str,
         values.append(utc_now())
         values.append(position_id)
         connection.execute(
-            f"UPDATE positions SET {', '.join(updates)} WHERE id = ? AND status = 'open'",
+            f"UPDATE positions SET {', '.join(updates)} WHERE id = ? AND status = 'open'",  # nosec B608
             values,
         )
         row = connection.execute("SELECT * FROM positions WHERE id = ?", (position_id,)).fetchone()

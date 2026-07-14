@@ -65,13 +65,13 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
         metadata.create_all(bind=engine)
     with engine.begin() as connection:
         connection.execute(text(
-            f"CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} ("
+            f"CREATE TABLE IF NOT EXISTS {MIGRATION_TABLE} ("  # nosec B608
             "version VARCHAR(80) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
         ))
-        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
+        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}  # nosec B608
         if BASELINE_VERSION not in applied:
             connection.execute(
-                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
                 {"version": BASELINE_VERSION},
             )
 
@@ -79,12 +79,12 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
         apply_compatibility_migrations(engine, COMPATIBILITY_COLUMNS)
         with engine.begin() as connection:
             connection.execute(
-                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
                 {"version": COMPATIBILITY_VERSION},
             )
 
     with engine.begin() as connection:
-        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
+        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}  # nosec B608
         if SUBSCRIPTION_ENTITLEMENTS_VERSION not in applied:
             primary_key = "SERIAL PRIMARY KEY" if engine.dialect.name == "postgresql" else "INTEGER PRIMARY KEY"
             connection.execute(text(
@@ -96,7 +96,10 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
             ))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_user_entitlement_overrides_user_id ON user_entitlement_overrides (user_id)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_user_entitlement_overrides_key ON user_entitlement_overrides (entitlement_key)"))
-            connection.execute(text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"), {"version": SUBSCRIPTION_ENTITLEMENTS_VERSION})
+            connection.execute(  # nosec B608
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
+                {"version": SUBSCRIPTION_ENTITLEMENTS_VERSION},
+            )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

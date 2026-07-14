@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from email.message import EmailMessage
 from urllib import request
 
+from Backend.infrastructure.http_safety import require_https_url
+
 logger = logging.getLogger(__name__)
 
 
@@ -65,6 +67,7 @@ def get_notification_settings() -> NotificationSettings:
 
 
 def _post_json(url: str, payload: dict) -> None:
+    url = require_https_url(url, allowed_hosts={"api.telegram.org", "hooks.slack.com"})
     data = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
         url,
@@ -72,7 +75,7 @@ def _post_json(url: str, payload: dict) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with request.urlopen(http_request, timeout=10) as response:
+    with request.urlopen(http_request, timeout=10) as response:  # nosec B310
         response.read()
 
 

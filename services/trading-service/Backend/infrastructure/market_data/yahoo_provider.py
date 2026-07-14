@@ -8,6 +8,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
+from Backend.infrastructure.http_safety import require_https_url
 
 
 YAHOO_TRADING_GRADE_WARNING = "Yahoo data is not trading-grade and should not be used for live execution."
@@ -35,15 +36,19 @@ class YahooProvider(MarketDataProvider):
         self.mark_fetch()
         yahoo_symbol = self.normalize_symbol(symbol)
         params = urlencode({"range": period, "interval": interval, "includePrePost": "false"})
-        request = Request(
+        url = require_https_url(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(yahoo_symbol, safe='')}?{params}",
+            allowed_hosts={"query1.finance.yahoo.com"},
+        )
+        request = Request(
+            url,
             headers={"User-Agent": "QuantGrid/1.0"},
         )
         last_error: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
                 started = time.monotonic()
-                with urlopen(request, timeout=10) as response:
+                with urlopen(request, timeout=10) as response:  # nosec B310
                     payload = json.loads(response.read().decode("utf-8"))
                 result = payload.get("chart", {}).get("result") or []
                 if not result:

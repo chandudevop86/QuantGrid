@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from Backend.domain.models.context import StrategyContext
@@ -15,6 +16,9 @@ from Backend.domain.strategies.mean_reversion import MeanReversionStrategy
 from Backend.domain.strategies.mtf import MTFStrategy
 from Backend.domain.strategies.mtfa import MTFAStrategy
 from Backend.domain.strategies.supply_demand import SupplyDemandStrategy
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -92,7 +96,7 @@ class StrategyEngine:
                 if rows:
                     return rows
             except Exception:
-                pass
+                logger.debug("Unable to read persisted strategy audit trail", exc_info=True)
         return list(self._audit_trail)
 
     def configure_strategy(
@@ -169,7 +173,7 @@ class StrategyEngine:
 
                 record_strategy_governance_audit(event, strategy, details)
             except Exception:
-                pass
+                logger.debug("Unable to persist strategy audit event", exc_info=True)
 
     def _persist_governance(self, governance: StrategyGovernance, *, overwrite: bool) -> None:
         if not self._persist_governance_enabled:
@@ -179,7 +183,7 @@ class StrategyEngine:
 
             upsert_strategy_governance(governance.to_dict(), overwrite=overwrite)
         except Exception:
-            pass
+            logger.debug("Unable to persist strategy governance", exc_info=True)
 
     def _load_persisted_governance(self) -> None:
         if not self._persist_governance_enabled:

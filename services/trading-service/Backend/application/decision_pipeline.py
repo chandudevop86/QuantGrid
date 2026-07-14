@@ -1806,8 +1806,8 @@ def _paper_trade_gate(
             "minimum_confluence_score": 70,
             "allowed_trade_quality": ["Good", "Excellent"],
             "minimum_risk_reward": 1.5,
-            "requires_risk_engine_pass": True,
-            "requires_discipline_engine_pass": True,
+            "requires_risk_engine_pass": True,  # nosec B105
+            "requires_discipline_engine_pass": True,  # nosec B105
             "requires_fresh_data": True,
         },
     }

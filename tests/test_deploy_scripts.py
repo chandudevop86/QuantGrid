@@ -20,6 +20,8 @@ REQUIRED_SCRIPTS = {
     "restart.sh",
     "logs.sh",
     "production_frontend.sh",
+    "validate-compose.sh",
+    "database-backup.sh",
 }
 
 
@@ -60,6 +62,16 @@ def test_database_script_exposes_expected_check_command_without_duplicate_schema
     assert "Backend.tools.check_database" not in database
     assert "CREATE TABLE" not in database
     assert "Use postgres.sh for database service start/status operations." in database
+
+
+def test_database_backup_requires_explicit_restore_authorization():
+    script = _text("database-backup.sh")
+    assert "pg_dump --format=custom" in script
+    assert "pg_restore --list" in script
+    assert "sha256sum" in script
+    assert 'ALLOW_DATABASE_RESTORE:-}" == "YES"' in script
+    assert "RESTORE_DATABASE_URL is required" in script
+    assert "--exit-on-error" in script
 
 
 def test_health_check_waits_and_prints_backend_diagnostics():
@@ -200,3 +212,7 @@ def test_production_deploy_script_is_safe_and_supports_rollback():
     assert "git reset --hard" not in script
     assert "git clean" not in script
     assert "rm -rf" not in script
+def test_compose_validation_never_prints_interpolated_configuration():
+    script = (ROOT / "deploy" / "scripts" / "validate-compose.sh").read_text(encoding="utf-8")
+    assert "config --quiet" in script
+    assert "config\n" not in script
