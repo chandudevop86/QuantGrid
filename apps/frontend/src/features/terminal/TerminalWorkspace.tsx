@@ -1,50 +1,287 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../api";
-import { useMarketStream } from "./useMarketStream";
-import type { OrderTicket, Quote, TerminalPosition, TerminalTab, Timeframe } from "./types";
+import { getCurrentMode } from "../../mode";
 import TradingChart from "./TradingChart";
+import { useMarketStream } from "./useMarketStream";
+import { useTerminalQuote } from "./useTerminalQuote";
 import { useTerminalStore } from "./store";
+import type { OrderTicket, TerminalTab, Timeframe } from "./types";
 
-const QUOTES: Quote[] = [
-  { symbol: "NIFTY", name: "Nifty 50", price: 24672.35, change: 126.8, changePercent: .52, volume: 1842390, atr: 186, trendScore: 82, aiScore: 88, signal: "Strong buy", favorite: true },
-  { symbol: "BANKNIFTY", name: "Nifty Bank", price: 55342.1, change: -134.7, changePercent: -.24, volume: 930202, atr: 421, trendScore: 48, aiScore: 61, signal: "Neutral", favorite: true },
-  { symbol: "RELIANCE", name: "Reliance", price: 1487.5, change: 16.2, changePercent: 1.1, volume: 5941020, atr: 29.4, trendScore: 78, aiScore: 81, signal: "Buy" },
-  { symbol: "HDFCBANK", name: "HDFC Bank", price: 1981.8, change: -11.3, changePercent: -.57, volume: 3211904, atr: 32.8, trendScore: 36, aiScore: 47, signal: "Sell" },
-];
-const tabs: { id: TerminalTab; label: string }[] = [{ id: "positions", label: "Positions" }, { id: "orders", label: "Orders" }, { id: "history", label: "Trade history" }, { id: "journal", label: "Journal" }, { id: "alerts", label: "Alerts" }, { id: "logs", label: "Strategy logs" }];
-const frames: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1D"];
-const money = (value: number) => new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
-const initial: OrderTicket = { symbol: "NIFTY", side: "BUY", type: "MARKET", quantity: 65, stopLoss: 24600, target: 24820, trailingStopPercent: .5, riskPercent: 1, bracketOrder: true };
+type WatchlistItem = { symbol: string; name: string; exchange: string };
 type Activity = { id: string; time: string; event: string; detail: string; tone?: "positive" | "negative" };
+type CopilotPayload = {
+  confidence_score?: number;
+  market_regime?: string;
+  summary?: string;
+  market_narrative?: string;
+  invalidation_level?: number | null;
+  invalidation_text?: string;
+  signal_explanation?: { scenario?: string; reason?: string; why_now?: string };
+};
+
+const WATCHLIST: WatchlistItem[] = [
+  { symbol: "NIFTY", name: "Nifty 50", exchange: "NSE" },
+  { symbol: "BANKNIFTY", name: "Nifty Bank", exchange: "NSE" },
+  { symbol: "RELIANCE", name: "Reliance Industries", exchange: "NSE" },
+  { symbol: "HDFCBANK", name: "HDFC Bank", exchange: "NSE" },
+];
+const TABS: { id: TerminalTab; label: string }[] = [
+  { id: "positions", label: "Positions" },
+  { id: "orders", label: "Orders" },
+  { id: "history", label: "Trade history" },
+  { id: "journal", label: "Journal" },
+  { id: "alerts", label: "Alerts" },
+  { id: "logs", label: "Strategy logs" },
+];
+const FRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1D"];
+const DRAWING_TOOLS = [["cursor", "⌖", "Cursor"], ["trendline", "╱", "Trendline"], ["horizontal", "━", "Horizontal line"], ["rectangle", "□", "Rectangle"], ["fib", "ƒ", "Fib retracement"], ["riskReward", "R", "Risk reward"]] as const;
+const EMPTY_TICKET: OrderTicket = { symbol: "NIFTY", side: "BUY", type: "MARKET", quantity: 65, stopLoss: 0, target: 0, trailingStopPercent: 0, riskPercent: 1, bracketOrder: true };
+
+function money(value: number | null | undefined) {
+  return Number.isFinite(value) ? new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value)) : "—";
+}
+
+function rowsFrom(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) return payload as Record<string, unknown>[];
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    for (const key of ["rows", "positions", "trades"]) {
+      if (Array.isArray(record[key])) return record[key] as Record<string, unknown>[];
+    }
+  }
+  return [];
+}
+
+function finite(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function valueOrBlank(value: number) {
+  return value > 0 ? value : "";
+}
 
 export default function TerminalWorkspace() {
-  const symbol = useTerminalStore((state) => state.symbol), setSymbol = useTerminalStore((state) => state.setSymbol), timeframe = useTerminalStore((state) => state.timeframe), setTimeframe = useTerminalStore((state) => state.setTimeframe), tab = useTerminalStore((state) => state.activeTab), setTab = useTerminalStore((state) => state.setActiveTab), activeDrawing = useTerminalStore((state) => state.activeDrawing), setActiveDrawing = useTerminalStore((state) => state.setActiveDrawing);
-  const [ticket, setTicket] = useState(initial), [query, setQuery] = useState(""), [notice, setNotice] = useState<string | null>(null), [submitting, setSubmitting] = useState(false), [commandOpen, setCommandOpen] = useState(false);
-  const [activity, setActivity] = useState<Activity[]>([{ id: "market-open", time: "09:15:02", event: "Market data connected", detail: "NSE cash and derivatives feed is live.", tone: "positive" }, { id: "risk", time: "09:18:44", event: "Risk check passed", detail: "Portfolio exposure is within the intraday limit." }]);
+  const symbol = useTerminalStore((state) => state.symbol);
+  const setSymbol = useTerminalStore((state) => state.setSymbol);
+  const timeframe = useTerminalStore((state) => state.timeframe);
+  const setTimeframe = useTerminalStore((state) => state.setTimeframe);
+  const tab = useTerminalStore((state) => state.activeTab);
+  const setTab = useTerminalStore((state) => state.setActiveTab);
+  const activeDrawing = useTerminalStore((state) => state.activeDrawing);
+  const setActiveDrawing = useTerminalStore((state) => state.setActiveDrawing);
+  const [ticket, setTicket] = useState<OrderTicket>(EMPTY_TICKET);
+  const [query, setQuery] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [activity, setActivity] = useState<Activity[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
-  const stream = useMarketStream(symbol);
-  const quote = QUOTES.find((item) => item.symbol === symbol) ?? QUOTES[0];
-  const filtered = useMemo(() => QUOTES.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(query.toLowerCase())), [query]);
-  const position: TerminalPosition = { id: "paper-1", symbol: "NIFTY", product: "MIS", side: "BUY", quantity: 65, averagePrice: 24611.4, lastPrice: quote.price, pnl: (quote.price - 24611.4) * 65, pnlPercent: ((quote.price / 24611.4) - 1) * 100, stopLoss: ticket.stopLoss, target: ticket.target };
-  useEffect(() => setTicket((current) => ({ ...current, symbol, price: quote.price })), [symbol, quote.price]);
-  useEffect(() => { const shortcuts = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen(true); window.setTimeout(() => searchRef.current?.focus(), 0); return; } if ((event.target as HTMLElement)?.matches("input,select,textarea")) return; if (event.key.toLowerCase() === "b") setTicket((v) => ({ ...v, side: "BUY" })); if (event.key.toLowerCase() === "s") setTicket((v) => ({ ...v, side: "SELL" })); if (event.key.toLowerCase() === "p") setTab("positions"); if (event.key === "Escape") setCommandOpen(false); }; window.addEventListener("keydown", shortcuts); return () => window.removeEventListener("keydown", shortcuts); }, []);
+  const socketStatus = useMarketStream();
+  const quoteQuery = useTerminalQuote(symbol);
+  const quote = quoteQuery.data;
+  const livePrice = quote?.price ?? null;
+  const filteredWatchlist = useMemo(
+    () => WATCHLIST.filter((item) => `${item.symbol} ${item.name}`.toLowerCase().includes(query.trim().toLowerCase())),
+    [query],
+  );
+  const positionsQuery = useQuery({
+    queryKey: ["terminal", "positions", getCurrentMode()],
+    queryFn: async () => rowsFrom(await api.openPositions()),
+    refetchInterval: 15_000,
+    staleTime: 5_000,
+    retry: 1,
+  });
+  const copilotQuery = useQuery({
+    queryKey: ["terminal", "copilot", symbol],
+    queryFn: () => api.marketCopilot(symbol) as Promise<CopilotPayload>,
+    staleTime: 30_000,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    setTicket((current) => ({ ...current, symbol, price: livePrice ?? current.price }));
+  }, [symbol, livePrice]);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 0);
+        return;
+      }
+      if ((event.target as HTMLElement | null)?.matches("input,select,textarea")) return;
+      if (event.key.toLowerCase() === "b") setTicket((current) => ({ ...current, side: "BUY" }));
+      if (event.key.toLowerCase() === "s") setTicket((current) => ({ ...current, side: "SELL" }));
+      if (event.key.toLowerCase() === "p") setTab("positions");
+      if (event.key === "Escape") setCommandOpen(false);
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [setTab]);
+
   const change = <K extends keyof OrderTicket>(key: K, value: OrderTicket[K]) => setTicket((current) => ({ ...current, [key]: value }));
-  const submit = async () => { setSubmitting(true); setNotice(null); try { await api.executeOrder({ strategy_name: "terminal_manual", symbol: ticket.symbol, side: ticket.side, entry_price: ticket.type === "MARKET" ? quote.price : ticket.price, stop_loss: ticket.stopLoss, target_price: ticket.target, trailing_stop_pct: ticket.trailingStopPercent, signal_time: new Date().toISOString(), metadata: { quantity: ticket.quantity, order_type: ticket.type, bracket_order: ticket.bracketOrder, source: "trading-terminal" } }); setNotice(`${ticket.side} order submitted to the paper execution queue.`); setActivity((items) => [{ id: `order-${Date.now()}`, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }), event: `${ticket.side} ${ticket.symbol} submitted`, detail: `${ticket.quantity} units · ${ticket.type} · paper execution queue`, tone: ticket.side === "BUY" ? "positive" : "negative" }, ...items]); setTab("orders"); } catch (error: any) { setNotice(error?.response?.data?.detail ?? "Order could not be submitted. Check the execution service."); } finally { setSubmitting(false); } };
+
+  const submit = async () => {
+    const entryPrice = ticket.type === "MARKET" ? livePrice : finite(ticket.price);
+    if (!entryPrice || entryPrice <= 0) {
+      setNotice("A verified market price is required before an order can be submitted.");
+      return;
+    }
+    if (ticket.quantity < 1) {
+      setNotice("Quantity must be at least one unit.");
+      return;
+    }
+    if (ticket.bracketOrder && (ticket.stopLoss <= 0 || ticket.target <= 0)) {
+      setNotice("Enter both stop loss and target for a bracket order.");
+      return;
+    }
+    setSubmitting(true);
+    setNotice(null);
+    try {
+      await api.executeOrder({
+        strategy_name: "terminal_manual",
+        symbol: ticket.symbol,
+        side: ticket.side,
+        entry_price: entryPrice,
+        stop_loss: ticket.stopLoss || undefined,
+        target_price: ticket.target || undefined,
+        trailing_stop_pct: ticket.trailingStopPercent || undefined,
+        signal_time: new Date().toISOString(),
+        metadata: { quantity: ticket.quantity, order_type: ticket.type, bracket_order: ticket.bracketOrder, source: "trading-terminal" },
+      });
+      const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      setNotice(`${ticket.side} ${ticket.symbol} was sent to the ${getCurrentMode()} execution queue.`);
+      setActivity((items) => [{ id: `order-${Date.now()}`, time, event: `${ticket.side} ${ticket.symbol} submitted`, detail: `${ticket.quantity} units · ${ticket.type} · ${getCurrentMode()} execution queue`, tone: ticket.side === "BUY" ? "positive" : "negative" }, ...items]);
+      setTab("orders");
+      void positionsQuery.refetch();
+    } catch (error: any) {
+      setNotice(error?.response?.data?.detail ?? "Order could not be submitted. Check the execution service.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const changePercent = quote?.changePercent;
+  const priceClass = changePercent == null ? "" : changePercent >= 0 ? "positive" : "negative";
+
   return <section className="terminal" aria-label="QuantGrid trading terminal">
-    <header className="terminal-commandbar"><div><span className="terminal-kicker">Trading terminal · NSE</span><strong>{quote.name} <em>{money(quote.price)}</em></strong><span className={quote.change >= 0 ? "positive" : "negative"}>{quote.change >= 0 ? "+" : ""}{money(quote.change)} ({quote.changePercent.toFixed(2)}%)</span></div><div><span className={`stream-state ${stream}`}>{stream === "live" ? "Live stream" : stream === "connecting" ? "Connecting" : "Reconnecting"}</span><button className="terminal-icon-button" type="button" aria-label="Open command palette" onClick={() => setCommandOpen(true)}>⌘ K</button></div></header>
-    <section className="terminal-market-strip" aria-label="Market pulse"><span><small>NIFTY 50</small><b className="positive">24,672.35 <i>+0.52%</i></b></span><span><small>BANK NIFTY</small><b className="negative">55,342.10 <i>−0.24%</i></b></span><span><small>SENSEX</small><b className="positive">80,490.12 <i>+0.31%</i></b></span><span><small>INDIA VIX</small><b>12.84 <i className="negative">+1.08%</i></b></span><span><small>Market breadth</small><b>31 / 19 <i>adv / dec</i></b></span></section>
-    {commandOpen && <div className="terminal-command-palette" role="dialog" aria-modal="true" aria-label="Command palette"><button className="terminal-command-backdrop" aria-label="Close command palette" onClick={() => setCommandOpen(false)} /><div className="terminal-command-dialog"><span className="terminal-kicker">Jump to instrument</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search NIFTY, BANKNIFTY, RELIANCE…" aria-label="Search instruments" />{filtered.map((item) => <button key={item.symbol} type="button" onClick={() => { setSymbol(item.symbol); setQuery(""); setCommandOpen(false); }}><span><b>{item.symbol}</b><small>{item.name}</small></span><strong className={item.change >= 0 ? "positive" : "negative"}>{money(item.price)} · {item.changePercent.toFixed(2)}%</strong></button>)}</div></div>}
-    <div className="terminal-grid"><aside className="terminal-left"><section className="terminal-panel watchlist-panel"><div className="panel-title"><h2>Watchlist</h2><button type="button" aria-label="Add instrument">＋</button></div><input className="terminal-search" aria-label="Search watchlist" placeholder="Search instruments" value={query} onChange={(e) => setQuery(e.target.value)} /><div className="watchlist-header"><span>Instrument</span><span>Last</span><span>Chg%</span></div>{filtered.map((item) => <button type="button" className={`watch-row ${item.symbol === symbol ? "selected" : ""}`} onClick={() => setSymbol(item.symbol)} key={item.symbol}><span><b>{item.favorite ? "★ " : ""}{item.symbol}</b><small>{item.signal} · AI {item.aiScore}</small></span><strong>{money(item.price)}</strong><i className={item.change >= 0 ? "positive" : "negative"}>{item.changePercent.toFixed(2)}%</i></button>)}</section><MiniPanels /></aside>
-      <main className="terminal-center"><section className="terminal-panel chart-shell"><div className="chart-toolbar"><div className="timeframe-group">{frames.map((item) => <button type="button" className={item === timeframe ? "active" : ""} onClick={() => setTimeframe(item)} key={item}>{item}</button>)}</div><div className="chart-actions"><button type="button">Indicators</button><button type="button">Drawings</button><button type="button">⚙</button></div></div><div className="chart-annotations"><span>EMA 20</span><span>VWAP</span><span>Market structure</span><span>Volume</span></div><TradingChart symbol={symbol} timeframe={timeframe} support={24540} resistance={24790} /><div className="drawing-rail">{([['cursor','⌖','Cursor'],['trendline','╱','Trendline'],['horizontal','━','Horizontal line'],['rectangle','□','Rectangle'],['fib','ƒ','Fib retracement'],['riskReward','R','Risk reward']] as const).map(([tool, icon, label]) => <button className={activeDrawing === tool ? "active" : ""} type="button" title={label} aria-label={label} onClick={() => setActiveDrawing(tool)} key={tool}>{icon}</button>)}</div></section><AiPanel score={quote.aiScore} /></main>
-      <aside className="terminal-right"><OrderPanel quote={quote} ticket={ticket} change={change} submit={submit} submitting={submitting} notice={notice} /><section className="terminal-panel calculator-panel"><div className="panel-title"><h2>Position size</h2><button type="button">Auto</button></div><p>1% risk on ₹5,00,000 capital</p><strong>{ticket.quantity} <small>units · 1 lot</small></strong><span>Max loss ₹{money(Math.abs(quote.price - ticket.stopLoss) * ticket.quantity)}</span></section></aside></div>
-    <section className="terminal-panel terminal-bottom"><div className="bottom-tabs" role="tablist">{tabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} key={item.id}>{item.label}{item.id === "positions" && <span>1</span>}</button>)}</div><TerminalDock tab={tab} position={position} activity={activity} /></section>
+    <header className="terminal-commandbar">
+      <div>
+        <span className="terminal-kicker">Trading terminal · {quote?.provider?.toUpperCase() ?? "market data"}</span>
+        <strong>{WATCHLIST.find((item) => item.symbol === symbol)?.name ?? symbol} <em>{money(livePrice)}</em></strong>
+        {changePercent != null && <span className={priceClass}>{changePercent >= 0 ? "+" : ""}{changePercent.toFixed(2)}%</span>}
+      </div>
+      <div>
+        <span className={`stream-state ${socketStatus}`}>{socketStatus === "connected" ? "Workspace connected" : socketStatus === "connecting" ? "Connecting workspace" : "Workspace reconnecting"}</span>
+        <button className="terminal-icon-button" type="button" aria-label="Open instrument command palette" onClick={() => setCommandOpen(true)}>⌘ K</button>
+      </div>
+    </header>
+
+    <section className="terminal-market-strip" aria-label="Terminal data status">
+      <span><small>Data source</small><b>{quote?.provider ?? (quoteQuery.isLoading ? "Loading" : "Unavailable")}</b></span>
+      <span><small>Last update</small><b>{quote?.timestamp ? new Date(quote.timestamp).toLocaleTimeString() : "—"}</b></span>
+      <span><small>Chart interval</small><b>{timeframe}</b></span>
+      <span><small>Execution mode</small><b>{getCurrentMode()}</b></span>
+      <span><small>Open positions</small><b>{positionsQuery.data?.length ?? "—"}</b></span>
+    </section>
+
+    {quote?.warning && <p className="terminal-data-warning" role="status">{quote.warning}</p>}
+    {quoteQuery.isError && <p className="terminal-data-warning is-error" role="alert">Live price is unavailable. The order ticket remains disabled until a verified price is returned.</p>}
+
+    {commandOpen && <CommandPalette items={filteredWatchlist} inputRef={searchRef} query={query} setQuery={setQuery} onSelect={(nextSymbol) => { setSymbol(nextSymbol); setQuery(""); setCommandOpen(false); }} onClose={() => setCommandOpen(false)} />}
+
+    <div className="terminal-grid">
+      <aside className="terminal-left">
+        <Watchlist items={filteredWatchlist} symbol={symbol} price={livePrice} onSelect={setSymbol} query={query} setQuery={setQuery} />
+        <MarketPanels />
+      </aside>
+      <main className="terminal-center">
+        <section className="terminal-panel chart-shell">
+          <div className="chart-toolbar">
+            <div className="timeframe-group" role="group" aria-label="Chart interval">
+              {FRAMES.map((item) => <button type="button" aria-pressed={item === timeframe} className={item === timeframe ? "active" : ""} onClick={() => setTimeframe(item)} key={item}>{item}</button>)}
+            </div>
+            <div className="chart-actions"><button type="button" title="EMA 20, VWAP, volume, support and resistance are enabled">Indicators</button><button type="button" title="Select a supported drawing tool from the rail">Drawings</button><button type="button" onClick={() => void quoteQuery.refetch()}>Refresh</button></div>
+          </div>
+          <div className="chart-annotations"><span>EMA 20</span><span>VWAP</span><span>Volume</span><span>Support / resistance</span></div>
+          <TradingChart symbol={symbol} timeframe={timeframe} />
+          <div className="drawing-rail" role="toolbar" aria-label="Chart drawing tools">
+            {DRAWING_TOOLS.map(([tool, icon, label]) => <button className={activeDrawing === tool ? "active" : ""} type="button" title={label} aria-label={label} aria-pressed={activeDrawing === tool} onClick={() => setActiveDrawing(tool)} key={tool}>{icon}</button>)}
+          </div>
+        </section>
+        <AiPanel payload={copilotQuery.data} isLoading={copilotQuery.isLoading} isError={copilotQuery.isError} />
+      </main>
+      <aside className="terminal-right">
+        <OrderPanel price={livePrice} ticket={ticket} change={change} submit={submit} submitting={submitting} notice={notice} />
+        <PositionCalculator price={livePrice} ticket={ticket} />
+      </aside>
+    </div>
+
+    <section className="terminal-panel terminal-bottom">
+      <div className="bottom-tabs" role="tablist" aria-label="Trading records">
+        {TABS.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} key={item.id}>{item.label}{item.id === "positions" && (positionsQuery.data?.length ?? 0) > 0 && <span>{positionsQuery.data?.length}</span>}</button>)}
+      </div>
+      <TerminalDock tab={tab} positions={positionsQuery.data ?? []} positionsLoading={positionsQuery.isLoading} positionsError={positionsQuery.isError} activity={activity} />
+    </section>
   </section>;
 }
 
-function MiniPanels() { return <><section className="terminal-panel compact-panel"><div className="panel-title"><h2>Market overview</h2><span>India</span></div><div className="market-mini"><span>NIFTY <b className="positive">+0.52%</b></span><span>BANK <b className="negative">−0.24%</b></span><span>VIX <b>12.84</b></span></div></section><section className="terminal-panel compact-panel"><div className="panel-title"><h2>Sector performance</h2><span>1D</span></div>{["IT", "Auto", "Financials", "Energy"].map((sector, index) => <div className="sector-row" key={sector}><span>{sector}</span><div><i style={{ width: `${78 - index * 16}%` }} /></div><b className={index === 3 ? "negative" : "positive"}>{index === 3 ? "−0.28%" : `+${(1.42 - index * .3).toFixed(2)}%`}</b></div>)}</section></>; }
-function AiPanel({ score }: { score: number }) { return <section className="terminal-panel ai-panel"><div className="panel-title"><div><span className="terminal-kicker">QuantGrid AI</span><h2>Trade intelligence</h2></div><span className="ai-score">{score}<small>/100</small></span></div><div className="ai-metrics">{[["Trend probability", "72%"], ["Momentum", "84/100"], ["Volume", "68/100"], ["Institutional", "Accumulating"]].map(([label, value]) => <span key={label}><small>{label}</small><b>{value}</b></span>)}</div><p>Long bias above 24,620. Suggested entry near VWAP; protective stop below 24,590 with a 1:2.1 risk/reward profile.</p></section>; }
-function OrderPanel({ quote, ticket, change, submit, submitting, notice }: { quote: Quote; ticket: OrderTicket; change: <K extends keyof OrderTicket>(key: K, value: OrderTicket[K]) => void; submit: () => Promise<void>; submitting: boolean; notice: string | null }) { const risk = Math.abs(quote.price - ticket.stopLoss) * ticket.quantity; const reward = Math.abs(ticket.target - quote.price) / Math.max(Math.abs(quote.price - ticket.stopLoss), 1); return <section className="terminal-panel order-panel"><div className="panel-title"><h2>Order entry</h2><span className="paper-badge">Paper</span></div><div className="side-toggle"><button type="button" className={ticket.side === "BUY" ? "buy active" : "buy"} onClick={() => change("side", "BUY")}>Buy <kbd>B</kbd></button><button type="button" className={ticket.side === "SELL" ? "sell active" : "sell"} onClick={() => change("side", "SELL")}>Sell <kbd>S</kbd></button></div><div className="order-types">{(["MARKET", "LIMIT", "SL"] as const).map((type) => <button type="button" className={ticket.type === type ? "active" : ""} onClick={() => change("type", type)} key={type}>{type}</button>)}</div><label>Quantity<input type="number" min="1" value={ticket.quantity} onChange={(e) => change("quantity", Number(e.target.value))} /></label>{ticket.type !== "MARKET" && <label>Limit price<input type="number" value={ticket.price ?? quote.price} onChange={(e) => change("price", Number(e.target.value))} /></label>}<div className="ticket-grid"><label>Stop loss<input type="number" value={ticket.stopLoss} onChange={(e) => change("stopLoss", Number(e.target.value))} /></label><label>Target<input type="number" value={ticket.target} onChange={(e) => change("target", Number(e.target.value))} /></label><label>Trail %<input type="number" step=".1" value={ticket.trailingStopPercent ?? ""} onChange={(e) => change("trailingStopPercent", Number(e.target.value))} /></label><label>Risk %<input type="number" step=".25" value={ticket.riskPercent} onChange={(e) => change("riskPercent", Number(e.target.value))} /></label></div><label className="checkline"><input type="checkbox" checked={ticket.bracketOrder} onChange={(e) => change("bracketOrder", e.target.checked)} /> Bracket order (SL + target)</label><div className="order-summary-grid"><span><small>Margin</small><b>₹{money(ticket.quantity * quote.price * .18)}</b></span><span><small>Risk</small><b>₹{money(risk)}</b></span><span><small>R:R</small><b>1:{reward.toFixed(1)}</b></span></div><button type="button" className={`place-order ${ticket.side.toLowerCase()}`} disabled={submitting} onClick={() => void submit()}>{submitting ? "Submitting…" : `${ticket.side === "BUY" ? "Buy" : "Sell"} ${ticket.symbol}`}</button>{notice && <p role="status" className="order-notice">{notice}</p>}</section>; }
-function PositionTable({ position }: { position: TerminalPosition }) { return <div className="terminal-table-wrap"><table><thead><tr><th>Instrument</th><th>Product</th><th>Qty</th><th>Avg. price</th><th>LTP</th><th>SL / Target</th><th>P&L</th><th>Actions</th></tr></thead><tbody><tr><td><b>{position.symbol}</b><small>{position.side} · Intraday</small></td><td>{position.product}</td><td>{position.quantity}</td><td>{money(position.averagePrice)}</td><td>{money(position.lastPrice)}</td><td>{money(position.stopLoss)} / {money(position.target)}</td><td className={position.pnl >= 0 ? "positive" : "negative"}><b>₹{money(position.pnl)}</b><small>{position.pnlPercent.toFixed(2)}%</small></td><td><button type="button">Exit</button><button type="button">Trail</button></td></tr></tbody></table></div>; }
-function TerminalDock({ tab, position, activity }: { tab: TerminalTab; position: TerminalPosition; activity: Activity[] }) { if (tab === "positions") return <PositionTable position={position} />; if (tab === "orders") { const orders = activity.filter((item) => item.id.startsWith("order-")); return <div className="terminal-activity-list">{orders.length ? orders.map((item) => <ActivityRow item={item} key={item.id} />) : <EmptyDock title="No orders in this session" detail="New orders appear here immediately after submission." />}</div>; } if (tab === "alerts" || tab === "logs") return <div className="terminal-activity-list">{activity.map((item) => <ActivityRow item={item} key={item.id} />)}</div>; if (tab === "history") return <EmptyDock title="No completed trades today" detail="Executed and closed orders will be retained in your trade history." />; return <EmptyDock title="Your trading journal is ready" detail="Add notes against completed trades from the history workspace." />; }
-function ActivityRow({ item }: { item: Activity }) { return <article className="terminal-activity-row"><time>{item.time}</time><span className={`activity-pip ${item.tone ?? ""}`} /><div><b>{item.event}</b><small>{item.detail}</small></div><button type="button">View</button></article>; }
-function EmptyDock({ title, detail }: { title: string; detail: string }) { return <div className="tab-empty"><strong>{title}</strong><span>{detail}</span></div>; }
+function CommandPalette({ items, inputRef, query, setQuery, onSelect, onClose }: { items: WatchlistItem[]; inputRef: React.RefObject<HTMLInputElement>; query: string; setQuery: (value: string) => void; onSelect: (symbol: string) => void; onClose: () => void }) {
+  return <div className="terminal-command-palette" role="dialog" aria-modal="true" aria-label="Instrument command palette"><button className="terminal-command-backdrop" aria-label="Close command palette" onClick={onClose} /><div className="terminal-command-dialog"><span className="terminal-kicker">Jump to instrument</span><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search NIFTY, BANKNIFTY, RELIANCE…" aria-label="Search instruments" />{items.map((item) => <button key={item.symbol} type="button" onClick={() => onSelect(item.symbol)}><span><b>{item.symbol}</b><small>{item.name}</small></span><strong>{item.exchange}</strong></button>)}{!items.length && <p className="terminal-empty-message">No instruments match your search.</p>}</div></div>;
+}
+
+function Watchlist({ items, symbol, price, onSelect, query, setQuery }: { items: WatchlistItem[]; symbol: string; price: number | null; onSelect: (symbol: string) => void; query: string; setQuery: (value: string) => void }) {
+  return <section className="terminal-panel watchlist-panel"><div className="panel-title"><h2>Watchlist</h2><span>Live on select</span></div><input className="terminal-search" aria-label="Search watchlist" placeholder="Search instruments" value={query} onChange={(event) => setQuery(event.target.value)} /><div className="watchlist-header"><span>Instrument</span><span>Last</span><span>Feed</span></div>{items.map((item) => <button type="button" className={`watch-row ${item.symbol === symbol ? "selected" : ""}`} onClick={() => onSelect(item.symbol)} key={item.symbol}><span><b>{item.symbol}</b><small>{item.name}</small></span><strong>{item.symbol === symbol ? money(price) : "—"}</strong><i>{item.symbol === symbol ? "Loaded" : "Select"}</i></button>)}{!items.length && <p className="terminal-empty-message">No instruments match your search.</p>}</section>;
+}
+
+function MarketPanels() {
+  return <><section className="terminal-panel compact-panel"><div className="panel-title"><h2>Market overview</h2><span>Configured feed</span></div><div className="market-mini"><span>Price <b>On selection</b></span><span>Candles <b>Verified API</b></span><span>Orders <b>Paper guarded</b></span></div></section><section className="terminal-panel compact-panel"><div className="panel-title"><h2>Saved screeners</h2><Link to="/ai-scanner">Open</Link></div><p className="terminal-panel-copy">Run your entitled scanner from the dedicated workspace. Results are not duplicated in the order flow.</p></section></>;
+}
+
+function AiPanel({ payload, isLoading, isError }: { payload: CopilotPayload | undefined; isLoading: boolean; isError: boolean }) {
+  const explanation = payload?.signal_explanation;
+  return <section className="terminal-panel ai-panel"><div className="panel-title"><div><span className="terminal-kicker">QuantGrid AI</span><h2>Trade intelligence</h2></div><span className="ai-score">{isLoading ? "…" : payload?.confidence_score ?? "—"}<small>/100</small></span></div>{isError ? <p className="terminal-panel-copy" role="status">AI context is unavailable for this account or market state. It never blocks risk controls.</p> : <><div className="ai-metrics"><span><small>Regime</small><b>{payload?.market_regime ?? "—"}</b></span><span><small>Scenario</small><b>{explanation?.scenario ?? "—"}</b></span><span><small>Invalidation</small><b>{money(payload?.invalidation_level)}</b></span><span><small>Why now</small><b>{explanation?.why_now ?? "—"}</b></span></div><p>{payload?.summary ?? payload?.market_narrative ?? "Waiting for the configured AI market context."}</p></>}</section>;
+}
+
+function OrderPanel({ price, ticket, change, submit, submitting, notice }: { price: number | null; ticket: OrderTicket; change: <K extends keyof OrderTicket>(key: K, value: OrderTicket[K]) => void; submit: () => Promise<void>; submitting: boolean; notice: string | null }) {
+  const risk = price && ticket.stopLoss > 0 ? Math.abs(price - ticket.stopLoss) * ticket.quantity : null;
+  const reward = price && ticket.stopLoss > 0 && ticket.target > 0 ? Math.abs(ticket.target - price) / Math.max(Math.abs(price - ticket.stopLoss), 1) : null;
+  return <section className="terminal-panel order-panel"><div className="panel-title"><h2>Order entry</h2><span className="paper-badge">{getCurrentMode()}</span></div><div className="side-toggle"><button type="button" className={ticket.side === "BUY" ? "buy active" : "buy"} onClick={() => change("side", "BUY")}>Buy <kbd>B</kbd></button><button type="button" className={ticket.side === "SELL" ? "sell active" : "sell"} onClick={() => change("side", "SELL")}>Sell <kbd>S</kbd></button></div><div className="order-types">{(["MARKET", "LIMIT", "SL"] as const).map((type) => <button type="button" className={ticket.type === type ? "active" : ""} onClick={() => change("type", type)} key={type}>{type}</button>)}</div><label>Quantity<input type="number" min="1" value={ticket.quantity} onChange={(event) => change("quantity", Math.max(1, Number(event.target.value)))} /></label>{ticket.type !== "MARKET" && <label>Limit price<input type="number" min="0" value={ticket.price ?? ""} onChange={(event) => change("price", Number(event.target.value))} /></label>}<div className="ticket-grid"><label>Stop loss<input type="number" min="0" value={valueOrBlank(ticket.stopLoss)} onChange={(event) => change("stopLoss", Number(event.target.value))} /></label><label>Target<input type="number" min="0" value={valueOrBlank(ticket.target)} onChange={(event) => change("target", Number(event.target.value))} /></label><label>Trail %<input type="number" min="0" step=".1" value={valueOrBlank(ticket.trailingStopPercent ?? 0)} onChange={(event) => change("trailingStopPercent", Number(event.target.value))} /></label><label>Risk %<input type="number" min="0" step=".25" value={ticket.riskPercent} onChange={(event) => change("riskPercent", Number(event.target.value))} /></label></div><label className="checkline"><input type="checkbox" checked={ticket.bracketOrder} onChange={(event) => change("bracketOrder", event.target.checked)} /> Bracket order (SL + target)</label><div className="order-summary-grid"><span><small>Reference LTP</small><b>{money(price)}</b></span><span><small>Risk</small><b>{risk == null ? "—" : `₹${money(risk)}`}</b></span><span><small>R:R</small><b>{reward == null ? "—" : `1:${reward.toFixed(1)}`}</b></span></div><button type="button" className={`place-order ${ticket.side.toLowerCase()}`} disabled={submitting || price == null} onClick={() => void submit()}>{submitting ? "Submitting…" : price == null ? "Waiting for verified price" : `${ticket.side === "BUY" ? "Buy" : "Sell"} ${ticket.symbol}`}</button>{notice && <p role="status" className="order-notice">{notice}</p>}</section>;
+}
+
+function PositionCalculator({ price, ticket }: { price: number | null; ticket: OrderTicket }) {
+  const potentialLoss = price && ticket.stopLoss > 0 ? Math.abs(price - ticket.stopLoss) * ticket.quantity : null;
+  return <section className="terminal-panel calculator-panel"><div className="panel-title"><h2>Position size</h2><span>Manual ticket</span></div><p>Quantity stays under your server-side risk gate.</p><strong>{ticket.quantity} <small>units</small></strong><span>{potentialLoss == null ? "Enter a verified price and stop loss to calculate risk." : `Estimated loss ₹${money(potentialLoss)}`}</span></section>;
+}
+
+function TerminalDock({ tab, positions, positionsLoading, positionsError, activity }: { tab: TerminalTab; positions: Record<string, unknown>[]; positionsLoading: boolean; positionsError: boolean; activity: Activity[] }) {
+  if (tab === "positions") return <PositionTable rows={positions} loading={positionsLoading} error={positionsError} />;
+  if (tab === "orders") return activity.length ? <div className="terminal-activity-list">{activity.map((item) => <ActivityRow item={item} key={item.id} />)}</div> : <EmptyDock title="No orders in this terminal session" detail="Submitted orders appear here immediately. Use Positions to see confirmed open exposure." />;
+  if (tab === "history") return <DockLink title="Review completed trades" detail="Trade history remains in the dedicated record, with filters and export controls." to="/paper-trades" label="Open positions & history" />;
+  if (tab === "journal") return <DockLink title="Trading journal" detail="Add notes against completed trades from the journal workspace." to="/trade-journal" label="Open journal" />;
+  if (tab === "alerts") return <EmptyDock title="No terminal alerts loaded" detail="System and trade alerts remain available in the application header." />;
+  return <DockLink title="Strategy logs" detail="Use the execution workspace for server-provided strategy activity." to="/execution" label="Open execution" />;
+}
+
+function PositionTable({ rows, loading, error }: { rows: Record<string, unknown>[]; loading: boolean; error: boolean }) {
+  if (loading) return <EmptyDock title="Loading open positions" detail="Fetching the active account from the execution API." />;
+  if (error) return <EmptyDock title="Position data is unavailable" detail="Use the Positions page to retry or inspect the execution service." />;
+  if (!rows.length) return <EmptyDock title="No open positions" detail="Open exposure from the active account appears here. No simulated positions are shown." />;
+  return <div className="terminal-table-wrap"><table><thead><tr><th>Instrument</th><th>Side</th><th>Quantity</th><th>Average</th><th>LTP</th><th>SL / Target</th><th>P&amp;L</th><th /></tr></thead><tbody>{rows.map((row) => { const pnl = finite(row.open_pnl ?? row.pnl) ?? 0; const entry = finite(row.entry_price ?? row.entry); const ltp = finite(row.current_price ?? row.ltp); const quantity = finite(row.quantity); const percent = entry && quantity ? (pnl / Math.abs(entry * quantity)) * 100 : null; return <tr key={String(row.id ?? row.broker_order_id ?? `${row.symbol}-${row.opened_at}`)}><td><b>{String(row.symbol ?? "—")}</b><small>{String(row.product ?? row.product_type ?? "Position")}</small></td><td>{String(row.side ?? "—")}</td><td>{quantity ?? "—"}</td><td>{money(entry)}</td><td>{money(ltp)}</td><td>{money(finite(row.stop_loss))} / {money(finite(row.target))}</td><td className={pnl >= 0 ? "positive" : "negative"}><b>₹{money(pnl)}</b><small>{percent == null ? "—" : `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%`}</small></td><td><Link to="/paper-trades">Manage</Link></td></tr>; })}</tbody></table></div>;
+}
+
+function ActivityRow({ item }: { item: Activity }) {
+  return <article className="terminal-activity-row"><time>{item.time}</time><span className={`activity-pip ${item.tone ?? ""}`} /><div><b>{item.event}</b><small>{item.detail}</small></div><Link to="/paper-trades">View</Link></article>;
+}
+
+function EmptyDock({ title, detail }: { title: string; detail: string }) {
+  return <div className="tab-empty"><strong>{title}</strong><span>{detail}</span></div>;
+}
+
+function DockLink({ title, detail, to, label }: { title: string; detail: string; to: string; label: string }) {
+  return <div className="tab-empty"><strong>{title}</strong><span>{detail}</span><Link className="terminal-dock-link" to={to}>{label}</Link></div>;
+}

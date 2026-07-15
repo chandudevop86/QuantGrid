@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import AppHeader from "../components/AppHeader";
 import Sidebar from "../components/Sidebar";
 import { OperationsStatusProvider } from "../context/OperationsStatusContext";
@@ -10,7 +11,9 @@ type AppLayoutProps = { children: React.ReactNode };
 
 export default function AppLayout({ children }: AppLayoutProps) {
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
-  return <MarketSelectionProvider><SubscriptionProvider><OperationsStatusProvider><div className="app-shell"><Sidebar collapsed={navigationCollapsed} onNavigate={() => setNavigationCollapsed(false)} /><main className="app-main"><AppHeader onMenuToggle={() => setNavigationCollapsed((value) => !value)} /><div className="app-content">{children}</div></main><WorkspaceContext /></div></OperationsStatusProvider></SubscriptionProvider></MarketSelectionProvider>;
+  const location = useLocation();
+  const isTerminal = location.pathname === "/trade";
+  return <MarketSelectionProvider><SubscriptionProvider><OperationsStatusProvider><div className={`app-shell${isTerminal ? " app-shell-terminal" : ""}`}><Sidebar collapsed={navigationCollapsed} onNavigate={() => setNavigationCollapsed(false)} /><main className="app-main"><AppHeader onMenuToggle={() => setNavigationCollapsed((value) => !value)} /><div className="app-content">{children}</div></main>{!isTerminal && <WorkspaceContext />}</div></OperationsStatusProvider></SubscriptionProvider></MarketSelectionProvider>;
 }
 
 function WorkspaceContext() {
