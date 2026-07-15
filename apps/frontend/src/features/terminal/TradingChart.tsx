@@ -48,10 +48,28 @@ function vwap(candles: ReturnType<typeof normalized>) {
   });
 }
 
-function priceLine(price: number, color: string, title: string): PriceLineOptions {
-         return { price, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title };
-}
 
+function priceLine(
+  price: number,
+  color: string,
+  title: string
+): PriceLineOptions {
+  return {
+    price,
+    color,
+    lineWidth: 1,
+    lineStyle: LineStyle.Dashed,
+
+    // Required in v5
+    lineVisible: true,
+
+    axisLabelVisible: true,
+    axisLabelColor: color,
+    axisLabelTextColor: "#ffffff",
+
+    title,
+  };
+}
 export default function TradingChart({ symbol, timeframe, support, resistance }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
