@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-#/ from Backend.domain.engine.strategy_engine import StrategyEngine
+from Backend.domain.engine.strategy_engine import StrategyEngine
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.logging import get_logger
