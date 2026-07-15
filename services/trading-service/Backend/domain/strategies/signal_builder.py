@@ -5,12 +5,12 @@ from typing import Any
 import pandas as pd
 
 from Backend.domain.models.signal import StrategySignal
-from Backend.domain.risk.risk_manager import RiskManager
+from Backend.trading_system.risk import GlobalRiskManager
 
 
 class SignalBuilder:
-    def __init__(self, risk_manager: RiskManager | None = None) -> None:
-        self.risk_manager = risk_manager or RiskManager()
+    def __init__(self, risk_manager: GlobalRiskManager | None = None) -> None:
+        self.risk_manager = risk_manager or GlobalRiskManager()
 
     def build(
         self,

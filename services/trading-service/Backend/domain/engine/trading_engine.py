@@ -7,14 +7,14 @@ from Backend.domain.engine.strategy_engine import StrategyEngine
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
-from Backend.domain.risk.risk_manager import RiskManager
+from Backend.trading_system.risk import GlobalRiskManager
 
 
 class TradingEngine:
-    def __init__(self, strategy_engine: StrategyEngine | None = None, execution_engine: ExecutionEngine | None = None, risk_manager: RiskManager | None = None) -> None:
+    def __init__(self, strategy_engine: StrategyEngine | None = None, execution_engine: ExecutionEngine | None = None, risk_manager: GlobalRiskManager | None = None) -> None:
         self.strategy_engine = strategy_engine or StrategyEngine()
         self.execution_engine = execution_engine or ExecutionEngine()
-        self.risk_manager = risk_manager or RiskManager()
+        self.risk_manager = risk_manager or GlobalRiskManager()
 
     def scan(self, strategy_name: str, data: Any, context: StrategyContext) -> list[StrategySignal]:
         signals = self.strategy_engine.run(strategy_name, data, context)
