@@ -16,7 +16,7 @@ from Backend.application.notifications import alert_job_finished
 from Backend.application.paper_trade_store import create_paper_trade
 from Backend.application.signal_validation import validate_signals
 from Backend.application.signal_quality import split_signals
-from Backend.domain.engine.execution_engine import ExecutionEngine
+from Backend.domain.engine.order_factory import ExecutionEngine
 from Backend.domain.execution_constraints import apply_order_constraints, requested_quantity, validate_execution_constraints
 from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
