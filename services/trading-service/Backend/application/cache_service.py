@@ -211,7 +211,6 @@ class MultiLevelCache:
         """Clear all local cache entries."""
         with self._lock:
             self._local_cache.clear()
-            self._stats["evictions"] += len(self._local_cache)
     
     def stats(self) -> dict[str, Any]:
         """Cache performance statistics."""
