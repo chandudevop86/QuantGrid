@@ -22,7 +22,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, TypeVar, Generic, Callable
+from typing import Any, TypeVar, Generic
 
 logger = logging.getLogger("quantgrid.cache")
 
@@ -241,7 +241,6 @@ class MultiLevelCache:
         if not self._local_cache:
             return
         
-        # Find entry with minimum hits
         lru_key = min(
             self._local_cache.keys(),
             key=lambda k: (self._local_cache[k].hits, time.time() - self._local_cache[k].expires_at),
@@ -275,7 +274,6 @@ def cache_key_hash(*parts: str, prefix: str = "") -> str:
     return hash_val
 
 
-# Singleton instance (initialized in main.py)
 _cache_instance: MultiLevelCache | None = None
 
 

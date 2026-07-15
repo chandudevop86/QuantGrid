@@ -15,31 +15,21 @@ from Backend.application import market_data_store
 
 logger = logging.getLogger("quantgrid.cached_market_data")
 
-# Cache TTL constants (seconds)
-CANDLES_TTL = 10  # Candles refresh every minute; cache 10s
-PRICE_TICK_TTL = 5  # Price ticks more frequent
-SUMMARY_TTL = 60  # Summary data less time-sensitive
+CANDLES_TTL = 10
+PRICE_TICK_TTL = 5
+SUMMARY_TTL = 60
 
 
 def latest_candles(symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
-    """Get latest candles with caching.
-    
-    Cache hit rate: ~90% for typical trading signals
-    """
+    """Get latest candles with caching."""
     cache = get_cache()
-    
-    # Build cache key
     key = cache_key("candles", symbol, interval, prefix="market_data")
     
-    # Try cache
     cached = cache.get(key)
     if cached is not None:
         return cached
     
-    # Cache miss: fetch from DB
     candles = market_data_store.latest_candles(symbol, interval, limit)
-    
-    # Store in cache
     cache.set(key, candles, ttl_seconds=CANDLES_TTL)
     
     return candles
@@ -53,12 +43,7 @@ def store_candles(
     source: str,
     candles: list[dict[str, Any]],
 ) -> None:
-    """Store candles and invalidate cache.
-    
-    This is called when new market data arrives. Invalidate cache
-    to ensure fresh data on next read.
-    """
-    # Write to DB
+    """Store candles and invalidate cache."""
     market_data_store.store_candles(
         symbol=symbol,
         market_symbol=market_symbol,
@@ -67,7 +52,6 @@ def store_candles(
         candles=candles,
     )
     
-    # Invalidate cache for this symbol across all intervals
     cache = get_cache()
     cache.delete_pattern(f"market_data:candles:{symbol.upper()}:*")
     logger.debug(
@@ -126,19 +110,11 @@ def batch_latest_candles(
     interval: str = "1m",
     limit: int = 100,
 ) -> dict[str, list[dict[str, Any]]]:
-    """Batch fetch candles for multiple symbols.
-    
-    Reduces database round-trips by caching multiple symbols
-    in parallel.
-    
-    Example:
-        candles = batch_latest_candles(["NIFTY", "BANKNIFTY", "FINNIFTY"])
-    """
+    """Batch fetch candles for multiple symbols."""
     cache = get_cache()
     result = {}
     symbols_to_fetch = []
     
-    # Check cache for all symbols
     for symbol in symbols:
         key = cache_key("candles", symbol, interval, prefix="market_data")
         cached = cache.get(key)
@@ -147,7 +123,6 @@ def batch_latest_candles(
         else:
             symbols_to_fetch.append(symbol)
     
-    # Fetch missing symbols in batch (if DB supports it)
     if symbols_to_fetch:
         for symbol in symbols_to_fetch:
             candles = market_data_store.latest_candles(symbol, interval, limit)
@@ -159,10 +134,7 @@ def batch_latest_candles(
 
 
 def invalidate_all_candles() -> int:
-    """Invalidate all cached candle data.
-    
-    Used during market hours reset or cache maintenance.
-    """
+    """Invalidate all cached candle data."""
     cache = get_cache()
     return cache.delete_pattern("market_data:candles:*")
 
