@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from Backend.domain.engine.execution_engine import ExecutionEngine
+from Backend.domain.engine.order_factory import ExecutionEngine
 from Backend.domain.engine.strategy_engine import StrategyEngine
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.order import Order
