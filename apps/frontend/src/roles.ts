@@ -28,7 +28,7 @@ const developerModeRoutes: Record<string, Role[]> = {
   "/dhan-login": ["admin"],
   "/execution": ["admin", "developer"],
   "/jobs": ["admin", "developer"],
-  "/operations": ["admin", "developer"],
+  "/operations": ["admin", "ops"],
   "/management": ["admin", "developer"],
   "/institutional": ["admin", "developer"],
   "/investing": ["admin", "developer"],

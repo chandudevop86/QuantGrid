@@ -17,8 +17,16 @@ export default function Operations() {
           setAuditEvents(Array.isArray(auditData?.events) ? auditData.events : []);
           setError(null);
         })
-        .catch(() => {
-          if (isMounted) setError("Operations API is not available.");
+        .catch((err) => {
+          if (!isMounted) return;
+          const status = err?.response?.status;
+          if (status === 403) {
+            setError("Audit trail requires admin or ops role.");
+          } else if (status === 401) {
+            setError("Session expired. Sign in again.");
+          } else {
+            setError("Audit trail is unavailable.");
+          }
         });
     };
     load();

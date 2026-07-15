@@ -181,10 +181,6 @@ export const api = {
     API.get("/api/signals/audit")
       .then((res) => res.data)
       .catch(() => API.get("/signals/audit").then((res) => res.data)),
-  systemAudit: () =>
-    API.get("/api/system/audit")
-      .then((res) => res.data)
-      .catch(() => API.get("/system/audit").then((res) => res.data)),
   paperTrades: () =>
     API.get("/api/trades/paper")
       .then((res) => res.data)

@@ -105,7 +105,19 @@ export default function ProfessionalSignals() {
             failures.push(`${label} (${reason})`);
           }
         });
-        setPartialErrors(failures);
+        if (failures.length === calls.length) {
+          setError("Signal dashboard is unavailable.");
+          setPartialErrors([]);
+        } else {
+          setError(null);
+          setPartialErrors((prev) => {
+            const merged = [...failures];
+            for (const item of prev) {
+              if (item.startsWith("backtest ") && !merged.includes(item)) merged.push(item);
+            }
+            return merged;
+          });
+        }
 
         const signalData = signalResult.status === "fulfilled" ? signalResult.value : { active_signals: [], rejected_signals: [], stale_signals: [], message: "Signals unavailable." };
         const journalData = journalResult.status === "fulfilled" ? journalResult.value : { recent_trades: [], total_trades: 0, win_rate: 0, pnl: 0 };
@@ -116,7 +128,6 @@ export default function ProfessionalSignals() {
         setTrades(Array.isArray(journalData?.recent_trades) ? journalData.recent_trades : []);
         setRisk(riskData?.summary ?? riskData);
         setAudit(auditData);
-        setError(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
