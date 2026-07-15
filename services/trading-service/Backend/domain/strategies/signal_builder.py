@@ -11,35 +11,78 @@ from Backend.trading_system.risk import GlobalRiskManager
 class SignalBuilder:
     def __init__(self, risk_manager: GlobalRiskManager | None = None) -> None:
         self.risk_manager = risk_manager or GlobalRiskManager()
+def build(
+    self,
+    row: pd.Series,
+    *,
+    strategy_name: str,
+    symbol: str,
+    side: str,
+    capital: float,
+    risk_pct: float,
+    stop_loss: float,
+    target_price: float,
+    score: float,
+    metadata: dict[str, Any] | None = None,
+) -> StrategySignal | None:
+    entry = float(row["close"])
 
-    def build(
-        self,
-        row: pd.Series,
-        *,
-        strategy_name: str,
-        symbol: str,
-        side: str,
-        capital: float,
-        risk_pct: float,
-        stop_loss: float,
-        target_price: float,
-        score: float,
-        metadata: dict[str, Any] | None = None,
-    ) -> StrategySignal | None:
-        entry = float(row["close"])
-        quantity = self.risk_manager.position_size(capital, risk_pct, entry, stop_loss)
-        if quantity <= 0:
-            return None
+    quantity, _, _ = self.risk_manager.position_size(
+        capital=capital,
+        risk_pct=risk_pct,
+        entry=entry,
+        stop_loss=stop_loss,
+    )
 
-        signal_metadata = {
-            "quantity": int(quantity),
-            "total_score": round(float(score), 2),
-            "score": round(float(score), 2),
-        }
-        signal_metadata.update(self._indicator_metadata(row))
-        signal_metadata.update(metadata or {})
+    if quantity <= 0:
+        return None
 
-        return StrategySignal(
+    signal_metadata = {
+        "quantity": int(quantity),
+        "total_score": round(float(score), 2),
+        "score": round(float(score), 2),
+    }
+    signal_metadata.update(self._indicator_metadata(row))
+    signal_metadata.update(metadata or {})
+
+    return StrategySignal(
+        strategy_name=strategy_name,
+        symbol=symbol,
+        side=side.upper(),
+        entry_price=round(entry, 4),
+        stop_loss=round(float(stop_loss), 4),
+        target_price=round(float(target_price), 4),
+        signal_time=pd.Timestamp(row["timestamp"]).to_pydatetime(),
+        metadata=signal_metadata,
+    )
+    # def build(
+    #     self,
+    #     row: pd.Series,
+    #     *,
+    #     strategy_name: str,
+    #     symbol: str,
+    #     side: str,
+    #     capital: float,
+    #     risk_pct: float,
+    #     stop_loss: float,
+    #     target_price: float,
+    #     score: float,
+    #     metadata: dict[str, Any] | None = None,
+    # ) -> StrategySignal | None:
+    #     entry = float(row["close"])
+    #     quantity = self.risk_manager.position_size(capital, risk_pct, entry, stop_loss)
+    #     if quantity <= 0:
+    #         return None
+
+    #     signal_metadata = {
+    #         "quantity": int(quantity),
+    #         "total_score": round(float(score), 2),
+    #         "score": round(float(score), 2),
+    #     }
+    #     signal_metadata.update(self._indicator_metadata(row))
+    #     signal_metadata.update(metadata or {})
+
+    return StrategySignal(
             strategy_name=strategy_name,
             symbol=symbol,
             side=side.upper(),
