@@ -14,13 +14,6 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.logging import get_logger
 from Backend.trading_system.risk import GlobalRiskConfig, GlobalRiskManager
 from Backend.trading_system.slippage import SlippageModel
-class BacktestEngine:
-    def __init__(
-        self,
-        strategy_engine: StrategyEngine | None = None,
-    
-    ):
-        self.strategy_engine = strategy_engine or StrategyEngine()
 
 @dataclass(slots=True)
 class BacktestTrade:
