@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from Backend.domain.engine.execution_engine import ExecutionEngine as OrderFactory
+from Backend.domain.engine.order_factory import ExecutionEngine as OrderFactory
 from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.broker import BrokerInterface, BrokerOrder, MockBroker
 from Backend.trading_system.logging import get_logger
