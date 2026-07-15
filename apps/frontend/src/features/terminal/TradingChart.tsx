@@ -49,7 +49,7 @@ function vwap(candles: ReturnType<typeof normalized>) {
 }
 
 function priceLine(price: number, color: string, title: string): PriceLineOptions {
-  return { price, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title };
+         return { price, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title };
 }
 
 export default function TradingChart({ symbol, timeframe, support, resistance }: Props) {
