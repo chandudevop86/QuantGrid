@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketDisconnect
-
+from starlette.websockets import WebSocketState
 from Backend.application.monitoring import observe_api_request
 from Backend.application.redis_service import redis_service
 from Backend.application.subscriptions import PLANS, SubscriptionAccess, subscription_for_user
@@ -280,16 +280,39 @@ def create_app():
 
         if not await manager.connect(websocket, subprotocol="quantgrid"):
             return
-
         try:
             while True:
                 try:
-                    await asyncio.wait_for(websocket.receive_text(), timeout=5)
+                    await asyncio.wait_for(
+                        websocket.receive_text(),
+                        timeout=5
+                    )
+
                 except asyncio.TimeoutError:
-                    payload = await run_in_threadpool(_websocket_dashboard_payload, websocket_user_id)
-                    await websocket.send_json({"type": "dashboard_status", "payload": payload})
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        manager.disconnect(websocket)
+                        break
+
+                    payload = await run_in_threadpool(
+                        _websocket_dashboard_payload,
+                        websocket_user_id
+                    )
+
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.send_json(
+                            {
+                                "type": "dashboard_status",
+                                "payload": payload
+                            }
+                        )
+
         except WebSocketDisconnect:
             manager.disconnect(websocket)
+
+        except Exception:
+            logger.exception("websocket_endpoint_failed")
+            manager.disconnect(websocket)
+        
 
     from Backend.presentation.api.dashboard_api import compatibility_router as dashboard_compatibility_router
     from Backend.presentation.api.dashboard_api import router as dashboard_router
