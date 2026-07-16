@@ -6,7 +6,7 @@ from Backend.domain.breakout.models import BreakoutSetup, Side
 
 
 class BreakoutSignalValidator:
-    def __init__(self, *, min_score: int = 6, avoid_open_minutes: int = 5) -> None:
+    def __init__(self, *, min_score: int = 7, avoid_open_minutes: int = 5) -> None:
         self.min_score = int(min_score)
         self.avoid_open_minutes = int(avoid_open_minutes)
 
@@ -26,5 +26,5 @@ class BreakoutSignalValidator:
         if not trend_aligned:
             return False, "trend filter rejected side"
         if score < self.min_score:
-            return False, "score below threshold"
+           return False, f"score {score}/{self.min_score} below threshold"
         return True, "accepted"
