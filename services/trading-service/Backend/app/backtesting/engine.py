@@ -27,7 +27,7 @@ class BacktestEngine:
         symbol: str,
         candles: list[dict[str, Any]],
         capital: float = 100_000,
-        risk_pct: float = 1.0,
+        risk_pct: float = 2.0,
         rr_ratio: float = 2.0,
     ) -> BacktestResult:
         canonical = self.engine.run(

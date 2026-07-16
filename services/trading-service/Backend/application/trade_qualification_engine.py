@@ -64,7 +64,7 @@ class TradeQualificationEngine:
         *,
         candles: list[dict[str, Any]] | pd.DataFrame,
         capital: float = 100_000,
-        risk_pct: float = 1.0,
+        risk_pct=2.0,
         h4_candles: list[dict[str, Any]] | pd.DataFrame | None = None,
         h1_candles: list[dict[str, Any]] | pd.DataFrame | None = None,
         m15_candles: list[dict[str, Any]] | pd.DataFrame | None = None,
