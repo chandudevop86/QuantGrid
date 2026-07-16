@@ -30,7 +30,7 @@ from Backend.domain.security.models import User
 from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 from Backend.presentation.api.roles import require_roles
-from app.institutional.router import router
+from Backend.presentation.api.institutional_api import router as institutional_router
 
 
 
