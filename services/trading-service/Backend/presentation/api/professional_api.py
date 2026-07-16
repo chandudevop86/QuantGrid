@@ -126,7 +126,7 @@ def backtest_strategy(
     start_date: str | None = None,
     end_date: str | None = None,
     capital: float = 100_000,
-    risk_pct: float = 1,
+    risk_pct: float = 2,
     rr_ratio: float = 2,
     max_candles: int = Query(default=200, ge=50, le=1000),
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),

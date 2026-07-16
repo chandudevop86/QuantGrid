@@ -186,7 +186,7 @@ class AutoPaperExecutionRequest(BaseModel):
     interval: str = "1m"
     period: str = "1d"
     capital: float = Field(default=100000, gt=0)
-    risk_pct: float = Field(default=1, gt=0)
+    risk_pct: float = Field(default=2, gt=0)
     rr_ratio: float = Field(default=2, gt=0)
     strategies: list[str] | None = None
 
