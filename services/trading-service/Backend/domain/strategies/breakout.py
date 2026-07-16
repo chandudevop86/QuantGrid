@@ -21,7 +21,7 @@ from Backend.domain.strategies.signal_builder import SignalBuilder
 @dataclass(slots=True)
 class BreakoutConfig(StrategyConfig):
     lookback: int = 20
-    min_score: int = 6
+    min_score: int = 7
     cooldown_minutes: int = 20
     avoid_open_minutes: int = 5
     min_rr: float = 2.0
