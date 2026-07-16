@@ -302,7 +302,7 @@ def latest_signals(
                 data=one_minute,
                 symbol=symbol.upper(),
                 capital=100_000,
-                risk_pct=1,
+                risk_pct=2,
                 rr_ratio=2,
                 params={"mtf_candles": five_minute, "htf_candles": fifteen_minute},
             )
@@ -499,7 +499,7 @@ def _build_signal_audit(symbol: str = "NIFTY") -> dict:
                 data=one_minute,
                 symbol=symbol.upper(),
                 capital=100_000,
-                risk_pct=1,
+                risk_pct=2,
                 rr_ratio=2,
                 params={
                     "mtf_candles": five_minute,
