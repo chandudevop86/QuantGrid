@@ -65,6 +65,12 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["session_day"] = out["timestamp"].dt.strftime("%Y-%m-%d")
     out["vwap"] = session_vwap(out)
     out["atr_14"] = atr(out, 14)
+    out["avg_volume_20"] = ( out["volume"].rolling(20, min_periods=1).mean())
+    out["volume_ratio"] = (out["volume"] /out["avg_volume_20"]).fillna(0)
+    out["candle_body_ratio"] = (out["body_size"] /
+    out["bar_range"].replace(0,1))
+    out["adx"] = adx(out,14)
+    out["ema50_slope"] = (out["ema_50"].diff())
     out["avg_range_5"] = out["bar_range"].rolling(5, min_periods=1).mean()
     out["recent_high"] = out["high"].shift(1).rolling(6, min_periods=2).max()
     out["recent_low"] = out["low"].shift(1).rolling(6, min_periods=2).min()
@@ -106,7 +112,72 @@ def session_vwap(df: pd.DataFrame) -> pd.Series:
     session_value = (typical_price * volume).groupby(df["session_day"]).cumsum()
     session_volume = volume.groupby(df["session_day"]).cumsum().replace(0.0, pd.NA)
     return session_value.div(session_volume).fillna(df["close"]).astype(float)
+def adx(df: pd.DataFrame, period:int=14):
 
+    high = df["high"]
+    low = df["low"]
+
+    plus_dm = (
+        high.diff()
+        .clip(lower=0)
+    )
+
+    minus_dm = (
+        -low.diff()
+        .clip(lower=0)
+    )
+
+
+    tr = pd.concat(
+        [
+            high-low,
+            abs(high-df["close"].shift()),
+            abs(low-df["close"].shift())
+        ],
+        axis=1
+    ).max(axis=1)
+
+
+    atr_value = (
+        tr.ewm(
+            alpha=1/period,
+            adjust=False
+        ).mean()
+    )
+
+
+    plus_di = (
+        100 *
+        plus_dm.ewm(alpha=1/period).mean()
+        /
+        atr_value
+    )
+
+
+    minus_di = (
+        100 *
+        minus_dm.ewm(alpha=1/period).mean()
+        /
+        atr_value
+    )
+
+
+    dx = (
+        abs(plus_di-minus_di)
+        /
+        (plus_di+minus_di)
+        .replace(0,1)
+    )*100
+
+
+    return (
+        dx.ewm(
+            alpha=1/period,
+            adjust=False
+        )
+        .mean()
+        .fillna(0)
+    )
 
 class IndicatorService:
     def prepare(self, data: Any) -> pd.DataFrame:
