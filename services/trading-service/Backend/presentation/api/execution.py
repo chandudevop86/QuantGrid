@@ -507,7 +507,7 @@ def _execution_qualification(
         signal,
         candles=candles_1m,
         capital=100_000,
-        risk_pct=1,
+        risk_pct=2,
         m15_candles=candles_15m,
         enforce_execution_checks=True,
         execution_mode=execution_mode,
