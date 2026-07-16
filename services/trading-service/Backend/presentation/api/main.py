@@ -386,4 +386,3 @@ def create_app():
 
 
 app = create_app()
-app.include_router(router)
