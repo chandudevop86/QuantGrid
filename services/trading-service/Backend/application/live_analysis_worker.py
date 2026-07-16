@@ -34,7 +34,7 @@ class LiveAnalysisPayload(BaseModel):
     period: str = "1d"
     strategy: str = "breakout"
     capital: float = 100000
-    risk_pct: float = 1
+    risk_pct: float = 2
     rr_ratio: float = 2
     auto_trade: bool = False
     execution_mode: str = "paper"

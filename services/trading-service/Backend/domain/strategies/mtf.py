@@ -124,7 +124,7 @@ class MTFStrategy(BaseStrategy):
             symbol=context.symbol,
             side=side,
             capital=context.capital,
-            risk_pct=1.0,
+            risk_pct=context.risk_pct,
             stop_loss=stop_loss,
             target_price=target,
             score=score.total,

@@ -29,7 +29,7 @@ class BacktestModuleRequest(BaseModel):
     symbol: str = "NIFTY"
     strategy_name: str = "amd"
     capital: float = 100000
-    risk_pct: float = 1.0
+    risk_pct: float = 2.0
     rr_ratio: float = 2.0
     min_score: float = 0.0
     max_candles: int | None = None

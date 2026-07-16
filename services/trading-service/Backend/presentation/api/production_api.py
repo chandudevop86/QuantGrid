@@ -54,7 +54,7 @@ class StrategyRequest(BaseModel):
     strategy_name: str = Field(default="amd", examples=["amd"])
     symbol: str
     capital: float = 100_000
-    risk_pct: float = 1.0
+    risk_pct: float = 2.0
     rr_ratio: float = 2.0
     candles: list[dict[str, Any]]
     htf_candles: list[dict[str, Any]] | None = None
