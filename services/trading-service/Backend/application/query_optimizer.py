@@ -238,7 +238,8 @@ class CachingHints:
     CACHE_FOREVER = -1
     CACHE_DISABLED = 0
     
-    # Cache TTL recommendations (seconds)    HINTS = {
+    # Cache TTL recommendations (seconds)   
+    HINTS = {
         "latest_candles": 10,  # Refresh every minute
         "candles_summary": 60,  # Refresh less frequently
         "paper_trades_list": 30,  # Update as trades complete
