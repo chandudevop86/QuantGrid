@@ -30,6 +30,8 @@ from Backend.domain.security.models import User
 from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 from Backend.presentation.api.roles import require_roles
+from app.institutional.router import router
+
 
 
 def _websocket_dashboard_payload(user_id: int | None = None) -> dict:
@@ -384,3 +386,4 @@ def create_app():
 
 
 app = create_app()
+app.include_router(router)
