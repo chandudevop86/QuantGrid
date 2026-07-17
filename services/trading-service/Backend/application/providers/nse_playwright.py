@@ -12,27 +12,46 @@ def fetch_nse_option_chain(symbol: str):
     with sync_playwright() as p:
 
         browser = p.chromium.launch(
-            headless=True
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
         )
 
-        page = browser.new_page(
+        context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 Chrome/126 Safari/537.36"
-            )
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1366, "height": 768},
         )
+
+        page = context.new_page()
 
         page.goto(
             "https://www.nseindia.com",
-            wait_until="networkidle",
-            timeout=30000,
+            wait_until="domcontentloaded",
+            timeout=15000,
         )
+
+        page.wait_for_timeout(3000)
 
         data = page.evaluate(
             """
             async (url) => {
-                const res = await fetch(url);
-                return await res.text();
+                const r = await fetch(url, {
+                    credentials: "include"
+                });
+
+                if (!r.ok) {
+                    throw new Error(
+                        `HTTP ${r.status}: ${await r.text()}`
+                    );
+                }
+
+                return await r.json();
             }
             """,
             url,
@@ -40,4 +59,26 @@ def fetch_nse_option_chain(symbol: str):
 
         browser.close()
 
-    return json.loads(data)
+        return data
+    
+    print("1")
+with sync_playwright() as p:
+    print("2")
+
+    browser = p.chromium.launch(headless=True)
+    print("3")
+
+    context = browser.new_context()
+    print("4")
+
+    page = context.new_page()
+    print("5")
+
+    page.goto("https://www.nseindia.com", wait_until="domcontentloaded")
+    print("6")
+
+    page.wait_for_timeout(3000)
+    print("7")
+
+    data = page.evaluate(...)
+    print("8")
