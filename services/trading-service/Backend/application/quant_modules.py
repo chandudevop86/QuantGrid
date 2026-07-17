@@ -468,9 +468,9 @@ for item in raw_rows:
             }
         )
 
-rows = sorted(rows, key=lambda row: row["strike"])
+    rows = sorted(rows, key=lambda row: row["strike"])
 
-if not rows:
+    if not rows:
         exc = RuntimeError("NSE returned empty option chain")
 
         observe_option_chain_failure(
@@ -479,28 +479,29 @@ if not rows:
         )
 
         return _live_nse_fallback_payload(
-                 option_chain_engine(
+            option_chain_engine(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
             ),
             exc,
         )
-total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
-total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
-total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
-total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
+
+    total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
+    total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
+    total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
+    total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
     
-pcr = (
+    pcr = (
         round(total_put_oi / total_call_oi, 3)
         if total_call_oi
         else None
     )
-max_pain = _max_pain(rows)
+    max_pain = _max_pain(rows)
     # -------------------------------------------------
     # Build professional signal
     # -------------------------------------------------
-signal_data = _professional_option_signal(
+    signal_data = _professional_option_signal(
         rows,
         spot=underlying,
         atm=atm,
@@ -511,7 +512,7 @@ signal_data = _professional_option_signal(
     # -------------------------------------------------
     # SUCCESS PAYLOAD
     # -------------------------------------------------
-return _option_chain_compat_payload(
+        return _option_chain_compat_payload(
         {
             "module": "live_nse_option_chain",
             "symbol": symbol.upper(),
