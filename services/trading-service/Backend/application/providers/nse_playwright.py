@@ -1,64 +1,48 @@
-from playwright.sync_api import sync_playwright
-import json
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+BASE_URL = "https://www.nseindia.com"
 
 
-def fetch_nse_option_chain(symbol: str):
+def _session():
+    s = requests.Session()
 
-    url = (
-        "https://www.nseindia.com/api/"
-        f"option-chain-indices?symbol={symbol}"
+    retries = Retry(
+        total=5,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
     )
 
-    with sync_playwright() as p:
+    s.mount("https://", HTTPAdapter(max_retries=retries))
 
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-            ],
-        )
+    s.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nseindia.com/option-chain",
+    })
 
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1366, "height": 768},
-        )
+    return s
 
-        page = context.new_page()
 
-        page.goto(
-            "https://www.nseindia.com",
-            wait_until="domcontentloaded",
-            timeout=15000,
-        )
+def fetch_nse_option_chain(symbol="NIFTY"):
+    s = _session()
 
-        page.wait_for_timeout(3000)
+    # Get cookies
+    r = s.get(BASE_URL, timeout=20)
+    r.raise_for_status()
 
-        data = page.evaluate(
-            """
-            async (url) => {
-                const r = await fetch(url, {
-                    credentials: "include"
-                });
+    # Fetch option chain
+    api = (
+        f"{BASE_URL}/api/option-chain-indices?symbol={symbol}"
+    )
 
-                if (!r.ok) {
-                    throw new Error(
-                        `HTTP ${r.status}: ${await r.text()}`
-                    );
-                }
+    r = s.get(api, timeout=20)
+    r.raise_for_status()
 
-                return await r.json();
-            }
-            """,
-            url,
-        )
-
-        browser.close()
-
-        return data
-    
-    
+    return r.json()

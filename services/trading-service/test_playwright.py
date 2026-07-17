@@ -1,51 +1,31 @@
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from playwright.sync_api import sync_playwright
 
-BASE = "https://www.nseindia.com"
-
-
-def _session():
-    s = requests.Session()
-
-    retries = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
+with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=False,
+        args=[
+            "--disable-http2",
+            "--disable-quic",
+            "--no-sandbox",
+        ],
     )
 
-    s.mount("https://", HTTPAdapter(max_retries=retries))
+    page = browser.new_page()
 
-    s.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/126.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.nseindia.com/option-chain",
-        "Connection": "keep-alive",
-    })
-
-    return s
-
-
-def fetch_nse_option_chain(symbol="NIFTY"):
-
-    s = _session()
-
-    # Get cookies
-    r = s.get(BASE, timeout=20)
-    r.raise_for_status()
-
-    # Option chain API
-    api = (
-        "https://www.nseindia.com/api/"
-        f"option-chain-indices?symbol={symbol}"
+    page.goto(
+        "https://www.google.com",
+        wait_until="domcontentloaded",
     )
 
-    r = s.get(api, timeout=20)
-    r.raise_for_status()
+    print("Google OK")
 
-    return r.json()
+    page.goto(
+        "https://www.nseindia.com",
+        wait_until="domcontentloaded",
+        timeout=30000,
+    )
+
+    print("NSE OK")
+
+    input("Press Enter...")
+    browser.close()
