@@ -67,56 +67,26 @@ class TradeJournalPatchRequest(BaseModel):
     source: str | None = None
     closed_at: str | None = None
 
-
 def _clean_candles(response: dict) -> list[dict]:
     candles = list(response.get("candles", []))
-    if response.get("volume_status") == "not_reported_for_index":
-        return [{**candle, "volume": None} for candle in candles]
-    return candles
+
+    cleaned = []
+
+    for c in candles:
+        cleaned.append(
+            {
+                "timestamp": c["timestamp"],
+                "open": float(c["open"]),
+                "high": float(c["high"]),
+                "low": float(c["low"]),
+                "close": float(c["close"]),
+                "volume": float(c.get("volume") or 0),
+            }
+        )
+
+    return cleaned
 
 
-def _sample_backtest_candles(symbol: str, interval: str, limit: int = 160):
-
-    ticker = f"{symbol.upper()}.NS"
-
-    df = yf.download(
-        ticker,
-        period="6mo",
-        interval=interval,
-        auto_adjust=False,
-        progress=False,
-    )
-
-    if df.empty:
-        return []
-
-    df = df.tail(limit)
-
-    candles = []
-
-    for ts, row in df.iterrows():
-
-        candles.append({
-
-            "symbol": symbol.upper(),
-
-            "timestamp": ts.isoformat(),
-
-            "open": float(row["Open"]),
-
-            "high": float(row["High"]),
-
-            "low": float(row["Low"]),
-
-            "close": float(row["Close"]),
-
-            "volume": int(row["Volume"]),
-
-            "interval": interval,
-
-        })
-
-    return candles
 
 def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_date: str | None) -> list[dict]:
     if not start_date and not end_date:
@@ -136,7 +106,8 @@ def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_dat
         filtered.append(candle)
     return filtered or candles
 
-
+@router.get("/api/strategies/{strategy}/backtest")
+@router.get("/strategies/{strategy}/backtest", include_in_schema=False)
 @router.get("/api/strategies/{strategy}/backtest")
 @router.get("/strategies/{strategy}/backtest", include_in_schema=False)
 def backtest_strategy(
@@ -146,46 +117,55 @@ def backtest_strategy(
     period: str = "1d",
     start_date: str | None = None,
     end_date: str | None = None,
-    capital: float = 100_000,
+    capital: float = 100000,
     risk_pct: float = 2,
     rr_ratio: float = 2,
-    max_candles: int = Query(default=200, ge=50, le=1000),
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
+    max_candles: int = Query(default=500, ge=50, le=5000),
+    _role: str = Depends(
+        require_roles("admin", "developer", "trader", "analyst")
+    ),
 ):
+
     try:
-       candles = _clean_candles(
-        get_candles(
+        response = get_candles(
             symbol=symbol,
             interval=interval,
             period=period,
             limit=max_candles,
         )
-    )
+
+        candles = _clean_candles(response)
 
     except Exception as exc:
-       logger.exception(
-        "Failed to load historical candles",
-        extra={
-            "strategy": strategy,
-            "symbol": symbol,
-            "interval": interval,
-            "error": str(exc),
-        },
+        logger.exception(
+            "backtest_candle_load_failed",
+            extra={
+                "strategy": strategy,
+                "symbol": symbol,
+                "interval": interval,
+                "error": str(exc),
+            },
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to fetch historical candles: {exc}",
+        )
+
+    candles = _filter_candles_by_date(
+        candles,
+        start_date,
+        end_date,
     )
 
-    # Never use fake candles
-    raise HTTPException(
-        status_code=500,
-        detail=f"Unable to fetch historical data: {exc}",
-    )
+    if len(candles) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only {len(candles)} candles available. Minimum 50 required.",
+        )
 
-if len(candles) < 50:
-    raise HTTPException(
-        status_code=400,
-        detail="Not enough historical candles available for backtest.",
-    )
-    candles = _filter_candles_by_date(candles, start_date, end_date)
     candles = candles[-max_candles:]
+
     result = BacktestEngine().run(
         strategy=strategy,
         symbol=symbol,
@@ -194,9 +174,15 @@ if len(candles) < 50:
         risk_pct=risk_pct,
         rr_ratio=rr_ratio,
     )
+
     report = render_report(result)
-    metrics = report.setdefault("metrics", {})
-    metrics["recent_accuracy"] = metrics.get("recent_accuracy", metrics.get("win_rate", 0.0))
+
+    report.setdefault("metrics", {})
+    report["metrics"]["recent_accuracy"] = report["metrics"].get(
+        "win_rate",
+        0,
+    )
+
     report["input"] = {
         "symbol": symbol.upper(),
         "interval": interval,
@@ -205,45 +191,10 @@ if len(candles) < 50:
         "end_date": end_date,
         "candles": len(candles),
         "max_candles": max_candles,
+        "data_source": response.get("source", "live"),
     }
+
     return report
-
-
-@router.get("/api/trades/paper")
-@router.get("/trades/paper", include_in_schema=False)
-def paper_trades(
-    limit: int = Query(default=100, ge=1, le=500),
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
-):
-    return {"trades": list_paper_trades(limit)}
-
-
-@router.get("/api/trade-journal")
-@router.get("/api/trades/journal")
-@router.get("/trade-journal", include_in_schema=False)
-@router.get("/trades/journal", include_in_schema=False)
-def trade_journal(
-    limit: int = Query(default=100, ge=1, le=500),
-    strategy: str | None = None,
-    status: str | None = None,
-    date: str | None = None,
-    symbol: str | None = None,
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
-):
-    rows = list_trade_journal(limit, strategy=strategy, status=status, date=date, symbol=symbol)
-    closed = [row for row in rows if row.get("exit_price") is not None or row.get("exit_reason")]
-    wins = [row for row in closed if float(row.get("pnl") or 0.0) > 0]
-    return {
-        "rows": rows,
-        "summary": {
-            "total_trades": len(rows),
-            "closed_trades": len(closed),
-            "win_rate": round(len(wins) / len(closed) * 100, 2) if closed else 0.0,
-            "pnl": round(sum(float(row.get("pnl") or 0.0) for row in rows), 2),
-        },
-    }
-
-
 @router.get("/api/trades/journal/{entry_id}")
 @router.get("/trades/journal/{entry_id}", include_in_schema=False)
 def trade_journal_entry(
