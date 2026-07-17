@@ -1,8 +1,8 @@
 from __future__ import annotations
-
+from time import sleep
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from math import erf, exp, log, sqrt
 from statistics import mean
 from typing import Any
@@ -38,9 +38,18 @@ def _black_scholes_greeks(
     time_to_expiry: float,
     volatility: float,
     rate: float,
+    dividend: float = 0.0
 ) -> dict[str, float]:
+    spot = max(spot, 1e-9)
+    strike = max(strike, 1e-9)
+
     sigma_sqrt_t = max(volatility * sqrt(max(time_to_expiry, 1e-6)), 1e-9)
-    d1 = (log(max(spot, 1e-9) / max(strike, 1e-9)) + (rate + 0.5 * volatility * volatility) * time_to_expiry) / sigma_sqrt_t
+    
+    d1 = (
+        log(spot / strike)
+        + (rate - dividend + 0.5 * volatility ** 2)
+        * time_to_expiry
+        ) / sigma_sqrt_t
     d2 = d1 - sigma_sqrt_t
     side = option_type.lower()
     delta = _norm_cdf(d1) if side == "call" else _norm_cdf(d1) - 1.0
@@ -62,7 +71,7 @@ def _round_to_step(value: float, step: int) -> int:
 
 def _latest_underlying_price(symbol: str, fallback: float | None = None) -> float:
     tick = latest_price_tick(symbol)
-    if tick and tick.get("price"):
+    if tick and tick.get("price") is not None:
         return float(tick["price"])
     candles = latest_candles(symbol, "1m", 1) or latest_candles(symbol, "5m", 1)
     if candles:
@@ -73,6 +82,7 @@ def _latest_underlying_price(symbol: str, fallback: float | None = None) -> floa
         return fallback
     raise RuntimeError(f"No stored provider price is available for {symbol.upper()}.")
 
+max_pain = _max_pain(rows)
 
 def _max_pain(rows: list[dict[str, Any]]) -> int | None:
     if not rows:
@@ -98,11 +108,36 @@ def _nse_index_symbol(symbol: str) -> str:
     }
     return aliases.get(normalized, normalized)
 
+def _time_to_expiry(expiry: str | None) -> float:
+    if not expiry:
+        return 1 / 365
+
+    try:
+        expiry_dt = datetime.strptime(
+            expiry,
+            "%d-%b-%Y"
+        ).replace(
+            tzinfo=timezone.utc
+        )
+
+        seconds = (
+            expiry_dt -
+            datetime.now(timezone.utc)
+        ).total_seconds()
+
+        return max(seconds / (365 * 24 * 3600), 0.001)
+
+    except Exception:
+        return 1 / 365
 
 def _nse_number(value: Any) -> float | int | None:
     if value in {None, ""}:
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+
     return int(number) if number.is_integer() else round(number, 4)
 
 
@@ -114,19 +149,83 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
     }
+
     opener = build_opener(HTTPCookieProcessor())
+
+    payload = None
+
     try:
-        opener.open(Request("https://www.nseindia.com", headers=headers), timeout=8).read()
-        response = opener.open(
-            Request(f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}", headers=headers),
-            timeout=8,
+        for attempt in range(3):
+
+            try:
+                opener.open(
+                    Request(
+                        "https://www.nseindia.com",
+                        headers=headers
+                    ),
+                    timeout=8
+                ).read()
+
+                response = opener.open(
+                    Request(
+                        f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}",
+                        headers=headers
+                    ),
+                    timeout=8
+                )
+
+                payload = json.loads(
+                    response.read().decode("utf-8")
+                )
+
+                break
+
+            except Exception as exc:
+
+                logger.warning(
+                    "NSE retry %s failed: %s",
+                    attempt + 1,
+                    exc
+                )
+
+                sleep(2 ** attempt)
+
+
+        if payload is None:
+            raise RuntimeError(
+                "NSE option chain unavailable after retries"
+            )
+
+
+    except (
+        HTTPError,
+        URLError,
+        TimeoutError,
+        OSError,
+        json.JSONDecodeError,
+        RuntimeError
+    ) as exc:
+
+        logger.exception(
+            "live_nse_option_chain_fetch_failed"
         )
-        payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        logger.exception("live_nse_option_chain_fetch_failed", extra={"symbol": nse_symbol, "error_type": exc.__class__.__name__})
-        observe_option_chain_failure("nse", exc.__class__.__name__)
-        fallback = option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step)
-        return _live_nse_fallback_payload(fallback, exc)
+
+        observe_option_chain_failure(
+            "nse",
+            exc.__class__.__name__
+        )
+
+        fallback = option_chain_engine(
+            symbol,
+            strikes_each_side=strikes_each_side,
+            step=step
+        )
+
+        return _live_nse_fallback_payload(
+            fallback,
+            exc
+        )
+
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
     expiry = next((item for item in records.get("expiryDates") or [] if item), None)
@@ -153,7 +252,7 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "volume": _nse_number(ce.get("totalTradedVolume")),
                     "oi": _nse_number(ce.get("openInterest")),
                     "iv": _nse_number(ce.get("impliedVolatility")),
-                    "greeks": None,
+                   "greeks" : _black_scholes_greeks(...),
                 },
                 "pe": {
                     "ltp": _nse_number(pe.get("lastPrice")),
@@ -161,80 +260,63 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "volume": _nse_number(pe.get("totalTradedVolume")),
                     "oi": _nse_number(pe.get("openInterest")),
                     "iv": _nse_number(pe.get("impliedVolatility")),
-                    "greeks": None,
+                    "greeks" : _black_scholes_greeks(...),
                 },
             }
         )
 
     rows = sorted(rows, key=lambda row: row["strike"])
+    
     if not rows:
-        exc = RuntimeError("NSE returned no option-chain rows for the selected strike range.")
-        logger.error("live_nse_option_chain_empty", extra={"symbol": nse_symbol, "error_type": exc.__class__.__name__})
-        observe_option_chain_failure("nse", exc.__class__.__name__)
-        return _live_nse_fallback_payload(option_chain_engine(symbol, strikes_each_side=strikes_each_side, step=step), exc)
+        exc = RuntimeError("NSE returned empty option chain")
 
-    total_call_oi = sum(float(row["ce"].get("oi") or 0) for row in rows)
-    total_put_oi = sum(float(row["pe"].get("oi") or 0) for row in rows)
-    for row in rows:
-        strike = float(row["strike"])
-        iv = float(row["ce"].get("iv") or row["pe"].get("iv") or 18.0) / 100
-        row["ce"]["greeks"] = _black_scholes_greeks(
-            option_type="call",
-            spot=underlying,
-            strike=strike,
-            time_to_expiry=7 / 365,
-            volatility=max(iv, 0.01),
-            rate=0.06,
-        )
-        row["pe"]["greeks"] = _black_scholes_greeks(
-            option_type="put",
-            spot=underlying,
-            strike=strike,
-            time_to_expiry=7 / 365,
-            volatility=max(iv, 0.01),
-            rate=0.06,
-        )
+        logger.error(str(exc))
 
-    max_pain = _max_pain(rows)
-    pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else 0.0
-    signal_bias = "NEUTRAL"
-    signal_reason = "PCR and max pain are balanced around ATM."
-    if pcr >= 1.15 and max_pain and max_pain >= atm:
-        signal_bias = "BULLISH"
-        signal_reason = "Put OI is dominant and max pain is at or above ATM."
-    elif pcr <= 0.85 and max_pain and max_pain <= atm:
-        signal_bias = "BEARISH"
-        signal_reason = "Call OI is dominant and max pain is at or below ATM."
-    elif pcr >= 1.15:
-        signal_bias = "PUT_SUPPORT"
-        signal_reason = "Put-call ratio shows stronger put-side open interest."
-    elif pcr <= 0.85:
-        signal_bias = "CALL_RESISTANCE"
-        signal_reason = "Put-call ratio shows stronger call-side open interest."
+        observe_option_chain_failure(
+           "nse",
+        exc.__class__.__name__,
+    )
 
-    return _option_chain_compat_payload({
-        "module": "live_nse_option_chain",
-        "symbol": nse_symbol,
-        "underlying_price": round(underlying, 2),
-        "atm_strike": atm,
-        "expiry": expiry,
-        "step": step,
-        "source": "live-nse-chain",
-        "pcr": pcr,
-        "max_pain": max_pain,
-        "greek_model": "black_scholes_from_nse_iv",
-        "signals": {
-            "bias": signal_bias,
-            "reason": signal_reason,
-            "total_call_oi": int(total_call_oi),
-            "total_put_oi": int(total_put_oi),
-            "pcr": pcr,
-            "atm_strike": atm,
-            "max_pain": max_pain,
-        },
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "rows": rows,
-    })
+    fallback = option_chain_engine(
+        symbol,
+        strikes_each_side=strikes_each_side,
+        step=step,
+        return _live_nse_fallback_payload(
+        fallback,
+        exc,
+    ))
+total_call_oi = sum(
+    float(r["ce"]["oi"] or 0)
+    for r in rows
+)
+
+total_put_oi = sum(
+    float(r["pe"]["oi"] or 0)
+    for r in rows
+)
+
+pcr = (
+    round(total_put_oi / total_call_oi, 3)
+    if total_call_oi
+    else None
+)
+return _option_chain_compat_payload({
+    "module": "live_nse_option_chain",
+    "symbol": symbol.upper(),
+    "underlying_price": underlying,
+    "atm_strike": atm,
+    "expiry": expiry,
+    "step": step,
+    "rows": rows,
+    "pcr": pcr,
+    "max_pain": max_pain,
+    "source": "live-nse-chain",
+    "provider_available": True,
+    "updated_at": datetime.now(timezone.utc).isoformat(),
+})
+  
+
+    
 
 
 def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
@@ -369,7 +451,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         brokerage_per_order=cost_model["brokerage_per_order"],
         brokerage_bps=cost_model["brokerage_bps"],
         taxes_bps=cost_model["taxes_bps"],
-        latency_ms=cost_model["entry_delay_seconds"] * 1000,
+        latency_ms=cost_model["entry_delay_seconds"] * 1000
     )
     result = engine.run(
         candles=candles,
@@ -534,13 +616,28 @@ def risk_engine_summary() -> dict[str, Any]:
     halt = kill_switch_status()
     max_daily_loss = float(risk.get("max_daily_loss") or 0.0)
     daily_pnl = float(risk.get("daily_pnl") or 0.0)
+    
+    "max_trades":
+    int(risk.get("trades_today") or 0)
+    <
+    max_trades,
+
     checks = {
         "daily_loss": daily_pnl > -max_daily_loss if max_daily_loss else True,
-        "trades_per_day": int(risk.get("trades_today") or 0) < int(risk.get("max_trades_per_day") or 0),
-        "open_positions": int(risk.get("open_positions") or 0) < int(risk.get("max_open_positions") or 0),
-        "consecutive_losses": int(risk.get("consecutive_losses") or 0) < int(risk.get("max_consecutive_losses") or 0),
-        "kill_switch": not bool(halt.get("active")),
-    }
+        "max_trades": int(risk.get("trades_today") or 0) < max_trades,
+        "open_positions":
+              int(risk.get("open_positions") or 0)
+                <
+             int(risk.get("max_open_positions") or 0),
+        "consecutive_losses":
+             int(risk.get("consecutive_losses") or 0)
+              <
+              int(risk.get("max_consecutive_losses") or 0),
+        "kill_switch":
+             not bool(halt.get("active")),
+   }
+
+    
     halted = not all(checks.values())
     return {
         "module": "risk_engine",
@@ -649,10 +746,9 @@ def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     return {
-        "option_chain": option_chain_engine(),
+        "option_chain": live_nse_option_chain(),
         "backtesting": backtesting,
         "risk_engine": risk_engine_summary(),
         "trade_journal": trade_journal_summary(),
     }
-
 
