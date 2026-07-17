@@ -196,6 +196,15 @@ def backtest_strategy(
     }
 
     return report
+@router.get("/api/trades/journal")
+@router.get("/trades/journal", include_in_schema=False)
+def list_trade_journal_api(
+    limit: int = 100,
+):
+    return list_trade_journal(
+        limit=max(1, min(int(limit), 500))
+    )
+
 @router.get("/api/trades/journal/{entry_id}")
 @router.get("/trades/journal/{entry_id}", include_in_schema=False)
 def trade_journal_entry(
