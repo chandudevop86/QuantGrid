@@ -61,24 +61,4 @@ def fetch_nse_option_chain(symbol: str):
 
         return data
     
-    print("1")
-with sync_playwright() as p:
-    print("2")
-
-    browser = p.chromium.launch(headless=True)
-    print("3")
-
-    context = browser.new_context()
-    print("4")
-
-    page = context.new_page()
-    print("5")
-
-    page.goto("https://www.nseindia.com", wait_until="domcontentloaded")
-    print("6")
-
-    page.wait_for_timeout(3000)
-    print("7")
-
-    data = page.evaluate(...)
-    print("8")
+    
