@@ -46,6 +46,8 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
+market_service = get_market_data_service()
+
 _LATEST_OPTION_CONTEXT: dict[str, dict[str, dict[str, Any]]] = {}
 _DHAN_OPTION_LOCK = threading.Lock()
 _DHAN_OPTION_CACHE: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]], str | None]] = {}
@@ -955,7 +957,7 @@ def get_volume_analysis(
     limit: int = 100,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    candles_payload = get_candles(symbol, interval=timeframe, period=period, limit=limit, _role=_role)
+    candles_payload = market_service.get_candles(symbol, interval=timeframe, period=period, limit=limit, _role=_role)
     result = analyze_volume(
         symbol=symbol,
         timeframe=timeframe,
@@ -1152,7 +1154,7 @@ def get_candle_validation(
     mode: str = "paper",
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
 ):
-    response = get_candles(symbol, interval=interval, period=period, limit=limit)
+    response = market_service.get_candles(symbol, interval=interval, period=period, limit=limit)
     validation = validate_live_candle(
         list(response.get("candles", [])),
         interval=interval,
