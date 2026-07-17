@@ -376,7 +376,8 @@ def _nse_number(value: Any) -> float | int | None:
             step: int = 50,
             ) -> dict[str, Any]:
 
-nse_symbol = _nse_index_symbol(symbol)
+        
+            nse_symbol = _nse_index_symbol(symbol)
 
 
         try:
