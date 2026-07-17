@@ -1,36 +1,37 @@
-            from __future__ import annotations
-            from time import sleep
-            import json
-            import logging
-            from datetime import datetime, timezone
-            from math import erf, exp, log, sqrt
-            from statistics import mean
-            from typing import Any
-            from urllib.parse import quote
-            from urllib.error import HTTPError, URLError
-            from urllib.request import HTTPCookieProcessor, Request, build_opener
+     
+from __future__ import annotations
+from time import sleep
+import json
+import logging
+from datetime import datetime, timezone
+from math import erf, exp, log, sqrt
+from statistics import mean
+from typing import Any
+from urllib.parse import quote
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-            from Backend.application.kill_switch import kill_switch_status
-            from Backend.application.market_data_store import latest_candles, latest_price_tick
-            from Backend.application.monitoring import observe_option_chain_failure
-            from Backend.application.paper_trade_store import list_paper_trades, risk_status
-            from Backend.trading_system.backtesting import BacktestEngine
-            from Backend.trading_system.risk import GlobalRiskManager
-            from Backend.trading_system.slippage import SlippageConfig, SlippageModel
-            from Backend.application.providers.nse_playwright import fetch_nse_option_chain
+from Backend.application.kill_switch import kill_switch_status
+from Backend.application.market_data_store import latest_candles, latest_price_tick
+from Backend.application.monitoring import observe_option_chain_failure
+from Backend.application.paper_trade_store import list_paper_trades, risk_status
+from Backend.trading_system.backtesting import BacktestEngine
+from Backend.trading_system.risk import GlobalRiskManager
+from Backend.trading_system.slippage import SlippageConfig, SlippageModel
+from Backend.application.providers.nse_playwright import fetch_nse_option_chain
 
-            logger = logging.getLogger("quantgrid.option_chain")
+logger = logging.getLogger("quantgrid.option_chain")
 
 
-            def _norm_cdf(value: float) -> float:
+def _norm_cdf(value: float) -> float:
             return 0.5 * (1.0 + erf(value / sqrt(2.0)))
 
 
-            def _norm_pdf(value: float) -> float:
+def _norm_pdf(value: float) -> float:
             return exp(-0.5 * value * value) / sqrt(2.0 * 3.141592653589793)
 
 
-            def _black_scholes_greeks(
+def _black_scholes_greeks(
             *,
             option_type: str,
             spot: float,
@@ -65,11 +66,11 @@
             }
 
 
-            def _round_to_step(value: float, step: int) -> int:
+def _round_to_step(value: float, step: int) -> int:
             return int(round(value / step) * step)
 
 
-            def _latest_underlying_price(symbol: str, fallback: float | None = None) -> float:
+def _latest_underlying_price(symbol: str, fallback: float | None = None) -> float:
             tick = latest_price_tick(symbol)
             if tick and tick.get("price") is not None:
                 return float(tick["price"])
@@ -84,7 +85,7 @@
 
 
 
-            def _max_pain(rows: list[dict[str, Any]]) -> int | None:
+def _max_pain(rows: list[dict[str, Any]]) -> int | None:
             if not rows:
                 return None
             return min(
@@ -95,7 +96,7 @@
                     for row in rows
                 ),
             )["strike"]
-            def _professional_option_signal(
+def _professional_option_signal(
             rows: list[dict[str, Any]],
             *,
             spot: float,
@@ -324,7 +325,7 @@
                 "reasons": reasons,
             }
 
-            def _nse_index_symbol(symbol: str) -> str:
+def _nse_index_symbol(symbol: str) -> str:
             normalized = symbol.upper().strip()
             aliases = {
                 "NIFTY": "NIFTY",
@@ -335,7 +336,7 @@
             }
             return aliases.get(normalized, normalized)
 
-            def _time_to_expiry(expiry: str | None) -> float:
+def _time_to_expiry(expiry: str | None) -> float:
             if not expiry:
                 return 1 / 365
 
@@ -357,7 +358,7 @@
             except Exception:
                 return 1 / 365
 
-            def _nse_number(value: Any) -> float | int | None:
+def _nse_number(value: Any) -> float | int | None:
             if value in {None, ""}:
                 return None
             try:
@@ -375,13 +376,13 @@
             step: int = 50,
             ) -> dict[str, Any]:
 
-            nse_symbol = _nse_index_symbol(symbol)
+nse_symbol = _nse_index_symbol(symbol)
 
 
-            try:
+        try:
                 payload = fetch_nse_option_chain(nse_symbol)
 
-            except Exception as exc:
+        except Exception as exc:
                 logger.exception("live_nse_option_chain_fetch_failed")
 
                 observe_option_chain_failure(
@@ -547,10 +548,9 @@
                 
 
 
-            def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
-            rows = list(payload.get("rows") or [])
-
-            atm = payload.get("atm_strike")
+def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
+rows = list(payload.get("rows") or [])
+atm = payload.get("atm_strike")
 
             support = None
             resistance = None
@@ -632,7 +632,7 @@
 
 
 
-            def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
+def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
             return _option_chain_compat_payload({
                 "module": "option_chain_engine",
                 "symbol": symbol.upper(),
@@ -652,7 +652,7 @@
             })
 
 
-            def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
+def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
             now = datetime.now(timezone.utc)
             return {
                 "module": "historical_option_chain",
@@ -666,7 +666,7 @@
             }
 
 
-            def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
+def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
             return latest_candles(symbol, "5m", 160)
 
 
@@ -741,7 +741,7 @@
             }
 
 
-            def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             payload = payload or {}
             strategies = payload.get("strategies") or ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
             normalized = [str(strategy).strip().lower() for strategy in strategies if str(strategy).strip()]
@@ -773,7 +773,7 @@
 
 
 
-            def _backtest_rank_key(item: dict[str, Any]) -> tuple[float, float, float, float]:
+def _backtest_rank_key(item: dict[str, Any]) -> tuple[float, float, float, float]:
             metrics = item.get("metrics", {}) or {}
             total_trades = float(metrics.get("total_trades") or 0)
             return (
@@ -782,7 +782,7 @@
                 float(metrics.get("net_pnl") or metrics.get("pnl") or 0),
                 -float(metrics.get("max_drawdown") or 0),
             )
-            def _professional_backtest_metrics(
+def _professional_backtest_metrics(
             candles: list[dict[str, Any]],
             trades: list[dict[str, Any]],
             equity_curve: list[dict[str, Any]],
@@ -812,7 +812,7 @@
             }
 
 
-            def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
+def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
             model = {
                 "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
                 "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
@@ -833,7 +833,7 @@
             return model
 
 
-            def _backtest_period_years(candles: list[dict[str, Any]]) -> float:
+def _backtest_period_years(candles: list[dict[str, Any]]) -> float:
             if len(candles) < 2:
                 return 1 / 252
             start = _candle_timestamp(candles[0])
@@ -844,7 +844,7 @@
             return max(days / 365.0, 1 / 365)
 
 
-            def _candle_timestamp(candle: dict[str, Any]) -> datetime | None:
+def _candle_timestamp(candle: dict[str, Any]) -> datetime | None:
             raw = candle.get("timestamp")
             if raw is None:
                 return None
@@ -854,7 +854,7 @@
                 return None
 
 
-            def risk_engine_summary() -> dict[str, Any]:
+def risk_engine_summary() -> dict[str, Any]:
             risk = risk_status()
             halt = kill_switch_status()
             max_daily_loss = float(risk.get("max_daily_loss") or 0.0)
@@ -899,7 +899,7 @@
             }
 
 
-            def trade_journal_summary(limit: int = 100) -> dict[str, Any]:
+def trade_journal_summary(limit: int = 100) -> dict[str, Any]:
             trades = list_paper_trades(limit)
             closed = [trade for trade in trades if str(trade.get("status") or "").lower() in {"closed", "exited", "completed"}]
             pnl_values = [float(trade.get("pnl") or 0.0) for trade in closed]
@@ -948,7 +948,7 @@
             }
 
 
-            def _max_drawdown(pnl_values: list[float]) -> float:
+def _max_drawdown(pnl_values: list[float]) -> float:
             equity = 0.0
             peak = 0.0
             max_drawdown = 0.0
@@ -959,7 +959,7 @@
             return abs(max_drawdown)
 
 
-            def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
+def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
             try:
                 entry = float(trade.get("entry") or trade.get("entry_price"))
                 stop = float(trade.get("stop_loss"))
@@ -972,7 +972,7 @@
             return abs(target - entry) / risk
 
 
-            def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             try:
                 backtesting = backtesting_module(payload)
             except ValueError as exc:
