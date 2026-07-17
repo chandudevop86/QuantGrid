@@ -476,9 +476,9 @@ def live_nse_option_chain(
                     }
                 )
 
-        rows = sorted(rows, key=lambda row: row["strike"])
+    rows = sorted(rows, key=lambda row: row["strike"])
 
-        if not rows:
+    if not rows:
                     exc = RuntimeError("NSE returned empty option chain")
 
                     observe_option_chain_failure(
