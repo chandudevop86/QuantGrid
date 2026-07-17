@@ -22,10 +22,12 @@ from Backend.domain.models.order import Order
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.market_structure import analyze_market_structure
 from Backend.application.trading_service import TradingService
-from Backend.presentation.api.market_api import get_candles
+from Backend.application.market_data_service import MarketDataService
 
 logger = logging.getLogger(__name__)
 JOB_START_DELAY_SECONDS = 0.75
+
+market_service = MarketDataService()
 
 
 class LiveAnalysisPayload(BaseModel):
@@ -104,9 +106,11 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     if execution_mode != "paper":
         raise ValueError("Live auto-trading is disabled; only paper execution is supported.")
 
-    candles_response = get_candles(payload.symbol, interval=payload.interval, period=payload.period)
-    confirmation_response = get_candles(payload.symbol, interval="5m", period=payload.period)
-    trend_response = get_candles(payload.symbol, interval="15m", period=payload.period)
+    candles_response = market_service.get_candles(payload.symbol,interval=payload.interval,period=payload.period)
+
+    confirmation_response = market_service.get_candles(
+    payload.symbol,interval="5m",period=payload.period)
+    trend_response = market_service.get_candles(payload.symbol,interval="15m",period=payload.period)
     hourly_response = get_candles(payload.symbol, interval="1h", period="5d")
     candles = _prepare_strategy_candles(candles_response)
     confirmation_candles = _prepare_strategy_candles(confirmation_response)

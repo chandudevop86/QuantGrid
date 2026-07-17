@@ -23,15 +23,16 @@ from Backend.application.signal_audit import AUDIT_STRATEGIES, StrategyAuditInpu
 from Backend.application.signal_quality import split_signals
 from Backend.application.signal_validation import validate_signals
 from Backend.application.trading_service import TradingService
-from Backend.presentation.api.market_api import get_candles, get_price
 from Backend.presentation.api.roles import require_roles
 from Backend.application.subscriptions import SubscriptionAccess, subscription_access
 from pydantic import BaseModel
+from Backend.application.market_data_service import MarketDataService
+from Backend.presentation.api.market_api import get_price
 
 
 router = APIRouter(tags=["professional-paper-trading"])
 logger = logging.getLogger("quantgrid.professional")
-
+market_service = MarketDataService()
 
 class TradeJournalEntryRequest(BaseModel):
     strategy: str
@@ -127,7 +128,7 @@ def backtest_strategy(
 ):
 
     try:
-        response = get_candles(
+        response = market_service.get_candles(
             symbol=symbol,
             interval=interval,
             period=period,
@@ -267,9 +268,9 @@ def latest_signals(
     access: SubscriptionAccess = Depends(subscription_access),
 ):
     try:
-        one_minute = _clean_candles(get_candles(symbol, interval="1m", period="1d", limit=100))
-        five_minute = _clean_candles(get_candles(symbol, interval="5m", period="1d", limit=100))
-        fifteen_minute = _clean_candles(get_candles(symbol, interval="15m", period="1d", limit=100))
+        one_minute = _clean_candles(market_service.get_candles(symbol, interval="1m", period="1d", limit=100))
+        five_minute = _clean_candles(market_service.get_candles(symbol, interval="5m", period="1d", limit=100))
+        fifteen_minute = _clean_candles(market_service.get_candles(symbol, interval="15m", period="1d", limit=100))
     except Exception as exc:
         logger.exception("latest_signals_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         return _empty_signals(symbol, reason="Market candles are unavailable; no signals generated.")
@@ -440,9 +441,9 @@ def system_audit(
 
 def _build_signal_audit(symbol: str = "NIFTY") -> dict:
     try:
-        candles_response = get_candles(symbol, interval="1m", period="1d", limit=150)
-        confirmation_response = get_candles(symbol, interval="5m", period="1d", limit=150)
-        trend_response = get_candles(symbol, interval="15m", period="1d", limit=150)
+        candles_response = market_service.get_candles(symbol, interval="1m", period="1d", limit=150)
+        confirmation_response = market_service.get_candles(symbol, interval="5m", period="1d", limit=150)
+        trend_response = market_service.get_candles(symbol, interval="15m", period="1d", limit=150)
         one_minute = _clean_candles(candles_response)
         five_minute = _clean_candles(confirmation_response)
         fifteen_minute = _clean_candles(trend_response)
