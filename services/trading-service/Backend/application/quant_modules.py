@@ -380,10 +380,10 @@ def live_nse_option_chain(
             nse_symbol = _nse_index_symbol(symbol)
 
 
-        try:
+            try:
                 payload = fetch_nse_option_chain(nse_symbol)
 
-        except Exception as exc:
+            except Exception as exc:
                 logger.exception("live_nse_option_chain_fetch_failed")
 
                 observe_option_chain_failure(
