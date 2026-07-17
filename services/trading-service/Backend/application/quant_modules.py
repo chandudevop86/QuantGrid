@@ -405,7 +405,7 @@ def live_nse_option_chain(
         expiry = next(
                 (x for x in records.get("expiryDates") or [] if x),
                 None,
-            )
+               )
         underlying = float(
                 records.get("underlyingValue")
                 or _latest_underlying_price(symbol)
