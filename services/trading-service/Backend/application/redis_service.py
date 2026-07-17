@@ -215,42 +215,60 @@ class RedisService:
             logger.warning("redis_lock_release_failed", extra={"name": name, "error_type": exc.__class__.__name__})
             self._mark_connection_failed()
             return False
-
-    async def subscribe_json(self, channel: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+    async def subscribe_json(
+        self,
+        channel: str,
+        callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         while True:
             if not self._ensure_connected() or self.async_client is None:
                 await asyncio.sleep(self._reconnect_interval_seconds())
                 continue
 
             pubsub = self.async_client.pubsub()
+
             try:
                 await pubsub.subscribe(channel)
+
                 async for message in pubsub.listen():
                     if message.get("type") != "message":
                         continue
+
                     try:
-                        await callback(json.loads(message.get("data")))
+                        data = message.get("data")
+
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8")
+
+                        await callback(json.loads(data))
+
                     except Exception:
-                        logger.exception("redis_subscriber_callback_failed", extra={"channel": channel})
-           
+                        logger.exception(
+                            "redis_subscriber_callback_failed",
+                            extra={"channel": channel},
+                        )
 
             except Exception as exc:
-                        logger.warning(
-                           "redis_subscriber_failed",
-                        extra={"error_type": exc.__class__.__name__}
-                       )
-            await asyncio.sleep(2)
-            except Exception as exc:
-            logger.exception("redis_subscriber_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
-            self._mark_connection_failed()
-        finally:
-            try:
+                logger.warning(
+                    "redis_subscriber_failed",
+                    extra={
+                        "channel": channel,
+                        "error_type": exc.__class__.__name__,
+                    },
+                )
+                self._mark_connection_failed()
+
+            finally:
+                try:
                     await pubsub.unsubscribe(channel)
                     await pubsub.close()
-            except Exception:
-                    logger.warning("redis_subscriber_cleanup_failed", extra={"channel": channel})
+                except Exception:
+                    logger.warning(
+                        "redis_subscriber_cleanup_failed",
+                        extra={"channel": channel},
+                    )
 
-            await asyncio.sleep(self._reconnect_interval_seconds())
-
-
-redis_service = RedisService()
+            await asyncio.sleep(
+                self._reconnect_interval_seconds()
+            )
+    redis_service = RedisService()
