@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from Backend.presentation.api.market_api import get_candles
 
+from Backend.application.market_data_service import MarketDataService
 logger = logging.getLogger(__name__)
-
+market_service = MarketDataService()
 
 class MarketDataService:
 
-    def get_candles(
+    def market_service.get_candles(...)
         self,
         symbol: str,
         interval: str,
@@ -17,7 +17,7 @@ class MarketDataService:
         limit: int,
     ):
 
-        response = get_candles(
+        response = market_service.get_candles(...)
             symbol=symbol,
             interval=interval,
             period=period,
