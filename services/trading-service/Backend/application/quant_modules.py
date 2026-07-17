@@ -265,9 +265,9 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "pe_iv": max(float(pe.get("impliedVolatility") or 20) / 100,0.01,),
                     "oi_change": _nse_number(pe.get("changeinOpenInterest")),},
           })
-    rows = sorted(rows, key=lambda row: row["strike"])
+rows = sorted(rows, key=lambda row: row["strike"])
     
-    if not rows:
+if not rows:
         exc = RuntimeError("NSE returned empty option chain")
 
         logger.error(str(exc))
@@ -277,24 +277,20 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         exc.__class__.__name__,
     )
 
-    fallback = option_chain_engine(
+fallback = option_chain_engine(
         symbol,
         strikes_each_side=strikes_each_side,
-        step=step,)
+        step=step,),
     
-    return _live_nse_fallback_payload(
+return _live_nse_fallback_payload(
         fallback,
         exc,
-    )
+    ),
   
-
-    
-"oi_change": _nse_number(
-    pe.get("changeinOpenInterest")
-),
+   
 
 def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
-    return _option_chain_compat_payload({
+    return _option_chain_compat_payload(
         "module": "live_nse_option_chain",
         "symbol": payload.get("symbol") or "NIFTY",
         "underlying_price": None,
@@ -319,16 +315,19 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
             "atm_strike": None,
                    },
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "total_call_oi": sum(float(r["ce"]["oi"] or 0),
-                            for r in rows)
-        "total_put_oi": sum(float(r["pe"]["oi"] or 0),
-                            for r in rows
-        )
-        "pcr": (round(total_put_oi / total_call_oi, 3), if total_call_oi
+        "total_call_oi": sum(
+    float(r["ce"].get("oi") or 0)
+    for r in rows
+)
+"total_put_oi" : sum(
+    float(r["pe"].get("oi") or 0)
+    for r in rows
+)
+       "pcr": (round(total_put_oi / total_call_oi, 3), if total_call_oi
          else None
         )
-    })
-   return option_chain_compat_payload({
+    
+   return option_chain_compat_payload(
         "module": "live_nse_option_chain",
         "symbol": symbol.upper(),
         "underlying_price": underlying,
@@ -341,7 +340,8 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
         "source": "live-nse-chain",
         "provider_available": True,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-})
+)
+)
 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows = list(payload.get("rows") or [])
