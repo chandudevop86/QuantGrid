@@ -232,16 +232,22 @@ class RedisService:
                         await callback(json.loads(message.get("data")))
                     except Exception:
                         logger.exception("redis_subscriber_callback_failed", extra={"channel": channel})
-            except asyncio.CancelledError:
-                raise
+           
+
             except Exception as exc:
-                logger.exception("redis_subscriber_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
-                self._mark_connection_failed()
-            finally:
-                try:
+                        logger.warning(
+                           "redis_subscriber_failed",
+                        extra={"error_type": exc.__class__.__name__}
+                       )
+            await asyncio.sleep(2)
+            except Exception as exc:
+            logger.exception("redis_subscriber_failed", extra={"channel": channel, "error_type": exc.__class__.__name__})
+            self._mark_connection_failed()
+        finally:
+            try:
                     await pubsub.unsubscribe(channel)
                     await pubsub.close()
-                except Exception:
+            except Exception:
                     logger.warning("redis_subscriber_cleanup_failed", extra={"channel": channel})
 
             await asyncio.sleep(self._reconnect_interval_seconds())
