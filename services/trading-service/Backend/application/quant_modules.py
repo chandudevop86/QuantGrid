@@ -17,7 +17,7 @@ from Backend.application.paper_trade_store import list_paper_trades, risk_status
 from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.risk import GlobalRiskManager
 from Backend.trading_system.slippage import SlippageConfig, SlippageModel
-
+from Backend.application.providers.nse_playwright import fetch_nse_option_chain
 
 logger = logging.getLogger("quantgrid.option_chain")
 
@@ -387,60 +387,25 @@ def live_nse_option_chain(
         "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
     }
 
-    opener = build_opener(HTTPCookieProcessor())
-    payload = None
+   try:
+       payload = fetch_nse_option_chain(nse_symbol)
 
-    try:
-        for attempt in range(3):
-            try:
-                opener.open(
-                    Request("https://www.nseindia.com", headers=headers),
-                    timeout=8,
-                ).read()
+   except Exception as exc:
+       logger.exception("live_nse_option_chain_fetch_failed")
 
-                response = opener.open(
-                    Request(
-                        f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}",
-                        headers=headers,
-                    ),
-                    timeout=8,
-                )
+       observe_option_chain_failure(
+        "nse",
+        exc.__class__.__name__,
+    )
 
-                payload = json.loads(response.read().decode("utf-8"))
-                break
-
-            except Exception as exc:
-                logger.warning("NSE retry %s failed: %s", attempt + 1, exc)
-                sleep(2 ** attempt)
-
-        if payload is None:
-            raise RuntimeError("NSE option chain unavailable after retries")
-
-    except (
-        HTTPError,
-        URLError,
-        TimeoutError,
-        OSError,
-        json.JSONDecodeError,
-        RuntimeError,
-    ) as exc:
-
-        logger.exception("live_nse_option_chain_fetch_failed")
-
-        observe_option_chain_failure(
-            "nse",
-            exc.__class__.__name__,
-        )
-
-        return _live_nse_fallback_payload(
-            option_chain_engine(
-                symbol,
-                strikes_each_side=strikes_each_side,
-                step=step,
-            ),
-            exc,
-        )
-
+    return _live_nse_fallback_payload(
+        option_chain_engine(
+            symbol,
+            strikes_each_side=strikes_each_side,
+            step=step,
+        ),
+        exc,
+    )
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
 
