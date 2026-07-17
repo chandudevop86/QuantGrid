@@ -546,55 +546,52 @@ def _live_nse_fallback_payload(
                 }
             )
 
-                
-
-
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
-rows = list(payload.get("rows") or [])
-atm = payload.get("atm_strike")
+        rows = list(payload.get("rows") or [])
+        atm = payload.get("atm_strike")
 
-            support = None
-            resistance = None
+        support = None
+        resistance = None
 
-            below = [
+        below = [
                 row for row in rows
                 if atm is not None and float(row.get("strike") or 0) < float(atm)
             ]
 
-            above = [
+        above = [
                 row for row in rows
                 if atm is not None and float(row.get("strike") or 0) > float(atm)
             ]
 
-            if below:
+        if below:
                 support = max(
                     below,
                     key=lambda row: float(row.get("pe", {}).get("oi") or 0),
                 ).get("strike")
 
-            if above:
+        if above:
                 resistance = max(
                     above,
                     key=lambda row: float(row.get("ce", {}).get("oi") or 0),
                 ).get("strike")
 
-            raw_pcr = payload.get("pcr")
-            pcr = float(raw_pcr) if raw_pcr is not None else None
+        raw_pcr = payload.get("pcr")
+        pcr = float(raw_pcr) if raw_pcr is not None else None
 
-            max_pain = payload.get("max_pain")
+        max_pain = payload.get("max_pain")
 
-            raw_spot = (
+        raw_spot = (
                 payload.get("underlying_price")
                 if payload.get("underlying_price") is not None
                 else payload.get("spot")
             )
 
-            spot = float(raw_spot) if raw_spot is not None else None
+        spot = float(raw_spot) if raw_spot is not None else None
 
             # Use professional signal if already generated
-            signal_data = payload.get("signals")
+        signal_data = payload.get("signals")
 
-            if signal_data is None:
+        if signal_data is None:
                 signal_data = {
                     "signal": "NO_TRADE",
                     "bias": "NEUTRAL",
@@ -606,14 +603,14 @@ atm = payload.get("atm_strike")
                     "reasons": ["Signal engine not executed"],
                 }
 
-            raw_source = str(payload.get("source") or "")
-            source = (
+        raw_source = str(payload.get("source") or "")
+        source = (
                 "live"
                 if raw_source in {"live", "live-nse-chain"}
                 else raw_source or "option-chain-unavailable"
             )
 
-            return {
+        return {
                 **payload,
                 "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
                 "spot": spot,
@@ -671,7 +668,7 @@ def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
             return latest_candles(symbol, "5m", 160)
 
 
-            def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             payload = payload or {}
             symbol = str(payload.get("symbol") or "NIFTY").upper()
             capital = float(payload.get("capital") or 100000)
