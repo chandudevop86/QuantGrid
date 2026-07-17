@@ -153,19 +153,37 @@ def backtest_strategy(
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst")),
 ):
     try:
-        candles = _clean_candles(get_candles(symbol, interval=interval, period=period, limit=max_candles))
+       candles = _clean_candles(
+        get_candles(
+            symbol=symbol,
+            interval=interval,
+            period=period,
+            limit=max_candles,
+        )
+    )
+
     except Exception as exc:
-        logger.exception(
-            "backtest_candle_load_failed",
-            extra={"strategy": strategy, "symbol": symbol, "interval": interval, "error_type": exc.__class__.__name__},
-        )
-        candles = _sample_backtest_candles(symbol, interval)
-    if len(candles) < 12:
-        logger.warning(
-            "backtest_candle_load_insufficient",
-            extra={"strategy": strategy, "symbol": symbol, "interval": interval, "candles": len(candles)},
-        )
-        candles = _sample_backtest_candles(symbol, interval)
+       logger.exception(
+        "Failed to load historical candles",
+        extra={
+            "strategy": strategy,
+            "symbol": symbol,
+            "interval": interval,
+            "error": str(exc),
+        },
+    )
+
+    # Never use fake candles
+    raise HTTPException(
+        status_code=500,
+        detail=f"Unable to fetch historical data: {exc}",
+    )
+
+if len(candles) < 50:
+    raise HTTPException(
+        status_code=400,
+        detail="Not enough historical candles available for backtest.",
+    )
     candles = _filter_candles_by_date(candles, start_date, end_date)
     candles = candles[-max_candles:]
     result = BacktestEngine().run(
