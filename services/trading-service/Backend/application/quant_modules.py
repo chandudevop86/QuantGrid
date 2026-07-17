@@ -141,61 +141,53 @@ def _nse_number(value: Any) -> float | int | None:
     return int(number) if number.is_integer() else round(number, 4)
 
 
-def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, step: int = 50) -> dict[str, Any]:
+def live_nse_option_chain(
+    symbol: str = "NIFTY",
+    *,
+    strikes_each_side: int = 8,
+    step: int = 50,
+) -> dict[str, Any]:
+
     nse_symbol = _nse_index_symbol(symbol)
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/126 Safari/537.36"
+        ),
         "Accept": "application/json,text/plain,*/*",
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
     }
 
     opener = build_opener(HTTPCookieProcessor())
-
     payload = None
 
     try:
         for attempt in range(3):
-
             try:
                 opener.open(
-                    Request(
-                        "https://www.nseindia.com",
-                        headers=headers
-                    ),
-                    timeout=8
+                    Request("https://www.nseindia.com", headers=headers),
+                    timeout=8,
                 ).read()
 
                 response = opener.open(
                     Request(
                         f"https://www.nseindia.com/api/option-chain-indices?symbol={quote(nse_symbol)}",
-                        headers=headers
+                        headers=headers,
                     ),
-                    timeout=8
+                    timeout=8,
                 )
 
-                payload = json.loads(
-                    response.read().decode("utf-8")
-                )
-
+                payload = json.loads(response.read().decode("utf-8"))
                 break
 
             except Exception as exc:
-
-                logger.warning(
-                    "NSE retry %s failed: %s",
-                    attempt + 1,
-                    exc
-                )
-
+                logger.warning("NSE retry %s failed: %s", attempt + 1, exc)
                 sleep(2 ** attempt)
 
-
         if payload is None:
-            raise RuntimeError(
-                "NSE option chain unavailable after retries"
-            )
-
+            raise RuntimeError("NSE option chain unavailable after retries")
 
     except (
         HTTPError,
@@ -203,46 +195,58 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         TimeoutError,
         OSError,
         json.JSONDecodeError,
-        RuntimeError
+        RuntimeError,
     ) as exc:
 
-        logger.exception(
-            "live_nse_option_chain_fetch_failed"
-        )
+        logger.exception("live_nse_option_chain_fetch_failed")
 
         observe_option_chain_failure(
             "nse",
-            exc.__class__.__name__
-        )
-
-        fallback = option_chain_engine(
-            symbol,
-            strikes_each_side=strikes_each_side,
-            step=step
+            exc.__class__.__name__,
         )
 
         return _live_nse_fallback_payload(
-            fallback,
-            exc
+            option_chain_engine(
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+            ),
+            exc,
         )
 
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
-    expiry = next((item for item in records.get("expiryDates") or [] if item), None)
-    underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+
+    expiry = next(
+        (x for x in records.get("expiryDates") or [] if x),
+        None,
+    )
+
+    underlying = float(
+        records.get("underlyingValue")
+        or _latest_underlying_price(symbol)
+    )
+
     atm = _round_to_step(underlying, step)
+
     lower = atm - strikes_each_side * step
     upper = atm + strikes_each_side * step
-    rows: list[dict[str, Any]] = []
+
+    rows = []
 
     for item in raw_rows:
+
         if expiry and item.get("expiryDate") != expiry:
             continue
-        strike = int(round(float(item.get("strikePrice") or 0)))
+
+        strike = int(item["strikePrice"])
+
         if strike < lower or strike > upper:
             continue
+
         ce = item.get("CE") or {}
         pe = item.get("PE") or {}
+
         rows.append(
             {
                 "strike": strike,
@@ -252,90 +256,133 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "volume": _nse_number(ce.get("totalTradedVolume")),
                     "oi": _nse_number(ce.get("openInterest")),
                     "iv": _nse_number(ce.get("impliedVolatility")),
-                    "greeks": _black_scholes_greeks(option_type="call",spot=underlying,strike=strike,time_to_expiry = _time_to_expiry(expiry),volatility=max(float(ce.get("impliedVolatility") or 20) / 100, 0.01),rate=0.06,),            
-                    "ce_iv": max(float(ce.get("impliedVolatility") or 20) / 100, 0.01,),
-                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),},
-                "pe":  {
+                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),
+                    "greeks": _black_scholes_greeks(
+                        option_type="call",
+                        spot=underlying,
+                        strike=strike,
+                        time_to_expiry=_time_to_expiry(expiry),
+                        volatility=max(
+                            float(ce.get("impliedVolatility") or 20) / 100,
+                            0.01,
+                        ),
+                        rate=0.06,
+                    ),
+                },
+                "pe": {
                     "ltp": _nse_number(pe.get("lastPrice")),
                     "change": _nse_number(pe.get("change")),
                     "volume": _nse_number(pe.get("totalTradedVolume")),
                     "oi": _nse_number(pe.get("openInterest")),
                     "iv": _nse_number(pe.get("impliedVolatility")),
-                    "greeks": _black_scholes_greeks(option_type="put",spot=underlying,strike=strike,time_to_expiry=_time_to_expiry(expiry),volatility=max(float(pe.get("impliedVolatility") or 20) / 100, 0.01),rate=0.06,),
-                    "pe_iv": max(float(pe.get("impliedVolatility") or 20) / 100,0.01,),
-                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),},
-          })
-        rows = sorted(rows, key=lambda row: row["strike"])
-    
-        if not rows:
-             exc = RuntimeError("NSE returned empty option chain"),
+                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),
+                    "greeks": _black_scholes_greeks(
+                        option_type="put",
+                        spot=underlying,
+                        strike=strike,
+                        time_to_expiry=_time_to_expiry(expiry),
+                        volatility=max(
+                            float(pe.get("impliedVolatility") or 20) / 100,
+                            0.01,
+                        ),
+                        rate=0.06,
+                    ),
+                },
+            }
+        )
 
-            logger.error(str(exc)),
+    rows = sorted(rows, key=lambda row: row["strike"])
 
-            observe_option_chain_failure(
-              "nse",
-             exc.__class__.__name__,
-           )
+    if not rows:
+        exc = RuntimeError("NSE returned empty option chain")
 
-        fallback = option_chain_engine(
-        symbol,
-        strikes_each_side=strikes_each_side,
-        step=step,),
-    
+        observe_option_chain_failure(
+            "nse",
+            exc.__class__.__name__,
+        )
+
         return _live_nse_fallback_payload(
-        fallback,
-        exc,
-       ),
-    "total_call_oi": sum(float(r["ce"].get("oi") or 0), for r in rows),
-    "total_put_oi" : sum( float(r["pe"].get("oi") or 0),for r in rows),
-    "pcr": (round(total_put_oi / total_call_oi, 3), if total_call_oi else None)
-    
-    return option_chain_compat_payload({
-        "module": "live_nse_option_chain",
-        "symbol": symbol.upper(),
-        "underlying_price": underlying,
-        "atm_strike": atm,
-        "expiry": expiry,
-        "step": step,
-        "rows": rows,
-        "pcr": pcr,
-        "max_pain": max_pain,
-        "source": "live-nse-chain",
-        "provider_available": True,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-})
+            option_chain_engine(
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+            ),
+            exc,
+        )
 
-  
-   
-
-def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[str, Any]:
-    return _option_chain_compat_payload(
-        "module": "live_nse_option_chain",
-        "symbol": payload.get("symbol") or "NIFTY",
-        "underlying_price": None,
-        "atm_strike": None,
-        "expiry": None,
-        "step": payload.get("step") or 50,
-        "source": "option-chain-unavailable",
-        "synthetic": False,
-        "provider_available": False,
-        "fallback_reason": exc.__class__.__name__,
-        "provider_warning": "Live NSE option-chain provider unavailable. No option-chain values are being shown.",
-        "fallback_detail": str(exc),
-        "pcr": None,
-        "max_pain": None,
-        "rows": [],
-        "signals": {
-            "bias": "NEUTRAL",
-            "reason": "Live NSE option-chain is unavailable.",
-            "total_call_oi": 0,
-            "total_put_oi": 0,
-            "pcr": None,
-            "atm_strike": None,
-                   },
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+    total_call_oi = sum(
+        float(r["ce"].get("oi") or 0)
+        for r in rows
     )
 
+    total_put_oi = sum(
+        float(r["pe"].get("oi") or 0)
+        for r in rows
+    )
+
+    pcr = (
+        round(total_put_oi / total_call_oi, 3)
+        if total_call_oi
+        else None
+    )
+
+    max_pain = _max_pain(rows)
+
+    return _option_chain_compat_payload(
+        {
+            "module": "live_nse_option_chain",
+            "symbol": symbol.upper(),
+            "underlying_price": underlying,
+            "atm_strike": atm,
+            "expiry": expiry,
+            "step": step,
+            "rows": rows,
+            "pcr": pcr,
+            "max_pain": max_pain,
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "source": "live-nse-chain",
+            "provider_available": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )  
+   
+
+def _live_nse_fallback_payload(
+    payload: dict[str, Any],
+    exc: Exception,
+) -> dict[str, Any]:
+
+    return _option_chain_compat_payload(
+        {
+            "module": "live_nse_option_chain",
+            "symbol": payload.get("symbol") or "NIFTY",
+            "underlying_price": None,
+            "atm_strike": None,
+            "expiry": None,
+            "step": payload.get("step") or 50,
+            "source": "option-chain-unavailable",
+            "synthetic": False,
+            "provider_available": False,
+            "fallback_reason": exc.__class__.__name__,
+            "provider_warning": (
+                "Live NSE option-chain provider unavailable."
+            ),
+            "fallback_detail": str(exc),
+            "rows": [],
+            "pcr": None,
+            "max_pain": None,
+            "signals": {
+                "bias": "NEUTRAL",
+                "reason": "Live NSE option-chain unavailable.",
+                "total_call_oi": 0,
+                "total_put_oi": 0,
+                "pcr": None,
+                "atm_strike": None,
+            },
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows = list(payload.get("rows") or [])
     atm = payload.get("atm_strike")
