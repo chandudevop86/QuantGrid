@@ -399,14 +399,14 @@ def live_nse_option_chain(
                 ),
                 exc,
             )
-          records = payload.get("records") or {},
-          raw_rows = records.get("data") or [],
+    records = payload.get("records") or {},
+    raw_rows = records.get("data") or [],
 
-          expiry = next(
+    expiry = next(
                 (x for x in records.get("expiryDates") or [] if x),
                 None,
                )
-          underlying = float(
+    underlying = float(
                 records.get("underlyingValue")
                 or _latest_underlying_price(symbol)
             )
