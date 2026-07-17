@@ -46,7 +46,8 @@ class RedisService:
 
             self.client = redis.Redis.from_url(self.url, socket_connect_timeout=0.5, socket_timeout=0.5)
             self.client.ping()
-            self.async_client = async_redis.Redis.from_url(self.url, socket_connect_timeout=0.5, socket_timeout=0.5)
+            self.async_client = async_redis.Redis.from_url(self.url, socket_connect_timeout=2, socket_timeout=None,
+    health_check_interval=30)
             self._status = RedisStatus(True, "redis", "Redis ping ok.", True)
             self._next_reconnect_at = 0.0
         except Exception as exc:
