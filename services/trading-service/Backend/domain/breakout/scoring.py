@@ -114,8 +114,7 @@ class BreakoutScoringEngine:
 
 
         # store extra metadata if model supports
-        if hasattr(score, "total"):
-            score.total = total_score
+        
 
 
         score.reasons = [
