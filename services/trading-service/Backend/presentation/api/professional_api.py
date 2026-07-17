@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-
+import yfinance as yf
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from Backend.app.backtesting.engine import BacktestEngine
@@ -74,28 +75,48 @@ def _clean_candles(response: dict) -> list[dict]:
     return candles
 
 
-def _sample_backtest_candles(symbol: str, interval: str, limit: int = 160) -> list[dict]:
-    now = datetime.now(timezone.utc) - timedelta(minutes=limit)
-    candles = []
-    base = 22500.0
-    for index in range(limit):
-        drift = index * 1.8
-        wave = ((index % 11) - 5) * 6
-        close = base + drift + wave
-        candles.append(
-            {
-                "symbol": symbol.upper(),
-                "timestamp": (now + timedelta(minutes=index)).isoformat(),
-                "open": round(close - 4, 2),
-                "high": round(close + 12, 2),
-                "low": round(close - 10, 2),
-                "close": round(close, 2),
-                "volume": 1000 + index * 25,
-                "interval": interval,
-            }
-        )
-    return candles
+def _sample_backtest_candles(symbol: str, interval: str, limit: int = 160):
 
+    ticker = f"{symbol.upper()}.NS"
+
+    df = yf.download(
+        ticker,
+        period="6mo",
+        interval=interval,
+        auto_adjust=False,
+        progress=False,
+    )
+
+    if df.empty:
+        return []
+
+    df = df.tail(limit)
+
+    candles = []
+
+    for ts, row in df.iterrows():
+
+        candles.append({
+
+            "symbol": symbol.upper(),
+
+            "timestamp": ts.isoformat(),
+
+            "open": float(row["Open"]),
+
+            "high": float(row["High"]),
+
+            "low": float(row["Low"]),
+
+            "close": float(row["Close"]),
+
+            "volume": int(row["Volume"]),
+
+            "interval": interval,
+
+        })
+
+    return candles
 
 def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_date: str | None) -> list[dict]:
     if not start_date and not end_date:
