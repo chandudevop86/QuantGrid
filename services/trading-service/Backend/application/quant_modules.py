@@ -252,18 +252,19 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "volume": _nse_number(ce.get("totalTradedVolume")),
                     "oi": _nse_number(ce.get("openInterest")),
                     "iv": _nse_number(ce.get("impliedVolatility")),
-                   "greeks" : _black_scholes_greeks(option_type="call",spot=underlying,strike=strike,tte = _time_to_expiry(expiry),volatility=max(float(ce.get("impliedVolatility") or 20) / 100, 0.01),RISK_FREE_RATE=0.06,),            
-                    "ce_iv": max(float(ce.get("impliedVolatility") or 20) / 100, 0.01,),},
-                 
-                  "pe": {
-                   
+                    "greeks": _black_scholes_greeks(option_type="call",spot=underlying,strike=strike,tte = _time_to_expiry(expiry),volatility=max(float(ce.get("impliedVolatility") or 20) / 100, 0.01),rate=0.06,),            
+                    "ce_iv": max(float(ce.get("impliedVolatility") or 20) / 100, 0.01,),
+                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),},
+                "pe":  {
                     "ltp": _nse_number(pe.get("lastPrice")),
                     "change": _nse_number(pe.get("change")),
                     "volume": _nse_number(pe.get("totalTradedVolume")),
                     "oi": _nse_number(pe.get("openInterest")),
                     "iv": _nse_number(pe.get("impliedVolatility")),
-                    "greeks" : _black_scholes_greeks("greeks": _black_scholes_greeks(option_type="put",spot=underlying,strike=strike, time_to_expiry=_tte,volatility=max(float(pe.get("impliedVolatility") or 20)/100, 0.01),RISK_FREE_RATE=0.06,)),
-                   "pe_iv": max(float(pe.get("impliedVolatility") or 20) / 100,0.01,),})
+                    "greeks":  _black_scholes_greeks("greeks": _black_scholes_greeks(option_type="put",spot=underlying,strike=strike, tte =_time_to_expiry,volatility=max(float(pe.get("impliedVolatility") or 20)/100, 0.01),rate=0.06,)),
+                    "pe_iv": max(float(pe.get("impliedVolatility") or 20) / 100,0.01,),
+                    "oi_change": _nse_number(ce.get("changeinOpenInterest"))},
+          })
     rows = sorted(rows, key=lambda row: row["strike"])
     
     if not rows:
@@ -286,9 +287,7 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
         exc,
     )
   
-"oi_change": _nse_number(
-    ce.get("changeinOpenInterest")
-),
+
     
 "oi_change": _nse_number(
     pe.get("changeinOpenInterest")
@@ -318,8 +317,7 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
             "total_put_oi": 0,
             "pcr": None,
             "atm_strike": None,
-            "max_pain ": _max_pain(rows)
-        },
+                   },
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "total_call_oi": sum(float(r["ce"]["oi"] or 0)
          for r in rows
@@ -331,6 +329,7 @@ def _live_nse_fallback_payload(payload: dict[str, Any], exc: Exception) -> dict[
          if total_call_oi
          else None
         )
+    })
 return _option_chain_compat_payload({
     "module": "live_nse_option_chain",
     "symbol": symbol.upper(),
@@ -345,9 +344,6 @@ return _option_chain_compat_payload({
     "provider_available": True,
     "updated_at": datetime.now(timezone.utc).isoformat(),
 })
-
-    })
-
 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows = list(payload.get("rows") or [])
