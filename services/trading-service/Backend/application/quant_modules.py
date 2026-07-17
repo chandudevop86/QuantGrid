@@ -95,7 +95,234 @@ def _max_pain(rows: list[dict[str, Any]]) -> int | None:
             for row in rows
         ),
     )["strike"]
+def _professional_option_signal(
+    rows: list[dict[str, Any]],
+    *,
+    spot: float,
+    atm: int,
+    pcr: float | None,
+    max_pain: int | None,
+    
+) -> dict[str, Any]:
+    """
+    Production option-chain signal engine.
 
+    Returns
+    -------
+    {
+        signal,
+        confidence,
+        bias,
+        reasons,
+        support,
+        resistance
+    }
+    """
+
+    if not rows:
+        return {
+            "signal": "NO_TRADE",
+            "bias": "NEUTRAL",
+            "confidence": 0,
+            "support": None,
+            "resistance": None,
+            "reasons": ["Empty option chain"],
+        }
+
+    below = [r for r in rows if r["strike"] <= atm]
+    above = [r for r in rows if r["strike"] >= atm]
+
+    support = None
+    resistance = None
+
+    if below:
+        support = max(
+            below,
+            key=lambda x: float(x["pe"].get("oi") or 0)
+        )["strike"]
+
+    if above:
+        resistance = max(
+            above,
+            key=lambda x: float(x["ce"].get("oi") or 0)
+        )["strike"]
+
+    score = 0
+    reasons = []
+
+    ##########################################
+    # PCR
+    ##########################################
+
+    if pcr is not None:
+
+        if pcr >= 1.30:
+            score += 30
+            reasons.append("Bullish PCR")
+
+        elif pcr >= 1.10:
+            score += 15
+            reasons.append("Positive PCR")
+
+        elif pcr <= 0.70:
+            score -= 30
+            reasons.append("Bearish PCR")
+
+        elif pcr <= 0.90:
+            score -= 15
+            reasons.append("Weak PCR")
+
+    ##########################################
+    # Max Pain
+    ##########################################
+
+    if max_pain is not None:
+
+        distance = abs(spot - max_pain)
+
+        if distance <= 50:
+            reasons.append("Near Max Pain")
+
+        if spot > max_pain:
+            score += 10
+            reasons.append("Above Max Pain")
+
+        elif spot < max_pain:
+            score -= 10
+            reasons.append("Below Max Pain")
+            
+       
+    ##########################################
+    # Support
+    ##########################################
+
+    if support:
+
+        if spot > support:
+            score += 15
+            reasons.append("Above Support")
+
+        else:
+            score -= 20
+            reasons.append("Support Broken")
+
+    ##########################################
+    # Resistance
+    ##########################################
+
+    if resistance:
+
+        if spot < resistance:
+            score += 5
+
+        else:
+            score -= 20
+            reasons.append("Resistance Breakout Failure")
+
+    ##########################################
+    # ATM Greeks
+    ##########################################
+
+    atm_row = next(
+        (
+            r
+            for r in rows
+            if r["strike"] == atm
+        ),
+        None,
+    )
+
+    if atm_row:
+
+        call_delta = float(
+            atm_row["ce"]["greeks"]["delta"]
+        )
+
+        put_delta = abs(
+            float(
+                atm_row["pe"]["greeks"]["delta"]
+            )
+        )
+
+        gamma = float(
+            atm_row["ce"]["greeks"]["gamma"]
+        )
+
+        iv = float(
+            atm_row["ce"].get("iv") or 20
+        )
+
+        ##################################
+
+        if gamma > 0.0008:
+            score += 5
+            reasons.append("High Gamma")
+
+        ##################################
+
+        if iv < 15:
+            score += 5
+            reasons.append("Low IV")
+
+        elif iv > 30:
+            score -= 5
+            reasons.append("High IV")
+
+        ##################################
+
+        if call_delta > put_delta:
+            score += 5
+
+        else:
+            score -= 5
+
+    ##########################################
+    # Confidence
+    ##########################################
+    MAX_SCORE = 70
+    confidence = min(
+        round(abs(score) / MAX_SCORE * 100),
+    100,
+    )
+
+    ##########################################
+    # Final Signal
+    ##########################################
+
+    if score >= 40:
+
+        signal = "BUY_CE"
+        bias = "BULLISH"
+
+    elif score <= -40:
+
+        signal = "BUY_PE"
+        bias = "BEARISH"
+
+    else:
+
+        signal = "NO_TRADE"
+        bias = "NEUTRAL"
+
+    ##########################################
+
+    return {
+
+        "signal": signal,
+       
+        "bias": bias,
+
+        "confidence": confidence,
+
+        "score": score,
+
+        "support": support,
+
+        "resistance": resistance,
+        
+        "max_pain": max_pain,
+        "reasons": reasons,
+   }
 
 def _nse_index_symbol(symbol: str) -> str:
     normalized = symbol.upper().strip()
@@ -226,7 +453,8 @@ def live_nse_option_chain(
         records.get("underlyingValue")
         or _latest_underlying_price(symbol)
     )
-
+    tte = _time_to_expiry(expiry)
+    expiry_days = round(tte * 365, 2)
     atm = _round_to_step(underlying, step)
 
     lower = atm - strikes_each_side * step
@@ -246,7 +474,8 @@ def live_nse_option_chain(
 
         ce = item.get("CE") or {}
         pe = item.get("PE") or {}
-
+        ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
+        pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
         rows.append(
             {
                 "strike": strike,
@@ -261,11 +490,8 @@ def live_nse_option_chain(
                         option_type="call",
                         spot=underlying,
                         strike=strike,
-                        time_to_expiry=_time_to_expiry(expiry),
-                        volatility=max(
-                            float(ce.get("impliedVolatility") or 20) / 100,
-                            0.01,
-                        ),
+                        time_to_expiry=tte,
+                        volatility=ce_iv,
                         rate=0.06,
                     ),
                 },
@@ -280,11 +506,8 @@ def live_nse_option_chain(
                         option_type="put",
                         spot=underlying,
                         strike=strike,
-                        time_to_expiry=_time_to_expiry(expiry),
-                        volatility=max(
-                            float(pe.get("impliedVolatility") or 20) / 100,
-                            0.01,
-                        ),
+                        time_to_expiry=tte,
+                        volatility=pe_iv,
                         rate=0.06,
                     ),
                 },
@@ -309,25 +532,31 @@ def live_nse_option_chain(
             ),
             exc,
         )
-
-    total_call_oi = sum(
-        float(r["ce"].get("oi") or 0)
-        for r in rows
-    )
-
-    total_put_oi = sum(
-        float(r["pe"].get("oi") or 0)
-        for r in rows
-    )
-
+    total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
+    total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
+    total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
+    total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
+    
     pcr = (
         round(total_put_oi / total_call_oi, 3)
         if total_call_oi
         else None
     )
-
     max_pain = _max_pain(rows)
+    # -------------------------------------------------
+    # Build professional signal
+    # -------------------------------------------------
+    signal_data = _professional_option_signal(
+        rows,
+        spot=underlying,
+        atm=atm,
+        pcr=pcr,
+        max_pain=max_pain,
+    )
 
+    # -------------------------------------------------
+    # SUCCESS PAYLOAD
+    # -------------------------------------------------
     return _option_chain_compat_payload(
         {
             "module": "live_nse_option_chain",
@@ -341,12 +570,17 @@ def live_nse_option_chain(
             "max_pain": max_pain,
             "total_call_oi": total_call_oi,
             "total_put_oi": total_put_oi,
+            "total_call_oi_change": total_call_oi_change,
+            "total_put_oi_change": total_put_oi_change,
             "source": "live-nse-chain",
             "provider_available": True,
             "updated_at": datetime.now(timezone.utc).isoformat(),
+            "expiry_days": expiry_days,
+            "signal": signal_data["signal"],
+            "signals": signal_data,
         }
-    )  
-   
+    )
+
 
 def _live_nse_fallback_payload(
     payload: dict[str, Any],
@@ -365,46 +599,109 @@ def _live_nse_fallback_payload(
             "synthetic": False,
             "provider_available": False,
             "fallback_reason": exc.__class__.__name__,
-            "provider_warning": (
-                "Live NSE option-chain provider unavailable."
-            ),
+            "provider_warning": "Live NSE option-chain provider unavailable.",
             "fallback_detail": str(exc),
             "rows": [],
             "pcr": None,
             "max_pain": None,
             "signals": {
+                "signal": "NO_TRADE",
                 "bias": "NEUTRAL",
+                "confidence": 0,
                 "reason": "Live NSE option-chain unavailable.",
-                "total_call_oi": 0,
-                "total_put_oi": 0,
-                "pcr": None,
-                "atm_strike": None,
+                "support": None,
+                "resistance": None,
+                "max_pain": None,
             },
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
+    
+       
+
+ 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows = list(payload.get("rows") or [])
+
     atm = payload.get("atm_strike")
+
     support = None
     resistance = None
-    below = [row for row in rows if atm is not None and float(row.get("strike") or 0) < float(atm)]
-    above = [row for row in rows if atm is not None and float(row.get("strike") or 0) > float(atm)]
+
+    below = [
+        row for row in rows
+        if atm is not None and float(row.get("strike") or 0) < float(atm)
+    ]
+
+    above = [
+        row for row in rows
+        if atm is not None and float(row.get("strike") or 0) > float(atm)
+    ]
+
     if below:
-        support = max(below, key=lambda row: float(row.get("pe", {}).get("oi") or 0)).get("strike")
+        support = max(
+            below,
+            key=lambda row: float(row.get("pe", {}).get("oi") or 0),
+        ).get("strike")
+
     if above:
-        resistance = max(above, key=lambda row: float(row.get("ce", {}).get("oi") or 0)).get("strike")
+        resistance = max(
+            above,
+            key=lambda row: float(row.get("ce", {}).get("oi") or 0),
+        ).get("strike")
+
     raw_pcr = payload.get("pcr")
     pcr = float(raw_pcr) if raw_pcr is not None else None
+
     max_pain = payload.get("max_pain")
-    raw_spot = payload.get("underlying_price") if payload.get("underlying_price") is not None else payload.get("spot")
+
+    raw_spot = (
+        payload.get("underlying_price")
+        if payload.get("underlying_price") is not None
+        else payload.get("spot")
+    )
+
     spot = float(raw_spot) if raw_spot is not None else None
-    if pcr is not None and spot is not None and pcr >= 1.15 and max_pain and spot >= float(max_pain):
-        signal = "BUY_CE"
-    elif pcr is not None and spot is not None and pcr <= 0.85 and max_pain and spot <= float(max_pain):
-        signal = "BUY_PE"
-    else:
-        signal = "NO_TRADE"
+
+    # Use professional signal if already generated
+    signal_data = payload.get("signals")
+
+    if signal_data is None:
+        signal_data = {
+            "signal": "NO_TRADE",
+            "bias": "NEUTRAL",
+            "confidence": 0,
+            "score": 0,
+            "support": support,
+            "resistance": resistance,
+            "max_pain": max_pain,
+            "reasons": ["Signal engine not executed"],
+        }
+
+    raw_source = str(payload.get("source") or "")
+    source = (
+        "live"
+        if raw_source in {"live", "live-nse-chain"}
+        else raw_source or "option-chain-unavailable"
+    )
+
+    return {
+        **payload,
+        "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
+        "spot": spot,
+        "ATM": atm,
+        "atm": atm,
+        "PCR": pcr,
+        "pcr": pcr,
+        "support": support if support is not None else max_pain,
+        "resistance": resistance if resistance is not None else max_pain,
+        "source": source,
+        "legacy_source": raw_source,
+        "signal": signal_data.get("signal", "NO_TRADE"),
+        "signals": signal_data,
+    }
+  
+        
     raw_source = str(payload.get("source") or "")
     source = "live" if raw_source in {"live", "live-nse-chain"} else raw_source or "option-chain-unavailable"
     return {
@@ -419,7 +716,8 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "resistance": resistance if resistance is not None else payload.get("max_pain"),
         "source": source,
         "legacy_source": raw_source,
-        "signal": signal,
+        "signal": signal_data["signal"],
+        "signals": signal_data,
     }
 
 
