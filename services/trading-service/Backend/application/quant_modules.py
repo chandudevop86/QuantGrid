@@ -263,7 +263,7 @@ def live_nse_option_chain(symbol: str = "NIFTY", *, strikes_each_side: int = 8, 
                     "iv": _nse_number(pe.get("impliedVolatility")),
                     "greeks": _black_scholes_greeks(option_type="put",spot=underlying,strike=strike,time_to_expiry=_time_to_expiry(expiry),volatility=max(float(pe.get("impliedVolatility") or 20) / 100, 0.01),rate=0.06,),
                     "pe_iv": max(float(pe.get("impliedVolatility") or 20) / 100,0.01,),
-                    "oi_change": _nse_number(pe.get("changeinOpenInterest"))},
+                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),},
           })
     rows = sorted(rows, key=lambda row: row["strike"])
     
