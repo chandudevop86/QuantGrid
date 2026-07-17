@@ -478,8 +478,8 @@ if not rows:
             exc.__class__.__name__,
         )
 
-        return _live_nse_fallback_payload(
-            option_chain_engine(
+           return _live_nse_fallback_payload(
+                 option_chain_engine(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
