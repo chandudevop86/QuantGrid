@@ -370,55 +370,61 @@ def _nse_number(value: Any) -> float | int | None:
 
 
 def live_nse_option_chain(
-            symbol: str = "NIFTY",
-            *,
-            strikes_each_side: int = 8,
-            step: int = 50,
-            ) -> dict[str, Any]:
+    symbol: str = "NIFTY",
+    *,
+    strikes_each_side: int = 8,
+    step: int = 50,
+) -> dict[str, Any]:
 
-        
-            nse_symbol = _nse_index_symbol(symbol)
+    nse_symbol = _nse_index_symbol(symbol)
 
+    try:
+        payload = fetch_nse_option_chain(nse_symbol)
 
-            try:
-                payload = fetch_nse_option_chain(nse_symbol)
+    except Exception as exc:
+        logger.exception("live_nse_option_chain_fetch_failed")
 
-            except Exception as exc:
-                logger.exception("live_nse_option_chain_fetch_failed")
+        observe_option_chain_failure(
+            "nse",
+            exc.__class__.__name__,
+        )
 
-                observe_option_chain_failure(
-                "nse",
-                exc.__class__.__name__,
-            )
+        return _live_nse_fallback_payload(
+            option_chain_engine(
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+            ),
+            exc,
+        )
 
-            return _live_nse_fallback_payload(
-                      option_chain_engine(
-                      symbol,
-                      strikes_each_side=strikes_each_side,
-                    step=step,
-                ),
-                exc,
-            )
-    records = payload.get("records") or {},
-    raw_rows = records.get("data") or [],
+    records = payload.get("records") or {}
+    raw_rows = records.get("data") or []
 
     expiry = next(
-                (x for x in records.get("expiryDates") or [] if x),
-                None,
-               )
+        (x for x in records.get("expiryDates") or [] if x),
+        None,
+    )
+
     underlying = float(
-                records.get("underlyingValue")
-                or _latest_underlying_price(symbol)
-            )
-          tte = _time_to_expiry(expiry)
-          expiry_days = round(tte * 365, 2)
-          atm = _round_to_step(underlying, step)
+        records.get("underlyingValue")
+        or _latest_underlying_price(symbol)
+    )
 
-          lower = atm - strikes_each_side * step
-          upper = atm + strikes_each_side * step
-          rows = []
+    tte = _time_to_expiry(expiry)
+    expiry_days = round(tte * 365, 2)
 
-          for item in raw_rows:
+    atm = _round_to_step(
+        underlying,
+        step,
+    )
+
+    lower = atm - strikes_each_side * step
+    upper = atm + strikes_each_side * step
+
+    rows = []
+
+    for item in raw_rows:
 
                 if expiry and item.get("expiryDate") != expiry:
                     continue
