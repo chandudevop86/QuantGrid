@@ -468,7 +468,7 @@ for item in raw_rows:
             }
         )
 
-    rows = sorted(rows, key=lambda row: row["strike"])
+rows = sorted(rows, key=lambda row: row["strike"])
 
     if not rows:
         exc = RuntimeError("NSE returned empty option chain")
