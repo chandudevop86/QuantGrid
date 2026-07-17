@@ -511,7 +511,7 @@ def live_nse_option_chain(
             # -------------------------------------------------
 
 
-            def _live_nse_fallback_payload(
+def _live_nse_fallback_payload(
             payload: dict[str, Any],
             exc: Exception,
             ) -> dict[str, Any]:
