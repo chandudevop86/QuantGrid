@@ -468,23 +468,23 @@ for item in raw_rows:
             }
         )
 
-    rows = sorted(rows, key=lambda row: row["strike"])
+        rows = sorted(rows, key=lambda row: row["strike"])
 
-    if not rows:
-        exc = RuntimeError("NSE returned empty option chain")
+        if not rows:
+            exc = RuntimeError("NSE returned empty option chain")
 
-        observe_option_chain_failure(
+            observe_option_chain_failure(
             "nse",
             exc.__class__.__name__,
         )
 
         return _live_nse_fallback_payload(
-            option_chain_engine(
+                option_chain_engine(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
-            ),
-            exc,
+              ),
+              exc,
         )
 
     total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
@@ -512,29 +512,7 @@ for item in raw_rows:
     # -------------------------------------------------
     # SUCCESS PAYLOAD
     # -------------------------------------------------
-        return _option_chain_compat_payload(
-        {
-            "module": "live_nse_option_chain",
-            "symbol": symbol.upper(),
-            "underlying_price": underlying,
-            "atm_strike": atm,
-            "expiry": expiry,
-            "step": step,
-            "rows": rows,
-            "pcr": pcr,
-            "max_pain": max_pain,
-            "total_call_oi": total_call_oi,
-            "total_put_oi": total_put_oi,
-            "total_call_oi_change": total_call_oi_change,
-            "total_put_oi_change": total_put_oi_change,
-            "source": "live-nse-chain",
-            "provider_available": True,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "expiry_days": expiry_days,
-            "signal": signal_data["signal"],
-            "signals": signal_data,
-        }
-    )
+
 
 def _live_nse_fallback_payload(
     payload: dict[str, Any],
@@ -656,23 +634,7 @@ def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
   
         
-    raw_source = str(payload.get("source") or "")
-    source = "live" if raw_source in {"live", "live-nse-chain"} else raw_source or "option-chain-unavailable"
-    return {
-        **payload,
-        "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
-        "spot": spot,
-        "ATM": atm,
-        "atm": atm,
-        "PCR": pcr,
-        "pcr": pcr,
-        "support": support if support is not None else payload.get("max_pain"),
-        "resistance": resistance if resistance is not None else payload.get("max_pain"),
-        "source": source,
-        "legacy_source": raw_source,
-        "signal": signal_data["signal"],
-        "signals": signal_data,
-    }
+    
 
 
 def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
