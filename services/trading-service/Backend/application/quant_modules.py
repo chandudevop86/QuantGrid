@@ -369,7 +369,7 @@ def _nse_number(value: Any) -> float | int | None:
             return int(number) if number.is_integer() else round(number, 4)
 
 
-            def live_nse_option_chain(
+def live_nse_option_chain(
             symbol: str = "NIFTY",
             *,
             strikes_each_side: int = 8,
