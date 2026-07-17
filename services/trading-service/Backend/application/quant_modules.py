@@ -377,20 +377,11 @@ def live_nse_option_chain(
 
     nse_symbol = _nse_index_symbol(symbol)
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 Chrome/126 Safari/537.36"
-        ),
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": f"https://www.nseindia.com/option-chain?symbol={quote(nse_symbol)}",
-    }
-
-   try:
+    
+    try:
        payload = fetch_nse_option_chain(nse_symbol)
 
-   except Exception as exc:
+    except Exception as exc:
        logger.exception("live_nse_option_chain_fetch_failed")
 
        observe_option_chain_failure(
@@ -406,28 +397,26 @@ def live_nse_option_chain(
         ),
         exc,
     )
-    records = payload.get("records") or {}
-    raw_rows = records.get("data") or []
+records = payload.get("records") or {}
+raw_rows = records.get("data") or []
 
-    expiry = next(
+expiry = next(
         (x for x in records.get("expiryDates") or [] if x),
         None,
     )
-
-    underlying = float(
+underlying = float(
         records.get("underlyingValue")
         or _latest_underlying_price(symbol)
     )
-    tte = _time_to_expiry(expiry)
-    expiry_days = round(tte * 365, 2)
-    atm = _round_to_step(underlying, step)
+tte = _time_to_expiry(expiry)
+expiry_days = round(tte * 365, 2)
+atm = _round_to_step(underlying, step)
 
-    lower = atm - strikes_each_side * step
-    upper = atm + strikes_each_side * step
+lower = atm - strikes_each_side * step
+upper = atm + strikes_each_side * step
+rows = []
 
-    rows = []
-
-    for item in raw_rows:
+for item in raw_rows:
 
         if expiry and item.get("expiryDate") != expiry:
             continue
@@ -545,7 +534,6 @@ def live_nse_option_chain(
             "signals": signal_data,
         }
     )
-
 
 def _live_nse_fallback_payload(
     payload: dict[str, Any],
