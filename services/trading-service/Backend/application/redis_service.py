@@ -271,4 +271,4 @@ class RedisService:
             await asyncio.sleep(
                 self._reconnect_interval_seconds()
             )
-    redis_service = RedisService()
+redis_service = RedisService()
