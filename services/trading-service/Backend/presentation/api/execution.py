@@ -611,12 +611,12 @@ async def _submit_paper_signal(
     candles_15m = latest_candles(signal.symbol, "15m", 100)
     if not candles_15m:
         try:
-            candles_15m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="15m", period="1d", limit=100))
+            candles_15m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="15m", period="1d", limit=100)
         except Exception:
             candles_15m = []
     if not candles_15m:
         try:
-            candles_15m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="15m", period="1d", limit=100))
+            candles_15m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="15m", period="1d", limit=100)
         except Exception:
             candles_15m = []
     qualification = _execution_qualification(
