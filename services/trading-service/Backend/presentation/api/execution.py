@@ -605,7 +605,7 @@ async def _submit_paper_signal(
     candles_15m = candles_15m if candles_15m is not None else latest_candles(signal.symbol, "15m", 100)
     if not candles_1m:
         try:
-            candles_1m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="1m", period="1d", limit=100))
+            candles_1m = _strategy_candles(market_service.get_candles(...)signal.symbol, interval="1m", period="1d", limit=100)
         except Exception:
             candles_1m = []
     candles_15m = latest_candles(signal.symbol, "15m", 100)
