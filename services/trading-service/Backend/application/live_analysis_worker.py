@@ -106,12 +106,26 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     if execution_mode != "paper":
         raise ValueError("Live auto-trading is disabled; only paper execution is supported.")
 
-    candles_response = market_service.get_candles(payload.symbol,interval=payload.interval,period=payload.period)
+    candles_response = market_service.get_candles(
+        payload.symbol,
+        interval=payload.interval,
+        period=payload.period
+        )
 
     confirmation_response = market_service.get_candles(
-    payload.symbol,interval="5m",period=payload.period)
-    trend_response = market_service.get_candles(payload.symbol,interval="15m",period=payload.period)
-    hourly_response = market_service.get_candles(payload.symbol, interval="1h", period="5d")
+        payload.symbol,
+        interval="5m",
+        period=payload.period
+        )
+    trend_response = market_service.get_candles(
+           payload.symbol,
+           interval="15m",
+           period=payload.period)
+    hourly_response = market_service.get_candles(
+           payload.symbol, 
+           interval="1h", 
+           period="5d"
+           )
     candles = _prepare_strategy_candles(candles_response)
     confirmation_candles = _prepare_strategy_candles(confirmation_response)
     trend_candles = _prepare_strategy_candles(trend_response)
