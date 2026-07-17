@@ -24,11 +24,11 @@ logger = logging.getLogger("quantgrid.option_chain")
 
 
 def _norm_cdf(value: float) -> float:
-            return 0.5 * (1.0 + erf(value / sqrt(2.0)))
+    return 0.5 * (1.0 + erf(value / sqrt(2.0)))
 
 
 def _norm_pdf(value: float) -> float:
-            return exp(-0.5 * value * value) / sqrt(2.0 * 3.141592653589793)
+    return exp(-0.5 * value * value) / sqrt(2.0 * 3.141592653589793)
 
 
 def _black_scholes_greeks(
@@ -399,26 +399,26 @@ def live_nse_option_chain(
                 ),
                 exc,
             )
-            records = payload.get("records") or {}
-            raw_rows = records.get("data") or []
+        records = payload.get("records") or {}
+        raw_rows = records.get("data") or []
 
-            expiry = next(
+        expiry = next(
                 (x for x in records.get("expiryDates") or [] if x),
                 None,
             )
-            underlying = float(
+        underlying = float(
                 records.get("underlyingValue")
                 or _latest_underlying_price(symbol)
             )
-            tte = _time_to_expiry(expiry)
-            expiry_days = round(tte * 365, 2)
-            atm = _round_to_step(underlying, step)
+        tte = _time_to_expiry(expiry)
+        expiry_days = round(tte * 365, 2)
+        atm = _round_to_step(underlying, step)
 
-            lower = atm - strikes_each_side * step
-            upper = atm + strikes_each_side * step
-            rows = []
+        lower = atm - strikes_each_side * step
+        upper = atm + strikes_each_side * step
+        rows = []
 
-            for item in raw_rows:
+        for item in raw_rows:
 
                 if expiry and item.get("expiryDate") != expiry:
                     continue
@@ -470,9 +470,9 @@ def live_nse_option_chain(
                     }
                 )
 
-            rows = sorted(rows, key=lambda row: row["strike"])
+        rows = sorted(rows, key=lambda row: row["strike"])
 
-            if not rows:
+        if not rows:
                     exc = RuntimeError("NSE returned empty option chain")
 
                     observe_option_chain_failure(
@@ -485,20 +485,20 @@ def live_nse_option_chain(
                                         step=step,),exc,
                 ) 
 
-            total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
-            total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
-            total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
-            total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
+        total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
+        total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
+        total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
+        total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
 
-            pcr = (round(total_put_oi / total_call_oi, 3)
+        pcr = (round(total_put_oi / total_call_oi, 3)
                     if total_call_oi
                     else None
             )
-            max_pain = _max_pain(rows)
+        max_pain = _max_pain(rows)
             # -------------------------------------------------
             # Build professional signal
             # -------------------------------------------------
-            signal_data = _professional_option_signal(
+        signal_data = _professional_option_signal(
                         rows,
                         spot=underlying,
                         atm=atm,
@@ -509,14 +509,36 @@ def live_nse_option_chain(
             # -------------------------------------------------
             # SUCCESS PAYLOAD
             # -------------------------------------------------
-
+        return _option_chain_compat_payload(
+                {
+                    "module": "live_nse_option_chain",
+                    "symbol": symbol.upper(),
+                    "underlying_price": underlying,
+                    "atm_strike": atm,
+                    "expiry": expiry,
+                    "step": step,
+                    "rows": rows,
+                    "pcr": pcr,
+                    "max_pain": max_pain,
+                    "total_call_oi": total_call_oi,
+                    "total_put_oi": total_put_oi,
+                    "total_call_oi_change": total_call_oi_change,
+                    "total_put_oi_change": total_put_oi_change,
+                    "source": "live-nse-chain",
+                    "provider_available": True,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "expiry_days": expiry_days,
+                    "signal": signal_data["signal"],
+                    "signals": signal_data,
+                }
+            )
 
 def _live_nse_fallback_payload(
             payload: dict[str, Any],
             exc: Exception,
             ) -> dict[str, Any]:
 
-            return _option_chain_compat_payload(
+        return _option_chain_compat_payload(
                 {
                     "module": "live_nse_option_chain",
                     "symbol": payload.get("symbol") or "NIFTY",
