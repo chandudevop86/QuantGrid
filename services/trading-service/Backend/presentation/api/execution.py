@@ -605,18 +605,18 @@ async def _submit_paper_signal(
     candles_15m = candles_15m if candles_15m is not None else latest_candles(signal.symbol, "15m", 100)
     if not candles_1m:
         try:
-            candles_1m = _strategy_candles(market_service.get_candlessignal.symbol, interval="1m", period="1d", limit=100)
+            candles_1m = _strategy_candles(market_service.get_candles(signal.symbol, interval="1m", period="1d", limit=100))
         except Exception:
             candles_1m = []
     candles_15m = latest_candles(signal.symbol, "15m", 100)
     if not candles_15m:
         try:
-            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100)
+            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
         except Exception:
             candles_15m = []
     if not candles_15m:
         try:
-            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100)
+            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
         except Exception:
             candles_15m = []
     qualification = _execution_qualification(
@@ -1103,9 +1103,9 @@ async def auto_paper_order(
             execution_mode=execution_mode,
         )
 
-    candles_response = market_service.get_candlessymbol, interval=payload.interval, period=payload.period, limit=150)
-    confirmation_response = market_service.get_candlessymbol, interval="5m", period=payload.period, limit=150)
-    trend_response = market_service.get_candlessymbol, interval="15m", period=payload.period, limit=150)
+    candles_response = market_service.get_candles(symbol, interval=payload.interval, period=payload.period, limit=150)
+    confirmation_response = market_service.get_candles(symbol, interval="5m", period=payload.period, limit=150)
+    trend_response = market_service.get_candles(symbol, interval="15m", period=payload.period, limit=150)
     candles = _strategy_candles(candles_response)
     confirmation_candles = _strategy_candles(confirmation_response)
     trend_candles = _strategy_candles(trend_response)
@@ -1317,13 +1317,13 @@ async def place_order(
     candles_1m = latest_candles(signal.symbol, "1m", 100)
     if not candles_1m:
         try:
-            candles_1m = _strategy_candles(market_service.get_candlessignal.symbol, interval="1m", period="1d", limit=100))
+            candles_1m = _strategy_candles(market_service.get_candles(signal.symbol, interval="1m", period="1d", limit=100))
         except Exception:
             candles_1m = []
     candles_15m = latest_candles(signal.symbol, "15m", 100)
     if not candles_15m:
         try:
-            candles_15m = _strategy_candles(market_service.get_candlessignal.symbol, interval="15m", period="1d", limit=100))
+            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
         except Exception:
             candles_15m = []
 
