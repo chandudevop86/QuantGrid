@@ -1103,9 +1103,9 @@ async def auto_paper_order(
             execution_mode=execution_mode,
         )
 
-    candles_response = market_service.get_candles(...)symbol, interval=payload.interval, period=payload.period, limit=150)
-    confirmation_response = market_service.get_candles(...)symbol, interval="5m", period=payload.period, limit=150)
-    trend_response = market_service.get_candles(...)symbol, interval="15m", period=payload.period, limit=150)
+    candles_response = market_service.get_candles(...)(symbol, interval=payload.interval, period=payload.period, limit=150)
+    confirmation_response = market_service.get_candles(...)(symbol, interval="5m", period=payload.period, limit=150)
+    trend_response = market_service.get_candles(...)(symbol, interval="15m", period=payload.period, limit=150)
     candles = _strategy_candles(candles_response)
     confirmation_candles = _strategy_candles(confirmation_response)
     trend_candles = _strategy_candles(trend_response)
