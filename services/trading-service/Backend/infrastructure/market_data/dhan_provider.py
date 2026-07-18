@@ -8,11 +8,14 @@ from zoneinfo import ZoneInfo
 from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
-from Backend.application.security_master import SecurityMaster
+try:
+    from Backend.application.security_master import SecurityMaster
 
-SECURITY_MASTER = SecurityMaster(
-    "data/dhan_security_master.csv"
-)
+    SECURITY_MASTER = SecurityMaster(
+        "data/dhan_security_master.csv"
+    )
+except FileNotFoundError:
+    SECURITY_MASTER = None
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
