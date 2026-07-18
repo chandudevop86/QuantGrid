@@ -16,6 +16,8 @@ try:
 except FileNotFoundError:
     SECURITY_MASTER = None
 
+INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
+
 
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
@@ -70,21 +72,39 @@ class DhanProvider(EnvConfiguredProvider):
 
     def get_ltp(self, symbol: str) -> dict[str, Any]:
         self._require_configured()
+
+        normalized = symbol.upper()
+
+        # Dhan marketfeed REST doesn't return spot index quotes; fall back to Yahoo
+        if normalized in INDEX_SPOT_SYMBOLS:
+            from Backend.infrastructure.market_data.yahoo_provider import YahooProvider
+            return YahooProvider().get_ltp(normalized)
+
         dhan = dhan_sdk_client()
         instrument = self.normalize_symbol(symbol)
         security_id = instrument["security_id"]
         exchange_segment = instrument["exchange_segment"]
         security = int(security_id) if str(security_id).isdigit() else security_id
+        
         raw = dhan.ohlc_data(securities={exchange_segment: [security]})
+        
         print("=" * 80)
         print("RAW RESPONSE")
         print(repr(raw))
         print("TYPE:", type(raw))
         print("=" * 80)
+        
         quote = _extract_quote(raw, security_id)
         print("EXTRACTED QUOTE:", quote)
-        ltp = quote.get("last_price") or quote.get("ltp") or quote.get("lastPrice") or quote.get("LTP")
-        if ltp in {None, ""}:
+        
+        ltp = (
+            quote.get("last_price")
+            or quote.get("ltp")
+            or quote.get("lastPrice")
+            or quote.get("LTP")
+        )
+        
+        if ltp in (None, ""):
             raise MarketDataProviderError("Dhan quote response did not contain LTP.")
             
         fetched_at = self.mark_fetch()
@@ -233,7 +253,6 @@ def _timestamp_to_ist(value: Any) -> str:
 
 
 def _safe_raw(value: Any) -> Any:
-    # Safely handles raw data; masks credential structures if present.
     if isinstance(value, dict):
         return {k: v for k, v in value.items() if "token" not in k.lower() and "secret" not in k.lower()}
     return value
