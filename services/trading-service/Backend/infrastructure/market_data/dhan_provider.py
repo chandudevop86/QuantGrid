@@ -42,18 +42,27 @@ class DhanProvider(EnvConfiguredProvider):
         """
 
     # Option/Future instrument
-        if all([expiry, option_type]) and strike is not None:
-            return SECURITY_MASTER.resolve(
+    if (
+               expiry is not None
+               and strike is not None
+               and option_type is not None
+       ):
+        if SECURITY_MASTER is None:
+            raise MarketDataProviderError(
+            "Security Master CSV is not installed."
+        )
+
+        return SECURITY_MASTER.resolve(
             symbol=symbol,
             expiry=expiry,
             strike=strike,
             option_type=option_type,
-        )
+       )
 
    # Cash / Index instrument
-        security_id = os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}")
+    security_id = os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}")
 
-        if security_id is None:
+    if security_id is None:
            raise MarketDataProviderError(
             f"No Dhan Security ID configured for '{symbol}'. "
             f"Please set DHAN_SECURITY_ID_{symbol.upper()} "
