@@ -73,5 +73,6 @@ class SecurityMaster:
             "exchange_segment": row["SEM_EXM_EXCH_ID"],
             "instrument": row["SEM_INSTRUMENT_NAME"],
             "symbol": row["SEM_TRADING_SYMBOL"],
-            "lot_size": int(row["SEM_LOT_UNITS"]),
+            "lot_size": int(float(row["SEM_LOT_UNITS"]or 0))
+                            
         }
