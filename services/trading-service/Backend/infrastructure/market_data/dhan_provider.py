@@ -8,21 +8,69 @@ from zoneinfo import ZoneInfo
 from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
+from Backend.application.security_master import SecurityMaster
 
-
+SECURITY_MASTER = SecurityMaster(
+    "data/dhan_security_master.csv"
+)
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
+    
+    # instrument = self.normalize_symbol(symbol)
+    # security_id = instrument["security_id"]
+    # exchange_segment = instrument["exchange_segment"]
+    def normalize_symbol(
+        self,
+        symbol: str,
+        expiry: str | None = None,
+        strike: float | None = None,
+        option_type: str | None = None,
+      ) -> dict[str, Any]:
+        """
+        Resolve a Dhan instrument.
 
-    def normalize_symbol(self, symbol: str) -> str:
-        normalized = symbol.upper().replace(" ", "").replace("-", "_")
-        return os.getenv(f"DHAN_SECURITY_ID_{normalized}", "13" if normalized in {"NIFTY", "NIFTY50", "NIFTY_50"} else normalized)
+        For options/futures:
+        Uses Security Master CSV.
 
+        For cash/index:
+        Uses environment variables.
+        
+        """
+
+    # Option/Future instrument
+        if all([expiry, option_type]) and strike is not None:
+            return SECURITY_MASTER.resolve(
+            symbol=symbol,
+            expiry=expiry,
+            strike=strike,
+            option_type=option_type,
+        )
+
+   # Cash / Index instrument
+        security_id = os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}")
+
+        if security_id is None:
+           raise MarketDataProviderError(
+            f"No Dhan Security ID configured for '{symbol}'. "
+            f"Please set DHAN_SECURITY_ID_{symbol.upper()} "
+            f"or use SecurityMaster for derivatives."
+        )
+
+        return {
+            "security_id": security_id,
+            "exchange_segment": _exchange_segment(),
+            "symbol": symbol.upper(),
+       }
+        
     def get_ltp(self, symbol: str) -> dict[str, Any]:
         self._require_configured()
         dhan = dhan_sdk_client()
-        security_id = self.normalize_symbol(symbol)
-        raw = dhan.ohlc_data(securities={_exchange_segment(): [int(security_id) if str(security_id).isdigit() else security_id]})
+        instrument = self.normalize_symbol(symbol)
+        security_id = instrument["security_id"]
+        exchange_segment = instrument["exchange_segment"]
+        security = (int(security_id) if str(security_id).isdigit() else security_id)
+        raw = dhan.ohlc_data(securities={exchange_segment: [security]})
         quote = _extract_quote(raw, security_id)
         ltp = quote.get("last_price") or quote.get("ltp") or quote.get("lastPrice") or quote.get("LTP")
         if ltp in {None, ""}:
@@ -31,6 +79,8 @@ class DhanProvider(EnvConfiguredProvider):
         return {
             "provider": self.provider_name,
             "symbol": symbol.upper(),
+            "security_id": security_id,
+            "exchange_segment": exchange_segment,       
             "market_symbol": security_id,
             "exchange": "NSE",
             "ltp": float(ltp),
@@ -44,16 +94,13 @@ class DhanProvider(EnvConfiguredProvider):
     def get_candles(self, symbol: str, interval: str, period: str, limit: int) -> list[dict[str, Any]]:
         self._require_configured()
         dhan = dhan_sdk_client()
-        security_id = self.normalize_symbol(symbol)
+        instrument = self.normalize_symbol(symbol)
+        security_id = instrument["security_id"]
+        security = (int(security_id) if str(security_id).isdigit() else security_id)
+        exchange_segment = instrument["exchange_segment"]
         to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         from_date = to_date - timedelta(days=max(1, _period_days(period)))
-        raw = dhan.intraday_minute_data(
-            security_id=str(security_id),
-            exchange_segment=_exchange_segment(),
-            instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),
-            from_date=from_date.isoformat(),
-            to_date=to_date.isoformat(),
-        )
+        raw = dhan.intraday_minute_data(security_id=str(security),exchange_segment=exchange_segment,instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),from_date=from_date.isoformat(),to_date=to_date.isoformat(),)
         self.mark_fetch()
         candles = _normalize_candles(symbol, raw)
         return candles[-max(1, min(int(limit), 500)):]
@@ -61,12 +108,28 @@ class DhanProvider(EnvConfiguredProvider):
     def subscribe_ticks(self, symbols: Iterable[str]) -> None:
         self._require_configured()
         context, market_feed = dhan_market_feed_class()
-        instruments = [
-            (market_feed.NSE, str(self.normalize_symbol(symbol)), market_feed.Ticker)
-            for symbol in symbols
-        ]
-        feed = market_feed(context, instruments, "v2")
-        feed.run_forever()
+        
+    instruments = []
+
+    for symbol in symbols:
+     instrument = self.normalize_symbol(symbol)
+
+    if not instrument.get("security_id"):
+       continue
+
+    instruments.append(
+        (
+            instrument["exchange_segment"],
+            str(instrument["security_id"]),
+            market_feed.Ticker,
+        )
+    )
+    feed =   market_feed(
+        context,
+        instruments, 
+        "v2",
+    )
+    feed.run_forever()
 
 
 def _exchange_segment() -> str:
