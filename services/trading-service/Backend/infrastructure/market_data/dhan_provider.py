@@ -76,6 +76,11 @@ class DhanProvider(EnvConfiguredProvider):
         exchange_segment = instrument["exchange_segment"]
         security = int(security_id) if str(security_id).isdigit() else security_id
         raw = dhan.ohlc_data(securities={exchange_segment: [security]})
+        print("=" * 80)
+        print("RAW RESPONSE")
+        print(repr(raw))
+        print("TYPE:", type(raw))
+        print("=" * 80)
         quote = _extract_quote(raw, security_id)
         print("EXTRACTED QUOTE:", quote)
         ltp = quote.get("last_price") or quote.get("ltp") or quote.get("lastPrice") or quote.get("LTP")
