@@ -26,7 +26,11 @@ class SecurityMaster:
 
         self.csv_path = Path(csv_path)
 
-        self.df = pd.read_csv(self.csv_path)
+        self.df = pd.read_csv(
+    self.csv_path,
+    dtype=str,
+    low_memory=False,
+)
 
         self.df.columns = [c.strip() for c in self.df.columns]
 
@@ -40,8 +44,19 @@ class SecurityMaster:
 
         df = self.df
 
-        df = df[df["SEM_TRADING_SYMBOL"].str.contains(symbol, case=False)]
+        symbol = symbol.upper()
 
+        df = self.df.copy()
+
+        df["SEM_TRADING_SYMBOL"] = (df["SEM_TRADING_SYMBOL"].fillna("").astype(str).str.upper())
+
+# Prefer exact match
+exact = df[df["SEM_TRADING_SYMBOL"] == symbol]
+
+if not exact.empty:
+    df = exact
+else:
+    df = df[df["SEM_TRADING_SYMBOL"].str.startswith(symbol)]
         if expiry:
             df = df[df["SEM_EXPIRY_DATE"] == expiry]
 

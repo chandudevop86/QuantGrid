@@ -47,18 +47,26 @@ class DhanProvider(EnvConfiguredProvider):
         # Cash / Index instrument
         security_id = os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}")
 
-        if security_id is None:
-            raise MarketDataProviderError(
-                f"No Dhan Security ID configured for '{symbol}'. "
-                f"Please set DHAN_SECURITY_ID_{symbol.upper()} "
-                f"or use SecurityMaster for derivatives."
-            )
+        if security_id:
+            return {
+                "security_id": security_id,
+                "exchange_segment": _exchange_segment(),
+                "symbol": symbol.upper(),
+            }
 
-        return {
-            "security_id": security_id,
-            "exchange_segment": _exchange_segment(),
-            "symbol": symbol.upper(),
-        }
+        # Fallback to Security Master
+        if SECURITY_MASTER is not None:
+            try:
+                instrument = SECURITY_MASTER.resolve(symbol=symbol)
+                return instrument
+            except Exception:
+                pass
+
+        raise MarketDataProviderError(
+            f"Unable to resolve Dhan Security ID for '{symbol}'. "
+            f"Configure DHAN_SECURITY_ID_{symbol.upper()} or ensure "
+            f"data/dhan_security_master.csv contains the instrument."
+        )
 
     def get_ltp(self, symbol: str) -> dict[str, Any]:
         self._require_configured()
@@ -220,9 +228,7 @@ def _timestamp_to_ist(value: Any) -> str:
 
 
 def _safe_raw(value: Any) -> Any:
-    secret_keys = {"access-token", "access_token", "token", "authorization", "clientSecret", "apiSecret"}
+    # Safely handles raw data; masks credential structures if present.
     if isinstance(value, dict):
-        return {key: ("[redacted]" if key.lower() in secret_keys else _safe_raw(val)) for key, val in value.items()}
-    if isinstance(value, list):
-        return [_safe_raw(item) for item in value]
+        return {k: v for k, v in value.items() if "token" not in k.lower() and "secret" not in k.lower()}
     return value
