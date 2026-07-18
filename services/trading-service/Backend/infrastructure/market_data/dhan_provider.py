@@ -106,31 +106,33 @@ class DhanProvider(EnvConfiguredProvider):
         return candles[-max(1, min(int(limit), 500)):]
 
     def subscribe_ticks(self, symbols: Iterable[str]) -> None:
-        self._require_configured()
-        context, market_feed = dhan_market_feed_class()
-        
+     self._require_configured()
+
+    context, market_feed = dhan_market_feed_class()
+
     instruments = []
 
     for symbol in symbols:
-     instrument = self.normalize_symbol(symbol)
+        instrument = self.normalize_symbol(symbol)
 
-    if not instrument.get("security_id"):
-       continue
+        if not instrument.get("security_id"):
+            continue
 
-    instruments.append(
-        (
-            instrument["exchange_segment"],
-            str(instrument["security_id"]),
-            market_feed.Ticker,
+        instruments.append(
+            (
+                instrument["exchange_segment"],
+                str(instrument["security_id"]),
+                market_feed.Ticker,
+            )
         )
-    )
-    feed =   market_feed(
+
+    feed = market_feed(
         context,
-        instruments, 
+        instruments,
         "v2",
     )
-    feed.run_forever()
 
+    feed.run_forever()
 
 def _exchange_segment() -> str:
     return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "IDX_I")
