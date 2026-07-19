@@ -211,7 +211,8 @@ async def reconcile_broker_state(
             broker_order
             and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
         ):
-            pass
+            
+            continue
 
     _record_fix(
         summary,
