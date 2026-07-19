@@ -551,7 +551,7 @@ for item in raw_rows:
 # -------------------------------------------------
 #        Build professional signal
 # -------------------------------------------------
-signal_data = _professional_option_signal(
+    signal_data = _professional_option_signal(
         rows,
         spot=underlying,
         atm=atm,
@@ -561,30 +561,30 @@ signal_data = _professional_option_signal(
 # -------------------------------------------------
 #           SUCCESS PAYLOAD
 # -------------------------------------------------
-            return _option_chain_compat_payload(
+    return _option_chain_compat_payload(
                 
-                {
-                    "module": "live_nse_option_chain",
-                    "symbol": symbol.upper(),
-                    "underlying_price": underlying,
-                    "atm_strike": atm,
-                    "expiry": expiry,
-                    "step": step,
-                    "rows": rows,
-                    "pcr": pcr,
-                    "max_pain": max_pain,
-                    "total_call_oi": total_call_oi,
-                    "total_put_oi": total_put_oi,
-                    "total_call_oi_change": total_call_oi_change,
-                    "total_put_oi_change": total_put_oi_change,
-                    "source": "live-nse-chain",
-                    "provider_available": True,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "expiry_days": expiry_days,
-                    "signal": signal_data["signal"],
-                    "signals": signal_data,
-            }
-        )
+        {
+            "module": "live_nse_option_chain",
+            "symbol": symbol.upper(),
+            "underlying_price": underlying,
+            "atm_strike": atm,
+            "expiry": expiry,
+            "step": step,
+            "rows": rows,
+            "pcr": pcr,
+            "max_pain": max_pain,
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "total_call_oi_change": total_call_oi_change,
+            "total_put_oi_change": total_put_oi_change,
+            "source": "live-nse-chain",
+            "provider_available": True,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "expiry_days": expiry_days,
+            "signal": signal_data["signal"],
+            "signals": signal_data,
+    }
+)
 
 def _live_nse_fallback_payload(
     payload: dict[str, Any],
