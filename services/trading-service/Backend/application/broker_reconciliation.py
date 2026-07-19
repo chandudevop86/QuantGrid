@@ -199,23 +199,21 @@ async def reconcile_broker_state(
         if matched_broker_position and int(matched_broker_position["quantity"]) > 0:
             continue
 
-        broker_order: BrokerOrderResult | None = None
+        position_broker_order: BrokerOrderResult | None = None
 
         if broker_order_id:
             try:
-                broker_order = await broker_client.get_order_status(broker_order_id)
+                position_broker_order = await broker_client.get_order_status(broker_order_id)
             except Exception:
-                broker_order = None
+                position_broker_order = None
 
         if (
-            broker_order
+            position_broker_order
             and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
         ):
-            pass
-        
-        if position is None:
             continue
-
+        
+        
     _record_fix(
         summary,
         db,
