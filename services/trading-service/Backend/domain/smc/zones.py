@@ -21,8 +21,8 @@ class ZoneConfluenceEngine:
         pass
 
     # Check: Ensure this is indented 4 spaces inside the class!
-    def has_confluence(self, ...):
-        # logic called by amd.py
+    def has_confluence(self, *args: Any, **kwargs: Any) -> Any:
+        # Temporary wildcard parameters to pass compilation
         pass
 
 
