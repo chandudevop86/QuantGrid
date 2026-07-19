@@ -872,7 +872,7 @@ def get_option_chain(
 
     rows, data_quality = validate_option_chain_rows(rows, source=source, expiry=expiry)
     data_quality_payload = data_quality.model_dump()
-    fallback_message =  none: any  if provider_available else warning
+    fallback_message =  none  if provider_available else warning
     if not provider_available:
         data_quality_payload = {
             **data_quality_payload,
