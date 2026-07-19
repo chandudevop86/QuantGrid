@@ -364,7 +364,8 @@ def operations(
     observe_api_request("GET", "/dashboard/operations", 200, latency_ms / 1000)
     observe_trading_decision(decision.trade_recommendation, decision.data_status, decision.blocked)
     if risk_blocked:
-        observe_risk_block("DASHBOARD_RISK_BLOCKED")
+        observe_risk_block(strategy="DASHBOARD_STRATEGY", 
+            rule_triggered="DASHBOARD_RISK_BLOCKED""DASHBOARD_RISK_BLOCKED")
     logger.info(
         "dashboard_decision",
         extra={
