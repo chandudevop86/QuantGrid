@@ -116,8 +116,8 @@ def main() -> None:
                     raise ValueError(f"Invalid table name detected: {table}")
 
                 try:
-                    # nosec B608 - Verified through regex matching pattern constraints above
-                    count = fetch_value(db, f'SELECT COUNT(*) FROM "{table}"')
+                    # Fixed: Moved inline comment to exact execution line to satisfy Bandit parser rules
+                    count = fetch_value(db, f'SELECT COUNT(*) FROM "{table}"')  # nosec B608
                 except Exception:
                     count = "?"
 
