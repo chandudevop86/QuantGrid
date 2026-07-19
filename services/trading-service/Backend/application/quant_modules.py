@@ -588,8 +588,7 @@ def _live_nse_fallback_payload(
             )
 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        rows = list(payload.get("rows") or [])
-        atm = payload.get("atm_strike")
+        rows: list[dict[str, Any]] = [row for row in (payload.get("rows") or []) if isinstance(row, dict)] atm = payload.get("atm_strike")
 
         support = None
         resistance = None
@@ -999,17 +998,27 @@ def _max_drawdown(pnl_values: list[float]) -> float:
 
 
 def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
-            try:
-                entry = float(trade.get("entry") or trade.get("entry_price"))
-                stop = float(trade.get("stop_loss"))
-                target = float(trade.get("target") or trade.get("target_price"))
-            except (TypeError, ValueError):
-                return None
-            risk = abs(entry - stop)
-            if risk <= 0:
-                return None
-            return abs(target - entry) / risk
+    entry_raw = trade.get("entry") or trade.get("entry_price")
+    stop_raw = trade.get("stop_loss")
+    target_raw = trade.get("target") or trade.get("target_price")
 
+    if entry_raw is None or stop_raw is None or target_raw is None:
+        return None
+
+    try:
+        entry = float(entry_raw)
+        stop = float(stop_raw)
+        target = float(target_raw)
+
+    except (TypeError, ValueError):
+        return None
+
+    risk = abs(entry - stop)
+
+    if risk <= 0:
+        return None
+
+    return abs(target - entry) / risk
 
 def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             try:
