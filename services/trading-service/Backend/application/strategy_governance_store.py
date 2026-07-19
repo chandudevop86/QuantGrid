@@ -110,9 +110,13 @@ def list_strategy_governance() -> list[dict[str, Any]]:
     return [_public_row(dict(row)) for row in rows]
 
 
+from typing import Any, Dict
+
 def record_strategy_governance_audit(event: str, strategy: str, details: dict[str, Any]) -> dict[str, Any]:
     init_strategy_governance_store()
-    row = {
+    
+    # Explicitly type row as dict[str, Any] so mypy accepts mixed type values
+    row: Dict[str, Any] = {
         "event": str(event),
         "strategy": _normalize_name(strategy),
         "details_json": json.dumps(details or {}, sort_keys=True),
