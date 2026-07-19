@@ -43,7 +43,21 @@ from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.volume_analysis import analyze_volume
 from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
+# Backend/domain/market_data/provider.py
 
+from typing import Any
+
+class MarketDataProvider(Protocol):
+    ...
+
+    def fetch_chart(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1m",
+        period: str = "1d",
+    ) -> dict[str, Any]:
+        ...
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
 market_service = get_market_data_service()
