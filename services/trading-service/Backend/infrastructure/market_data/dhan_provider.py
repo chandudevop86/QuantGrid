@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Any, Iterable
@@ -17,6 +18,9 @@ except FileNotFoundError:
     SECURITY_MASTER = None
 
 INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
+
+# Set up module logger instance for tracking resolution failures
+logger = logging.getLogger(__name__)
 
 
 class DhanProvider(EnvConfiguredProvider):
@@ -61,7 +65,11 @@ class DhanProvider(EnvConfiguredProvider):
             try:
                 instrument = SECURITY_MASTER.resolve(symbol=symbol)
                 return instrument
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "Unable to resolve instrument: %s",
+                    exc,
+                )
                 pass
 
         raise MarketDataProviderError(

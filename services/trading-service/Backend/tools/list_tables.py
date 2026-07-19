@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from urllib.parse import urlsplit
 
@@ -61,9 +62,12 @@ def main():
 
             for table in tables:
 
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+                    raise ValueError(table)
+
                 try:
                     rows = db.execute(
-                        text(f'SELECT COUNT(*) FROM "{table}"')
+                        text(f'SELECT COUNT(*) FROM "{table}"')  # nosec B608
                     ).scalar()
 
                 except Exception:
