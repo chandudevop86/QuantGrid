@@ -140,10 +140,10 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
             """
             INSERT INTO positions
                 (broker_order_id, symbol, side, quantity, entry_price, stop_loss, target, trailing_stop_loss, trailing_stop_pct, current_price,
-                 exit_price, exit_reason, open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
+                exit_price, exit_reason, open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
             VALUES
                 (:broker_order_id, :symbol, :side, :quantity, :entry_price, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :current_price,
-                 :exit_price, :exit_reason, :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
+                :exit_price, :exit_reason, :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
             """,
             row,
         )
@@ -323,10 +323,10 @@ def _latest_price(symbol: str) -> float | None:
     if not candles:
         return None
     try:
-        return float(candles[-1].get("close"))
+        # Adding 'or 0' ensures float() never receives None
+        return float(candles[-1].get("close") or 0)
     except (TypeError, ValueError):
         return None
-
 
 def _open_pnl(side: str, quantity: int, entry: float, current: float) -> float:
     multiplier = 1.0 if side.upper() == "BUY" else -1.0
