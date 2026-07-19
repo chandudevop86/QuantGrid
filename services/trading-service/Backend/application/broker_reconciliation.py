@@ -175,9 +175,10 @@ async def reconcile_broker_state(
         _position_key(str(position.get("symbol") or ""), str(position.get("side") or ""))
         for position in open_positions
     }
-    for key, broker_position in broker_position_index.items():
-        if int(broker_position.get("quantity") or 0) <= 0 or key in local_position_keys:
+    for key, broker_position_item in broker_position_index.items():
+        if int(broker_position_item.get("quantity") or 0) <= 0 or key in local_position_keys:
             continue
+
         _record_review(
             summary,
             db,
@@ -185,31 +186,51 @@ async def reconcile_broker_state(
             request,
             "broker_position_local_missing",
             key,
-            {"broker_position": broker_position},
+            {"broker_position": broker_position_item},
         )
-
     for position in open_positions:
-        broker_order_id = str(position.get("broker_order_id") or "")
-        broker_position: dict[str, Any] | None = _matching_broker_position(position, broker_position_index)
-        if broker_position and int(broker_position["quantity"]) > 0:
-            continue
-        if broker_order_id:
-            try:
-                broker_order = await broker_client.get_order_status(broker_order_id)
-            except Exception:
-                broker_order = None
-            if broker_order and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES:
-                continue
-        _record_fix(
-            summary,
-            db,
-            actor,
-            request,
-            "closed_position_still_marked_open",
-            broker_order_id or position.get("symbol") or "-",
-            {"local_position": position, "broker_position": broker_position},
-        )
-        close_open_position(int(position["id"]), current_price=(broker_position or {}).get("price"), reason="broker_position_closed")
+    broker_order_id = str(position.get("broker_order_id") or "")
+
+    matched_broker_position: dict[str, Any] | None = _matching_broker_position(
+        position,
+        broker_position_index,
+    )
+
+    if matched_broker_position and int(matched_broker_position["quantity"]) > 0:
+        continue
+
+    broker_order: BrokerOrderResult | None = None
+
+    if broker_order_id:
+        try:
+            broker_order = await broker_client.get_order_status(broker_order_id)
+        except Exception:
+            broker_order = None
+
+        if (
+            broker_order
+            and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
+        ):
+            pass
+
+    _record_fix(
+        summary,
+        db,
+        actor,
+        request,
+        "closed_position_still_marked_open",
+        broker_order_id or position.get("symbol") or "-",
+        {
+            "local_position": position,
+            "broker_position": matched_broker_position,
+        },
+    )
+
+    close_open_position(
+        int(position["id"]),
+        current_price=(matched_broker_position or {}).get("price"),
+        reason="broker_position_closed",
+    )
 
     _write_status(summary)
     return summary
