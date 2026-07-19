@@ -141,7 +141,7 @@ def _trend_direction(metadata: dict[str, Any]) -> str | None:
     if ema_9 < ema_21 < ema_50 < ema_200:
             return "DOWNTREND"
 
-
+    return None
 def _trend_aligned(signal: StrategySignal) -> bool:
     trend = _trend_direction(signal.metadata)
     if signal.side == "BUY":
