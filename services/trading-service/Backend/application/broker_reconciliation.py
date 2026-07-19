@@ -359,7 +359,13 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
         broker_order_id = metadata.get("broker_order_id")
         if not broker_order_id or str(broker_order_id) in orders:
             continue
-        broker_order = metadata.get("broker_order") if isinstance(metadata.get("broker_order"), dict) else {}
+        broker_order_raw = metadata.get("broker_order")
+
+        if isinstance(broker_order_raw, dict):
+                broker_order: dict[str, Any] = broker_order_raw
+        else:
+                broker_order = {}
+
         orders[str(broker_order_id)] = {
             "source": "audit_logs",
             "broker_order_id": str(broker_order_id),
@@ -369,7 +375,7 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
             "status": metadata.get("status") or row.status,
             "raw": {"audit_id": row.id, "metadata": metadata},
         }
-
+    
     for broker_order_id, position in positions_by_order.items():
         orders.setdefault(
             broker_order_id,
