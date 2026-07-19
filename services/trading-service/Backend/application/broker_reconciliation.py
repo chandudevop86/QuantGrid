@@ -190,14 +190,14 @@ async def reconcile_broker_state(
 
     for position in open_positions:
         broker_order_id = str(position.get("broker_order_id") or "")
-        broker_position = _matching_broker_position(position, broker_position_index)
+        broker_position: dict[str, Any] | None = _matching_broker_position(position, broker_position_index)
         if broker_position and int(broker_position["quantity"]) > 0:
             continue
         if broker_order_id:
             try:
                 broker_order = await broker_client.get_order_status(broker_order_id)
             except Exception:
-                broker_order = None
+                broker_order = BrokerOrderResult | None = None
             if broker_order and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES:
                 continue
         _record_fix(
@@ -215,6 +215,7 @@ async def reconcile_broker_state(
     return summary
 
 
+
 def reconciliation_status() -> dict[str, Any]:
     if not STATUS_FILE.exists():
         return {
@@ -227,6 +228,19 @@ def reconciliation_status() -> dict[str, Any]:
             "errors": [],
         }
 
+    try:
+        payload = json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {
+            "last_run_at": None,
+            "checked_orders": 0,
+            "checked_positions": 0,
+            "mismatches": 0,
+            "fixed": 0,
+            "needs_review": 0,
+            "errors": ["reconciliation status file is unreadable"],
+        }
 
 def _recover_stale_local_orders(
     summary: dict[str, Any],
