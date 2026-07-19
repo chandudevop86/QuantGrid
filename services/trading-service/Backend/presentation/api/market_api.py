@@ -56,15 +56,6 @@ _DHAN_OPTION_CACHE: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]], str
 _DHAN_OPTION_COOLDOWN_UNTIL = 0.0
 _DHAN_OPTION_COOLDOWN_NAME = "dhan-option-chain"
 _DHAN_OPTION_FETCH_LOCK_NAME = "dhan-option-chain-fetch"
-class MarketDataProvider:
-
-    async def fetch_chart(
-        self,
-        symbol: str,
-        interval: str,
-        period: str,
-    ) -> dict[str, Any]:
-        raise NotImplementedError
 
 def latest_verified_option_context(symbol: str = "NIFTY") -> dict[str, dict[str, Any]]:
     """Return the latest provider observation already validated by this module."""
@@ -108,7 +99,8 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
 def _market_symbol(symbol: str) -> str:
     return market_symbol(symbol)
 
-
+if isinstance(provider, YahooProvider):
+    await provider.fetch_chart(...)
 def _fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
     return get_market_data_provider().fetch_chart(symbol, interval=interval, period=period)
 
