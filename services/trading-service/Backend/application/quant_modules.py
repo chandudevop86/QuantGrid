@@ -588,109 +588,101 @@ def _live_nse_fallback_payload(
             )
 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = [row for row in (payload.get("rows") or []), 
-        if isinstance(row, dict)] ,
-            atm = payload.get("atm_strike")
+    rows: list[dict[str, Any]] = [
+        row
+        for row in (payload.get("rows") or [])
+        if isinstance(row, dict)
+    ]
 
-        support = None
-        resistance = None
+    atm = payload.get("atm_strike")
 
-        below = [
-                row for row in rows
-                if atm is not None and float(row.get("strike") or 0) < float(atm)
-            ]
+    support = None
+    resistance = None
 
-        above = [
-                row for row in rows
-                if atm is not None and float(row.get("strike") or 0) > float(atm)
-            ]
+    below = [
+        row
+        for row in rows
+        if atm is not None
+        and float(row.get("strike") or 0) < float(atm)
+    ]
 
-        if below:
-                support = max(
-                    below,
-                    key=lambda row: float(row.get("pe", {}).get("oi") or 0),
-                ).get("strike")
+    above = [
+        row
+        for row in rows
+        if atm is not None
+        and float(row.get("strike") or 0) > float(atm)
+    ]
 
-        if above:
-                resistance = max(
-                    above,
-                    key=lambda row: float(row.get("ce", {}).get("oi") or 0),
-                ).get("strike")
+    if below:
+        support = max(
+            below,
+            key=lambda row: float(
+                (row.get("pe") or {}).get("oi") or 0
+            ),
+        ).get("strike")
 
-        raw_pcr = payload.get("pcr")
-        pcr = float(raw_pcr) if raw_pcr is not None else None
+    if above:
+        resistance = max(
+            above,
+            key=lambda row: float(
+                (row.get("ce") or {}).get("oi") or 0
+            ),
+        ).get("strike")
 
-        max_pain = payload.get("max_pain")
+    raw_pcr = payload.get("pcr")
+    pcr = float(raw_pcr) if raw_pcr is not None else None
 
-        raw_spot = (
-                payload.get("underlying_price")
-                if payload.get("underlying_price") is not None
-                else payload.get("spot")
-            )
+    max_pain = payload.get("max_pain")
 
-        spot = float(raw_spot) if raw_spot is not None else None
+    raw_spot = (
+        payload.get("underlying_price")
+        if payload.get("underlying_price") is not None
+        else payload.get("spot")
+    )
 
-            # Use professional signal if already generated
-        signal_data = payload.get("signals")
+    spot = float(raw_spot) if raw_spot is not None else None
 
-        if signal_data is None:
-                signal_data = {
-                    "signal": "NO_TRADE",
-                    "bias": "NEUTRAL",
-                    "confidence": 0,
-                    "score": 0,
-                    "support": support,
-                    "resistance": resistance,
-                    "max_pain": max_pain,
-                    "reasons": ["Signal engine not executed"],
-                }
+    signal_data = payload.get("signals")
 
-        raw_source = str(payload.get("source") or "")
-        source = (
-                "live"
-                if raw_source in {"live", "live-nse-chain"}
-                else raw_source or "option-chain-unavailable"
-            )
+    if not isinstance(signal_data, dict):
+        signal_data = {
+            "signal": "NO_TRADE",
+            "bias": "NEUTRAL",
+            "confidence": 0,
+            "score": 0,
+            "support": support,
+            "resistance": resistance,
+            "max_pain": max_pain,
+            "reasons": ["Signal engine not executed"],
+        }
 
-        return {
-                **payload,
-                "underlying": payload.get("symbol") or payload.get("underlying") or "NIFTY",
-                "spot": spot,
-                "ATM": atm,
-                "atm": atm,
-                "PCR": pcr,
-                "pcr": pcr,
-                "support": support if support is not None else max_pain,
-                "resistance": resistance if resistance is not None else max_pain,
-                "source": source,
-                "legacy_source": raw_source,
-                "signal": signal_data.get("signal", "NO_TRADE"),
-                "signals": signal_data,
-            }
+    raw_source = str(payload.get("source") or "")
 
-                
+    source = (
+        "live"
+        if raw_source in {"live", "live-nse-chain"}
+        else raw_source or "option-chain-unavailable"
+    )
 
-
-
-def option_chain_engine(symbol: str = "NIFTY", *, strikes_each_side: int = 5, step: int = 50) -> dict[str, Any]:
-            return _option_chain_compat_payload({
-                "module": "option_chain_engine",
-                "symbol": symbol.upper(),
-                "underlying_price": None,
-                "atm_strike": None,
-                "expiry": None,
-                "step": max(1, int(step)),
-                "source": "option-chain-unavailable",
-                "synthetic": False,
-                "provider_available": False,
-                "provider_warning": "Synthetic option-chain generation is disabled. Use a live option-chain provider.",
-                "pcr": None,
-                "max_pain": None,
-                "greek_model": None,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-                "rows": [],
-            })
-
+    return {
+        **payload,
+        "underlying": (
+            payload.get("symbol")
+            or payload.get("underlying")
+            or "NIFTY"
+        ),
+        "spot": spot,
+        "ATM": atm,
+        "atm": atm,
+        "PCR": pcr,
+        "pcr": pcr,
+        "support": support if support is not None else max_pain,
+        "resistance": resistance if resistance is not None else max_pain,
+        "source": source,
+        "legacy_source": raw_source,
+        "signal": signal_data.get("signal", "NO_TRADE"),
+        "signals": signal_data,
+    }
 
 def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: int = 50) -> dict[str, Any]:
             now = datetime.now(timezone.utc)
