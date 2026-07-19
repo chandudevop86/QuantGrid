@@ -16,13 +16,13 @@ except Exception:  # pragma: no cover
     PromGauge = None
     PromHistogram = None
 
-if (
-    PromCounter is not None
-    and PromGauge is not None
-    and PromHistogram is not None
+if PROMETHEUS_AVAILABLE: Any (
+            PromCounter is not None
+            and PromGauge is not None
+            and PromHistogram is not None
 ):
-    ...
-    def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
+...
+def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
         try:
             return metric_type(name, documentation, labels)
         except ValueError:
@@ -37,154 +37,154 @@ if (
                     return existing
             raise
 
-    candle_validation_total = _metric(
+candle_validation_total = _metric(
         PromCounter,
         "candle_validation_total",
         "Candle validation decisions.",
         ("status", "valid"),
     )
-    candle_feed_delay_seconds = _metric(
+candle_feed_delay_seconds = _metric(
         PromGauge,
         "candle_feed_delay_seconds",
         "Latest market data feed delay in seconds.",
         ("status",),
     )
-    paper_orders_total = _metric(
+paper_orders_total = _metric(
         PromCounter,
         "paper_orders_total",
         "Paper order submissions.",
         ("status", "strategy", "symbol"),
     )
-    rejected_orders_total = _metric(
+rejected_orders_total = _metric(
         PromCounter,
         "rejected_orders_total",
         "Rejected order attempts.",
         ("reason", "mode"),
     )
-    rejected_signals_total = _metric(
+rejected_signals_total = _metric(
         PromCounter,
         "rejected_signals_total",
         "Rejected signal decisions.",
         ("strategy", "reason"),
     )
-    signal_generation_total = _metric(
+signal_generation_total = _metric(
         PromCounter,
         "signal_generation_total",
         "Signal generation attempts.",
         ("strategy", "status"),
     )
-    strategy_executions_total = _metric(
+strategy_executions_total = _metric(
         PromCounter,
         "strategy_executions_total",
         "Strategy execution attempts.",
         ("strategy", "status"),
     )
-    strategy_signals_total = _metric(
+strategy_signals_total = _metric(
         PromCounter,
         "strategy_signals_total",
         "Signals emitted by strategy executions.",
         ("strategy",),
     )
-    failed_strategy_executions_total = _metric(
+failed_strategy_executions_total = _metric(
         PromCounter,
         "failed_strategy_executions_total",
         "Failed strategy executions.",
         ("strategy", "error_type"),
     )
-    option_chain_fetch_failures_total = _metric(
+option_chain_fetch_failures_total = _metric(
         PromCounter,
         "option_chain_fetch_failures_total",
         "Option-chain provider fetch failures.",
         ("provider", "reason"),
     )
-    option_chain_failures_total = _metric(
+option_chain_failures_total = _metric(
         PromCounter,
         "option_chain_failures_total",
         "Option-chain failures.",
         ("provider", "reason"),
     )
-    websocket_disconnect_total = _metric(
+websocket_disconnect_total = _metric(
         PromCounter,
         "websocket_disconnect_total",
         "WebSocket disconnects.",
         ("reason",),
     )
-    market_data_age_seconds = _metric(
+market_data_age_seconds = _metric(
         PromGauge,
         "market_data_age_seconds",
         "Latest market data age in seconds.",
         ("symbol", "interval"),
     )
-    api_request_latency_seconds = _metric(
+api_request_latency_seconds = _metric(
         PromHistogram,
         "api_request_latency_seconds",
         "API request latency in seconds.",
         ("method", "path", "status_code"),
     )
-    market_data_ticks_total = _metric(
+market_data_ticks_total = _metric(
         PromCounter,
         "market_data_ticks_total",
         "Market data ticks received.",
         ("provider", "symbol"),
     )
-    market_data_provider_errors_total = _metric(
+market_data_provider_errors_total = _metric(
         PromCounter,
         "market_data_provider_errors_total",
         "Market data provider errors.",
         ("provider", "operation"),
     )
-    market_data_feed_delay_seconds = _metric(
+market_data_feed_delay_seconds = _metric(
         PromGauge,
         "market_data_feed_delay_seconds",
         "Market data feed delay in seconds.",
         ("provider", "symbol"),
     )
-    market_data_cache_hits_total = _metric(
+market_data_cache_hits_total = _metric(
         PromCounter,
         "market_data_cache_hits_total",
         "Market data cache hits.",
         ("provider", "kind"),
     )
-    market_data_cache_misses_total = _metric(
+market_data_cache_misses_total = _metric(
         PromCounter,
         "market_data_cache_misses_total",
         "Market data cache misses.",
         ("provider", "kind"),
     )
-    trading_decisions_total = _metric(
+trading_decisions_total = _metric(
         PromCounter,
         "trading_decisions_total",
         "Dashboard trading decisions.",
         ("recommendation", "data_status", "blocked"),
     )
-    risk_blocks_total = _metric(
+risk_blocks_total = _metric(
         PromCounter,
         "risk_blocks_total",
         "Risk blocks by reason.",
         ("reason",),
     )
-else:
-    candle_validation_total = None
-    candle_feed_delay_seconds = None
-    paper_orders_total = None
-    rejected_orders_total = None
-    signal_generation_total = None
-    api_request_latency_seconds = None
-    market_data_ticks_total = None
-    market_data_provider_errors_total = None
-    market_data_feed_delay_seconds = None
-    market_data_cache_hits_total = None
-    market_data_cache_misses_total = None
-    strategy_executions_total = None
-    strategy_signals_total = None
-    failed_strategy_executions_total = None
-    option_chain_fetch_failures_total = None
-    option_chain_failures_total = None
-    rejected_signals_total = None
-    websocket_disconnect_total = None
-    market_data_age_seconds = None
-    trading_decisions_total = None
-    risk_blocks_total = None
+        else:
+            candle_validation_total = None
+            candle_feed_delay_seconds = None
+            paper_orders_total = None
+            rejected_orders_total = None
+            signal_generation_total = None
+            api_request_latency_seconds = None
+            market_data_ticks_total = None
+            market_data_provider_errors_total = None
+            market_data_feed_delay_seconds = None
+            market_data_cache_hits_total = None
+            market_data_cache_misses_total = None
+            strategy_executions_total = None
+            strategy_signals_total = None
+            failed_strategy_executions_total = None
+            option_chain_fetch_failures_total = None
+            option_chain_failures_total = None
+            rejected_signals_total = None
+            websocket_disconnect_total = None
+            market_data_age_seconds = None
+            trading_decisions_total = None
+            risk_blocks_total = None
 
 
 def observe_candle_validation(status: str, valid: bool, delay_seconds: int | None) -> None:
