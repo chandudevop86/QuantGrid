@@ -130,7 +130,7 @@ def _user_response(user: User) -> UserResponse:
     return UserResponse(id=user.id, username=user.username, role=user.role)
 
 
-def _rate_key(*parts: str | None) -> str:
+def _rate_key(*parts: object | None) -> str:
     return ":".join(str(part or "-").lower() for part in parts)
 
 
