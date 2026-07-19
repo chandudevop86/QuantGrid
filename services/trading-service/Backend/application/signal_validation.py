@@ -111,9 +111,14 @@ def _valid_indicator_metadata(metadata: dict[str, Any]) -> bool:
 
 def _indicator_value(metadata: dict[str, Any], key: str) -> float | None:
     value = metadata.get(key)
-    if not _finite_number(value):
+
+    if value is None:
         return None
-    return float(value)
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _trend_direction(metadata: dict[str, Any]) -> str | None:
