@@ -1,78 +1,93 @@
 """
-Backend/application/security_master.py
+Backend/tools/update_dhan_security_master.py
 
-Dhan Security Master Resolver
-
-Responsibilities
-----------------
-* Load Dhan Security Master CSV
-* Resolve Symbol -> Security ID
-* Return exchange segment
-* Return instrument
-* Return lot size
+Dhan Security Master Downloader & Utility Script
 """
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
-from typing import Optional
+import requests
 
-import pandas as pd
+# Production endpoints for Dhan Scrip Master files
+SECURITY_MASTER_URL = os.getenv(
+    "DHAN_SECURITY_MASTER_URL", 
+    "https://dhan.co"
+)
+DEFAULT_DESTINATION = Path("data/dhan_security_master.csv")
 
 
-class SecurityMaster:
+class Color:
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
+    BOLD = "\033[1m"
+    END = "\033[0m"
 
-    def __init__(self, csv_path: str | Path):
-        self.csv_path = Path(csv_path)
-        self.df = pd.read_csv(
-            self.csv_path,
-            dtype=str,
-            low_memory=False,
-        )
-        self.df.columns = [c.strip() for c in self.df.columns]
 
-    def resolve(
-        self,
-        symbol: str,
-        expiry: Optional[str] = None,
-        strike: Optional[int] = None,
-        option_type: Optional[str] = None,
-    ) -> dict:
-        symbol = symbol.upper()
-        df = self.df.copy()
-        df["SEM_TRADING_SYMBOL"] = (df["SEM_TRADING_SYMBOL"].fillna("").astype(str).str.upper())
+def success(msg: str) -> None:
+    print(f"{Color.GREEN}✔ {msg}{Color.END}")
 
-        # Prefer exact match
-        exact = df[df["SEM_TRADING_SYMBOL"] == symbol]
 
-        if not exact.empty:
-            df = exact
-        else:
-            df = df[df["SEM_TRADING_SYMBOL"].str.startswith(symbol)]
+def info(msg: str) -> None:
+    print(f"{Color.CYAN}➜ {msg}{Color.END}")
 
-        if expiry:
-            df = df[df["SEM_EXPIRY_DATE"] == expiry]
 
-        if strike:
-            df = df[df["SEM_STRIKE_PRICE"] == strike]
+def warn(msg: str) -> None:
+    print(f"{Color.YELLOW}⚠ {msg}{Color.END}")
 
-        if option_type:
-            df = df[
-                df["SEM_OPTION_TYPE"]
-                .str.upper()
-                .eq(option_type.upper())
-            ]
 
-        if df.empty:
-            raise ValueError(f"Security not found: {symbol}")
+def error(msg: str) -> None:
+    print(f"{Color.RED}✖ {msg}{Color.END}")
 
-        row = df.iloc[0]
 
-        return {
-            "security_id": str(row["SEM_SMST_SECURITY_ID"]),
-            "exchange_segment": row["SEM_EXM_EXCH_ID"],
-            "instrument": row["SEM_INSTRUMENT_NAME"],
-            "symbol": row["SEM_TRADING_SYMBOL"],
-            "lot_size": int(float(row["SEM_LOT_UNITS"]or 0))
-                            
-        }
+def download_security_master(url: str, destination: Path) -> None:
+    """
+    Downloads the Dhan Security Master CSV using secure streaming chunks.
+    Fixes B310: Replaces vulnerable urlretrieve with explicit requests protocol validation.
+    """
+    print()
+    print(Color.BOLD + "=" * 70)
+    print("QuantGrid Dhan Security Master Synchronizer")
+    print("=" * 70 + Color.END)
+    
+    info(f"Target URL  : {url}")
+    info(f"Destination : {destination}")
+
+    # Ensure parent folder data/ hierarchy exists atomically
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Fixed B310: requests verifies network protocols directly (avoids file:// vulnerabilities)
+        # Using stream=True prevents storing multi-megabyte files entirely in system RAM
+        with requests.get(url, stream=True, timeout=60) as response:
+            response.raise_for_status()
+            
+            info("Downloading file payload in chunks...")
+            with open(destination, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        
+        success("Security master synced and updated successfully.")
+
+    except requests.exceptions.RequestException as e:
+        error(f"Network error occurred while fetching security master: {e}")
+        sys.exit(1)
+    except IOError as e:
+        error(f"File system operational block error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        error(f"An unexpected utility error occurred: {e}")
+        sys.exit(1)
+
+
+def main() -> None:
+    download_security_master(SECURITY_MASTER_URL, DEFAULT_DESTINATION)
+
+
+if __name__ == "__main__":
+    main()
