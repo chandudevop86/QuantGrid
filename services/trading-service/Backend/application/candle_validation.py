@@ -341,8 +341,9 @@ def validate_live_candle(
             )
             observe_candle_validation(result.market_status, result.valid, result.delay_seconds)
             return result
+        close_value = latest_candle.get("close")
         try:
-            latest_close = float(latest_candle.get("close"))
+            latest_close = float(close_value) if close_value is not None else 0.0
         except (TypeError, ValueError):
             latest_close = 0.0
         if latest_close <= 0:
