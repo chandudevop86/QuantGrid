@@ -2,31 +2,29 @@ from __future__ import annotations
 
 from typing import Any
 
-# 1. Fixed NameError: Initialize the flag before evaluation
-PROMETHEUS_AVAILABLE = True
-
+# Check if prometheus_client is available without overwriting class names
 try:
     from prometheus_client import (
-        Counter as PromCounter,
-        Gauge as PromGauge,
-        Histogram as PromHistogram,
-        REGISTRY as PROM_REGISTRY,
+        Counter,
+        Gauge,
+        Histogram,
+        REGISTRY,
     )
-except Exception:  # pragma: no cover
-    PROM_REGISTRY = None
-    PromCounter = None
-    PromGauge = None
-    PromHistogram = None
+
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 
 def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
+    # If Prometheus isn't available, this helper won't be called, 
+    # but we keep the logic safe just in case.
     try:
         return metric_type(name, documentation, labels)
     except ValueError:
-        names_to_collectors = getattr(PROM_REGISTRY, "_names_to_collectors", {}) if PROM_REGISTRY is not None else {}
+        names_to_collectors = getattr(REGISTRY, "_names_to_collectors", {}) if REGISTRY is not None else {}
         lookup_names = [name]
-        if metric_type is PromCounter and name.endswith("_total"):
+        if metric_type is Counter and name.endswith("_total"):
             base_name = name.removesuffix("_total")
             lookup_names.extend([base_name, f"{base_name}_total", f"{base_name}_created"])
         for lookup_name in lookup_names:
@@ -36,130 +34,130 @@ def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, 
         raise
 
 
-# 2. Fixed Syntax and Indentation: Using standard conditional flow control
-if PROMETHEUS_AVAILABLE and PromCounter is not None and PromGauge is not None and PromHistogram is not None:
+# Safely initialize globals as either the running metric object or None
+if PROMETHEUS_AVAILABLE:
     candle_validation_total = _metric(
-        PromCounter,
+        Counter,
         "candle_validation_total",
         "Candle validation decisions.",
         ("status", "valid"),
     )
     candle_feed_delay_seconds = _metric(
-        PromGauge,
+        Gauge,
         "candle_feed_delay_seconds",
         "Latest market data feed delay in seconds.",
         ("status",),
     )
     paper_orders_total = _metric(
-        PromCounter,
+        Counter,
         "paper_orders_total",
         "Paper order submissions.",
         ("status", "strategy", "symbol"),
     )
     rejected_orders_total = _metric(
-        PromCounter,
+        Counter,
         "rejected_orders_total",
         "Rejected order attempts.",
         ("reason", "mode"),
     )
     rejected_signals_total = _metric(
-        PromCounter,
+        Counter,
         "rejected_signals_total",
         "Rejected signal decisions.",
         ("strategy", "reason"),
     )
     signal_generation_total = _metric(
-        PromCounter,
+        Counter,
         "signal_generation_total",
         "Signal generation attempts.",
         ("strategy", "status"),
     )
     strategy_executions_total = _metric(
-        PromCounter,
+        Counter,
         "strategy_executions_total",
         "Strategy execution attempts.",
         ("strategy", "status"),
     )
     strategy_signals_total = _metric(
-        PromCounter,
+        Counter,
         "strategy_signals_total",
         "Signals emitted by strategy executions.",
         ("strategy",),
     )
     failed_strategy_executions_total = _metric(
-        PromCounter,
+        Counter,
         "failed_strategy_executions_total",
         "Failed strategy executions.",
         ("strategy", "error_type"),
     )
     option_chain_fetch_failures_total = _metric(
-        PromCounter,
+        Counter,
         "option_chain_fetch_failures_total",
         "Option-chain provider fetch failures.",
         ("provider", "reason"),
     )
     option_chain_failures_total = _metric(
-        PromCounter,
+        Counter,
         "option_chain_failures_total",
         "Option-chain failures.",
         ("provider", "reason"),
     )
     websocket_disconnect_total = _metric(
-        PromCounter,
+        Counter,
         "websocket_disconnect_total",
         "WebSocket disconnects.",
         ("reason",),
     )
     market_data_age_seconds = _metric(
-        PromGauge,
+        Gauge,
         "market_data_age_seconds",
         "Latest market data age in seconds.",
         ("symbol", "interval"),
     )
     api_request_latency_seconds = _metric(
-        PromHistogram,
+        Histogram,
         "api_request_latency_seconds",
         "API request latency in seconds.",
         ("method", "path", "status_code"),
     )
     market_data_ticks_total = _metric(
-        PromCounter,
+        Counter,
         "market_data_ticks_total",
         "Market data ticks received.",
         ("provider", "symbol"),
     )
     market_data_provider_errors_total = _metric(
-        PromCounter,
+        Counter,
         "market_data_provider_errors_total",
         "Market data provider errors.",
         ("provider", "operation"),
     )
     market_data_feed_delay_seconds = _metric(
-        PromGauge,
+        Gauge,
         "market_data_feed_delay_seconds",
         "Market data feed delay in seconds.",
         ("provider", "symbol"),
     )
     market_data_cache_hits_total = _metric(
-        PromCounter,
+        Counter,
         "market_data_cache_hits_total",
         "Market data cache hits.",
         ("provider", "kind"),
     )
     market_data_cache_misses_total = _metric(
-        PromCounter,
+        Counter,
         "market_data_cache_misses_total",
         "Market data cache misses.",
         ("provider", "kind"),
     )
     trading_decisions_total = _metric(
-        PromCounter,
+        Counter,
         "trading_decisions_total",
         "Dashboard trading decisions.",
         ("recommendation", "data_status", "blocked"),
     )
     risk_blocks_total = _metric(
-        PromCounter,
+        Counter,
         "risk_blocks_total",
         "Risk blocks by reason.",
         ("reason",),
@@ -229,7 +227,6 @@ def observe_strategy_execution(
         failed_strategy_executions_total.labels(strategy=strategy_name, error_type=error_type or "unknown").inc()
 
 
-# 3. Fixed typos: Completed incomplete trailing function wrapper block
 def observe_option_chain_failure(provider: str, reason: str | None = None) -> None:
     if option_chain_fetch_failures_total is not None:
         option_chain_fetch_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
