@@ -1,4 +1,3 @@
-     
 from __future__ import annotations
 from time import sleep
 import json
@@ -86,16 +85,26 @@ def _latest_underlying_price(symbol: str, fallback: float | None = None) -> floa
 
 
 def _max_pain(rows: list[dict[str, Any]]) -> int | None:
-            if not rows:
-                return None
-            return min(
-                rows,
-                key=lambda candidate: sum(
-                    max(float(row["strike"]) - float(candidate["strike"]), 0.0) * float(row["ce"].get("oi") or 0)
-                    + max(float(candidate["strike"]) - float(row["strike"]), 0.0) * float(row["pe"].get("oi") or 0)
-                    for row in rows
-                ),
-            )["strike"]
+    if not rows:
+        return None
+
+    def pain(candidate: dict[str, Any]) -> float:
+        candidate_strike = float(candidate.get("strike") or 0)
+
+        return sum(
+            max(float(row.get("strike") or 0) - candidate_strike, 0.0)
+            * float((row.get("ce") or {}).get("oi") or 0)
+            +
+            max(candidate_strike - float(row.get("strike") or 0), 0.0)
+            * float((row.get("pe") or {}).get("oi") or 0)
+            for row in rows
+        )
+
+    result = min(rows, key=pain)
+
+    strike = result.get("strike")
+
+    return int(strike) if strike is not None else None
 def _professional_option_signal(
             rows: list[dict[str, Any]],
             *,
@@ -476,21 +485,26 @@ def live_nse_option_chain(
                     }
                 )
 
-    rows = sorted(rows, key=lambda row: row["strike"])
+    rows = sorted(rows,key=lambda row: int(row.get("strike") or 0))
 
     if not rows:
-                    exc = RuntimeError("NSE returned empty option chain")
+        empty_chain_error = RuntimeError(
+        "NSE returned empty option chain"
+        )
 
-                    observe_option_chain_failure(
-                        "nse",
-                        exc.__class__.__name__,
-                )
+        observe_option_chain_failure(
+            "nse",
+            empty_chain_error.__class__.__name__,
+    )
 
-                    return _live_nse_fallback_payload(option_chain_engine(symbol,
-                                        strikes_each_side=strikes_each_side,
-                                        step=step,),exc,
-                ) 
-
+        return _live_nse_fallback_payload(
+            option_chain_engine(
+            symbol,
+            strikes_each_side=strikes_each_side,
+            step=step,
+        ),
+        empty_chain_error,
+    )
     total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
     total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
     total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
@@ -501,9 +515,9 @@ def live_nse_option_chain(
                     else None
             )
     max_pain = _max_pain(rows)
-            # -------------------------------------------------
-            # Build professional signal
-            # -------------------------------------------------
+# -------------------------------------------------
+#        Build professional signal
+# -------------------------------------------------
     signal_data = _professional_option_signal(
                         rows,
                         spot=underlying,
@@ -511,10 +525,9 @@ def live_nse_option_chain(
                         pcr=pcr,
                         max_pain=max_pain,
             )
-
-            # -------------------------------------------------
-            # SUCCESS PAYLOAD
-            # -------------------------------------------------
+# -------------------------------------------------
+#           SUCCESS PAYLOAD
+# -------------------------------------------------
     return _option_chain_compat_payload(
                 {
                     "module": "live_nse_option_chain",
