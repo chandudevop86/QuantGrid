@@ -5,6 +5,13 @@ __pycache__/
 
 # C extensions
 *.so
+.env
+*.json
+*.lock
+data/
+Backend/data/
+__pycache__/
+*.pyc
 
 # Distribution / packaging
 .Python
