@@ -157,7 +157,8 @@ def alert_job_finished(job: dict) -> None:
 
 def alert_execution_event(result: dict) -> None:
     status = str(result.get("status") or "unknown")
-    order = result.get("order") if isinstance(result.get("order"), dict) else {}
+    raw_order = result.get("order")
+    order: dict[str, Any] = raw_order if isinstance(raw_order, dict) else {}
     send_alert(
         f"QuantGrid execution {status}",
         "\n".join(
