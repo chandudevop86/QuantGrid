@@ -43,7 +43,6 @@ from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.volume_analysis import analyze_volume
 from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
-# Backend/domain/market_data/provider.py
 from Backend.infrastructure.market_data.yahoo_provider import YahooProvider
 
 router = APIRouter(tags=["market"])
@@ -1155,7 +1154,6 @@ def get_candles(
             symbol=symbol,
             market_symbol=market_symbol,
             interval=interval,
-            source=source,
             candles=candles,
         )
         return payload
