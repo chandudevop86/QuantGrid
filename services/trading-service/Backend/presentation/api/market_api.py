@@ -974,7 +974,7 @@ def get_volume_analysis(
     limit: int = 100,
     _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
 ):
-    candles_payload = market_service.get_candles(symbol, interval=timeframe, period=period, limit=limit, _role=_role)
+    candles_payload = market_service.get_candles(symbol, interval=timeframe, period=period, limit=limit)
     result = analyze_volume(
         symbol=symbol,
         timeframe=timeframe,
@@ -1133,7 +1133,9 @@ def get_candles(
             "validation": validation.model_dump(),
             "data_quality": data_quality.model_dump(),
         }
+        
         store_candles(
+            source = str(source or "unknown")
             symbol=symbol,
             market_symbol=market_symbol,
             interval=interval,
