@@ -872,7 +872,7 @@ def get_option_chain(
 
     rows, data_quality = validate_option_chain_rows(rows, source=source, expiry=expiry)
     data_quality_payload = data_quality.model_dump()
-    fallback_message = warning if not provider_available else None
+    fallback_message =  none: any  if provider_available else warning
     if not provider_available:
         data_quality_payload = {
             **data_quality_payload,
@@ -1103,8 +1103,8 @@ def get_candles(
             mode="live" if settings.live_trading_enabled else "paper",
         )
         candles = list(service_payload.get("candles", []))
-        source = service_payload.get("provider_name") or service_payload.get("provider")
-        _ensure_live_provider_allowed(str(source))
+        source: str  = str(service_payload.get("provider_name") ) if service_payload.get("provider_name") is not None else str(service_payload.get("provider") or "unknown")
+        _ensure_live_provider_allowed((source))
         market_symbol = _market_symbol(symbol)
         provider_fetched_at = service_payload.get("latest_fetch_at") or service_payload.get("fetched_at") or datetime.now(timezone.utc).isoformat()
         validation = validate_live_candle(
@@ -1116,7 +1116,7 @@ def get_candles(
         )
         if settings.live_trading_enabled and not validation.valid_for_execution:
             raise RuntimeError(f"Live market data failed validation: {validation.market_status}")
-        candles, data_quality = validate_candles(candles, source=str(source))
+        candles, data_quality = validate_candles(candles, source=(source))
 
         payload = {
             "symbol": symbol.upper(),
