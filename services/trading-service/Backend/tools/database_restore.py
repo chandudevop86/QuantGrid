@@ -22,19 +22,19 @@ class Color:
     END = "\033[0m"
 
 
-def success(msg):
+def success(msg: str) -> None:
     print(f"{Color.GREEN}✔ {msg}{Color.END}")
 
 
-def info(msg):
+def info(msg: str) -> None:
     print(f"{Color.CYAN}➜ {msg}{Color.END}")
 
 
-def warn(msg):
+def warn(msg: str) -> None:
     print(f"{Color.YELLOW}⚠ {msg}{Color.END}")
 
 
-def error(msg):
+def error(msg: str) -> None:
     print(f"{Color.RED}✖ {msg}{Color.END}")
 
 
@@ -42,7 +42,9 @@ def extract_sql(path: Path) -> Path:
     if path.suffix != ".gz":
         return path
 
-    tmp = Path(tempfile.mktemp(suffix=".sql"))
+    # Fixed B306: Use NamedTemporaryFile to allocate the filename securely
+    with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp_file:
+        tmp = Path(tmp_file.name)
 
     with gzip.open(path, "rb") as fin:
         with open(tmp, "wb") as fout:
@@ -51,10 +53,8 @@ def extract_sql(path: Path) -> Path:
     return tmp
 
 
-def restore_database(sql_file: Path):
-
+def restore_database(sql_file: Path) -> None:
     settings = validate_security_config()
-
     url = urlparse(settings.database_url)
 
     env = os.environ.copy()
@@ -65,11 +65,11 @@ def restore_database(sql_file: Path):
     cmd = [
         "psql",
         "-h",
-        url.hostname,
+        url.hostname or "localhost",
         "-p",
         str(url.port or 5432),
         "-U",
-        url.username,
+        url.username or "postgres",
         "-d",
         db,
         "-f",
@@ -79,20 +79,16 @@ def restore_database(sql_file: Path):
     subprocess.run(cmd, env=env, check=True)
 
 
-def main():
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("backup")
-
+def main() -> None:
+    parser = argparse.ArgumentParser(description="QuantGrid Database Restore Utility")
+    parser.add_argument("backup", help="Path to the backup file (.sql or .sql.gz)")
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Skip confirmation",
+        help="Skip confirmation prompt",
     )
 
     args = parser.parse_args()
-
     backup = Path(args.backup)
 
     if not backup.exists():
@@ -107,34 +103,26 @@ def main():
     info(f"Backup : {backup}")
 
     if not args.force:
-
-        confirm = input(
-            "\nThis will overwrite existing data.\nContinue? (yes/no): "
-        )
-
-        if confirm.lower() != "yes":
+        confirm = input("\nThis will overwrite existing data.\nContinue? (yes/no): ")
+        if confirm.strip().lower() != "yes":
             warn("Restore cancelled.")
             return
 
-    sql = extract_sql(backup)
-
+    sql = backup
     try:
-
+        sql = extract_sql(backup)
         restore_database(sql)
-
         success("Database restored successfully.")
 
     except subprocess.CalledProcessError as e:
-
         error("Restore failed.")
         print(e)
-
+    except Exception as e:
+        error(f"An unexpected error occurred: {e}")
     finally:
-
         if sql != backup and sql.exists():
             sql.unlink()
 
 
 if __name__ == "__main__":
     main()
-    
