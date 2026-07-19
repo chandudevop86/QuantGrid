@@ -250,14 +250,18 @@ def observe_market_data_error(provider: str, operation: str) -> None:
         ).inc()
 
 
-def observe_market_data_delay(provider: str, symbol: str, delay_seconds: float) -> None:
-    """Record current feed delay."""
-    if market_data_feed_delay_seconds is not None:
-        market_data_feed_delay_seconds.labels(
-            provider=provider or "unknown",
-            symbol=(symbol or "unknown").upper(),
-        ).set(delay_seconds)
+def observe_market_data_delay(
+    provider: str,
+    symbol: str,
+    delay_seconds: float | int | None,
+) -> None:
+    if market_data_feed_delay_seconds is None or delay_seconds is None:
+        return
 
+    market_data_feed_delay_seconds.labels(
+        provider=provider or "unknown",
+        symbol=(symbol or "unknown").upper(),
+    ).set(float(delay_seconds))
 
 def observe_market_data_cache(provider: str, kind: str, hit: bool) -> None:
     """Record cache hit/miss."""
