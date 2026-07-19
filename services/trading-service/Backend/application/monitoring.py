@@ -11,10 +11,10 @@ try:
         Histogram as PromHistogram,
     )
 except Exception:  # pragma: no cover
-    PROM_REGISTRY: Any = None
-    PromCounter: Any = None
-    PromGauge: Any = None
-    PromHistogram: Any = None
+    PROM_REGISTRY = None
+    PromCounter = None
+    PromGauge = None
+    PromHistogram = None
 
 if (
     PromCounter is not None
