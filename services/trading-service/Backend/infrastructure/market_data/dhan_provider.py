@@ -237,7 +237,7 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
                     "high": _to_float(_safe_index(highs, index)),
                     "low": _to_float(_safe_index(lows, index)),
                     "close": _to_float(_safe_index(closes, index)),
-                    "volume": int(_safe_index(volumes, index) or 0),,
+                    "volume": int(_safe_index(volumes, index) or 0),
                 }
             )
         return rows
