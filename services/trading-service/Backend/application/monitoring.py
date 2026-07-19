@@ -116,7 +116,7 @@ if (
         ("symbol", "interval"),
     )
     api_request_latency_seconds = _metric(
-        Histogram,
+        PromHistogram,
         "api_request_latency_seconds",
         "API request latency in seconds.",
         ("method", "path", "status_code"),
