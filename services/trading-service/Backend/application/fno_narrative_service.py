@@ -59,7 +59,7 @@ def build_narrative_input(symbol: str = "NIFTY", *, overrides: dict[str, Any] | 
     }
     if overrides:
         base.update(overrides)
-    return NarrativeInput(**base)
+    return NarrativeInput.model_validate(base)
 
 
 def _spot_payload(symbol: str) -> dict[str, Any]:
