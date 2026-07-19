@@ -189,6 +189,7 @@ async def reconcile_broker_state(
             {"broker_position": broker_position_item},
         )
     for position in open_positions:
+        
         broker_order_id = str(position.get("broker_order_id") or "")
 
         matched_broker_position: dict[str, Any] | None = _matching_broker_position(
@@ -209,23 +210,23 @@ async def reconcile_broker_state(
 
         if (
             position_broker_order
-            and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
+            and _normal_status(position_broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
         ):
             continue
         
         
-    _record_fix(
-        summary,
-        db,
-        actor,
-        request,
-        "closed_position_still_marked_open",
-        broker_order_id or position.get("symbol") or "-",
-        {
-            "local_position": position,
-            "broker_position": matched_broker_position,
-        },
-    )
+        _record_fix(
+            summary,
+            db,
+            actor,
+            request,
+            "closed_position_still_marked_open",
+            broker_order_id or position.get("symbol") or "-",
+                {
+                    "local_position": position,
+                    "broker_position": matched_broker_position,
+                },
+            )
 
     close_open_position(
         int(position["id"]),
