@@ -19,17 +19,14 @@ INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
 logger = logging.getLogger(__name__)
 def _to_float(value: Any, default: float = 0.0) -> float:
     try:
-        if value in (None, ""):
-            return default
-        return float(value)
+        return default if value in (None, "") else float(value)
     except (TypeError, ValueError):
         return default
 
 
 def _safe_index(values: list[Any], index: int) -> Any:
-    if index < len(values):
-        return values[index]
-    return None
+        
+        return values[index] if index < len(values) else None
 
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
