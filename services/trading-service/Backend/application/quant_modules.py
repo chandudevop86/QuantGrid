@@ -31,56 +31,56 @@ def _norm_pdf(value: float) -> float:
 
 
 def _black_scholes_greeks(
-            *,
-            option_type: str,
-            spot: float,
-            strike: float,
-            time_to_expiry: float,
-            volatility: float,
-            rate: float,
-            dividend: float = 0.0
-            ) -> dict[str, float]:
-            spot = max(spot, 1e-9)
-            strike = max(strike, 1e-9)
+    *,
+    option_type: str,
+    spot: float,
+    strike: float,
+    time_to_expiry: float,
+    volatility: float,
+    rate: float,
+    dividend: float = 0.0
+    ) -> dict[str, float]:
+    spot = max(spot, 1e-9)
+    strike = max(strike, 1e-9)
 
-            sigma_sqrt_t = max(volatility * sqrt(max(time_to_expiry, 1e-6)), 1e-9)
+    sigma_sqrt_t = max(volatility * sqrt(max(time_to_expiry, 1e-6)), 1e-9)
 
-            d1 = (
-                log(spot / strike)
-                + (rate - dividend + 0.5 * volatility ** 2)
-                * time_to_expiry
-                ) / sigma_sqrt_t
-            d2 = d1 - sigma_sqrt_t
-            side = option_type.lower()
-            delta = _norm_cdf(d1) if side == "call" else _norm_cdf(d1) - 1.0
-            gamma = _norm_pdf(d1) / max(spot * sigma_sqrt_t, 1e-9)
-            theta_call = (-(spot * _norm_pdf(d1) * volatility) / (2 * sqrt(max(time_to_expiry, 1e-6))) - rate * strike * exp(-rate * time_to_expiry) * _norm_cdf(d2)) / 365
-            theta_put = (-(spot * _norm_pdf(d1) * volatility) / (2 * sqrt(max(time_to_expiry, 1e-6))) + rate * strike * exp(-rate * time_to_expiry) * _norm_cdf(-d2)) / 365
-            vega = spot * _norm_pdf(d1) * sqrt(max(time_to_expiry, 1e-6)) / 100
-            return {
-                "delta": round(delta, 4),
-                "gamma": round(gamma, 6),
-                "theta": round(theta_call if side == "call" else theta_put, 4),
-                "vega": round(vega, 4),
-            }
+    d1 = (
+        log(spot / strike)
+        + (rate - dividend + 0.5 * volatility ** 2)
+        * time_to_expiry
+        ) / sigma_sqrt_t
+    d2 = d1 - sigma_sqrt_t
+    side = option_type.lower()
+    delta = _norm_cdf(d1) if side == "call" else _norm_cdf(d1) - 1.0
+    gamma = _norm_pdf(d1) / max(spot * sigma_sqrt_t, 1e-9)
+    theta_call = (-(spot * _norm_pdf(d1) * volatility) / (2 * sqrt(max(time_to_expiry, 1e-6))) - rate * strike * exp(-rate * time_to_expiry) * _norm_cdf(d2)) / 365
+    theta_put = (-(spot * _norm_pdf(d1) * volatility) / (2 * sqrt(max(time_to_expiry, 1e-6))) + rate * strike * exp(-rate * time_to_expiry) * _norm_cdf(-d2)) / 365
+    vega = spot * _norm_pdf(d1) * sqrt(max(time_to_expiry, 1e-6)) / 100
+    return {
+        "delta": round(delta, 4),
+        "gamma": round(gamma, 6),
+        "theta": round(theta_call if side == "call" else theta_put, 4),
+        "vega": round(vega, 4),
+    }
 
 
 def _round_to_step(value: float, step: int) -> int:
-            return int(round(value / step) * step)
+     return int(round(value / step) * step)
 
 
 def _latest_underlying_price(symbol: str, fallback: float | None = None) -> float:
-            tick = latest_price_tick(symbol)
-            if tick and tick.get("price") is not None:
-                return float(tick["price"])
-            candles = latest_candles(symbol, "1m", 1) or latest_candles(symbol, "5m", 1)
-            if candles:
-                close = candles[-1].get("close")
-                if close is not None:
-                    return float(close)
-            if fallback is not None:
-                return fallback
-            raise RuntimeError(f"No stored provider price is available for {symbol.upper()}.")
+    tick = latest_price_tick(symbol)
+    if tick and tick.get("price") is not None:
+        return float(tick["price"])
+    candles = latest_candles(symbol, "1m", 1) or latest_candles(symbol, "5m", 1)
+    if candles:
+        close = candles[-1].get("close")
+        if close is not None:
+            return float(close)
+    if fallback is not None:
+        return fallback
+    raise RuntimeError(f"No stored provider price is available for {symbol.upper()}.")
 
 
 
@@ -112,110 +112,110 @@ def _max_pain(rows: list[dict[str, Any]]) -> int | None:
         except ValueError:
                 return None
 
-        return None
+    return None
 
-    def _professional_option_signal(
-            rows: list[dict[str, Any]],
-            *,
-            spot: float,
-            atm: int,
-            pcr: float | None,
-            max_pain: int | None,
+def _professional_option_signal(
+    rows: list[dict[str, Any]],
+        *,
+        spot: float,
+        atm: int,
+        pcr: float | None,
+        max_pain: int | None,
 
-            ) -> dict[str, Any]:
-            """
-            Production option-chain signal engine.
+        ) -> dict[str, Any]:
+        """
+        Production option-chain signal engine.
 
-            Returns
-            -------
-            {
-                signal,
-                confidence,
-                bias,
-                reasons,
-                support,
-                resistance
+        Returns
+        -------
+        {
+            signal,
+            confidence,
+            bias,
+            reasons,
+            support,
+            resistance
+        }
+        """
+
+        if not rows:
+            return {
+                "signal": "NO_TRADE",
+                "bias": "NEUTRAL",
+                "confidence": 0,
+                "support": None,
+                "resistance": None,
+                "reasons": ["Empty option chain"],
             }
-            """
 
-            if not rows:
-                return {
-                    "signal": "NO_TRADE",
-                    "bias": "NEUTRAL",
-                    "confidence": 0,
-                    "support": None,
-                    "resistance": None,
-                    "reasons": ["Empty option chain"],
-                }
+        below = [r for r in rows if r["strike"] <= atm]
+        above = [r for r in rows if r["strike"] >= atm]
 
-            below = [r for r in rows if r["strike"] <= atm]
-            above = [r for r in rows if r["strike"] >= atm]
+        support = None
+        resistance = None
 
-            support = None
-            resistance = None
+        if below:
+            support = max(
+                below,
+                key=lambda x: float(x["pe"].get("oi") or 0)
+            )["strike"]
 
-            if below:
-                support = max(
-                    below,
-                    key=lambda x: float(x["pe"].get("oi") or 0)
-                )["strike"]
+        if above:
+            resistance = max(
+                above,
+                key=lambda x: float(x["ce"].get("oi") or 0)
+            )["strike"]
 
-            if above:
-                resistance = max(
-                    above,
-                    key=lambda x: float(x["ce"].get("oi") or 0)
-                )["strike"]
+        score = 0
+        reasons = []
 
-            score = 0
-            reasons = []
+##########################################
+#             PCR
+##########################################
 
-            ##########################################
-            # PCR
-            ##########################################
+        if pcr is not None:
 
-            if pcr is not None:
+            if pcr >= 1.30:
+                score += 30
+                reasons.append("Bullish PCR")
 
-                if pcr >= 1.30:
-                    score += 30
-                    reasons.append("Bullish PCR")
+            elif pcr >= 1.10:
+                score += 15
+                reasons.append("Positive PCR")
 
-                elif pcr >= 1.10:
-                    score += 15
-                    reasons.append("Positive PCR")
+            elif pcr <= 0.70:
+                score -= 30
+                reasons.append("Bearish PCR")
 
-                elif pcr <= 0.70:
-                    score -= 30
-                    reasons.append("Bearish PCR")
+            elif pcr <= 0.90:
+                score -= 15
+                reasons.append("Weak PCR")
 
-                elif pcr <= 0.90:
-                    score -= 15
-                    reasons.append("Weak PCR")
-
-            ##########################################
+##########################################
             # Max Pain
-            ##########################################
+##########################################
 
-            if max_pain is not None:
+        if max_pain is not None:
 
-                distance = abs(spot - max_pain)
+            distance = abs(spot - max_pain)
 
-                if distance <= 50:
-                    reasons.append("Near Max Pain")
+            if distance <= 50:
+                reasons.append("Near Max Pain")
 
-                if spot > max_pain:
-                    score += 10
-                    reasons.append("Above Max Pain")
+            if spot > max_pain:
+                score += 10
+                reasons.append("Above Max Pain")
 
-                elif spot < max_pain:
-                    score -= 10
-                    reasons.append("Below Max Pain")
-                    
+            elif spot < max_pain:
+                score -= 10
+                reasons.append("Below Max Pain")
                 
-            ##########################################
-            # Support
-            ##########################################
+            
+##########################################
+# Support
+##########################################
 
-            if support:
+        if support:
 
                 if spot > support:
                     score += 15
@@ -225,156 +225,156 @@ def _max_pain(rows: list[dict[str, Any]]) -> int | None:
                     score -= 20
                     reasons.append("Support Broken")
 
-            ##########################################
-            # Resistance
-            ##########################################
+##########################################
+# Resistance
+##########################################
 
-            if resistance:
+        if resistance:
 
-                if spot < resistance:
-                    score += 5
-
-                else:
-                    score -= 20
-                    reasons.append("Resistance Breakout Failure")
-
-            ##########################################
-            # ATM Greeks
-            ##########################################
-
-            atm_row = next(
-                (
-                    r
-                    for r in rows
-                    if r["strike"] == atm
-                ),
-                None,
-            )
-
-            if atm_row:
-
-                call_delta = float(
-                    atm_row["ce"]["greeks"]["delta"]
-                )
-
-                put_delta = abs(
-                    float(
-                        atm_row["pe"]["greeks"]["delta"]
-                    )
-                )
-
-                gamma = float(
-                    atm_row["ce"]["greeks"]["gamma"]
-                )
-
-                iv = float(
-                    atm_row["ce"].get("iv") or 20
-                )
-
-                ##################################
-
-                if gamma > 0.0008:
-                    score += 5
-                    reasons.append("High Gamma")
-
-                ##################################
-
-                if iv < 15:
-                    score += 5
-                    reasons.append("Low IV")
-
-                elif iv > 30:
-                    score -= 5
-                    reasons.append("High IV")
-
-                ##################################
-
-                if call_delta > put_delta:
-                    score += 5
-
-                else:
-                    score -= 5
-
-            ##########################################
-            # Confidence
-            ##########################################
-            MAX_SCORE = 70
-            confidence = min(
-                round(abs(score) / MAX_SCORE * 100),
-            100,
-            )
-
-            ##########################################
-            # Final Signal
-            ##########################################
-
-            if score >= 40:
-
-                signal = "BUY_CE"
-                bias = "BULLISH"
-
-            elif score <= -40:
-
-                signal = "BUY_PE"
-                bias = "BEARISH"
+            if spot < resistance:
+                score += 5
 
             else:
+                score -= 20
+                reasons.append("Resistance Breakout Failure")
 
-                signal = "NO_TRADE"
-                bias = "NEUTRAL"
+##########################################
+# ATM Greeks
+##########################################
 
-            ##########################################
+        atm_row = next(
+            (
+                r
+                for r in rows
+                if r["strike"] == atm
+            ),
+            None,
+        )
 
-            return {
+        if atm_row:
 
-                "signal": signal,
-                
-                "bias": bias,
+            call_delta = float(
+                atm_row["ce"]["greeks"]["delta"]
+            )
 
-                "confidence": confidence,
+            put_delta = abs(
+                float(
+                    atm_row["pe"]["greeks"]["delta"]
+                )
+            )
 
-                "score": score,
+            gamma = float(
+                atm_row["ce"]["greeks"]["gamma"]
+            )
 
-                "support": support,
+            iv = float(
+                atm_row["ce"].get("iv") or 20
+            )
 
-                "resistance": resistance,
-                
-                "max_pain": max_pain,
-                "reasons": reasons,
-            }
+            ##################################
+
+            if gamma > 0.0008:
+                score += 5
+                reasons.append("High Gamma")
+
+            ##################################
+
+            if iv < 15:
+                score += 5
+                reasons.append("Low IV")
+
+            elif iv > 30:
+                score -= 5
+                reasons.append("High IV")
+
+            ##################################
+
+            if call_delta > put_delta:
+                score += 5
+
+            else:
+                score -= 5
+
+        ##########################################
+        # Confidence
+        ##########################################
+        MAX_SCORE = 70
+        confidence = min(
+            round(abs(score) / MAX_SCORE * 100),
+        100,
+        )
+
+        ##########################################
+        # Final Signal
+        ##########################################
+
+        if score >= 40:
+
+            signal = "BUY_CE"
+            bias = "BULLISH"
+
+        elif score <= -40:
+
+            signal = "BUY_PE"
+            bias = "BEARISH"
+
+        else:
+
+            signal = "NO_TRADE"
+            bias = "NEUTRAL"
+
+        ##########################################
+
+        return {
+
+            "signal": signal,
+            
+            "bias": bias,
+
+            "confidence": confidence,
+
+            "score": score,
+
+            "support": support,
+
+            "resistance": resistance,
+            
+            "max_pain": max_pain,
+            "reasons": reasons,
+        }
 
 def _nse_index_symbol(symbol: str) -> str:
-            normalized = symbol.upper().strip()
-            aliases = {
-                "NIFTY": "NIFTY",
-                "NIFTY50": "NIFTY",
-                "BANKNIFTY": "BANKNIFTY",
-                "FINNIFTY": "FINNIFTY",
-                "MIDCPNIFTY": "MIDCPNIFTY",
-            }
-            return aliases.get(normalized, normalized)
+        normalized = symbol.upper().strip()
+        aliases = {
+            "NIFTY": "NIFTY",
+            "NIFTY50": "NIFTY",
+            "BANKNIFTY": "BANKNIFTY",
+            "FINNIFTY": "FINNIFTY",
+            "MIDCPNIFTY": "MIDCPNIFTY",
+        }
+        return aliases.get(normalized, normalized)
 
 def _time_to_expiry(expiry: str | None) -> float:
-            if not expiry:
-                return 1 / 365
+        if not expiry:
+            return 1 / 365
 
-            try:
-                expiry_dt = datetime.strptime(
-                    expiry,
-                    "%d-%b-%Y"
-                ).replace(
-                    tzinfo=timezone.utc
-                )
+        try:
+            expiry_dt = datetime.strptime(
+                expiry,
+                "%d-%b-%Y"
+            ).replace(
+                tzinfo=timezone.utc
+            )
 
-                seconds = (
-                    expiry_dt -
-                    datetime.now(timezone.utc)
-                ).total_seconds()
+            seconds = (
+                expiry_dt -
+                datetime.now(timezone.utc)
+            ).total_seconds()
 
-                return max(seconds / (365 * 24 * 3600), 0.001)
+            return max(seconds / (365 * 24 * 3600), 0.001)
 
-            except Exception:
-                return 1 / 365
+        except Exception:
+            return 1 / 365
 
 def _nse_number(value: Any) -> float | int | None:
             if value in {None, ""}:
@@ -442,187 +442,211 @@ def live_nse_option_chain(
 
     rows = []
 
-    for item in raw_rows:
+for item in raw_rows:
 
-                if expiry and item.get("expiryDate") != expiry:
-                    continue
+    if expiry and item.get("expiryDate") != expiry:
+        continue
 
-                strike = int(item["strikePrice"])
+    strike = int(item["strikePrice"])
 
-                if strike < lower or strike > upper:
-                    continue
+    strike = int(item["strikePrice"])
 
-                ce = item.get("CE") or {}
-                pe = item.get("PE") or {}
-                ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
-                pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
-                rows.append(
-                    {
-                        "strike": strike,
-                        "ce": {
-                            "ltp": _nse_number(ce.get("lastPrice")),
-                            "change": _nse_number(ce.get("change")),
-                            "volume": _nse_number(ce.get("totalTradedVolume")),
-                            "oi": _nse_number(ce.get("openInterest")),
-                            "iv": _nse_number(ce.get("impliedVolatility")),
-                            "oi_change": _nse_number(ce.get("changeinOpenInterest")),
-                            "greeks": _black_scholes_greeks(
-                                option_type="call",
-                                spot=underlying,
-                                strike=strike,
-                                time_to_expiry=tte,
-                                volatility=ce_iv,
-                                rate=0.06,
-                            ),
-                        },
-                        "pe": {
-                            "ltp": _nse_number(pe.get("lastPrice")),
-                            "change": _nse_number(pe.get("change")),
-                            "volume": _nse_number(pe.get("totalTradedVolume")),
-                            "oi": _nse_number(pe.get("openInterest")),
-                            "iv": _nse_number(pe.get("impliedVolatility")),
-                            "oi_change": _nse_number(pe.get("changeinOpenInterest")),
-                            "greeks": _black_scholes_greeks(
-                                option_type="put",
-                                spot=underlying,
-                                strike=strike,
-                                time_to_expiry=tte,
-                                volatility=pe_iv,
-                                rate=0.06,
-                            ),
-                        },
-                    }
-                )
+    if strike < lower or strike > upper:
+            continue
 
-    rows = sorted(rows,key=lambda row: int(row.get("strike") or 0))
+    ce = item.get("CE") or {}
+    pe = item.get("PE") or {}
+    ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
+    pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
+    rows.append(
+            {
+                "strike": strike,
+                "ce": {
+                    "ltp": _nse_number(ce.get("lastPrice")),
+                    "change": _nse_number(ce.get("change")),
+                    "volume": _nse_number(ce.get("totalTradedVolume")),
+                    "oi": _nse_number(ce.get("openInterest")),
+                    "iv": _nse_number(ce.get("impliedVolatility")),
+                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),
+                    "greeks": _black_scholes_greeks(
+                        option_type="call",
+                        spot=underlying,
+                        strike=strike,
+                        time_to_expiry=tte,
+                        volatility=ce_iv,
+                        rate=0.06,
+                    ),
+                },
+                "pe": {
+                    "ltp": _nse_number(pe.get("lastPrice")),
+                    "change": _nse_number(pe.get("change")),
+                    "volume": _nse_number(pe.get("totalTradedVolume")),
+                    "oi": _nse_number(pe.get("openInterest")),
+                    "iv": _nse_number(pe.get("impliedVolatility")),
+                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),
+                    "greeks": _black_scholes_greeks(
+                        option_type="put",
+                        spot=underlying,
+                        strike=strike,
+                        time_to_expiry=tte,
+                        volatility=pe_iv,
+                        rate=0.06,
+                    ),
+                },
+            }
+        )
 
-    if not rows:
+    rows = sorted(
+        rows,
+        key=lambda row: int(row.get("strike") or 0)
+    )
+
+    if not rows
         empty_chain_error = RuntimeError(
-        "NSE returned empty option chain"
+            "NSE returned empty option chain"
         )
 
         observe_option_chain_failure(
             "nse",
             empty_chain_error.__class__.__name__,
-    )
+        )
 
         return _live_nse_fallback_payload(
             option_chain_engine(
-            symbol,
-            strikes_each_side=strikes_each_side,
-            step=step,
-        ),
-        empty_chain_error,
-    )
-    total_call_oi = sum(float(r["ce"].get("oi") or 0) for r in rows)
-    total_put_oi = sum(float(r["pe"].get("oi") or 0)  for r in rows)
-    total_call_oi_change = sum(float(r["ce"].get("oi_change") or 0) for r in rows)
-    total_put_oi_change = sum(float(r["pe"].get("oi_change") or 0) for r in rows)
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+            ),
+            empty_chain_error,
+        )
 
-    pcr = (round(total_put_oi / total_call_oi, 3)
-                    if total_call_oi
-                    else None
-            )
+
+    total_call_oi = sum(
+        float((r.get("ce") or {}).get("oi") or 0)
+        for r in rows
+    )
+
+    total_put_oi = sum(
+        float((r.get("pe") or {}).get("oi") or 0)
+        for r in rows
+    )
+
+    total_call_oi_change = sum(
+        float((r.get("ce") or {}).get("oi_change") or 0)
+        for r in rows
+    )
+
+    total_put_oi_change = sum(
+        float((r.get("pe") or {}).get("oi_change") or 0)
+        for r in rows
+    )
+
+    pcr = (
+        round(total_put_oi / total_call_oi, 3)
+        if total_call_oi
+        else None
+    )
+
     max_pain = _max_pain(rows)
 # -------------------------------------------------
 #        Build professional signal
 # -------------------------------------------------
-    signal_data = _professional_option_signal(
-                        rows,
-                        spot=underlying,
-                        atm=atm,
-                        pcr=pcr,
-                        max_pain=max_pain,
-            )
+signal_data = _professional_option_signal(
+        rows,
+        spot=underlying,
+        atm=atm,
+        pcr=pcr,
+        max_pain=max_pain,
+    )
 # -------------------------------------------------
 #           SUCCESS PAYLOAD
 # -------------------------------------------------
-    return _option_chain_compat_payload(
-                {
-                    "module": "live_nse_option_chain",
-                    "symbol": symbol.upper(),
-                    "underlying_price": underlying,
-                    "atm_strike": atm,
-                    "expiry": expiry,
-                    "step": step,
-                    "rows": rows,
-                    "pcr": pcr,
-                    "max_pain": max_pain,
-                    "total_call_oi": total_call_oi,
-                    "total_put_oi": total_put_oi,
-                    "total_call_oi_change": total_call_oi_change,
-                    "total_put_oi_change": total_put_oi_change,
-                    "source": "live-nse-chain",
-                    "provider_available": True,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "expiry_days": expiry_days,
-                    "signal": signal_data["signal"],
-                    "signals": signal_data,
-                }
-            )
+            return _option_chain_compat_payload(
+            {
+                "module": "live_nse_option_chain",
+                "symbol": symbol.upper(),
+                "underlying_price": underlying,
+                "atm_strike": atm,
+                "expiry": expiry,
+                "step": step,
+                "rows": rows,
+                "pcr": pcr,
+                "max_pain": max_pain,
+                "total_call_oi": total_call_oi,
+                "total_put_oi": total_put_oi,
+                "total_call_oi_change": total_call_oi_change,
+                "total_put_oi_change": total_put_oi_change,
+                "source": "live-nse-chain",
+                "provider_available": True,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "expiry_days": expiry_days,
+                "signal": signal_data["signal"],
+                "signals": signal_data,
+            }
+        )
 
 def _live_nse_fallback_payload(
-            payload: dict[str, Any],
-            exc: Exception,
-            ) -> dict[str, Any]:
+    payload: dict[str, Any],
+    exc: Exception,
+) -> dict[str, Any]:
 
-        return _option_chain_compat_payload(
-                {
-                    "module": "live_nse_option_chain",
-                    "symbol": payload.get("symbol") or "NIFTY",
-                    "underlying_price": None,
-                    "atm_strike": None,
-                    "expiry": None,
-                    "step": payload.get("step") or 50,
-                    "source": "option-chain-unavailable",
-                    "synthetic": False,
-                    "provider_available": False,
-                    "fallback_reason": exc.__class__.__name__,
-                    "provider_warning": "Live NSE option-chain provider unavailable.",
-                    "fallback_detail": str(exc),
-                    "rows": [],
-                    "pcr": None,
+    return _option_chain_compat_payload(
+            {
+                "module": "live_nse_option_chain",
+                "symbol": payload.get("symbol") or "NIFTY",
+                "underlying_price": None,
+                "atm_strike": None,
+                "expiry": None,
+                "step": payload.get("step") or 50,
+                "source": "option-chain-unavailable",
+                "synthetic": False,
+                "provider_available": False,
+                "fallback_reason": exc.__class__.__name__,
+                "provider_warning": "Live NSE option-chain provider unavailable.",
+                "fallback_detail": str(exc),
+                "rows": [],
+                "pcr": None,
+                "max_pain": None,
+                "signals": {
+                    "signal": "NO_TRADE",
+                    "bias": "NEUTRAL",
+                    "confidence": 0,
+                    "reason": "Live NSE option-chain unavailable.",
+                    "support": None,
+                    "resistance": None,
                     "max_pain": None,
-                    "signals": {
-                        "signal": "NO_TRADE",
-                        "bias": "NEUTRAL",
-                        "confidence": 0,
-                        "reason": "Live NSE option-chain unavailable.",
-                        "support": None,
-                        "resistance": None,
-                        "max_pain": None,
-                    },
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-            )
+                },
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 def option_chain_engine(
     symbol: str = "NIFTY",
     *,
     strikes_each_side: int = 5,
     step: int = 50,
-) -> dict[str, Any]:
-    return _option_chain_compat_payload(
+    ) -> dict[str, Any]:
+return _option_chain_compat_payload(
         {
-            "module": "option_chain_engine",
-            "symbol": symbol.upper(),
-            "underlying_price": None,
-            "atm_strike": None,
-            "expiry": None,
-            "step": max(1, int(step)),
-            "source": "option-chain-unavailable",
-            "synthetic": False,
-            "provider_available": False,
-            "provider_warning": (
-                "Synthetic option-chain generation is disabled. "
-                "Use a live option-chain provider."
-            ),
-            "pcr": None,
-            "max_pain": None,
-            "greek_model": None,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "rows": [],
-        }
-    )
+        "module": "option_chain_engine",
+        "symbol": symbol.upper(),
+        "underlying_price": None,
+        "atm_strike": None,
+        "expiry": None,
+        "step": max(1, int(step)),
+        "source": "option-chain-unavailable",
+        "synthetic": False,
+        "provider_available": False,
+        "provider_warning": (
+            "Synthetic option-chain generation is disabled. "
+            "Use a live option-chain provider."
+        ),
+        "pcr": None,
+        "max_pain": None,
+        "greek_model": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "rows": [],
+    }
+)
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = [
         row
