@@ -1,35 +1,22 @@
 from __future__ import annotations
 
+from typing import Any, Literal
 import pandas as pd
 
 from Backend.domain.smc.models import FVGZone, Side, SupplyDemandZone
-class ZoneConfluenceEngine:
-    # ... other methods ...
-
-    # Check: Ensure this is indented 4 spaces inside the class!
-    def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
-        zone_type: Literal["supply", "demand"] = "demand" if side == "BUY" else "supply"
-        zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
-        
-        # This will now resolve because count_touches lives in the class scope
-        zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
-        return zone
-
-    # Check: Ensure this is indented 4 spaces inside the class!
-    def count_touches(self, candles: pd.DataFrame, zone: SupplyDemandZone, start_idx: int, end_idx: int) -> int:
-        # calculation logic...
-        pass
-
-    # Check: Ensure this is indented 4 spaces inside the class!
-    def has_confluence(self, *args: Any, **kwargs: Any) -> Any:
-        # Temporary wildcard parameters to pass compilation
-        pass
-
 
 class ZoneConfluenceEngine:
     def __init__(self, *, lookback: int = 40, max_touches: int = 1) -> None:
         self.lookback = int(lookback)
         self.max_touches = int(max_touches)
+
+    def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
+        zone_type: Literal["supply", "demand"] = "demand" if side == "BUY" else "supply"
+        zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
+        
+        # Calls the internal count_touches method safely
+        zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
+        return zone
 
     def find_zone(
         self,
@@ -44,6 +31,7 @@ class ZoneConfluenceEngine:
         window = candles.iloc[start:index]
         if len(window) < 5:
             return None
+            
         atr = max(float(candles.iloc[index].get("atr_14", candles.iloc[index].get("avg_range_5", 0.0)) or 0.0), 0.01)
         zone_width = atr * 0.75
 
@@ -69,16 +57,6 @@ class ZoneConfluenceEngine:
         if zone.touches > self.max_touches:
             return None
         return zone
-
-from typing import Literal
-
-def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
-    # Explicitly type zone_type as a Literal to match the expected argument type
-    zone_type: Literal["supply", "demand"] = "demand" if side == "BUY" else "supply"
-    
-    zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
-    zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
-    return zone
 
     def has_confluence(self, zone: SupplyDemandZone, fvg: FVGZone) -> bool:
         overlap_low = max(zone.low, fvg.low)
