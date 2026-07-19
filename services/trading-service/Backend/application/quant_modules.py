@@ -483,8 +483,9 @@ def live_nse_option_chain(
         )
 
     rows = sorted(
-        rows,
-        key=lambda row: int(row.get("strike") or 0)
+                rows,
+                key=lambda row: int(cast(Dict[str, Any], row).get("strike") or 0)
+
     )
 
     if not rows:
