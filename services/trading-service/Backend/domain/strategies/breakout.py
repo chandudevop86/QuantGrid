@@ -92,6 +92,14 @@ class BreakoutStrategy(BaseStrategy):
                 setup,
                 min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
             )
+            
+            print("=" * 60)
+            print("SIGNAL INDEX :", index)
+            print("SIGNAL TIME  :", row["timestamp"])
+            print("LATEST TIME  :", candles.iloc[-1]["timestamp"])
+            print("IS LATEST    :", index == len(candles) - 1)
+            print("=" * 60)
+            
             signal = self.signal_builder.build(
                 row,
                 strategy_name=self.name,
