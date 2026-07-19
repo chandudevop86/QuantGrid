@@ -197,7 +197,7 @@ async def reconcile_broker_state(
             try:
                 broker_order = await broker_client.get_order_status(broker_order_id)
             except Exception:
-                broker_order = "BrokerOrderResult" | None = None
+                broker_order = None
             if broker_order and _normal_status(broker_order.status) in OPEN_STATUSES | FILLED_STATUSES:
                 continue
         _record_fix(
