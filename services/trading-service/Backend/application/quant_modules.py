@@ -586,7 +586,34 @@ def _live_nse_fallback_payload(
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
-
+def option_chain_engine(
+    symbol: str = "NIFTY",
+    *,
+    strikes_each_side: int = 5,
+    step: int = 50,
+) -> dict[str, Any]:
+    return _option_chain_compat_payload(
+        {
+            "module": "option_chain_engine",
+            "symbol": symbol.upper(),
+            "underlying_price": None,
+            "atm_strike": None,
+            "expiry": None,
+            "step": max(1, int(step)),
+            "source": "option-chain-unavailable",
+            "synthetic": False,
+            "provider_available": False,
+            "provider_warning": (
+                "Synthetic option-chain generation is disabled. "
+                "Use a live option-chain provider."
+            ),
+            "pcr": None,
+            "max_pain": None,
+            "greek_model": None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "rows": [],
+        }
+    )
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = [
         row
