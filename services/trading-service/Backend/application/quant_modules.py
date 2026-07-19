@@ -101,11 +101,20 @@ def _max_pain(rows: list[dict[str, Any]]) -> int | None:
         )
 
     result = min(rows, key=pain)
-
     strike = result.get("strike")
 
-    return int(strike) if strike is not None else None
-def _professional_option_signal(
+    if isinstance(strike, (int, float)):
+        return int(strike)
+
+    if isinstance(strike, str):
+        try:
+                return int(float(strike))
+        except ValueError:
+                return None
+
+        return None
+
+    def _professional_option_signal(
             rows: list[dict[str, Any]],
             *,
             spot: float,
