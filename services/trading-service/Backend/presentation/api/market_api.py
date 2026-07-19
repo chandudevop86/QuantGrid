@@ -790,7 +790,7 @@ def get_option_chain(
     strikes_each_side = max(1, min(int(strikes_each_side), 10))
     step = max(1, int(step))
     try:
-        access_role = _access.user.role if hasattr(_access, "user") and _access.user is not None else _role
+        access_role: str = str(_access.user.role) if hasattr(_access, "user") and _access.user is not None else _role
         price_payload = get_price(symbol, _role=access_role)
         price = float(price_payload.get("price") or 0.0)
     except Exception as exc:
