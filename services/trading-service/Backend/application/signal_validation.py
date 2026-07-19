@@ -63,6 +63,11 @@ def _is_recent(candle: dict[str, Any]) -> bool:
 def _matches_latest_candle(signal: StrategySignal, latest_candle: dict[str, Any]) -> bool:
     signal_time = _parse_timestamp(signal.signal_time)
     candle_time = _parse_timestamp(latest_candle.get("timestamp"))
+    
+    print("=" * 60)
+    print("SIGNAL TIME :", signal_time)
+    print("LATEST TIME :", candle_time)    
+    
     if signal_time is None or candle_time is None:
         return False
 
