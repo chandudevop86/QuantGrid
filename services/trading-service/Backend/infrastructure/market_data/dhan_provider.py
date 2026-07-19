@@ -10,11 +10,8 @@ from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
 
-try:
-    from Backend.application.security_master import SecurityMaster
-    SECURITY_MASTER = SecurityMaster("data/dhan_security_master.csv")
-except (ImportError, FileNotFoundError):
-    SECURITY_MASTER = None
+
+SECURITY_MASTER = None
 
 INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
 
