@@ -108,11 +108,12 @@ class DhanProvider(EnvConfiguredProvider):
         security = int(security_id) if str(security_id).isdigit() else security_id
         
         raw = dhan.ohlc_data(securities={exchange_segment: [security]})
-        
         logger.debug("Raw Dhan response: %r", raw)
-        logger.debug("Extracted quote: %r", quote)
         
         quote = _extract_quote(raw, security_id)
+        
+        logger.debug("Extracted quote: %r", quote)
+        
         print("EXTRACTED QUOTE:", quote)
         
         ltp = (
