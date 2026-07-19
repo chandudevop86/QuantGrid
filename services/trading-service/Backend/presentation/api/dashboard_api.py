@@ -237,6 +237,8 @@ def _timestamp_bucket(candle: dict, interval_seconds: int) -> int | None:
     return int(timestamp // interval_seconds * interval_seconds)
 
 
+from datetime import datetime, timezone
+
 def _aggregate_candles(candles: list[dict], interval_seconds: int, limit: int = 100) -> list[dict]:
     buckets: dict[int, list[dict]] = {}
     for candle in candles:
@@ -253,18 +255,22 @@ def _aggregate_candles(candles: list[dict], interval_seconds: int, limit: int = 
         highs = [row.get("high") for row in rows if row.get("high") is not None]
         lows = [row.get("low") for row in rows if row.get("low") is not None]
         closes = [row.get("close") for row in rows if row.get("close") is not None]
+        
         if not opens or not highs or not lows or not closes:
             continue
+            
         aggregated.append({
             "timestamp": datetime.fromtimestamp(bucket, timezone.utc).isoformat(),
-            "open": float(opens[0]),
-            "high": max(float(value) for value in highs),
-            "low": min(float(value) for value in lows),
-            "close": float(closes[-1]),
+            # Fixed lines 260 - 263 by applying safety 'or 0' fallback guards
+            "open": float(opens[0] or 0),
+            "high": max(float(value or 0) for value in highs),
+            "low": min(float(value or 0) for value in lows),
+            "close": float(closes[-1] or 0),
             "volume": sum(float(row.get("volume") or 0) for row in rows),
             "source": "derived-from-stored-candles",
         })
     return aggregated[-limit:]
+
 
 
 def _dashboard_candles_by_interval(symbol: str) -> dict[str, list[dict]]:
