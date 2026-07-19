@@ -414,7 +414,7 @@ def live_nse_option_chain(
                 step=step,
         ),
         exc,
-   )
+    )
 
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
