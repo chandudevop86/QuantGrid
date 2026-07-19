@@ -838,7 +838,7 @@ def get_option_chain(
     strikes = [atm + (offset * step) for offset in range(-strikes_each_side, strikes_each_side + 1)]
     source = "derived-from-underlying"
     expiry = None
-    warning = "Live option-chain provider unavailable. Option-chain rows are hidden until provider data is available."
+    warning = ("Live option-chain provider unavailable...") 
     provider_available = False
     provider_diagnostics = None
 
