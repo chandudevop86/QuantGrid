@@ -228,11 +228,11 @@ async def reconcile_broker_state(
                 },
             )
 
-    close_open_position(
-        int(position["id"]),
-        current_price=(matched_broker_position or {}).get("price"),
-        reason="broker_position_closed",
-    )
+        close_open_position(
+            int(position["id"]),
+            current_price=(matched_broker_position or {}).get("price"),
+            reason="broker_position_closed",
+        )
 
     _write_status(summary)
     return summary
