@@ -831,7 +831,7 @@ def get_option_chain(
         rows, expiry = _dhan_option_rows(symbol, strikes)
         if any(row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None for row in rows):
             source = "dhan-option-chain"
-            warning = None
+            warning: str | None = ("Live option-chain provider unavailable. " "Option-chain rows are hidden until provider data is available.")
             provider_available = True
             provider_diagnostics = {
                 "provider": "dhan",
