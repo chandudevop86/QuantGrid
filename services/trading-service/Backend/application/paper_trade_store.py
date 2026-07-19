@@ -727,13 +727,21 @@ def risk_status() -> dict[str, Any]:
         if str(trade.get("status") or "").lower() in closed_statuses
     )
     daily_pnl = round(float(positions["todays_pnl"]) + closed_trade_pnl, 2)
-    weekly_closed_pnl = sum(
-        float(trade.get("pnl") or 0.0)
-        for trade in trades
-        if str(trade.get("status") or "").lower() in closed_statuses
-        and _trade_created_at(trade) is not None
-        and _trade_created_at(trade) >= week_start
-    )
+    weekly_closed_pnl = 0.0
+
+        for trade in trades:
+            if str(trade.get("status") or "").lower() not in closed_statuses:
+                continue
+
+            trade_created_at = _trade_created_at(trade)
+        
+            if trade_created_at is None:
+                continue
+
+            if trade_created_at < week_start:
+                continue
+
+    weekly_closed_pnl += float(trade.get("pnl") or 0.0)
     weekly_pnl = round(float(positions["unrealized_pnl"]) + weekly_closed_pnl, 2)
     consecutive_losses = 0
     for trade in trades:
