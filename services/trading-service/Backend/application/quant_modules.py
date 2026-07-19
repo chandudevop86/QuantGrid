@@ -588,7 +588,7 @@ def _live_nse_fallback_payload(
             )
 
 def _option_chain_compat_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        rows: list[dict[str, Any]] = [row for row in (payload.get("rows") or []) if isinstance(row, dict)] atm = payload.get("atm_strike")
+    rows: list[dict[str, Any]] = [row for row in (payload.get("rows") or []) if isinstance(row, dict)] atm = payload.get("atm_strike")
 
         support = None
         resistance = None
