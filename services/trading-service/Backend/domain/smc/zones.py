@@ -49,11 +49,15 @@ class ZoneConfluenceEngine:
             return None
         return zone
 
-    def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
-        zone_type = "demand" if side == "BUY" else "supply"
-        zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
-        zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
-        return zone
+    from typing import Literal
+
+def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
+    # Explicitly type zone_type as a Literal to match the expected argument type
+    zone_type: Literal["supply", "demand"] = "demand" if side == "BUY" else "supply"
+    
+    zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
+    zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
+    return zone
 
     def has_confluence(self, zone: SupplyDemandZone, fvg: FVGZone) -> bool:
         overlap_low = max(zone.low, fvg.low)
