@@ -889,25 +889,37 @@ def _professional_backtest_metrics(
             }
 
 
+from typing import Any
+
 def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
-            model = {
-                "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
-                "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
-                "taxes_bps": float(payload.get("taxes_bps", 2.5)),
-                "slippage_bps": float(payload.get("slippage_bps", 5.0)),
-                "spread_bps": float(payload.get("spread_bps", 8.0)),
-                "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
-                "candle_confirmation": bool(payload.get("candle_confirmation", True)),
-                "gap_opening_policy": str(payload.get("gap_opening_policy") or "skip first candle after large gap"),
-                "liquidity_filter": str(payload.get("liquidity_filter") or "block LOW/THIN/WEAK option liquidity"),
-                "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
-                "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
-            }
-            model["effective_slippage_per_side_bps"] = model["slippage_bps"] + model["spread_bps"] / 2.0
-            model["applied_to_results"] = True
-            model["applied_components"] = ["brokerage", "brokerage_bps", "taxes", "slippage", "spread"]
-            model["entry_delay_application"] = "recorded_as_latency_not_fill_shift"
-            return model
+    # 1. Parse your numeric values into explicit float variables first
+    slippage = float(payload.get("slippage_bps", 5.0))
+    spread = float(payload.get("spread_bps", 8.0))
+    
+    # 2. Compute your calculated metric cleanly using standard math
+    effective_slippage = slippage + (spread / 2.0)
+
+    model = {
+        "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
+        "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
+        "taxes_bps": float(payload.get("taxes_bps", 2.5)),
+        "slippage_bps": slippage,
+        "spread_bps": spread,
+        "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
+        "candle_confirmation": bool(payload.get("candle_confirmation", True)),
+        "gap_opening_policy": str(payload.get("gap_opening_policy") or "skip first candle after large gap"),
+        "liquidity_filter": str(payload.get("liquidity_filter") or "block LOW/THIN/WEAK option liquidity"),
+        "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
+        "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
+    }
+    
+    # 3. Assign the pre-calculated float directly to the dictionary
+    model["effective_slippage_per_side_bps"] = effective_slippage
+    model["applied_to_results"] = True
+    model["applied_components"] = ["brokerage", "brokerage_bps", "taxes", "slippage", "spread"]
+    model["entry_delay_application"] = "recorded_as_latency_not_fill_shift"
+    return model
+
 
 
 def _backtest_period_years(candles: list[dict[str, Any]]) -> float:
