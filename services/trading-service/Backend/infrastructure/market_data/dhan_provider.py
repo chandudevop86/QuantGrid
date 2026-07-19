@@ -12,22 +12,35 @@ from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, 
 
 try:
     from Backend.application.security_master import SecurityMaster
-
     SECURITY_MASTER = SecurityMaster("data/dhan_security_master.csv")
-except FileNotFoundError:
+except (ImportError, FileNotFoundError):
     SECURITY_MASTER = None
 
 INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
 
 # Set up module logger instance for tracking resolution failures
 logger = logging.getLogger(__name__)
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value in (None, ""):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
+
+def _safe_index(values: list[Any], index: int) -> Any:
+    if index < len(values):
+        return values[index]
+    return None
 
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
+    def normalize_symbol(self, symbol: str) -> str:
+        return symbol.upper()
 
-    def normalize_symbol(
+    def resolve_instrument(
         self,
         symbol: str,
         expiry: str | None = None,
@@ -89,18 +102,15 @@ class DhanProvider(EnvConfiguredProvider):
             return YahooProvider().get_ltp(normalized)
 
         dhan = dhan_sdk_client()
-        instrument = self.normalize_symbol(symbol)
+        instrument = self.resolve_instrument(symbol)
         security_id = instrument["security_id"]
         exchange_segment = instrument["exchange_segment"]
         security = int(security_id) if str(security_id).isdigit() else security_id
         
         raw = dhan.ohlc_data(securities={exchange_segment: [security]})
         
-        print("=" * 80)
-        print("RAW RESPONSE")
-        print(repr(raw))
-        print("TYPE:", type(raw))
-        print("=" * 80)
+        logger.debug("Raw Dhan response: %r", raw)
+        logger.debug("Extracted quote: %r", quote)
         
         quote = _extract_quote(raw, security_id)
         print("EXTRACTED QUOTE:", quote)
@@ -123,8 +133,8 @@ class DhanProvider(EnvConfiguredProvider):
             "exchange_segment": exchange_segment,       
             "market_symbol": security_id,
             "exchange": "NSE",
-            "ltp": float(ltp),
-            "price": float(ltp),
+            "ltp": _to_float(ltp),
+            "price": _to_float(ltp),
             "timestamp": fetched_at,
             "source": "live",
             "exchange_timezone": "Asia/Kolkata",
@@ -134,7 +144,7 @@ class DhanProvider(EnvConfiguredProvider):
     def get_candles(self, symbol: str, interval: str, period: str, limit: int) -> list[dict[str, Any]]:
         self._require_configured()
         dhan = dhan_sdk_client()
-        instrument = self.normalize_symbol(symbol)
+        instrument = self.resolve_instrument(symbol)
         security_id = instrument["security_id"]
         security = int(security_id) if str(security_id).isdigit() else security_id
         exchange_segment = instrument["exchange_segment"]
@@ -159,7 +169,7 @@ class DhanProvider(EnvConfiguredProvider):
         instruments = []
 
         for symbol in symbols:
-            instrument = self.normalize_symbol(symbol)
+            instrument = self.resolve_instrument(symbol)
             if not instrument.get("security_id"):
                 continue
 
@@ -223,11 +233,11 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
                     "symbol": symbol.upper(),
                     "timestamp": _timestamp_to_ist(timestamp),
                     "exchange_timezone": "Asia/Kolkata",
-                    "open": float(opens[index]),
-                    "high": float(highs[index]),
-                    "low": float(lows[index]),
-                    "close": float(closes[index]),
-                    "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
+                    "open": _to_float(_safe_index(opens, index)),
+                    "high": _to_float(_safe_index(highs, index)),
+                    "low": _to_float(_safe_index(lows, index)),
+                    "close": _to_float(_safe_index(closes, index)),
+                    "volume": int(_safe_index(volumes, index) or 0),,
                 }
             )
         return rows
@@ -238,10 +248,10 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
                 "symbol": symbol.upper(),
                 "timestamp": _timestamp_to_ist(item.get("timestamp") or item.get("time") or item.get("start_Time")),
                 "exchange_timezone": "Asia/Kolkata",
-                "open": float(item.get("open")),
-                "high": float(item.get("high")),
-                "low": float(item.get("low")),
-                "close": float(item.get("close")),
+                "open": _to_float(item.get("open")),
+                "high": _to_float(item.get("high")),
+                "low": _to_float(item.get("low")),
+                "close": _to_float(item.get("close")),
                 "volume": int(item.get("volume") or 0),
             }
             for item in data
