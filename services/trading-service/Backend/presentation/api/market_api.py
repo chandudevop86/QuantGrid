@@ -118,8 +118,7 @@ def _fetch_yahoo_chart(
         interval=interval,
         period=period,
     )
-def _fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
-    return get_market_data_provider().fetch_chart(symbol, interval=interval, period=period)
+
 
 
 def _provider_status_from_validation(provider: Any, validation: Any | None = None) -> dict[str, Any]:
