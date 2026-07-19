@@ -392,7 +392,7 @@ def live_nse_option_chain(
     *,
     strikes_each_side: int = 8,
     step: int = 50,
-) -> dict[str, Any]:
+    ) -> dict[str, Any]:
 
     nse_symbol = _nse_index_symbol(symbol)
 
@@ -412,54 +412,40 @@ def live_nse_option_chain(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
-            ),
-            exc,
-        )
+        ),
+        exc,
+   )
 
-records = payload.get("records") or {}
-raw_rows = records.get("data") or []
+    records = payload.get("records") or {}
+    raw_rows = records.get("data") or []
+    expiry = next( (x for x in records.get("expiryDates") or [] if x),None,)
+    underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+    tte = _time_to_expiry(expiry)
+    expiry_days = round(tte * 365, 2)
+    atm = _round_to_step(underlying,step,)
+    lower = atm - strikes_each_side * step
+    upper = atm + strikes_each_side * step
 
-expiry = next(
-    (x for x in records.get("expiryDates") or [] if x),
-    None,
-)
+    rows = []
 
-underlying = float(
-    records.get("underlyingValue")
-    or _latest_underlying_price(symbol)
-)
+    for item in raw_rows:
 
-tte = _time_to_expiry(expiry)
-expiry_days = round(tte * 365, 2)
-
-atm = _round_to_step(
-        underlying,
-        step,
-    )
-
-lower = atm - strikes_each_side * step
-upper = atm + strikes_each_side * step
-
-rows = []
-
-for item in raw_rows:
-
-    if expiry and item.get("expiryDate") != expiry:
-        continue
-
-    strike = int(item["strikePrice"])
-
-    strike = int(item["strikePrice"])
-
-    if strike < lower or strike > upper:
+        if expiry and item.get("expiryDate") != expiry:
             continue
 
-    ce = item.get("CE") or {}
-    pe = item.get("PE") or {}
-    ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
-    pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
-    rows.append(
-            {
+        strike = int(item["strikePrice"])
+
+        strike = int(item["strikePrice"])
+
+        if strike < lower or strike > upper:
+                continue
+
+        ce = item.get("CE") or {}
+        pe = item.get("PE") or {}
+        ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
+        pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
+        rows.append(
+                {
                 "strike": strike,
                 "ce": {
                     "ltp": _nse_number(ce.get("lastPrice")),
