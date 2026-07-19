@@ -501,7 +501,7 @@ for item in raw_rows:
         key=lambda row: int(row.get("strike") or 0)
     )
 
-    if not rows
+    if not rows:
         empty_chain_error = RuntimeError(
             "NSE returned empty option chain"
         )
