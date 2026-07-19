@@ -99,8 +99,25 @@ def _stored_candle_response(symbol: str, interval: str, period: str, limit: int)
 def _market_symbol(symbol: str) -> str:
     return market_symbol(symbol)
 
-if isinstance(provider, YahooProvider):
-    await provider.fetch_chart(...)
+def _fetch_yahoo_chart(
+    symbol: str,
+    *,
+    interval: str = "1m",
+    period: str = "1d",
+) -> dict[str, Any]:
+    provider = get_market_data_provider()
+
+    if not isinstance(provider, YahooProvider):
+        raise HTTPException(
+            status_code=400,
+            detail="Chart endpoint is only supported by YahooProvider",
+        )
+
+    return provider.fetch_chart(
+        symbol,
+        interval=interval,
+        period=period,
+    )
 def _fetch_yahoo_chart(symbol: str, *, interval: str = "1m", period: str = "1d") -> dict[str, Any]:
     return get_market_data_provider().fetch_chart(symbol, interval=interval, period=period)
 
