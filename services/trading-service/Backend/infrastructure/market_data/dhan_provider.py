@@ -24,10 +24,21 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _safe_index(values: list[Any], index: int) -> Any:
-        
-        return values[index] if index < len(values) else None
+from typing import Any
 
+def _safe_index(values: list[Any], index: int) -> float | None:
+    if index >= len(values):
+        return None
+
+    value = values[index]
+
+    if value is None:
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 class DhanProvider(EnvConfiguredProvider):
     provider_name = "dhan"
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
