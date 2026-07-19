@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from typing import Any
 
 try:
     from prometheus_client import (
@@ -22,6 +21,7 @@ if (
     and PromGauge is not None
     and PromHistogram is not None
 ):
+    ...
     def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
         try:
             return metric_type(name, documentation, labels)
