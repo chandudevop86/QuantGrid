@@ -127,13 +127,19 @@ def _trend_direction(metadata: dict[str, Any]) -> str | None:
     ema_50 = _indicator_value(metadata, "ema_50")
     ema_200 = _indicator_value(metadata, "ema_200")
 
-    if None in (ema_9, ema_21, ema_50, ema_200):
+    if (
+    ema_9 is None
+    or ema_21 is None
+    or ema_50 is None
+    or ema_200 is None
+    ):
         return None
+
     if ema_9 > ema_21 > ema_50 > ema_200:
-        return "UPTREND"
+            return "UPTREND"
+
     if ema_9 < ema_21 < ema_50 < ema_200:
-        return "DOWNTREND"
-    return None
+            return "DOWNTREND"
 
 
 def _trend_aligned(signal: StrategySignal) -> bool:
@@ -241,10 +247,13 @@ def _stop_distance(signal: StrategySignal) -> float:
 def _score(signal: StrategySignal) -> float:
     for key in ("total_score", "score"):
         value = signal.metadata.get(key)
-        if _finite_number(value):
-            return float(value)
-    return 0.0
 
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            pass
+
+    return 0.0
 
 def _quality_rank(signal: StrategySignal) -> tuple[float, float]:
     return _score(signal), _risk_reward(signal)
