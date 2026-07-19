@@ -6,21 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
-
-Freshness = Literal["fresh", "stale", "unknown"]
-
-freshness: Freshness
-
-if age < 60:
-    freshness = "fresh"
-elif age < 300:
-    freshness = "stale"
-else:
-    freshness = "unknown"
-
-quality = ProviderQuality(
-    freshness=freshness,
-)
 def _is_missing(value: Any) -> bool:
     return value is None or value == ""
 
