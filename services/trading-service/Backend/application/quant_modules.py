@@ -18,7 +18,7 @@ from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.risk import GlobalRiskManager
 from Backend.trading_system.slippage import SlippageConfig, SlippageModel
 from Backend.application.providers.nse_playwright import fetch_nse_option_chain
-
+from typing import Any, Dict, List, cast
 logger = logging.getLogger("quantgrid.option_chain")
 
 
@@ -505,27 +505,22 @@ def live_nse_option_chain(
             ),
             empty_chain_error,
         )
-
-
+    typed_rows = cast(List[Dict[str, Any]], rows)   
     total_call_oi = sum(
         float((r.get("ce") or {}).get("oi") or 0)
-        for r in rows
-    )
+        for r in typed_rows)
 
     total_put_oi = sum(
         float((r.get("pe") or {}).get("oi") or 0)
-        for r in rows
-    )
+        for r in typed_rows)
 
     total_call_oi_change = sum(
         float((r.get("ce") or {}).get("oi_change") or 0)
-        for r in rows
-    )
+        for r in typed_rows)
 
     total_put_oi_change = sum(
         float((r.get("pe") or {}).get("oi_change") or 0)
-        for r in rows
-    )
+        for r in typed_rows)
 
     pcr = (
         round(total_put_oi / total_call_oi, 3)
