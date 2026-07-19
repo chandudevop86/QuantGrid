@@ -14,7 +14,7 @@ from typing import Any,Protocol
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-
+from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 
 from Backend.infrastructure.http_safety import require_https_url
@@ -1135,7 +1135,6 @@ def get_candles(
         }
         
         store_candles(
-            
             source = str(source or "unknown"),
             symbol=symbol,
             market_symbol=market_symbol,
@@ -1165,6 +1164,8 @@ def get_candles(
         raise _market_data_unavailable(exc) from exc
 
 
+
+
 @router.get("/validation/{symbol}")
 def get_candle_validation(
     symbol: str,
@@ -1172,24 +1173,41 @@ def get_candle_validation(
     period: str = "1d",
     limit: int = 100,
     mode: str = "paper",
-    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+    _role: str = Depends(
+        require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")
+    ),
 ):
-    response = market_service.get_candles(symbol, interval=interval, period=period, limit=limit)
+    response = market_service.get_candles(
+        symbol,
+        interval=interval,
+        period=period,
+        limit=limit,
+    )
+
+    validated_mode: Literal["live", "paper", "backtest"]
+
+    if mode == "live":
+        validated_mode = "live"
+    elif mode == "backtest":
+        validated_mode = "backtest"
+    else:
+        validated_mode = "paper"
+
     validation = validate_live_candle(
         list(response.get("candles", [])),
         interval=interval,
-        mode=mode if mode in {"live", "paper", "backtest"} else "paper",
+        mode=validated_mode,
         source=response.get("source"),
         provider_fetched_at=response.get("fetched_at"),
     )
+
     return {
         "symbol": symbol.upper(),
         "interval": interval,
         "source": response.get("source"),
         **validation.model_dump(),
     }
-
-
+            
 @router.get("/stored/{symbol}")
 def get_stored_candles(
     symbol: str,
