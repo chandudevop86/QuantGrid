@@ -81,14 +81,19 @@ def _option_chain_payload(symbol: str) -> dict[str, Any]:
 
 def _previous_spot(symbol: str) -> float | None:
     candles = latest_candles(symbol, "1m", 2) or latest_candles(symbol, "5m", 2)
+
     if len(candles) < 2:
         return None
-    try:
-        return float(candles[-2].get("close"))
-    except (TypeError, ValueError):
+
+    close = candles[-2].get("close")
+
+    if close is None:
         return None
 
-
+    try:
+        return float(close)
+    except (TypeError, ValueError):
+        return None
 def _env_float(name: str) -> float | None:
     raw = os.getenv(name)
     if raw in {None, ""}:
