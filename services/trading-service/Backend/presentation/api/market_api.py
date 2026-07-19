@@ -46,16 +46,6 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 # Backend/domain/market_data/provider.py
 
 
-
-class MarketDataProvider(Protocol):
-    def fetch_chart(
-        self,
-        symbol: str,
-        *,
-        interval: str = "1m",
-        period: str = "1d",
-    ) -> dict[str, Any]:
-        ...
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
 market_service = get_market_data_service()
