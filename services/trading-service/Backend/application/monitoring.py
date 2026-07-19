@@ -26,9 +26,9 @@ if (
         try:
             return metric_type(name, documentation, labels)
         except ValueError:
-            names_to_collectors = getattr(REGISTRY, "_names_to_collectors", {}) if REGISTRY is not None else {}
+            names_to_collectors = getattr(PROM_REGISTRY, "_names_to_collectors", {}) if PROM_REGISTRY is not None else {}
             lookup_names = [name]
-            if metric_type is Counter and name.endswith("_total"):
+            if metric_type is PromCounter and name.endswith("_total"):
                 base_name = name.removesuffix("_total")
                 lookup_names.extend([base_name, f"{base_name}_total", f"{base_name}_created"])
             for lookup_name in lookup_names:
@@ -38,79 +38,79 @@ if (
             raise
 
     candle_validation_total = _metric(
-        Counter,
+        PromCounter,
         "candle_validation_total",
         "Candle validation decisions.",
         ("status", "valid"),
     )
     candle_feed_delay_seconds = _metric(
-        Gauge,
+        PromGauge,
         "candle_feed_delay_seconds",
         "Latest market data feed delay in seconds.",
         ("status",),
     )
     paper_orders_total = _metric(
-        Counter,
+        PromCounter,
         "paper_orders_total",
         "Paper order submissions.",
         ("status", "strategy", "symbol"),
     )
     rejected_orders_total = _metric(
-        Counter,
+        PromCounter,
         "rejected_orders_total",
         "Rejected order attempts.",
         ("reason", "mode"),
     )
     rejected_signals_total = _metric(
-        Counter,
+        PromCounter,
         "rejected_signals_total",
         "Rejected signal decisions.",
         ("strategy", "reason"),
     )
     signal_generation_total = _metric(
-        Counter,
+        PromCounter,
         "signal_generation_total",
         "Signal generation attempts.",
         ("strategy", "status"),
     )
     strategy_executions_total = _metric(
-        Counter,
+        PromCounter,
         "strategy_executions_total",
         "Strategy execution attempts.",
         ("strategy", "status"),
     )
     strategy_signals_total = _metric(
-        Counter,
+        PromCounter,
         "strategy_signals_total",
         "Signals emitted by strategy executions.",
         ("strategy",),
     )
     failed_strategy_executions_total = _metric(
-        Counter,
+        PromCounter,
         "failed_strategy_executions_total",
         "Failed strategy executions.",
         ("strategy", "error_type"),
     )
     option_chain_fetch_failures_total = _metric(
-        Counter,
+        PromCounter,
         "option_chain_fetch_failures_total",
         "Option-chain provider fetch failures.",
         ("provider", "reason"),
     )
     option_chain_failures_total = _metric(
-        Counter,
+        PromCounter,
         "option_chain_failures_total",
         "Option-chain failures.",
         ("provider", "reason"),
     )
     websocket_disconnect_total = _metric(
-        Counter,
+        PromCounter,
         "websocket_disconnect_total",
         "WebSocket disconnects.",
         ("reason",),
     )
     market_data_age_seconds = _metric(
-        Gauge,
+        PromGauge,
         "market_data_age_seconds",
         "Latest market data age in seconds.",
         ("symbol", "interval"),
@@ -122,43 +122,43 @@ if (
         ("method", "path", "status_code"),
     )
     market_data_ticks_total = _metric(
-        Counter,
+        PromCounter,
         "market_data_ticks_total",
         "Market data ticks received.",
         ("provider", "symbol"),
     )
     market_data_provider_errors_total = _metric(
-        Counter,
+        PromCounter,
         "market_data_provider_errors_total",
         "Market data provider errors.",
         ("provider", "operation"),
     )
     market_data_feed_delay_seconds = _metric(
-        Gauge,
+        PromGauge,
         "market_data_feed_delay_seconds",
         "Market data feed delay in seconds.",
         ("provider", "symbol"),
     )
     market_data_cache_hits_total = _metric(
-        Counter,
+        PromCounter,
         "market_data_cache_hits_total",
         "Market data cache hits.",
         ("provider", "kind"),
     )
     market_data_cache_misses_total = _metric(
-        Counter,
+        PromCounter,
         "market_data_cache_misses_total",
         "Market data cache misses.",
         ("provider", "kind"),
     )
     trading_decisions_total = _metric(
-        Counter,
+        PromCounter,
         "trading_decisions_total",
         "Dashboard trading decisions.",
         ("recommendation", "data_status", "blocked"),
     )
     risk_blocks_total = _metric(
-        Counter,
+        PromCounter,
         "risk_blocks_total",
         "Risk blocks by reason.",
         ("reason",),
