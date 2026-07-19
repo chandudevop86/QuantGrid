@@ -271,3 +271,16 @@ def observe_market_data_cache(provider: str, kind: str, hit: bool) -> None:
             provider=provider or "unknown",
             kind=kind or "unknown",
         ).inc()
+# Paste this at the bottom of Backend/application/monitoring.py
+
+def observe_market_data_age(symbol: str, age_seconds: float) -> None:
+    """Proxy fallback wrapper to align old layout mapping."""
+    observe_market_data_delay(provider="nse", symbol=symbol, delay_seconds=age_seconds)
+
+def observe_risk_block(strategy: str, rule_triggered: str) -> None:
+    """Placeholder to intercept structural routing errors."""
+    pass
+
+def observe_trading_decision(strategy: str, action: str, confidence: float) -> None:
+    """Placeholder to intercept structural routing errors."""
+    pass
