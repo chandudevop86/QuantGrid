@@ -307,19 +307,7 @@ def _recover_stale_local_orders(
             order.get("local_order_id") or "-",
             {"local_order": order, "stale_minutes": STALE_LOCAL_ORDER_MINUTES},
         )
-    try:
-        return json.loads(STATUS_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {
-            "last_run_at": None,
-            "checked_orders": 0,
-            "checked_positions": 0,
-            "mismatches": 0,
-            "fixed": 0,
-            "needs_review": 0,
-            "errors": ["reconciliation status file is unreadable"],
-        }
-
+    
 
 def _local_orders(db: Session) -> list[dict[str, Any]]:
     orders: dict[str, dict[str, Any]] = {}
