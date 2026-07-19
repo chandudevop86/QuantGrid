@@ -232,3 +232,38 @@ def observe_option_chain_failure(provider: str, reason: str | None = None) -> No
         option_chain_fetch_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
     if option_chain_failures_total is not None:
         option_chain_failures_total.labels(provider=provider, reason=reason or "unknown").inc()
+def observe_market_data_tick(provider: str, symbol: str) -> None:
+    """Record a market-data tick."""
+    if market_data_ticks_total is not None:
+        market_data_ticks_total.labels(
+            provider=provider or "unknown",
+            symbol=(symbol or "unknown").upper(),
+        ).inc()
+
+
+def observe_market_data_error(provider: str, operation: str) -> None:
+    """Record a market-data provider error."""
+    if market_data_provider_errors_total is not None:
+        market_data_provider_errors_total.labels(
+            provider=provider or "unknown",
+            operation=operation or "unknown",
+        ).inc()
+
+
+def observe_market_data_delay(provider: str, symbol: str, delay_seconds: float) -> None:
+    """Record current feed delay."""
+    if market_data_feed_delay_seconds is not None:
+        market_data_feed_delay_seconds.labels(
+            provider=provider or "unknown",
+            symbol=(symbol or "unknown").upper(),
+        ).set(delay_seconds)
+
+
+def observe_market_data_cache(provider: str, kind: str, hit: bool) -> None:
+    """Record cache hit/miss."""
+    metric = market_data_cache_hits_total if hit else market_data_cache_misses_total
+    if metric is not None:
+        metric.labels(
+            provider=provider or "unknown",
+            kind=kind or "unknown",
+        ).inc()
