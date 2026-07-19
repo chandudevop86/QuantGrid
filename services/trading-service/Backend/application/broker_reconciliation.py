@@ -40,7 +40,7 @@ async def reconcile_broker_state(
     actor: User,
     request: Request | None = None,
 ) -> dict[str, Any]:
-    summary = {
+    summary : dict[str, Any] = {
         "checked_orders": 0,
         "checked_positions": 0,
         "mismatches": 0,
@@ -50,7 +50,7 @@ async def reconcile_broker_state(
     }
     _recover_stale_local_orders(summary, db, actor, request)
     local_orders = _local_orders(db)
-    local_positions = list_open_positions()
+    
 
     try:
         broker_positions = await broker_client.get_positions()
