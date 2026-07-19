@@ -9,7 +9,17 @@ from urllib.request import Request, urlopen
 
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
 from Backend.infrastructure.http_safety import require_https_url
+from typing import Any
 
+
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 YAHOO_TRADING_GRADE_WARNING = "Yahoo data is not trading-grade and should not be used for live execution."
 YAHOO_SYMBOLS = {
@@ -104,10 +114,10 @@ class YahooProvider(MarketDataProvider):
                     "symbol": symbol.upper(),
                     "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
                     "exchange_timezone": timezone_name,
-                    "open": round(float(values[0]), 2),
-                    "high": round(float(values[1]), 2),
-                    "low": round(float(values[2]), 2),
-                    "close": round(float(values[3]), 2),
+                    "open": round(_safe_float(values[0]) or  2),
+                    "high": round(_safe_float(values[1]) or  2),
+                    "low": round(_safe_float(values[2]) or  2),
+                    "close": round(_safe_float(values[3]) or 2),
                     "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
                 }
             )
