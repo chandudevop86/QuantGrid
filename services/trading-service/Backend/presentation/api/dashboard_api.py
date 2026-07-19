@@ -300,7 +300,7 @@ def operations(
 
     market_context = latest_verified_option_context("NIFTY")
     validation = validate_live_candle(candles, interval="1m", mode="paper", source="stored-live-cache")
-    observe_market_data_age("NIFTY", "1m", validation.delay_seconds)
+    observe_market_data_age("NIFTY", validation.delay_seconds)
     market_store = market_data_summary("NIFTY", "1m")
     risk = risk_status()
     daily_loss_remaining = max(0.0, float(risk["max_daily_loss"]) + float(risk["daily_pnl"]))
