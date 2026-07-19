@@ -48,8 +48,6 @@ from app.validation.data_quality import validate_candles, validate_option_chain_
 
 
 class MarketDataProvider(Protocol):
-    ...
-
     def fetch_chart(
         self,
         symbol: str,
