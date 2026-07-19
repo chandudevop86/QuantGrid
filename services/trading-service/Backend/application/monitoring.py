@@ -17,8 +17,11 @@ except Exception:  # pragma: no cover
     PromGauge: Any = None
     PromHistogram: Any = None
 
-
-if Counter and Gauge and Histogram:
+if (
+    PromCounter is not None
+    and PromGauge is not None
+    and PromHistogram is not None
+):
     def _metric(metric_type: Any, name: str, documentation: str, labels: tuple[str, ...]) -> Any:
         try:
             return metric_type(name, documentation, labels)
