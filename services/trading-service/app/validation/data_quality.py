@@ -5,7 +5,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-
+class ProviderQuality(BaseModel):
+    source: str
+    freshness: Freshness
+    completeness_pct: float = Field(ge=0, le=100)
+    fallback: bool = False
+    missing_fields: list[str] = Field(default_factory=list)
+    quality_score: int = Field(ge=0, le=100)
+Freshness = Literal["fresh", "stale", "unknown"]    
 def _is_missing(value: Any) -> bool:
     return value is None or value == ""
 
@@ -300,7 +307,14 @@ def validate_provider_quality(
     total_fields = max(len(rows) * 5, 1)
     missing_count = len(missing_fields)
     completeness = max(0.0, min(100.0, 100.0 - missing_count / total_fields * 100.0))
-    freshness = "unknown" if fresh is None else "fresh" if fresh else "stale"
+    freshness: Freshness
+
+    if fresh is None:
+        freshness = "unknown"
+    elif fresh:
+        freshness = "fresh"
+    else:
+        freshness = "stale"
     score = int(max(0, min(100, completeness - missing_count * 5 - (25 if fallback else 0) - (20 if freshness == "stale" else 0))))
     return ProviderQuality(
         source=str(source or "unknown"),
