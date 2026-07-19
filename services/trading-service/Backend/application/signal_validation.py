@@ -243,15 +243,18 @@ def _stop_distance(signal: StrategySignal) -> float:
         return 1.0
     return abs(entry - float(signal.stop_loss)) / entry
 
-
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 def _score(signal: StrategySignal) -> float:
     for key in ("total_score", "score"):
-        value = signal.metadata.get(key)
-
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            pass
+        score = _to_float(signal.metadata.get(key))
+        if score is not None:
+            return score
 
     return 0.0
 
