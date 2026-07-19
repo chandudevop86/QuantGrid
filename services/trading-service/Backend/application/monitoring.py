@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from typing import Any
+
 try:
-    from prometheus_client import REGISTRY, Counter, Gauge, Histogram
-except Exception:  # pragma: no cover - optional production dependency
-    Counter = None  # type: ignore[assignment]
-    Gauge = None  # type: ignore[assignment]
-    Histogram = None  # type: ignore[assignment]
-    REGISTRY = None  # type: ignore[assignment]
+    from prometheus_client import (
+        REGISTRY as PROM_REGISTRY,
+        Counter as PromCounter,
+        Gauge as PromGauge,
+        Histogram as PromHistogram,
+    )
+except Exception:  # pragma: no cover
+    PROM_REGISTRY: Any = None
+    PromCounter: Any = None
+    PromGauge: Any = None
+    PromHistogram: Any = None
 
 
 if Counter and Gauge and Histogram:
