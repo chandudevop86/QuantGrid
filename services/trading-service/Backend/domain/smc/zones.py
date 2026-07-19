@@ -3,6 +3,27 @@ from __future__ import annotations
 import pandas as pd
 
 from Backend.domain.smc.models import FVGZone, Side, SupplyDemandZone
+class ZoneConfluenceEngine:
+    # ... other methods ...
+
+    # Check: Ensure this is indented 4 spaces inside the class!
+    def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
+        zone_type: Literal["supply", "demand"] = "demand" if side == "BUY" else "supply"
+        zone = SupplyDemandZone(zone_type, low=fvg.low, high=fvg.high, created_index=fvg.created_index)
+        
+        # This will now resolve because count_touches lives in the class scope
+        zone.touches = self.count_touches(candles, zone, fvg.created_index + 1, index - 1)
+        return zone
+
+    # Check: Ensure this is indented 4 spaces inside the class!
+    def count_touches(self, candles: pd.DataFrame, zone: SupplyDemandZone, start_idx: int, end_idx: int) -> int:
+        # calculation logic...
+        pass
+
+    # Check: Ensure this is indented 4 spaces inside the class!
+    def has_confluence(self, ...):
+        # logic called by amd.py
+        pass
 
 
 class ZoneConfluenceEngine:
