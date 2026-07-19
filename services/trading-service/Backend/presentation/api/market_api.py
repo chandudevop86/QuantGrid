@@ -1135,6 +1135,7 @@ def get_candles(
         }
         
         store_candles(
+            
             source = str(source or "unknown"),
             symbol=symbol,
             market_symbol=market_symbol,
