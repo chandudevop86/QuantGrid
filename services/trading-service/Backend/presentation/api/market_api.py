@@ -10,7 +10,7 @@ import threading
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from time import monotonic
-from typing import Any
+from typing import Any,Protocol
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -45,7 +45,7 @@ from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
 # Backend/domain/market_data/provider.py
 
-from typing import Any
+
 
 class MarketDataProvider(Protocol):
     ...
