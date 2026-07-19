@@ -5,14 +5,8 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-class ProviderQuality(BaseModel):
-    source: str
-    freshness: Freshness
-    completeness_pct: float = Field(ge=0, le=100)
-    fallback: bool = False
-    missing_fields: list[str] = Field(default_factory=list)
-    quality_score: int = Field(ge=0, le=100)
-Freshness = Literal["fresh", "stale", "unknown"]    
+
+    
 def _is_missing(value: Any) -> bool:
     return value is None or value == ""
 
@@ -149,7 +143,7 @@ class ProviderQuality(BaseModel):
     fallback: bool = False
     missing_fields: list[str] = Field(default_factory=list)
     quality_score: int = Field(ge=0, le=100)
-
+Freshness = Literal["fresh", "stale", "unknown"]
 
 class DataQualityReport(BaseModel):
     subject: str
