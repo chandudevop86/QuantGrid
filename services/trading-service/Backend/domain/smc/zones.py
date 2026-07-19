@@ -49,7 +49,7 @@ class ZoneConfluenceEngine:
             return None
         return zone
 
-    from typing import Literal
+from typing import Literal
 
 def _zone_from_fvg(self, candles: pd.DataFrame, index: int, side: Side, fvg: FVGZone) -> SupplyDemandZone:
     # Explicitly type zone_type as a Literal to match the expected argument type
