@@ -416,31 +416,31 @@ def live_nse_option_chain(
             exc,
         )
 
-    records = payload.get("records") or {}
-    raw_rows = records.get("data") or []
+records = payload.get("records") or {}
+raw_rows = records.get("data") or []
 
-    expiry = next(
-        (x for x in records.get("expiryDates") or [] if x),
-        None,
-    )
+expiry = next(
+    (x for x in records.get("expiryDates") or [] if x),
+    None,
+)
 
-    underlying = float(
-        records.get("underlyingValue")
-        or _latest_underlying_price(symbol)
-    )
+underlying = float(
+    records.get("underlyingValue")
+    or _latest_underlying_price(symbol)
+)
 
-    tte = _time_to_expiry(expiry)
-    expiry_days = round(tte * 365, 2)
+tte = _time_to_expiry(expiry)
+expiry_days = round(tte * 365, 2)
 
-    atm = _round_to_step(
+atm = _round_to_step(
         underlying,
         step,
     )
 
-    lower = atm - strikes_each_side * step
-    upper = atm + strikes_each_side * step
+lower = atm - strikes_each_side * step
+upper = atm + strikes_each_side * step
 
-    rows = []
+rows = []
 
 for item in raw_rows:
 
