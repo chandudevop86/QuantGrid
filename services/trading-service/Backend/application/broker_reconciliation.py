@@ -189,23 +189,23 @@ async def reconcile_broker_state(
             {"broker_position": broker_position_item},
         )
     for position in open_positions:
-    broker_order_id = str(position.get("broker_order_id") or "")
+        broker_order_id = str(position.get("broker_order_id") or "")
 
-    matched_broker_position: dict[str, Any] | None = _matching_broker_position(
-        position,
-        broker_position_index,
-    )
+        matched_broker_position: dict[str, Any] | None = _matching_broker_position(
+                position,
+                broker_position_index,
+            )
 
-    if matched_broker_position and int(matched_broker_position["quantity"]) > 0:
-        continue
+        if matched_broker_position and int(matched_broker_position["quantity"]) > 0:
+            continue
 
-    broker_order: BrokerOrderResult | None = None
+        broker_order: BrokerOrderResult | None = None
 
-    if broker_order_id:
-        try:
-            broker_order = await broker_client.get_order_status(broker_order_id)
-        except Exception:
-            broker_order = None
+        if broker_order_id:
+            try:
+                broker_order = await broker_client.get_order_status(broker_order_id)
+            except Exception:
+                broker_order = None
 
         if (
             broker_order
