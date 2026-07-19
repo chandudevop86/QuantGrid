@@ -729,7 +729,7 @@ def risk_status() -> dict[str, Any]:
     daily_pnl = round(float(positions["todays_pnl"]) + closed_trade_pnl, 2)
     weekly_closed_pnl = 0.0
 
-        for trade in trades:
+    for trade in trades:
             if str(trade.get("status") or "").lower() not in closed_statuses:
                 continue
 
