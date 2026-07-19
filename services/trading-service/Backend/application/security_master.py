@@ -1,22 +1,16 @@
-"""
-Backend/tools/update_dhan_security_master.py
-
-Dhan Security Master Downloader & Utility Script
-"""
-
 from __future__ import annotations
 
+import argparse
+import gzip
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
-import requests
+from urllib.parse import urlparse
 
-# Production endpoints for Dhan Scrip Master files
-SECURITY_MASTER_URL = os.getenv(
-    "DHAN_SECURITY_MASTER_URL", 
-    "https://dhan.co"
-)
-DEFAULT_DESTINATION = Path("data/dhan_security_master.csv")
+from Backend.core.config import validate_security_config
 
 
 class Color:
@@ -44,49 +38,96 @@ def error(msg: str) -> None:
     print(f"{Color.RED}✖ {msg}{Color.END}")
 
 
-def download_security_master(url: str, destination: Path) -> None:
-    """
-    Downloads the Dhan Security Master CSV using secure streaming chunks.
-    Fixes B310: Replaces vulnerable urlretrieve with explicit requests protocol validation.
-    """
-    print()
-    print(Color.BOLD + "=" * 70)
-    print("QuantGrid Dhan Security Master Synchronizer")
-    print("=" * 70 + Color.END)
-    
-    info(f"Target URL  : {url}")
-    info(f"Destination : {destination}")
+def extract_sql(path: Path) -> Path:
+    if path.suffix != ".gz":
+        return path
 
-    # Ensure parent folder data/ hierarchy exists atomically
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    # Secures the filename allocation atomically to satisfy Bandit (B306)
+    with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp_file:
+        tmp = Path(tmp_file.name)
 
-    try:
-        # Fixed B310: requests verifies network protocols directly (avoids file:// vulnerabilities)
-        # Using stream=True prevents storing multi-megabyte files entirely in system RAM
-        with requests.get(url, stream=True, timeout=60) as response:
-            response.raise_for_status()
-            
-            info("Downloading file payload in chunks...")
-            with open(destination, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        
-        success("Security master synced and updated successfully.")
+    with gzip.open(path, "rb") as fin:
+        with open(tmp, "wb") as fout:
+            shutil.copyfileobj(fin, fout)
 
-    except requests.exceptions.RequestException as e:
-        error(f"Network error occurred while fetching security master: {e}")
-        sys.exit(1)
-    except IOError as e:
-        error(f"File system operational block error: {e}")
-        sys.exit(1)
-    except Exception as e:
-        error(f"An unexpected utility error occurred: {e}")
-        sys.exit(1)
+    return tmp
+
+
+def restore_database(sql_file: Path) -> None:
+    settings = validate_security_config()
+    url = urlparse(settings.database_url)
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = url.password or ""
+
+    db = url.path.lstrip("/")
+
+    cmd = [
+        "psql",
+        "-h",
+        url.hostname or "localhost",
+        "-p",
+        str(url.port or 5432),
+        "-U",
+        url.username or "postgres",
+        "-d",
+        db,
+        "-f",
+        str(sql_file),
+    ]
+
+    # nosec B603 - Explicit argument array with shell execution disabled prevents injection vulnerabilities
+    subprocess.run(
+        cmd,
+        env=env,
+        shell=False,
+        check=True,
+    )
 
 
 def main() -> None:
-    download_security_master(SECURITY_MASTER_URL, DEFAULT_DESTINATION)
+    parser = argparse.ArgumentParser(description="QuantGrid Database Restore Utility")
+    parser.add_argument("backup", help="Path to the backup file (.sql or .sql.gz)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
+
+    args = parser.parse_args()
+    backup = Path(args.backup)
+
+    if not backup.exists():
+        error(f"{backup} not found.")
+        sys.exit(1)
+
+    print()
+    print(Color.BOLD + "=" * 70)
+    print("QuantGrid Database Restore")
+    print("=" * 70 + Color.END)
+
+    info(f"Backup : {backup}")
+
+    if not args.force:
+        confirm = input("\nThis will overwrite existing data.\nContinue? (yes/no): ")
+        if confirm.strip().lower() != "yes":
+            warn("Restore cancelled.")
+            return
+
+    sql = backup
+    try:
+        sql = extract_sql(backup)
+        restore_database(sql)
+        success("Database restored successfully.")
+
+    except subprocess.CalledProcessError as e:
+        error("Restore failed.")
+        print(e)
+    except Exception as e:
+        error(f"An unexpected error occurred: {e}")
+    finally:
+        if sql != backup and sql.exists():
+            sql.unlink()
 
 
 if __name__ == "__main__":
