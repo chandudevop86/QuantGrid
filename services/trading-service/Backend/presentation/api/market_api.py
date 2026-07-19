@@ -161,15 +161,26 @@ def _candles_from_chart(symbol: str, chart: dict[str, Any], *, limit: int) -> li
         if any(value is None for value in values):
             continue
 
+        open_price = values[0]
+        high_price = values[1]
+        low_price = values[2]
+        close_price = values[3]
+
+        assert open_price is not None
+        assert high_price is not None
+        assert low_price is not None
+        assert close_price is not None
+
+
         candles.append({
-            "symbol": symbol.upper(),
-            "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
-            "exchange_timezone": timezone_name,
-            "open": round(float(values[0]), 2),
-            "high": round(float(values[1]), 2),
-            "low": round(float(values[2]), 2),
-            "close": round(float(values[3]), 2),
-            "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
+                "symbol": symbol.upper(),
+                "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
+                "exchange_timezone": timezone_name,
+                "open": round(float(open_price), 2),
+                "high": round(float(high_price), 2),
+                "low": round(float(low_price), 2),
+                "close": round(float(close_price), 2),
+                "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
         })
 
     return candles[-limit:]
