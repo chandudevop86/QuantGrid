@@ -38,7 +38,7 @@ def prepare_ohlcv(data: Any) -> pd.DataFrame:
         df[column] = pd.to_numeric(df[column], errors="coerce")
 
     return (
-        df.dropna(subset=["timestamp", "open", "high", "low", "close"])
+        df.dropna(subset=["timestamp", "open", "high", "low", "close","volume"])
         .drop_duplicates(subset=["timestamp"])
         .sort_values("timestamp")
         .reset_index(drop=True)
@@ -112,8 +112,8 @@ def session_vwap(df: pd.DataFrame) -> pd.Series:
     session_value = (typical_price * volume).groupby(df["session_day"]).cumsum()
     session_volume = volume.groupby(df["session_day"]).cumsum().replace(0.0, pd.NA)
     return session_value.div(session_volume).fillna(df["close"]).astype(float)
-def adx(df: pd.DataFrame, period:int=14):
-
+def adx(df: pd.DataFrame, period:int=14)-> pd.Series:
+    
     high = df["high"]
     low = df["low"]
 
