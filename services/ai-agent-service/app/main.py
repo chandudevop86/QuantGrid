@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from agents.audit_agent import run_audit
-
+from reporting.report_generator import generate_report
 
 app = FastAPI(
     title="QuantGrid AI Audit Agent"
@@ -16,11 +16,15 @@ def health():
 
 
 @app.post("/audit")
-def audit_project(path:str):
+def audit(path:str):
 
-    result = run_audit(path)
+    report = run_audit(path)
+
+    report_file = generate_report(report)
+
 
     return {
         "status":"completed",
-        "report":result
+        "report":report,
+        "report_file":report_file
     }
