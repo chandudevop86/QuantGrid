@@ -1,5 +1,10 @@
 import ast
 
+from scanner.rules.security_rules import check_security
+from scanner.rules.code_quality_rules import check_quality
+from scanner.rules.trading_rules import check_trading
+
+
 
 def analyze_python_file(file):
 
@@ -8,35 +13,48 @@ def analyze_python_file(file):
 
     try:
 
-        with open(file) as f:
+        with open(
+            file,
+            errors="ignore"
+        ) as f:
+
             code=f.read()
 
 
         tree=ast.parse(code)
 
 
-        for node in ast.walk(tree):
+        findings.extend(
+            check_security(
+                file,
+                code
+            )
+        )
 
-            if isinstance(node,ast.Import):
 
-                pass
+        findings.extend(
+            check_quality(
+                file,
+                tree
+            )
+        )
 
 
-            if isinstance(node,ast.Try):
-
-                findings.append(
-                    {
-                    "type":"exception_block",
-                    "file":file
-                    }
-                )
+        findings.extend(
+            check_trading(
+                file,
+                code
+            )
+        )
 
 
     except Exception as e:
 
         findings.append(
             {
-            "error":str(e),
+            "id":"PARSER-001",
+            "severity":"LOW",
+            "issue":str(e),
             "file":file
             }
         )
