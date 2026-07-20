@@ -71,7 +71,7 @@ class ExecuteTradeRequest(BaseModel):
     signal: SignalPayload
     market_price: float | None = None
 
-
+logger = logging.getLogger(__name__)
 @router.post("/generate-signal")
 def generate_signal(
     payload: StrategyRequest,
