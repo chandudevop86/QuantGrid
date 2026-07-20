@@ -77,6 +77,13 @@ def generate_signal(
     payload: StrategyRequest,
     _role: str = Depends(require_roles("admin", "trader", "analyst")),
 ) -> list[dict[str, Any]]:
+    
+    logger.info(
+        "Strategy=%s candles=%d",
+        payload.strategy_name,
+        len(payload.candles),
+    )
+
     signals = service.run_strategy(
         strategy_name=payload.strategy_name,
         data=payload.candles,
