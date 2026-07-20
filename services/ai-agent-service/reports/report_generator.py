@@ -1,54 +1,118 @@
+from datetime import datetime
+from pathlib import Path
+
+
+def generate_report(report):
+
+    output = Path("reports/QuantGrid_AI_Audit_Report.md")
+
+    findings = report.get("findings", [])
+
+
+    high = [
+        f for f in findings
+        if f["severity"] == "HIGH"
+    ]
+
+    medium = [
+        f for f in findings
+        if f["severity"] == "MEDIUM"
+    ]
+
+
+    content = f"""
 # QuantGrid AI Audit Report
 
-Date:
-2026-07-21
+Generated:
+{datetime.now()}
 
 
 ## Executive Summary
 
-Files scanned:
-274
-
-Risk Level:
-MEDIUM
+Files Scanned:
+{report.get("files_scanned")}
 
 
-## Scores
-
-Code Quality:
-8/10
-
-Security:
-9/10
-
-Trading Safety:
-7/10
+Total Findings:
+{len(findings)}
 
 
-## Critical Findings
+High Risk:
+{len(high)}
 
-### TRADE-001
 
-File:
-Backend/trading_system/broker.py
+Medium Risk:
+{len(medium)}
+
+
+---
+
+# High Risk Findings
+
+"""
+
+
+    for item in high:
+
+        content += f"""
+## {item['id']}
+
+Severity:
+{item['severity']}
+
 
 Issue:
-Live order execution path lacks visible risk control
+
+{item['issue']}
+
+
+File:
+
+{item['file']}
 
 
 Recommendation:
 
-Implement:
+Review trading safety controls.
 
-✓ Risk gate
-✓ Position limits
-✓ Stop loss validation
-✓ Circuit breaker
+---
+
+"""
 
 
-## Code Quality
+    content += """
 
-4 bare exception handlers detected
+# Medium Risk Findings
 
-Priority:
-Medium
+"""
+
+
+    for item in medium:
+
+        content += f"""
+## {item['id']}
+
+File:
+{item['file']}
+
+Issue:
+{item['issue']}
+
+Recommendation:
+Improve exception handling.
+
+---
+
+"""
+
+
+    output.parent.mkdir(
+        exist_ok=True
+    )
+
+    output.write_text(
+        content
+    )
+
+
+    return str(output)
