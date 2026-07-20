@@ -284,3 +284,19 @@ def observe_risk_block(strategy: str, rule_triggered: str) -> None:
 def observe_trading_decision(strategy: str, action: str, confidence: float) -> None:
     """Placeholder to intercept structural routing errors."""
     pass
+def observe_api_request(
+    method: str,
+    path: str,
+    status_code: int,
+    latency_seconds: float,
+) -> None:
+    """
+    Record API request metrics.
+    """
+
+    if api_request_latency_seconds is not None:
+        api_request_latency_seconds.labels(
+            method=method,
+            path=path,
+            status_code=str(status_code),
+        ).observe(latency_seconds)
