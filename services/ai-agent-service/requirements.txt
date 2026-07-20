@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-dotenv
+langchain
+langgraph
+openai
+gitpython
+tree-sitter
+pydantic
+requests
