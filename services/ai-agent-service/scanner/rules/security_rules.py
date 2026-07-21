@@ -88,30 +88,3 @@ PATTERNS = [
     ),
 ]
 
-def check_security(file_path, code):
-
-    findings = []
-
-
-    for pattern in SECRET_PATTERNS:
-
-        matches = re.findall(
-            pattern,
-            code,
-            re.IGNORECASE
-        )
-
-
-        if matches:
-
-            findings.append(
-                {
-                    "id":"SECURITY-001",
-                    "severity":"HIGH",
-                    "issue":"Possible hardcoded secret",
-                    "file":file_path
-                }
-            )
-
-
-    return findings
