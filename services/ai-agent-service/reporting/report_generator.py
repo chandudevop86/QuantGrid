@@ -242,8 +242,18 @@ Architecture Score:
 
 Agent:
 {architecture.get("agent","")}
+    content += f"""
+
+# Architecture Assessment
+
+Architecture Score:
+{architecture_score}/100
+
+Agent:
+{architecture.get("agent","")}
 
 Services:
+    
 """
 
     for service in architecture.get("services", []):
@@ -264,9 +274,8 @@ Services:
     for rec in architecture.get("recommendations", []):
         content += f"- {rec}\n"
 
-    content += f"""
-
-performance = report.get("performance", {})
+    # Python code starts here (outside the f-string)
+    performance = report.get("performance", {})
     performance_score = performance.get("score", "N/A")
 
     content += f"""
@@ -285,6 +294,8 @@ Performance Findings:
 {len(performance.get("findings", []))}
 
 """
+
+
 
     if performance.get("findings"):
 
