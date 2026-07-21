@@ -14,14 +14,16 @@ def calculate_risk_score(findings):
 
     score = 0
 
+
     for finding in findings:
+
         score += SEVERITY_SCORE.get(
             finding.get("severity"),
             1
         )
 
-    return score
 
+    return min(score,100)
 
 def risk_rating(score):
 
@@ -53,8 +55,8 @@ def aggregate_findings(findings):
 
         key = (
             finding["id"],
-            finding["file"],
             finding["issue"]
+            
         )
 
 
@@ -285,8 +287,48 @@ Recommendation:
 
     output = Path(
         "reports/QuantGrid_AI_Audit_Report.md"
+        
     )
+    
+    architecture = report.get(
+    "architecture",
+    {}
+    )
+    architecture = report.get("architecture", {})
 
+    content += f"""
+
+# Architecture Assessment
+
+Score:
+
+{architecture.get("score", "N/A")}/100
+
+Agent:
+
+{architecture.get("agent", "")}
+
+Services:
+
+"""
+
+    for service in architecture.get("services", []):
+        content += f"- {service}\n"
+
+    content += "\nTechnologies:\n\n"
+
+    for tech in architecture.get("technologies", []):
+        content += f"- {tech}\n"
+
+    content += "\nWarnings:\n\n"
+
+    for warning in architecture.get("warnings", []):
+        content += f"- {warning}\n"
+
+    content += "\nRecommendations:\n\n"
+
+    for rec in architecture.get("recommendations", []):
+        content += f"- {rec}\n"
 
     output.parent.mkdir(
         exist_ok=True
@@ -299,3 +341,71 @@ Recommendation:
 
 
     return str(output)
+
+
+content += f"""
+
+# Architecture Assessment
+
+
+Score:
+
+{architecture.get("score","N/A")}/100
+
+
+Agent:
+
+{architecture.get("agent","")}
+
+
+Services:
+
+
+"""
+
+
+for service in architecture.get("services",[]):
+
+    content += f"- {service}\n"
+
+
+
+content += """
+
+Technologies:
+
+
+"""
+
+
+for tech in architecture.get("technologies",[]):
+
+    content += f"- {tech}\n"
+
+
+
+content += """
+
+Warnings:
+
+
+"""
+
+
+for warning in architecture.get("warnings",[]):
+
+    content += f"- {warning}\n"
+
+
+
+content += """
+
+Recommendations:
+
+
+"""
+
+
+for rec in architecture.get("recommendations",[]):
+
+    content += f"- {rec}\n"
