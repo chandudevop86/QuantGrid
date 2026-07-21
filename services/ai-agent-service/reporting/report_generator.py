@@ -269,14 +269,15 @@ Services:
 ---
 content += f"""
 
----
+
 
 # Performance Assessment
 
 Performance Score:
 {performance_score}/100
 
-Agent:
+Agent :
+    
 {performance.get("agent", "")}
 
 Performance Findings:
