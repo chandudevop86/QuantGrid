@@ -124,19 +124,22 @@ def generate_report(report):
     architecture = report.get("architecture", {})
 
     security = report.get("security", {})
+    performance = report.get("performance", {})
+
+    performance_score = performance.get("score", 0)
 
     architecture_score = architecture.get("score", 0)
 
     security_score = security.get("score", 0)
 
     overall_health = int(
-        (
-            architecture_score
-            + security_score
-            + (100 - score)
-        ) / 3
-    )
-
+    (
+        architecture_score
+        + security_score
+        + performance_score
+        + (100 - score)
+    ) / 4
+)
     severity_groups = defaultdict(list)
 
     for item in grouped:
@@ -170,6 +173,9 @@ Architecture Score:
 
 Security Score:
 {security_score}/100
+
+Performance Score:
+{performance_score}/100
 
 Risk Score:
 {score}/100
@@ -260,6 +266,52 @@ Services:
     content += f"""
 
 ---
+content += f"""
+
+---
+
+# Performance Assessment
+
+Performance Score:
+{performance_score}/100
+
+Agent:
+{performance.get("agent", "")}
+
+Performance Findings:
+{len(performance.get("findings", []))}
+"""
+
+if performance.get("findings"):
+
+    grouped_performance = aggregate_findings(
+        performance["findings"]
+    )
+
+    for item in grouped_performance:
+
+        content += f"""
+
+## {item["id"]}
+
+Severity:
+{item["severity"]}
+
+Issue:
+{item["issue"]}
+
+Occurrences:
+{item["count"]}
+
+Affected Files:
+"""
+
+        for file in item["files"]:
+            content += f"- {file}\n"
+
+        content += "\nRecommendation:\n"
+        content += recommendation(item["id"])
+        content += "\n"
 
 # Security Assessment
 

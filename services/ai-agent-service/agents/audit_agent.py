@@ -3,6 +3,7 @@ from scanner.python_parser import analyze_python_file
 
 from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
+from agents.performance_agent import analyze_performance
 
 
 def run_audit(path: str):
@@ -11,9 +12,9 @@ def run_audit(path: str):
 
     findings = []
 
-    # -----------------------------
+    # ------------------------------------
     # Code Analysis
-    # -----------------------------
+    # ------------------------------------
     for file in files:
 
         if not file.endswith(".py"):
@@ -23,7 +24,9 @@ def run_audit(path: str):
             findings.extend(
                 analyze_python_file(file)
             )
+
         except Exception as e:
+
             findings.append(
                 {
                     "id": "AUDIT-ERROR",
@@ -33,15 +36,19 @@ def run_audit(path: str):
                 }
             )
 
-    # -----------------------------
+    # ------------------------------------
     # Security Analysis
-    # -----------------------------
+    # ------------------------------------
     try:
+
         security = analyze_security(path)
+
         findings.extend(
             security.get("findings", [])
         )
+
     except Exception as e:
+
         security = {
             "agent": "Security Agent",
             "score": 0,
@@ -49,12 +56,35 @@ def run_audit(path: str):
             "error": str(e),
         }
 
-    # -----------------------------
-    # Architecture Analysis
-    # -----------------------------
+    # ------------------------------------
+    # Performance Analysis
+    # ------------------------------------
     try:
-        architecture = analyze_architecture(path)
+
+        performance = analyze_performance(path)
+
+        findings.extend(
+            performance.get("findings", [])
+        )
+
     except Exception as e:
+
+        performance = {
+            "agent": "Performance Agent",
+            "score": 0,
+            "findings": [],
+            "error": str(e),
+        }
+
+    # ------------------------------------
+    # Architecture Analysis
+    # ------------------------------------
+    try:
+
+        architecture = analyze_architecture(path)
+
+    except Exception as e:
+
         architecture = {
             "agent": "Architecture Agent",
             "score": 0,
@@ -65,12 +95,13 @@ def run_audit(path: str):
             "error": str(e),
         }
 
-    # -----------------------------
+    # ------------------------------------
     # Final Report
-    # -----------------------------
+    # ------------------------------------
     return {
         "files_scanned": len(files),
         "findings": findings,
         "architecture": architecture,
         "security": security,
+        "performance": performance,
     }
