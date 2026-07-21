@@ -683,3 +683,35 @@ Documentation Findings:
     content += _build_standard_findings_block(findings)
 
     return content
+def generate_report(report):
+
+    findings = report.get("findings", [])
+
+    content = "# QuantGrid AI Audit Report\n\n"
+
+    content += f"""
+Generated:
+{datetime.now()}
+
+Files Scanned:
+{report.get("files_scanned",0)}
+
+Total Findings:
+{len(findings)}
+"""
+
+    output = Path(
+        "reports/QuantGrid_AI_Audit_Report.md"
+    )
+
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    output.write_text(
+        content,
+        encoding="utf-8"
+    )
+
+    return str(output)
