@@ -282,6 +282,8 @@ Agent :
 
 Performance Findings:
 {len(performance.get("findings", []))}
+
+
 """
 
 if performance.get("findings"):
@@ -325,17 +327,18 @@ Agent:
 
 Security Findings:
 {len(security.get("findings", []))}
+
 """
 
-    if security.get("findings"):
+if security.get("findings"):
 
-        grouped_security = aggregate_findings(
-            security["findings"]
-        )
+    grouped_security = aggregate_findings(
+        security["findings"]
+    )
 
-        for item in grouped_security:
+    for item in grouped_security:
 
-            content += f"""
+        content += f"""
 
 ## {item["id"]}
 
@@ -351,10 +354,10 @@ Occurrences:
 Affected Files:
 """
 
-            for file in item["files"]:
+        for file in item["files"]:
                 content += f"- {file}\n"
 
-            content += "\n"
+        content += "\n"
 
     content += f"""
 
@@ -383,20 +386,20 @@ Generated:
 
 Version:
 1.0
+
 """
 
-    output = Path(
+output = Path(
         "reports/QuantGrid_AI_Audit_Report.md"
     )
 
-    output.parent.mkdir(
+output.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    output.write_text(
+output.write_text(
         content,
         encoding="utf-8",
     )
-
-    return str(output)
+return str(output)
