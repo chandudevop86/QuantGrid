@@ -10,7 +10,7 @@ from agents.api_agent import analyze_api
 from agents.testing_agent import analyze_testing
 from agents.documentation_agent import analyze_documentation
 from agents.infrastructure_agent import analyze_infrastructure
-
+from scanner.scan_context import ScanContext
 
 def safe_run(agent, path, name):
     try:
@@ -26,7 +26,9 @@ def safe_run(agent, path, name):
 
 def run_audit(path: str):
 
-    files = scan_repository(path)
+    context = ScanContext(path)
+
+    files = context.files
 
     findings = []
 
@@ -59,9 +61,9 @@ def run_audit(path: str):
     # -----------------------------
 
     security = safe_run(
-        analyze_security,
-        path,
-        "Security Agent"
+    analyze_security,
+    context,
+    "Security Agent"
     )
 
     performance = safe_run(
