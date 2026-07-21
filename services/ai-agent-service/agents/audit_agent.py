@@ -4,7 +4,7 @@ from scanner.python_parser import analyze_python_file
 from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
 from agents.performance_agent import analyze_performance
-from agents.database_agent import analyze_databasefrom 
+from agents.database_agent import analyze_database
 from agents.devops_agent import analyze_devops
 from agents.api_agent import analyze_api
 
