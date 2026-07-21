@@ -10,6 +10,8 @@ from agents.testing_agent import analyze_testing
 from agents.documentation_agent import analyze_documentation
 from agents.infrastructure_agent import analyze_infrastructure
 from scanner.scan_context import ScanContext
+from collections import Counter
+from scanner.finding_normalizer import deduplicate_findings
 
 def safe_run(agent, path, name):
     try:
@@ -136,7 +138,11 @@ def run_audit(path: str):
             agent.get("findings", [])
         )
 
-
+    findings = deduplicate_findings(findings)
+    severity_summary = Counter(
+    f.get("severity","UNKNOWN")
+    for f in findings
+)
     # -----------------------------
     # Final Audit Result
     # -----------------------------
@@ -164,5 +170,12 @@ def run_audit(path: str):
         "documentation": documentation,
 
         "infrastructure": infrastructure,
+        "summary": {
+                "critical": severity_summary["CRITICAL"],
+                "high": severity_summary["HIGH"],
+                "medium": severity_summary["MEDIUM"],
+                "low": severity_summary["LOW"],
+                "total": len(findings)
+        },
 
     }
