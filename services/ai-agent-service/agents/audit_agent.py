@@ -82,6 +82,22 @@ def run_audit(path: str):
     database.get("findings", [])
 )    
 
+    content += f"""
+
+---
+
+# Database Assessment
+
+Database Score:
+{database_score}/100
+
+Agent:
+{database.get("agent", "")}
+
+Database Findings:
+{len(database.get("findings", []))}
+
+"""
     # ------------------------------------
     # Architecture Analysis
     # ------------------------------------
