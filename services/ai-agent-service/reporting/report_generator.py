@@ -2,345 +2,244 @@ from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
 
-
 SEVERITY_SCORE = {
     "HIGH": 10,
     "MEDIUM": 5,
-    "LOW": 2
+    "LOW": 2,
 }
 
 
 def calculate_risk_score(findings):
+    score = sum(
+        SEVERITY_SCORE.get(f.get("severity", "LOW"), 1)
+        for f in findings
+    )
+    return min(score, 100)
 
-    score = 0
-
-
-    for finding in findings:
-
-        score += SEVERITY_SCORE.get(
-            finding.get("severity"),
-            1
-        )
-
-
-    return min(score,100)
 
 def risk_rating(score):
-
     if score >= 60:
         return "CRITICAL"
-
-    if score >= 30:
+    elif score >= 30:
         return "HIGH"
-
-    if score >= 15:
+    elif score >= 15:
         return "MEDIUM"
-
     return "LOW"
+
 
 def aggregate_findings(findings):
 
-    grouped = defaultdict(
-        lambda: {
-            "id": "",
-            "severity": "",
-            "issue": "",
-            "files": [],
-            "count": 0
-        }
-    )
-
+    grouped = defaultdict(lambda: {
+        "id": "",
+        "severity": "",
+        "issue": "",
+        "files": [],
+        "count": 0
+    })
 
     for finding in findings:
 
         key = (
-            finding["id"],
-            finding["issue"]
-            
+            finding.get("id"),
+            finding.get("issue")
         )
-
 
         item = grouped[key]
 
-        item["id"] = finding["id"]
-        item["severity"] = finding["severity"]
-        item["issue"] = finding["issue"]
+        item["id"] = finding.get("id")
+        item["severity"] = finding.get("severity")
+        item["issue"] = finding.get("issue")
         item["count"] += 1
+
         file = finding.get("file")
 
         if file and file not in item["files"]:
             item["files"].append(file)
-        
-        
-
 
     return list(grouped.values())
 
 
-def recommendation(finding):
+def recommendation(fid):
 
-    if finding["id"] == "TRADE-001":
-
-        return """
-- Add pre-trade risk validation
-- Enforce stop loss checks
-- Add position size limits
+    recommendations = {
+        "TRADE-001": """
+- Add pre-trade validation
+- Enforce stop-loss
+- Add position sizing
 - Add broker circuit breaker
-"""
+""",
 
-
-    if finding["id"] == "CODE-001":
-
-        return """
+        "CODE-001": """
 - Replace bare except blocks
+- Catch specific exceptions
 - Add structured logging
-- Preserve production stack traces
-"""
+""",
 
+        "SECURITY-001": """
+- Remove hardcoded secrets
+- Move secrets into .env
+- Use Secret Manager or Vault
+""",
 
-    return """
-- Review and fix identified issue
+        "SECURITY-002": """
+- Rotate AWS credentials immediately
+- Store keys securely
+""",
+
+        "SECURITY-003": """
+- Remove eval()
+- Replace with safe parsing
+""",
+
+        "SECURITY-004": """
+- Remove exec()
+- Use safer alternatives
 """
+    }
+
+    return recommendations.get(
+        fid,
+        "- Review and fix the identified issue."
+    )
 
 
 def generate_report(report):
 
-    findings = report.get(
-        "findings",
-        []
-    )
+    findings = report.get("findings", [])
 
+    grouped = aggregate_findings(findings)
 
-    grouped = aggregate_findings(
-        findings
-    )
+    score = calculate_risk_score(findings)
 
+    rating = risk_rating(score)
 
-    score = calculate_risk_score(
-        findings
-    )
+    architecture = report.get("architecture", {})
 
+    security = report.get("security", {})
 
-    rating = risk_rating(
-        score
-    )
+    severity_groups = {
+        "HIGH": [],
+        "MEDIUM": [],
+        "LOW": []
+    }
 
+    for item in grouped:
+        severity_groups[item["severity"]].append(item)
 
-    high = [
-        f for f in grouped
-        if f["severity"] == "HIGH"
-    ]
+    content = f"""# QuantGrid AI Audit Report
 
+Generated: {datetime.now():%Y-%m-%d %H:%M:%S}
 
-    medium = [
-        f for f in grouped
-        if f["severity"] == "MEDIUM"
-    ]
-
-
-    content = f"""
-# QuantGrid AI Audit Report
-
-
-Generated:
-
-{datetime.now()}
-
+---
 
 # Executive Summary
 
+Files Scanned: {report.get("files_scanned")}
 
-Files Scanned:
+Total Findings: {len(findings)}
 
-{report.get("files_scanned")}
+Unique Issues: {len(grouped)}
 
+Risk Score: {score}/100
 
-Total Findings:
-
-{len(findings)}
-
-
-Unique Issues:
-
-{len(grouped)}
-
-
-Risk Score:
-
-{score}/100
-
-
-Risk Rating:
-
-{rating}
-
-
+Risk Rating: **{rating}**
 
 ---
 
 # Risk Distribution
 
-
-High:
-
-{len(high)}
-
-
-Medium:
-
-{len(medium)}
-
-
+| Severity | Count |
+|----------|------:|
+| HIGH | {len(severity_groups["HIGH"])} |
+| MEDIUM | {len(severity_groups["MEDIUM"])} |
+| LOW | {len(severity_groups["LOW"])} |
 
 ---
-
-# High Risk Findings
-
 """
 
+    for severity in ["HIGH", "MEDIUM", "LOW"]:
 
-    for item in high:
+        content += f"\n# {severity.title()} Findings\n"
 
-        content += f"""
+        if not severity_groups[severity]:
+            content += "\nNo findings.\n"
+            continue
 
-## {item['id']}
+        for item in severity_groups[severity]:
 
+            content += f"""
 
-Severity:
+## {item["id"]}
 
-{item['severity']}
-
+Severity: {item["severity"]}
 
 Issue:
-
-{item['issue']}
-
-
-Affected Files:
-
-{len(item['files'])}
-
-
-"""
-
-        for file in item["files"]:
-            content += f"- {file}\n"
-
-
-        content += """
-
-Recommendation:
-
-"""
-
-        content += recommendation(item)
-
-        content += "\n---\n"
-
-
-
-    content += """
-
-# Medium Risk Findings
-
-"""
-
-
-    for item in medium:
-
-        content += f"""
-
-## {item['id']}
-
-
-Issue:
-
-{item['issue']}
-
+{item["issue"]}
 
 Occurrences:
+{item["count"]}
 
-{item['count']}
-
-
-Files:
-
-
+Affected Files:
 """
 
+            for f in item["files"]:
+                content += f"- {f}\n"
 
-        for file in item["files"]:
-            content += f"- {file}\n"
-
-
-        content += """
-
-Recommendation:
-
-"""
-
-
-        content += recommendation(item)
-
-        content += "\n---\n"
-
-
-
-    output = Path(
-        "reports/QuantGrid_AI_Audit_Report.md"
-        
-    )
-    
-    architecture = report.get(
-    "architecture",
-    {}
-    )
-    architecture = report.get("architecture", {})
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
 
     content += f"""
 
 # Architecture Assessment
 
-Score:
-
-{architecture.get("score", "N/A")}/100
+Architecture Score: {architecture.get("score", "N/A")}/100
 
 Agent:
-
 {architecture.get("agent", "")}
 
 Services:
-
 """
 
     for service in architecture.get("services", []):
         content += f"- {service}\n"
 
-    content += "\nTechnologies:\n\n"
+    content += "\nTechnologies:\n"
 
     for tech in architecture.get("technologies", []):
         content += f"- {tech}\n"
 
-    content += "\nWarnings:\n\n"
+    content += "\nWarnings:\n"
 
     for warning in architecture.get("warnings", []):
         content += f"- {warning}\n"
 
-    content += "\nRecommendations:\n\n"
+    content += "\nRecommendations:\n"
 
     for rec in architecture.get("recommendations", []):
         content += f"- {rec}\n"
 
-    output.parent.mkdir(
-        exist_ok=True
-    )
+    content += f"""
 
+---
 
-    output.write_text(
-        content
-    )
+# Security Assessment
 
+Security Score: {security.get("score", "N/A")}/100
+
+Agent:
+{security.get("agent", "")}
+
+Security Findings:
+{len(security.get("findings", []))}
+
+---
+
+Report generated by QuantGrid AI Audit Agent.
+"""
+
+    output = Path("reports/QuantGrid_AI_Audit_Report.md")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(content, encoding="utf-8")
 
     return str(output)
-
-

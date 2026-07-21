@@ -5,36 +5,72 @@ from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
 
 
-def run_audit(path):
+def run_audit(path: str):
 
     files = scan_repository(path)
 
     findings = []
 
-    # Code analysis
+    # -----------------------------
+    # Code Analysis
+    # -----------------------------
     for file in files:
 
-        if file.endswith(".py"):
+        if not file.endswith(".py"):
+            continue
 
-            result = analyze_python_file(file)
-            findings.extend(result)
+        try:
+            findings.extend(
+                analyze_python_file(file)
+            )
+        except Exception as e:
+            findings.append(
+                {
+                    "id": "AUDIT-ERROR",
+                    "severity": "LOW",
+                    "issue": f"Code analysis failed: {e}",
+                    "file": file,
+                }
+            )
 
-    # Security analysis (run once)
-    security = analyze_security(path)
+    # -----------------------------
+    # Security Analysis
+    # -----------------------------
+    try:
+        security = analyze_security(path)
+        findings.extend(
+            security.get("findings", [])
+        )
+    except Exception as e:
+        security = {
+            "agent": "Security Agent",
+            "score": 0,
+            "findings": [],
+            "error": str(e),
+        }
 
-    findings.extend(
-        security["findings"]
-    )
+    # -----------------------------
+    # Architecture Analysis
+    # -----------------------------
+    try:
+        architecture = analyze_architecture(path)
+    except Exception as e:
+        architecture = {
+            "agent": "Architecture Agent",
+            "score": 0,
+            "services": [],
+            "technologies": [],
+            "warnings": [],
+            "recommendations": [],
+            "error": str(e),
+        }
 
-    # Architecture analysis (run once)
-    architecture = analyze_architecture(path)
-
-    # Build report
-    report = {
+    # -----------------------------
+    # Final Report
+    # -----------------------------
+    return {
         "files_scanned": len(files),
         "findings": findings,
         "architecture": architecture,
         "security": security,
     }
-
-    return report
