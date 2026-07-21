@@ -232,7 +232,6 @@ Affected Files:
             content += "\nRecommendation:\n"
             content += recommendation(item["id"])
             content += "\n\n---\n"
-
     content += f"""
 
 # Architecture Assessment
@@ -241,19 +240,9 @@ Architecture Score:
 {architecture_score}/100
 
 Agent:
-{architecture.get("agent","")}
-    content += f"""
-
-# Architecture Assessment
-
-Architecture Score:
-{architecture_score}/100
-
-Agent:
-{architecture.get("agent","")}
+{architecture.get("agent", "")}
 
 Services:
-    
 """
 
     for service in architecture.get("services", []):
@@ -327,13 +316,17 @@ Affected Files:
             content += "\nRecommendation:\n"
             content += recommendation(item["id"])
             content += "\n\n---\n"
+    content += f"""
+
+---
+
 # Security Assessment
 
 Security Score:
 {security_score}/100
 
 Agent:
-{security.get("agent","")}
+{security.get("agent", "")}
 
 Security Findings:
 {len(security.get("findings", []))}
@@ -399,17 +392,18 @@ Version:
 
 """
 
-output = Path(
+    output = Path(
         "reports/QuantGrid_AI_Audit_Report.md"
     )
 
-output.parent.mkdir(
+    output.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-output.write_text(
+    output.write_text(
         content,
         encoding="utf-8",
     )
-return str(output)
+
+    return str(output)
