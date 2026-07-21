@@ -7,8 +7,6 @@ SEVERITY_SCORE = {
     "MEDIUM": 5,
     "LOW": 2,
 }
-database = report.get("database", {})
-database_score = database.get("score", 0)
 
 def calculate_risk_score(findings):
     score = sum(
@@ -126,7 +124,8 @@ def generate_report(report):
 
     security = report.get("security", {})
     performance = report.get("performance", {})
-
+    database = report.get("database", {})
+    database_score = database.get("score", 0)
     performance_score = performance.get("score", 0)
 
     architecture_score = architecture.get("score", 0)
@@ -138,8 +137,9 @@ def generate_report(report):
         architecture_score
         + security_score
         + performance_score
+        + database_score
         + (100 - score)
-    ) / 4
+    ) / 5
 )
     severity_groups = defaultdict(list)
 
@@ -333,10 +333,10 @@ Security Findings:
 
 """
 
-if security.get("findings"):
+    if security.get("findings"):
 
-    grouped_security = aggregate_findings(
-        security["findings"]
+        grouped_security = aggregate_findings(
+            security["findings"]
     )
 
     for item in grouped_security:
