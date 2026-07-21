@@ -469,7 +469,8 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
 
-    content += f"""
+       content += f"""
+
 ---
 
 # Documentation Assessment
@@ -482,12 +483,19 @@ Agent:
 
 Documentation Findings:
 {len(documentation.get("findings", []))}
+
 """
 
     if documentation.get("findings"):
-        grouped_doc = aggregate_findings(documentation["findings"])
+
+        grouped_doc = aggregate_findings(
+            documentation["findings"]
+        )
+
         for item in grouped_doc:
+
             content += f"""
+
 ## {item["id"]}
 
 Severity:
@@ -499,7 +507,19 @@ Issue:
 Occurrences:
 {item["count"]}
 
-    output = Path("reports/QuantGrid_AI_Audit_Report.md")
+Affected Files:
+"""
+
+            for file in item["files"]:
+                content += f"- {file}\n"
+
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
+
+    output = Path(
+        "reports/QuantGrid_AI_Audit_Report.md"
+    )
 
     output.parent.mkdir(
         parents=True,
