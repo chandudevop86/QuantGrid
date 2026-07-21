@@ -11,9 +11,13 @@ SEVERITY_SCORE = {
 
 def calculate_risk_score(findings):
     score = sum(
-        SEVERITY_SCORE.get(f.get("severity", "LOW"), 1)
-        for f in findings
+        SEVERITY_SCORE.get(
+            finding.get("severity", "LOW"),
+            1,
+        )
+        for finding in findings
     )
+
     return min(score, 100)
 
 
@@ -29,26 +33,28 @@ def risk_rating(score):
 
 def aggregate_findings(findings):
 
-    grouped = defaultdict(lambda: {
-        "id": "",
-        "severity": "",
-        "issue": "",
-        "files": [],
-        "count": 0
-    })
+    grouped = defaultdict(
+        lambda: {
+            "id": "",
+            "severity": "",
+            "issue": "",
+            "files": [],
+            "count": 0,
+        }
+    )
 
     for finding in findings:
 
         key = (
             finding.get("id"),
-            finding.get("issue")
+            finding.get("issue"),
         )
 
         item = grouped[key]
 
-        item["id"] = finding.get("id")
-        item["severity"] = finding.get("severity")
-        item["issue"] = finding.get("issue")
+        item["id"] = finding.get("id", "")
+        item["severity"] = finding.get("severity", "LOW")
+        item["issue"] = finding.get("issue", "")
         item["count"] += 1
 
         file = finding.get("file")
@@ -59,9 +65,10 @@ def aggregate_findings(findings):
     return list(grouped.values())
 
 
-def recommendation(fid):
+def recommendation(rule_id):
 
     recommendations = {
+
         "TRADE-001": """
 - Add pre-trade validation
 - Enforce stop-loss
@@ -73,33 +80,34 @@ def recommendation(fid):
 - Replace bare except blocks
 - Catch specific exceptions
 - Add structured logging
+- Preserve stack traces
 """,
 
         "SECURITY-001": """
 - Remove hardcoded secrets
-- Move secrets into .env
-- Use Secret Manager or Vault
+- Store secrets in .env
+- Use AWS Secrets Manager / Hashicorp Vault
 """,
 
         "SECURITY-002": """
 - Rotate AWS credentials immediately
-- Store keys securely
+- Remove exposed access keys
 """,
 
         "SECURITY-003": """
 - Remove eval()
-- Replace with safe parsing
+- Use safe parsing
 """,
 
         "SECURITY-004": """
 - Remove exec()
-- Use safer alternatives
-"""
+- Replace with secure alternatives
+""",
     }
 
     return recommendations.get(
-        fid,
-        "- Review and fix the identified issue."
+        rule_id,
+        "- Review and fix identified issue.",
     )
 
 
@@ -117,32 +125,60 @@ def generate_report(report):
 
     security = report.get("security", {})
 
-    severity_groups = {
-        "HIGH": [],
-        "MEDIUM": [],
-        "LOW": []
-    }
+    architecture_score = architecture.get("score", 0)
+
+    security_score = security.get("score", 0)
+
+    overall_health = int(
+        (
+            architecture_score
+            + security_score
+            + (100 - score)
+        ) / 3
+    )
+
+    severity_groups = defaultdict(list)
 
     for item in grouped:
-        severity_groups[item["severity"]].append(item)
+        severity = item.get(
+            "severity",
+            "LOW"
+        ).upper()
+
+        severity_groups[severity].append(item)
 
     content = f"""# QuantGrid AI Audit Report
 
-Generated: {datetime.now():%Y-%m-%d %H:%M:%S}
+Generated:
+{datetime.now():%Y-%m-%d %H:%M:%S}
 
 ---
 
 # Executive Summary
 
-Files Scanned: {report.get("files_scanned")}
+Files Scanned:
+{report.get("files_scanned",0)}
 
-Total Findings: {len(findings)}
+Total Findings:
+{len(findings)}
 
-Unique Issues: {len(grouped)}
+Unique Issues:
+{len(grouped)}
 
-Risk Score: {score}/100
+Architecture Score:
+{architecture_score}/100
 
-Risk Rating: **{rating}**
+Security Score:
+{security_score}/100
+
+Risk Score:
+{score}/100
+
+Risk Rating:
+**{rating}**
+
+Overall Health:
+{overall_health}/100
 
 ---
 
@@ -171,7 +207,8 @@ Risk Rating: **{rating}**
 
 ## {item["id"]}
 
-Severity: {item["severity"]}
+Severity:
+{item["severity"]}
 
 Issue:
 {item["issue"]}
@@ -182,8 +219,8 @@ Occurrences:
 Affected Files:
 """
 
-            for f in item["files"]:
-                content += f"- {f}\n"
+            for file in item["files"]:
+                content += f"- {file}\n"
 
             content += "\nRecommendation:\n"
             content += recommendation(item["id"])
@@ -193,10 +230,11 @@ Affected Files:
 
 # Architecture Assessment
 
-Architecture Score: {architecture.get("score", "N/A")}/100
+Architecture Score:
+{architecture_score}/100
 
 Agent:
-{architecture.get("agent", "")}
+{architecture.get("agent","")}
 
 Services:
 """
@@ -225,21 +263,86 @@ Services:
 
 # Security Assessment
 
-Security Score: {security.get("score", "N/A")}/100
+Security Score:
+{security_score}/100
 
 Agent:
-{security.get("agent", "")}
+{security.get("agent","")}
 
 Security Findings:
 {len(security.get("findings", []))}
+"""
+
+    if security.get("findings"):
+
+        grouped_security = aggregate_findings(
+            security["findings"]
+        )
+
+        for item in grouped_security:
+
+            content += f"""
+
+## {item["id"]}
+
+Severity:
+{item["severity"]}
+
+Issue:
+{item["issue"]}
+
+Occurrences:
+{item["count"]}
+
+Affected Files:
+"""
+
+            for file in item["files"]:
+                content += f"- {file}\n"
+
+            content += "\n"
+
+    content += f"""
 
 ---
 
-Report generated by QuantGrid AI Audit Agent.
+# Overall Project Health
+
+Architecture Score:
+{architecture_score}/100
+
+Security Score:
+{security_score}/100
+
+Risk Score:
+{score}/100
+
+Overall Health:
+{overall_health}/100
+
+---
+
+Report generated by QuantGrid AI Audit Agent
+
+Generated:
+{datetime.now():%Y-%m-%d %H:%M:%S}
+
+Version:
+1.0
 """
 
-    output = Path("reports/QuantGrid_AI_Audit_Report.md")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(content, encoding="utf-8")
+    output = Path(
+        "reports/QuantGrid_AI_Audit_Report.md"
+    )
+
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output.write_text(
+        content,
+        encoding="utf-8",
+    )
 
     return str(output)
