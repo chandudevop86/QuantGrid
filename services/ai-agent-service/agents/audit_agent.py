@@ -1,6 +1,5 @@
-from scanner.repo_scanner import scan_repository
-from scanner.python_parser import analyze_python_file
 
+from scanner.python_parser import analyze_python_file
 from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
 from agents.performance_agent import analyze_performance

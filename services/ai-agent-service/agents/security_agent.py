@@ -1,6 +1,5 @@
 from collections import Counter
 
-from scanner.repo_scanner import scan_repository
 from scanner.rules.security_rules import check_security
 
 
@@ -10,8 +9,7 @@ SEVERITY_PENALTY = {
     "LOW": 2,
 }
 
-
-def analyze_security(path: str):
+def analyze_security(context):
     """
     Scan all Python files for security issues and
     generate an overall security assessment.
@@ -19,7 +17,7 @@ def analyze_security(path: str):
 
     findings = []
 
-    files = scan_repository(path)
+    files = context.python_files
 
     for file in files:
         if file.endswith(".py"):
