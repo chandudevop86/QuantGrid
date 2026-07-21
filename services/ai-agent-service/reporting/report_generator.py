@@ -153,7 +153,7 @@ def generate_report(report):
             + testing_score
             + documentation_score
             + (100 - score)
-        ) / 9
+        ) / 10
     )
 
     severity_groups = defaultdict(list)
@@ -365,7 +365,7 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
 
-content += f"""
+        content += f"""
 
 ---
 
