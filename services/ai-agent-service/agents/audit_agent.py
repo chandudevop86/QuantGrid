@@ -8,7 +8,8 @@ from agents.database_agent import analyze_database
 from agents.devops_agent import analyze_devops
 from agents.api_agent import analyze_api
 from agents.testing_agent import analyze_testing
-
+from agents.documentation_agent import analyze_documentation
+from agents.infrastructure_agent import analyze_infrastructure
 
 
 
@@ -127,16 +128,27 @@ Database Findings:
 
         findings.extend(
         devops["findings"]
-    )
+        )
         
         api = analyze_api(path)
         findings.extend(api["findings"])
+        
         testing = analyze_testing(path)
 
         findings.extend(
         testing["findings"]
-    )
+        )
+        
+        infrastructure = analyze_infrastructure(path)
 
+        findings.extend(
+        infrastructure["findings"]
+        )
+        documentation = analyze_documentation(path)
+
+        findings.extend(
+        documentation["findings"]
+        )
     # ------------------------------------
     # Final Report
     # ------------------------------------
@@ -150,4 +162,6 @@ Database Findings:
         "devops": devops,
         "api": api,
         "testing": testing,
+        "documentation": documentation,
+        "infrastructure": infrastructure,
     }

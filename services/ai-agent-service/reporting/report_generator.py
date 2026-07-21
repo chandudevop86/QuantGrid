@@ -90,6 +90,51 @@ def recommendation(rule_id):
 - Remove exec()
 - Replace with secure alternatives
 """,
+        "DOC-001": """
+- Add module-level docstrings
+- Document purpose and usage
+""",
+        "DOC-002": """
+- Resolve TODO items
+- Remove obsolete TODO comments
+""",
+        "DOC-003": """
+- Address FIXME issues before release
+- Track them as technical debt if needed
+""",
+        "DOC-004": """
+- Improve inline code comments
+- Document complex business logic
+""",
+"INFRA-001": """
+- Add Docker HEALTHCHECK
+- Verify container health
+""",
+
+"INFRA-002": """
+- Configure restart policy
+- Improve container resilience
+""",
+
+"INFRA-003": """
+- Enable S3 Versioning
+- Protect Terraform state
+""",
+
+"INFRA-004": """
+- Enable encryption at rest
+- Use KMS-managed keys
+""",
+
+"INFRA-005": """
+- Configure Kubernetes Liveness Probe
+- Restart unhealthy pods automatically
+""",
+
+"INFRA-006": """
+- Configure Readiness Probe
+- Prevent routing traffic to unready pods
+""",
     }
     return recommendations.get(
         rule_id,
@@ -98,6 +143,9 @@ def recommendation(rule_id):
 
 
 def generate_report(report):
+    documentation = report.get("documentation", {})
+    documentation_score = documentation.get("score", 0)
+
     findings = report.get("findings", [])
     grouped = aggregate_findings(findings)
     score = calculate_risk_score(findings)
@@ -109,6 +157,7 @@ def generate_report(report):
     database = report.get("database", {})
     devops = report.get("devops", {})
     api = report.get("api", {})
+    infrastructure = report.get("infrastructure", {})
     testing = report.get("testing", {})
     
     architecture_score = architecture.get("score", 0)
@@ -117,6 +166,7 @@ def generate_report(report):
     database_score = database.get("score", 0)
     devops_score = devops.get("score", 0)
     api_score = api.get("score", 0)
+    infrastructure_score = infrastructure.get("score", 0)
     testing_score = testing.get("score", 0)
     
     overall_health = int(
@@ -127,9 +177,11 @@ def generate_report(report):
             + database_score
             + devops_score
             + api_score
+            +infrastructure_score 
             + testing_score
+            + documentation_score
             + (100 - score)
-        ) / 8
+        ) / 9
     )
 
     severity_groups = defaultdict(list)
@@ -166,6 +218,9 @@ Performance Score:
 
 API Score:
 {api_score}/100
+
+Documentation Score:
+{documentation_score}/100
 
 Risk Score:
 {score}/100
@@ -211,7 +266,6 @@ Occurrences:
 
 Affected Files:
 """
-            # Fixed: Properly indented these lines back into the 'item' loop
             for file in item["files"]:
                 content += f"- {file}\n"
 
@@ -285,7 +339,6 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
             
-    # Fixed: Moved DevOps out of the performance findings conditional scope
     content += f"""
 ---
 
@@ -301,7 +354,6 @@ DevOps Findings:
 {len(devops.get("findings", []))}
 """
 
-    # Fixed: Moved API Assessment back inside the generate_report() function scope
     content += f"""
 ---
 
@@ -341,8 +393,58 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
 
+content += f"""
+
+---
+
+# Infrastructure Assessment
+
+Infrastructure Score:
+{infrastructure_score}/100
+
+Agent:
+{infrastructure.get("agent", "")}
+
+Infrastructure Findings:
+{len(infrastructure.get("findings", []))}
+
+"""
+
+if infrastructure.get("findings"):
+
+    grouped_infra = aggregate_findings(
+        infrastructure["findings"]
+    )
+
+    for item in grouped_infra:
+
+        content += f"""
+
+## {item["id"]}
+
+Severity:
+{item["severity"]}
+
+Issue:
+{item["issue"]}
+
+Occurrences:
+{item["count"]}
+
+Affected Files:
+"""
+
+        for file in item["files"]:
+            content += f"- {file}\n"
+
+        content += "\nRecommendation:\n"
+        content += recommendation(item["id"])
+        content += "\n\n---\n"
+
+
     content += f"""
 ---
+
 
 # Testing Assessment
 
@@ -395,5 +497,43 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
 
-    # Fixed: Added missing return statement
-    return content
+    content += f"""
+---
+
+# Documentation Assessment
+
+Documentation Score:
+{documentation_score}/100
+
+Agent:
+{documentation.get("agent", "")}
+
+Documentation Findings:
+{len(documentation.get("findings", []))}
+"""
+
+    if documentation.get("findings"):
+        grouped_doc = aggregate_findings(documentation["findings"])
+        for item in grouped_doc:
+            content += f"""
+## {item["id"]}
+
+Severity:
+{item["severity"]}
+
+Issue:
+{item["issue"]}
+
+Occurrences:
+{item["count"]}
+
+Affected Files:
+"""
+            for file in item["files"]:
+                content += f"- {file}\n"
+
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
+
+            return content
