@@ -11,7 +11,44 @@ SEVERITY_SCORE = {
     "MEDIUM": 5,
     "LOW": 2,
 }
+import ast
 
+
+def detect_eval_usage(file_path):
+
+    findings = []
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    try:
+        tree = ast.parse(source)
+
+    except SyntaxError:
+        return findings
+
+
+    for node in ast.walk(tree):
+
+        if isinstance(node, ast.Call):
+
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+
+                findings.append(
+                    {
+                        "id": "SECURITY-003",
+                        "severity": "HIGH",
+                        "issue": "Use of eval()",
+                        "file": file_path,
+                        "line": node.lineno,
+                        "confidence": 0.95,
+                    }
+                )
+
+    return findings
 # ============================================================
 # Risk Calculation
 # ============================================================
