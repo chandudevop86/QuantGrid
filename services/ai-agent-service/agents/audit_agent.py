@@ -4,7 +4,11 @@ from scanner.python_parser import analyze_python_file
 from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
 from agents.performance_agent import analyze_performance
-from agents.database_agent import analyze_database
+from agents.database_agent import analyze_databasefrom agents.devops_agent import analyze_devops
+from agents.api_agent import analyze_api
+
+
+
 
 def run_audit(path: str):
 
@@ -116,6 +120,16 @@ Database Findings:
             "recommendations": [],
             "error": str(e),
         }
+        
+        devops = analyze_devops(path)
+
+        findings.extend(
+        devops["findings"]
+    )
+        
+        api = analyze_api(path)
+        findings.extend(api["findings"])
+        
 
     # ------------------------------------
     # Final Report
@@ -127,4 +141,6 @@ Database Findings:
         "security": security,
         "performance": performance,
         "database": database,
+        "devops": devops,
+        "api": api,
     }

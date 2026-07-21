@@ -125,21 +125,26 @@ def generate_report(report):
     security = report.get("security", {})
     performance = report.get("performance", {})
     database = report.get("database", {})
-    database_score = database.get("score", 0)
-    performance_score = performance.get("score", 0)
-
+    devops = report.get("devops", {})
+    api = report.get("api", {})
+    
+    
     architecture_score = architecture.get("score", 0)
-
     security_score = security.get("score", 0)
-
+    performance_score = performance.get("score", 0)
+    database_score = database.get("score", 0)
+    devops_score = devops.get("score", 0)
+    api_score = api.get("score", 0)
     overall_health = int(
     (
         architecture_score
         + security_score
         + performance_score
         + database_score
+        + devops_score
+        + api_score
         + (100 - score)
-    ) / 5
+    ) / 7
 )
     severity_groups = defaultdict(list)
 
@@ -177,6 +182,9 @@ Security Score:
 
 Performance Score:
 {performance_score}/100
+
+API Score:
+{api_score}/100
 
 Risk Score:
 {score}/100
@@ -316,6 +324,23 @@ Affected Files:
             content += "\nRecommendation:\n"
             content += recommendation(item["id"])
             content += "\n\n---\n"
+            
+            content += f"""
+
+---
+
+# DevOps Assessment
+
+DevOps Score:
+{devops_score}/100
+
+Agent:
+{devops.get("agent", "")}
+
+DevOps Findings:
+{len(devops.get("findings", []))}
+
+"""
     content += f"""
 
 ---
@@ -365,6 +390,7 @@ Affected Files:
     content += f"""
 
 ---
+
 
 # Overall Project Health
 
