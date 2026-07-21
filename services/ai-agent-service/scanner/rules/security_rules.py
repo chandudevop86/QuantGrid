@@ -30,17 +30,33 @@ def detect_exec_usage(file_path):
                 isinstance(node.func, ast.Name)
                 and node.func.id == "exec"
             ):
-
                 findings.append(
-                    {
-                        "id": "SECURITY-004",
-                        "severity": "HIGH",
-                        "issue": "Use of exec()",
-                        "file": file_path,
-                        "line": node.lineno,
-                        "confidence": 0.95,
-                        "evidence": "exec() function call detected"
-                    }
+                        {
+                            "id": "SECURITY-004",
+                            "category": "Code Execution",
+                            "severity": "HIGH",
+                            "title": "Use of exec()",
+                            "description": (
+                                "Dynamic execution using exec() detected. "
+                                "This may allow arbitrary code execution."
+                            ),
+                            "file": str(file_path),
+                            "line": node.lineno,
+                            "confidence": 0.95,
+                            "evidence": {
+                                "snippet": ast.get_source_segment(
+                                    source,
+                                    node
+                                )
+                            },
+                            "recommendation": (
+                                "Remove exec() and replace with safer "
+                                "explicit execution logic."
+                            ),
+                            "cwe": "CWE-94",
+                            "owasp": "A03:2021 Injection",
+                            "status": "OPEN"
+                        }
                 )
 
     return findings
