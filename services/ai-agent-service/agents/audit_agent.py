@@ -15,7 +15,7 @@ from scanner.finding_normalizer import deduplicate_findings
 from scanner.confidence import enrich_confidence
 from scanner.risk_filter import filter_actionable_findings
 from scanner.risk_adjuster import adjust_findings
-
+from scanner.risk_rules import apply_risk_rules
 
 
 
@@ -146,6 +146,7 @@ def run_audit(path: str):
 
     findings = deduplicate_findings(findings)
     findings = enrich_confidence(findings)
+    findings = apply_risk_rules(findings)
     findings = adjust_findings(findings)
     findings = filter_actionable_findings(findings) 
     severity_summary = Counter(
