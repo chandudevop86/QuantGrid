@@ -41,7 +41,15 @@ SUPPORTED_EXTENSIONS = {
     ".json",
     ".sh"
 }
-
+IGNORE_DIRS = {
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+    "node_modules",
+    "dist",
+    "build"
+}
 
 def scan_repository(path: str):
     """

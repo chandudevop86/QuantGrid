@@ -45,38 +45,93 @@ def detect_exec_usage(file_path):
 
     return findings
 
+def detect_eval_usage(file_path):
 
+    findings = []
+
+    try:
+        source = Path(file_path).read_text(
+            errors="ignore"
+        )
+
+        tree = ast.parse(source)
+
+    except Exception:
+        return findings
+
+
+    for node in ast.walk(tree):
+
+        if isinstance(node, ast.Call):
+
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "eval"
+            ):
+
+                findings.append(
+                    {
+                        "id": "SECURITY-003",
+                        "severity": "HIGH",
+                        "issue": "Use of eval()",
+                        "file": file_path,
+                        "line": node.lineno,
+                        "confidence": 0.95,
+                        "evidence": "eval() function call detected"
+                    }
+                )
+
+    return findings
 
 def check_security(file):
 
     findings = []
 
     try:
-        text = Path(file).read_text(errors="ignore")
+        source = Path(file).read_text(
+            errors="ignore"
+        )
+
     except Exception:
         return findings
 
+
+    # AST security checks
+    findings.extend(
+        detect_eval_usage(file)
+    )
+
+    findings.extend(
+        detect_exec_usage(file)
+    )
+
+
+    # Regex checks excluding eval/exec
     for rule_id, severity, pattern, issue in PATTERNS:
 
-        if re.search(pattern, text):
+        if rule_id in (
+            "SECURITY-003",
+            "SECURITY-004",
+        ):
+            continue
 
-            findings.append({
-                "id": rule_id,
-                "severity": severity,
-                "issue": issue,
-                "file": file,
-            })
+
+        if re.search(pattern, source):
+
+            findings.append(
+                {
+                    "id": rule_id,
+                    "severity": severity,
+                    "issue": issue,
+                    "file": file,
+                    "confidence": 0.80,
+                }
+            )
+
 
     return findings
-IGNORE_DIRS = {
-    "venv",
-    ".venv",
-    "__pycache__",
-    ".git",
-    "node_modules",
-    "dist",
-    "build"
-}
+
+
 SECRET_PATTERNS = [
     r"password\s*=\s*['\"].+['\"]",
     r"api_key\s*=\s*['\"].+['\"]",
