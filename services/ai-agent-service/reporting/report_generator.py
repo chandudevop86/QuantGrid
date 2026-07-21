@@ -25,17 +25,16 @@ def calculate_risk_score(findings):
 
 def risk_rating(score):
 
-    if score >= 30:
+    if score >= 60:
         return "CRITICAL"
 
-    if score >= 15:
+    if score >= 30:
         return "HIGH"
 
-    if score >= 5:
+    if score >= 15:
         return "MEDIUM"
 
     return "LOW"
-
 
 def aggregate_findings(findings):
 
