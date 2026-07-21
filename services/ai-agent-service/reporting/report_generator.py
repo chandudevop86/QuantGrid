@@ -106,35 +106,7 @@ def recommendation(rule_id):
 - Improve inline code comments
 - Document complex business logic
 """,
-"INFRA-001": """
-- Add Docker HEALTHCHECK
-- Verify container health
-""",
 
-"INFRA-002": """
-- Configure restart policy
-- Improve container resilience
-""",
-
-"INFRA-003": """
-- Enable S3 Versioning
-- Protect Terraform state
-""",
-
-"INFRA-004": """
-- Enable encryption at rest
-- Use KMS-managed keys
-""",
-
-"INFRA-005": """
-- Configure Kubernetes Liveness Probe
-- Restart unhealthy pods automatically
-""",
-
-"INFRA-006": """
-- Configure Readiness Probe
-- Prevent routing traffic to unready pods
-""",
     }
     return recommendations.get(
         rule_id,
@@ -527,13 +499,16 @@ Issue:
 Occurrences:
 {item["count"]}
 
-Affected Files:
-"""
-            for file in item["files"]:
-                content += f"- {file}\n"
+    output = Path("reports/QuantGrid_AI_Audit_Report.md")
 
-            content += "\nRecommendation:\n"
-            content += recommendation(item["id"])
-            content += "\n\n---\n"
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-            return content
+    output.write_text(
+        content,
+        encoding="utf-8",
+    )
+
+    return str(output)
