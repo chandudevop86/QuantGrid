@@ -66,10 +66,11 @@ def aggregate_findings(findings):
         item["severity"] = finding["severity"]
         item["issue"] = finding["issue"]
         item["count"] += 1
-        if finding["file"] not in item["files"]:
-            item["files"].append(
-            finding["file"]
-        )
+        file = finding.get("file")
+
+        if file and file not in item["files"]:
+            item["files"].append(file)
+        
         
 
 
@@ -343,69 +344,3 @@ Services:
     return str(output)
 
 
-content += f"""
-
-# Architecture Assessment
-
-
-Score:
-
-{architecture.get("score","N/A")}/100
-
-
-Agent:
-
-{architecture.get("agent","")}
-
-
-Services:
-
-
-"""
-
-
-for service in architecture.get("services",[]):
-
-    content += f"- {service}\n"
-
-
-
-content += """
-
-Technologies:
-
-
-"""
-
-
-for tech in architecture.get("technologies",[]):
-
-    content += f"- {tech}\n"
-
-
-
-content += """
-
-Warnings:
-
-
-"""
-
-
-for warning in architecture.get("warnings",[]):
-
-    content += f"- {warning}\n"
-
-
-
-content += """
-
-Recommendations:
-
-
-"""
-
-
-for rec in architecture.get("recommendations",[]):
-
-    content += f"- {rec}\n"
