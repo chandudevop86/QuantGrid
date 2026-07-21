@@ -12,6 +12,17 @@ from agents.documentation_agent import analyze_documentation
 from agents.infrastructure_agent import analyze_infrastructure
 
 
+def safe_run(agent, path, name):
+    try:
+        return agent(path)
+    except Exception as e:
+        return {
+            "agent": name,
+            "score": 0,
+            "findings": [],
+            "error": str(e)
+        }
+
 
 def run_audit(path: str):
 
@@ -19,9 +30,9 @@ def run_audit(path: str):
 
     findings = []
 
-    # ------------------------------------
-    # Code Analysis
-    # ------------------------------------
+    # -----------------------------
+    # Python Code Analysis
+    # -----------------------------
     for file in files:
 
         if not file.endswith(".py"):
@@ -33,135 +44,124 @@ def run_audit(path: str):
             )
 
         except Exception as e:
-
             findings.append(
                 {
-                    "id": "AUDIT-ERROR",
+                    "id": "CODE-ERROR",
                     "severity": "LOW",
-                    "issue": f"Code analysis failed: {e}",
-                    "file": file,
+                    "issue": str(e),
+                    "file": file
                 }
             )
 
-    # ------------------------------------
-    # Security Analysis
-    # ------------------------------------
-    try:
 
-        security = analyze_security(path)
+    # -----------------------------
+    # Specialized Agents
+    # -----------------------------
 
+    security = safe_run(
+        analyze_security,
+        path,
+        "Security Agent"
+    )
+
+    performance = safe_run(
+        analyze_performance,
+        path,
+        "Performance Agent"
+    )
+
+    database = safe_run(
+        analyze_database,
+        path,
+        "Database Agent"
+    )
+
+    architecture = safe_run(
+        analyze_architecture,
+        path,
+        "Architecture Agent"
+    )
+
+    devops = safe_run(
+        analyze_devops,
+        path,
+        "DevOps Agent"
+    )
+
+    api = safe_run(
+        analyze_api,
+        path,
+        "API Agent"
+    )
+
+    testing = safe_run(
+        analyze_testing,
+        path,
+        "Testing Agent"
+    )
+
+    documentation = safe_run(
+        analyze_documentation,
+        path,
+        "Documentation Agent"
+    )
+
+    infrastructure = safe_run(
+        analyze_infrastructure,
+        path,
+        "Infrastructure Agent"
+    )
+
+
+    # -----------------------------
+    # Findings Aggregation
+    # -----------------------------
+
+    agents = [
+        security,
+        performance,
+        database,
+        architecture,
+        devops,
+        api,
+        testing,
+        documentation,
+        infrastructure,
+    ]
+
+
+    for agent in agents:
         findings.extend(
-            security.get("findings", [])
+            agent.get("findings", [])
         )
 
-    except Exception as e:
 
-        security = {
-            "agent": "Security Agent",
-            "score": 0,
-            "findings": [],
-            "error": str(e),
-        }
+    # -----------------------------
+    # Final Audit Result
+    # -----------------------------
 
-    # ------------------------------------
-    # Performance Analysis
-    # ------------------------------------
-    try:
-
-        performance = analyze_performance(path)
-
-        findings.extend(
-            performance.get("findings", [])
-        )
-
-    except Exception as e:
-
-        performance = {
-            "agent": "Performance Agent",
-            "score": 0,
-            "findings": [],
-            "error": str(e),
-        }
-        
-    database = analyze_database(path)
-
-    findings.extend(
-    database.get("findings", [])
-)    
-
-    content += f"""
-
----
-
-# Database Assessment
-
-Database Score:
-{database_score}/100
-
-Agent:
-{database.get("agent", "")}
-
-Database Findings:
-{len(database.get("findings", []))}
-
-"""
-    # ------------------------------------
-    # Architecture Analysis
-    # ------------------------------------
-    try:
-
-        architecture = analyze_architecture(path)
-
-    except Exception as e:
-
-        architecture = {
-            "agent": "Architecture Agent",
-            "score": 0,
-            "services": [],
-            "technologies": [],
-            "warnings": [],
-            "recommendations": [],
-            "error": str(e),
-        }
-        
-        devops = analyze_devops(path)
-
-        findings.extend(
-        devops["findings"]
-        )
-        
-        api = analyze_api(path)
-        findings.extend(api["findings"])
-        
-        testing = analyze_testing(path)
-
-        findings.extend(
-        testing["findings"]
-        )
-        
-        infrastructure = analyze_infrastructure(path)
-
-        findings.extend(
-        infrastructure["findings"]
-        )
-        documentation = analyze_documentation(path)
-
-        findings.extend(
-        documentation["findings"]
-        )
-    # ------------------------------------
-    # Final Report
-    # ------------------------------------
     return {
+
         "files_scanned": len(files),
+
         "findings": findings,
+
         "architecture": architecture,
+
         "security": security,
+
         "performance": performance,
+
         "database": database,
+
         "devops": devops,
+
         "api": api,
+
         "testing": testing,
+
         "documentation": documentation,
+
         "infrastructure": infrastructure,
+
     }
