@@ -469,7 +469,7 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
 
-       content += f"""
+    content += f"""
 
 ---
 
