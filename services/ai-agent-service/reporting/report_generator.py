@@ -16,7 +16,6 @@ def calculate_risk_score(findings):
         )
         for finding in findings
     )
-
     return min(score, 100)
 
 
@@ -31,7 +30,6 @@ def risk_rating(score):
 
 
 def aggregate_findings(findings):
-
     grouped = defaultdict(
         lambda: {
             "id": "",
@@ -43,21 +41,18 @@ def aggregate_findings(findings):
     )
 
     for finding in findings:
-
         key = (
             finding.get("id"),
             finding.get("issue"),
         )
 
         item = grouped[key]
-
         item["id"] = finding.get("id", "")
         item["severity"] = finding.get("severity", "LOW")
         item["issue"] = finding.get("issue", "")
         item["count"] += 1
 
         file = finding.get("file")
-
         if file and file not in item["files"]:
             item["files"].append(file)
 
@@ -65,105 +60,50 @@ def aggregate_findings(findings):
 
 
 def recommendation(rule_id):
-
     recommendations = {
-
         "TRADE-001": """
 - Add pre-trade validation
 - Enforce stop-loss
 - Add position sizing
 - Add broker circuit breaker
 """,
-
         "CODE-001": """
 - Replace bare except blocks
 - Catch specific exceptions
 - Add structured logging
 - Preserve stack traces
 """,
-
         "SECURITY-001": """
 - Remove hardcoded secrets
 - Store secrets in .env
 - Use AWS Secrets Manager / Hashicorp Vault
 """,
-
         "SECURITY-002": """
 - Rotate AWS credentials immediately
 - Remove exposed access keys
 """,
-
         "SECURITY-003": """
 - Remove eval()
 - Use safe parsing
 """,
-
         "SECURITY-004": """
 - Remove exec()
 - Replace with secure alternatives
 """,
     }
-
     return recommendations.get(
         rule_id,
         "- Review and fix identified issue.",
     )
 
-def recommendation(rule_id):
 
-    recommendations = {
-
-        "TRADE-001": """
-- Add pre-trade validation
-- Enforce stop-loss
-- Add position sizing
-- Add broker circuit breaker
-""",
-
-        "CODE-001": """
-- Replace bare except blocks
-- Catch specific exceptions
-- Add structured logging
-""",
-
-        "SECURITY-001": """
-- Remove hardcoded secrets
-- Store secrets in .env
-- Use AWS Secrets Manager / Hashicorp Vault
-""",
-
-        "SECURITY-002": """
-- Rotate AWS credentials immediately
-- Remove exposed access keys
-""",
-
-        "SECURITY-003": """
-- Remove eval()
-- Use safe parsing
-""",
-
-        "SECURITY-004": """
-- Remove exec()
-- Replace with secure alternatives
-""",
-    }
-
-    return recommendations.get(
-        rule_id,
-        "- Review and fix identified issue.",
-    )
 def generate_report(report):
-
     findings = report.get("findings", [])
-
     grouped = aggregate_findings(findings)
-
     score = calculate_risk_score(findings)
-
     rating = risk_rating(score)
 
     architecture = report.get("architecture", {})
-
     security = report.get("security", {})
     performance = report.get("performance", {})
     database = report.get("database", {})
@@ -180,25 +120,21 @@ def generate_report(report):
     testing_score = testing.get("score", 0)
     
     overall_health = int(
-    (
-        architecture_score
-        + security_score
-        + performance_score
-        + database_score
-        + devops_score
-        + api_score
-        + testing_score
-        + (100 - score)
-    ) / 8
-)
+        (
+            architecture_score
+            + security_score
+            + performance_score
+            + database_score
+            + devops_score
+            + api_score
+            + testing_score
+            + (100 - score)
+        ) / 8
+    )
+
     severity_groups = defaultdict(list)
-
     for item in grouped:
-        severity = item.get(
-            "severity",
-            "LOW"
-        ).upper()
-
+        severity = item.get("severity", "LOW").upper()
         severity_groups[severity].append(item)
 
     content = f"""# QuantGrid AI Audit Report
@@ -211,7 +147,7 @@ Generated:
 # Executive Summary
 
 Files Scanned:
-{report.get("files_scanned",0)}
+{report.get("files_scanned", 0)}
 
 Total Findings:
 {len(findings)}
@@ -254,7 +190,6 @@ Overall Health:
 """
 
     for severity in ["HIGH", "MEDIUM", "LOW"]:
-
         content += f"\n# {severity.title()} Findings\n"
 
         if not severity_groups[severity]:
@@ -262,9 +197,7 @@ Overall Health:
             continue
 
         for item in severity_groups[severity]:
-
             content += f"""
-
 ## {item["id"]}
 
 Severity:
@@ -278,15 +211,15 @@ Occurrences:
 
 Affected Files:
 """
-
+            # Fixed: Properly indented these lines back into the 'item' loop
             for file in item["files"]:
                 content += f"- {file}\n"
 
             content += "\nRecommendation:\n"
             content += recommendation(item["id"])
             content += "\n\n---\n"
-    content += f"""
 
+    content += f"""
 # Architecture Assessment
 
 Architecture Score:
@@ -302,26 +235,18 @@ Services:
         content += f"- {service}\n"
 
     content += "\nTechnologies:\n"
-
     for tech in architecture.get("technologies", []):
         content += f"- {tech}\n"
 
     content += "\nWarnings:\n"
-
     for warning in architecture.get("warnings", []):
         content += f"- {warning}\n"
 
     content += "\nRecommendations:\n"
-
     for rec in architecture.get("recommendations", []):
         content += f"- {rec}\n"
 
-    # Python code starts here (outside the f-string)
-    performance = report.get("performance", {})
-    performance_score = performance.get("score", "N/A")
-
     content += f"""
-
 ---
 
 # Performance Assessment
@@ -334,21 +259,12 @@ Agent:
 
 Performance Findings:
 {len(performance.get("findings", []))}
-
 """
 
-
-
     if performance.get("findings"):
-
-        grouped_performance = aggregate_findings(
-            performance["findings"]
-        )
-
+        grouped_performance = aggregate_findings(performance["findings"])
         for item in grouped_performance:
-
             content += f"""
-
 ## {item["id"]}
 
 Severity:
@@ -362,7 +278,6 @@ Occurrences:
 
 Affected Files:
 """
-
             for file in item["files"]:
                 content += f"- {file}\n"
 
@@ -370,8 +285,8 @@ Affected Files:
             content += recommendation(item["id"])
             content += "\n\n---\n"
             
-            content += f"""
-
+    # Fixed: Moved DevOps out of the performance findings conditional scope
+    content += f"""
 ---
 
 # DevOps Assessment
@@ -384,10 +299,10 @@ Agent:
 
 DevOps Findings:
 {len(devops.get("findings", []))}
-
 """
-    content += f"""
 
+    # Fixed: Moved API Assessment back inside the generate_report() function scope
+    content += f"""
 ---
 
 # API Assessment
@@ -400,19 +315,12 @@ Agent:
 
 API Findings:
 {len(api.get("findings", []))}
-
 """
 
-if api.get("findings"):
-
-    grouped_api = aggregate_findings(
-        api["findings"]
-    )
-
-    for item in grouped_api:
-
-        content += f"""
-
+    if api.get("findings"):
+        grouped_api = aggregate_findings(api["findings"])
+        for item in grouped_api:
+            content += f"""
 ## {item["id"]}
 
 Severity:
@@ -426,24 +334,14 @@ Occurrences:
 
 Affected Files:
 """
+            for file in item["files"]:
+                content += f"- {file}\n"
 
-        for file in item["files"]:
-            content += f"- {file}\n"
-
-        content += "\nRecommendation:\n"
-        content += recommendation(item["id"])
-        content += "\n\n---\n"
-
-
-
-
-
-
-
-
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
 
     content += f"""
-
 ---
 
 # Testing Assessment
@@ -456,11 +354,9 @@ Agent:
 
 Testing Findings:
 {len(testing.get("findings", []))}
-
 """
 
     content += f"""
-
 ---
 
 # Security Assessment
@@ -473,19 +369,12 @@ Agent:
 
 Security Findings:
 {len(security.get("findings", []))}
-
 """
 
     if security.get("findings"):
-
-        grouped_security = aggregate_findings(
-            security["findings"]
-    )
-
-    for item in grouped_security:
-
-        content += f"""
-
+        grouped_security = aggregate_findings(security["findings"])
+        for item in grouped_security:
+            content += f"""
 ## {item["id"]}
 
 Severity:
@@ -499,55 +388,12 @@ Occurrences:
 
 Affected Files:
 """
-
-        for file in item["files"]:
+            for file in item["files"]:
                 content += f"- {file}\n"
 
-        content += "\n"
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
 
-    content += f"""
-
----
-
-
-# Overall Project Health
-
-Architecture Score:
-{architecture_score}/100
-
-Security Score:
-{security_score}/100
-
-Risk Score:
-{score}/100
-
-Overall Health:
-{overall_health}/100
-
----
-
-Report generated by QuantGrid AI Audit Agent
-
-Generated:
-{datetime.now():%Y-%m-%d %H:%M:%S}
-
-Version:
-1.0
-
-"""
-
-    output = Path(
-        "reports/QuantGrid_AI_Audit_Report.md"
-    )
-
-    output.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    output.write_text(
-        content,
-        encoding="utf-8",
-    )
-
-    return str(output)
+    # Fixed: Added missing return statement
+    return content
