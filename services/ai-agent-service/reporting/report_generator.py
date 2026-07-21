@@ -687,31 +687,149 @@ def generate_report(report):
 
     findings = report.get("findings", [])
 
+    risk_score = calculate_risk_score(findings)
+
     content = "# QuantGrid AI Audit Report\n\n"
 
     content += f"""
 Generated:
 {datetime.now()}
 
+
+# Executive Summary
+
 Files Scanned:
 {report.get("files_scanned",0)}
 
 Total Findings:
 {len(findings)}
+
+Risk Score:
+{risk_score}/100
+
+Risk Rating:
+{risk_rating(risk_score)}
+
 """
+
+
+    # ----------------------------------------
+    # Severity Summary
+    # ----------------------------------------
+
+    severity_count = defaultdict(int)
+
+    for finding in findings:
+        severity = finding.get(
+            "severity",
+            "LOW"
+        ).upper()
+
+        severity_count[severity] += 1
+
+
+    content += """
+
+---
+
+# Severity Summary
+
+"""
+
+
+    for severity, count in severity_count.items():
+
+        content += (
+            f"- {severity}: {count}\n"
+        )
+
+
+    # ----------------------------------------
+    # Agent Assessments
+    # ----------------------------------------
+
+    content += build_architecture_section(
+        report.get("architecture", {})
+    )
+
+
+    content += build_security_section(
+        report.get("security", {})
+    )
+
+
+    content += build_performance_section(
+        report.get("performance", {})
+    )
+
+
+    content += build_database_section(
+        report.get("database", {})
+    )
+
+
+    content += build_devops_section(
+        report.get("devops", {})
+    )
+
+
+    content += build_api_section(
+        report.get("api", {})
+    )
+
+
+    content += build_testing_section(
+        report.get("testing", {})
+    )
+
+
+    content += build_documentation_section(
+        report.get("documentation", {})
+    )
+
+
+    content += build_infrastructure_section(
+        report.get("infrastructure", {})
+    )
+
+
+    # ----------------------------------------
+    # Consolidated Findings
+    # ----------------------------------------
+
+    content += """
+
+---
+
+# Consolidated Findings
+
+"""
+
+
+    content += _build_standard_findings_block(
+        findings
+    )
+
+
+    # ----------------------------------------
+    # Save Report
+    # ----------------------------------------
 
     output = Path(
         "reports/QuantGrid_AI_Audit_Report.md"
     )
+
 
     output.parent.mkdir(
         parents=True,
         exist_ok=True
     )
 
+
     output.write_text(
         content,
         encoding="utf-8"
     )
+
 
     return str(output)
