@@ -64,9 +64,11 @@ def aggregate_findings(findings):
         item["severity"] = finding["severity"]
         item["issue"] = finding["issue"]
         item["count"] += 1
-        item["files"].append(
+        if finding["file"] not in item["files"]:
+            item["files"].append(
             finding["file"]
         )
+        
 
 
     return list(grouped.values())
