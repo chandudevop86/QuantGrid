@@ -109,7 +109,49 @@ def recommendation(rule_id):
         "- Review and fix identified issue.",
     )
 
+def recommendation(rule_id):
 
+    recommendations = {
+
+        "TRADE-001": """
+- Add pre-trade validation
+- Enforce stop-loss
+- Add position sizing
+- Add broker circuit breaker
+""",
+
+        "CODE-001": """
+- Replace bare except blocks
+- Catch specific exceptions
+- Add structured logging
+""",
+
+        "SECURITY-001": """
+- Remove hardcoded secrets
+- Store secrets in .env
+- Use AWS Secrets Manager / Hashicorp Vault
+""",
+
+        "SECURITY-002": """
+- Rotate AWS credentials immediately
+- Remove exposed access keys
+""",
+
+        "SECURITY-003": """
+- Remove eval()
+- Use safe parsing
+""",
+
+        "SECURITY-004": """
+- Remove exec()
+- Replace with secure alternatives
+""",
+    }
+
+    return recommendations.get(
+        rule_id,
+        "- Review and fix identified issue.",
+    )
 def generate_report(report):
 
     findings = report.get("findings", [])
@@ -127,7 +169,7 @@ def generate_report(report):
     database = report.get("database", {})
     devops = report.get("devops", {})
     api = report.get("api", {})
-    
+    testing = report.get("testing", {})
     
     architecture_score = architecture.get("score", 0)
     security_score = security.get("score", 0)
@@ -135,6 +177,8 @@ def generate_report(report):
     database_score = database.get("score", 0)
     devops_score = devops.get("score", 0)
     api_score = api.get("score", 0)
+    testing_score = testing.get("score", 0)
+    
     overall_health = int(
     (
         architecture_score
@@ -143,8 +187,9 @@ def generate_report(report):
         + database_score
         + devops_score
         + api_score
+        + testing_score
         + (100 - score)
-    ) / 7
+    ) / 8
 )
     severity_groups = defaultdict(list)
 
@@ -341,6 +386,79 @@ DevOps Findings:
 {len(devops.get("findings", []))}
 
 """
+    content += f"""
+
+---
+
+# API Assessment
+
+API Score:
+{api_score}/100
+
+Agent:
+{api.get("agent", "")}
+
+API Findings:
+{len(api.get("findings", []))}
+
+"""
+
+if api.get("findings"):
+
+    grouped_api = aggregate_findings(
+        api["findings"]
+    )
+
+    for item in grouped_api:
+
+        content += f"""
+
+## {item["id"]}
+
+Severity:
+{item["severity"]}
+
+Issue:
+{item["issue"]}
+
+Occurrences:
+{item["count"]}
+
+Affected Files:
+"""
+
+        for file in item["files"]:
+            content += f"- {file}\n"
+
+        content += "\nRecommendation:\n"
+        content += recommendation(item["id"])
+        content += "\n\n---\n"
+
+
+
+
+
+
+
+
+
+    content += f"""
+
+---
+
+# Testing Assessment
+
+Testing Score:
+{testing_score}/100
+
+Agent:
+{testing.get("agent", "")}
+
+Testing Findings:
+{len(testing.get("findings", []))}
+
+"""
+
     content += f"""
 
 ---
