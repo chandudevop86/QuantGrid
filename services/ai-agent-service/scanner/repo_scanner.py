@@ -1,34 +1,71 @@
+from pathlib import Path
 import os
 
-
-IGNORE = {
+EXCLUDED_DIRS = {
     ".git",
+    ".github",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
     "venv",
-    "__pycache__"
+    "env",
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    ".idea",
+    ".vscode",
+    ".terraform",
+    "coverage",
+    "htmlcov",
+    ".cache",
+    "logs",
+    "tmp",
+    "temp"
+}
+
+SUPPORTED_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".java",
+    ".go",
+    ".tf",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".sh"
 }
 
 
-def scan_repository(path):
+def scan_repository(path: str):
+    """
+    Recursively scan a repository and return supported source files,
+    skipping generated, dependency, cache, and build directories.
+    """
 
-    files=[]
+    repository = Path(path)
 
+    if not repository.exists():
+        raise FileNotFoundError(f"Repository not found: {path}")
 
-    for root,dirs,names in os.walk(path):
+    files = []
 
-        dirs[:] = [
-            d for d in dirs 
-            if d not in IGNORE
-        ]
+    for root, dirs, filenames in os.walk(repository):
 
+        # Skip excluded directories
+        dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
 
-        for file in names:
+        for filename in filenames:
 
-            files.append(
-                os.path.join(
-                    root,
-                    file
-                )
-            )
+            file_path = Path(root) / filename
 
+            if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
+                files.append(str(file_path))
 
-    return files
+    return sorted(files)
