@@ -4,7 +4,7 @@ from scanner.python_parser import analyze_python_file
 from agents.architecture_agent import analyze_architecture
 from agents.security_agent import analyze_security
 from agents.performance_agent import analyze_performance
-
+from agents.database_agent import analyze_database
 
 def run_audit(path: str):
 
@@ -75,6 +75,12 @@ def run_audit(path: str):
             "findings": [],
             "error": str(e),
         }
+        
+    database = analyze_database(path)
+
+    findings.extend(
+    database.get("findings", [])
+)    
 
     # ------------------------------------
     # Architecture Analysis
@@ -104,4 +110,5 @@ def run_audit(path: str):
         "architecture": architecture,
         "security": security,
         "performance": performance,
+        "database": database,
     }

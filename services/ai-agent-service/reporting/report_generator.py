@@ -7,7 +7,8 @@ SEVERITY_SCORE = {
     "MEDIUM": 5,
     "LOW": 2,
 }
-
+database = report.get("database", {})
+database_score = database.get("score", 0)
 
 def calculate_risk_score(findings):
     score = sum(
