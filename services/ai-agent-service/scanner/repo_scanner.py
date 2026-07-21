@@ -32,6 +32,9 @@ EXCLUDED_DIRS = {
     "*bak*",
     "*old*",
     "*archive*",
+    "scanner",
+    "agents",
+    "reporting",
 }
 
 SUPPORTED_EXTENSIONS = {
@@ -58,33 +61,49 @@ IGNORE_DIRS = {
 }
 
 def scan_repository(path: str):
+
     """
     Recursively scan a repository and return supported source files,
-    skipping generated, dependency, cache, and build directories.
+    skipping generated, dependency, cache, build, and audit engine directories.
     """
+
+    audit_service_dirs = {
+        "scanner",
+        "agents",
+        "reporting",
+        "__pycache__"
+    }
 
     repository = Path(path)
 
     if not repository.exists():
-        raise FileNotFoundError(f"Repository not found: {path}")
+        raise FileNotFoundError(
+            f"Repository not found: {path}"
+        )
 
     files = []
 
     for root, dirs, filenames in os.walk(repository):
 
-        # Skip excluded directories
-        dirs[:] = [d for d in dirs 
-                    if (d not in EXCLUDED_DIRS
-                        and "backup" not in d.lower()
-                        and "bak" not in d.lower()
-                        and "archive" not in d.lower()
-                        and "old" not in d.lower())]
+        dirs[:] = [
+            d for d in dirs
+            if (
+                d not in EXCLUDED_DIRS
+                and d not in audit_service_dirs
+                and "backup" not in d.lower()
+                and "bak" not in d.lower()
+                and "archive" not in d.lower()
+                and "old" not in d.lower()
+            )
+        ]
 
         for filename in filenames:
 
             file_path = Path(root) / filename
 
             if file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                files.append(str(file_path))
+                files.append(
+                    str(file_path)
+                )
 
     return sorted(files)
