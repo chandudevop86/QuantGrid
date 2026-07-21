@@ -1,21 +1,135 @@
 from datetime import datetime
 from pathlib import Path
+from collections import defaultdict
+
+
+SEVERITY_SCORE = {
+    "HIGH": 10,
+    "MEDIUM": 5,
+    "LOW": 2
+}
+
+
+def calculate_risk_score(findings):
+
+    score = 0
+
+    for finding in findings:
+        score += SEVERITY_SCORE.get(
+            finding.get("severity"),
+            1
+        )
+
+    return score
+
+
+def risk_rating(score):
+
+    if score >= 30:
+        return "CRITICAL"
+
+    if score >= 15:
+        return "HIGH"
+
+    if score >= 5:
+        return "MEDIUM"
+
+    return "LOW"
+
+
+def aggregate_findings(findings):
+
+    grouped = defaultdict(
+        lambda: {
+            "id": "",
+            "severity": "",
+            "issue": "",
+            "files": [],
+            "count": 0
+        }
+    )
+
+
+    for finding in findings:
+
+        key = (
+            finding["id"],
+            finding["file"],
+            finding["issue"]
+        )
+
+
+        item = grouped[key]
+
+        item["id"] = finding["id"]
+        item["severity"] = finding["severity"]
+        item["issue"] = finding["issue"]
+        item["count"] += 1
+        item["files"].append(
+            finding["file"]
+        )
+
+
+    return list(grouped.values())
+
+
+def recommendation(finding):
+
+    if finding["id"] == "TRADE-001":
+
+        return """
+- Add pre-trade risk validation
+- Enforce stop loss checks
+- Add position size limits
+- Add broker circuit breaker
+"""
+
+
+    if finding["id"] == "CODE-001":
+
+        return """
+- Replace bare except blocks
+- Add structured logging
+- Preserve production stack traces
+"""
+
+
+    return """
+- Review and fix identified issue
+"""
 
 
 def generate_report(report):
 
-    output = Path("reports/QuantGrid_AI_Audit_Report.md")
+    findings = report.get(
+        "findings",
+        []
+    )
 
-    findings = report.get("findings", [])
+
+    grouped = aggregate_findings(
+        findings
+    )
+
+
+    score = calculate_risk_score(
+        findings
+    )
+
+
+    rating = risk_rating(
+        score
+    )
 
 
     high = [
-        f for f in findings
+        f for f in grouped
         if f["severity"] == "HIGH"
     ]
 
+
     medium = [
-        f for f in findings
+        f for f in grouped
         if f["severity"] == "MEDIUM"
     ]
 
@@ -23,26 +137,55 @@ def generate_report(report):
     content = f"""
 # QuantGrid AI Audit Report
 
+
 Generated:
+
 {datetime.now()}
 
 
-## Executive Summary
+# Executive Summary
+
 
 Files Scanned:
+
 {report.get("files_scanned")}
 
 
 Total Findings:
+
 {len(findings)}
 
 
-High Risk:
+Unique Issues:
+
+{len(grouped)}
+
+
+Risk Score:
+
+{score}/100
+
+
+Risk Rating:
+
+{rating}
+
+
+
+---
+
+# Risk Distribution
+
+
+High:
+
 {len(high)}
 
 
-Medium Risk:
+Medium:
+
 {len(medium)}
+
 
 
 ---
@@ -55,9 +198,12 @@ Medium Risk:
     for item in high:
 
         content += f"""
+
 ## {item['id']}
 
+
 Severity:
+
 {item['severity']}
 
 
@@ -66,18 +212,27 @@ Issue:
 {item['issue']}
 
 
-File:
+Affected Files:
 
-{item['file']}
+{len(item['files'])}
 
+
+"""
+
+        for file in item["files"]:
+            content += f"- {file}\n"
+
+
+        content += """
 
 Recommendation:
 
-Review trading safety controls.
-
----
-
 """
+
+        content += recommendation(item)
+
+        content += "\n---\n"
+
 
 
     content += """
@@ -90,25 +245,52 @@ Review trading safety controls.
     for item in medium:
 
         content += f"""
+
 ## {item['id']}
 
-File:
-{item['file']}
 
 Issue:
+
 {item['issue']}
 
-Recommendation:
-Improve exception handling.
 
----
+Occurrences:
+
+{item['count']}
+
+
+Files:
+
 
 """
+
+
+        for file in item["files"]:
+            content += f"- {file}\n"
+
+
+        content += """
+
+Recommendation:
+
+"""
+
+
+        content += recommendation(item)
+
+        content += "\n---\n"
+
+
+
+    output = Path(
+        "reports/QuantGrid_AI_Audit_Report.md"
+    )
 
 
     output.parent.mkdir(
         exist_ok=True
     )
+
 
     output.write_text(
         content
