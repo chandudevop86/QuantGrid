@@ -1,6 +1,52 @@
 from pathlib import Path
 import re
 
+import ast
+
+
+def detect_exec_usage(file_path):
+
+    findings = []
+
+    try:
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+            source = f.read()
+
+        tree = ast.parse(source)
+
+    except Exception:
+        return findings
+
+
+    for node in ast.walk(tree):
+
+        if isinstance(node, ast.Call):
+
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "exec"
+            ):
+
+                findings.append(
+                    {
+                        "id": "SECURITY-004",
+                        "severity": "HIGH",
+                        "issue": "Use of exec()",
+                        "file": file_path,
+                        "line": node.lineno,
+                        "confidence": 0.95,
+                        "evidence": "exec() function call detected"
+                    }
+                )
+
+    return findings
+
+
+
 def check_security(file):
 
     findings = []
@@ -22,7 +68,15 @@ def check_security(file):
             })
 
     return findings
-
+IGNORE_DIRS = {
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+    "node_modules",
+    "dist",
+    "build"
+}
 SECRET_PATTERNS = [
     r"password\s*=\s*['\"].+['\"]",
     r"api_key\s*=\s*['\"].+['\"]",
