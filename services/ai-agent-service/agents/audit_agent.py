@@ -5,30 +5,29 @@ from agents.architecture_agent import analyze_architecture
 
 def run_audit(path):
 
-
     files = scan_repository(path)
 
-
-    report=[]
+    findings = []
 
 
     for file in files:
-
 
         if file.endswith(".py"):
 
             result = analyze_python_file(file)
 
-            report.extend(result)
-    architecture = analyze_architecture(path)
+            findings.extend(result)
 
-    report["architecture"] = architecture
+
+    architecture = analyze_architecture(path)
 
 
     return {
 
-        "files_scanned":len(files),
+        "files_scanned": len(files),
 
-        "findings":report
+        "findings": findings,
+
+        "architecture": architecture
 
     }
