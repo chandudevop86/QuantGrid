@@ -73,7 +73,12 @@ def scan_repository(path: str):
     for root, dirs, filenames in os.walk(repository):
 
         # Skip excluded directories
-        dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
+        dirs[:] = [d for d in dirs 
+                    if (d not in EXCLUDED_DIRS
+                        and "backup" not in d.lower()
+                        and "bak" not in d.lower()
+                        and "archive" not in d.lower()
+                        and "old" not in d.lower())]
 
         for filename in filenames:
 
