@@ -1,6 +1,6 @@
 from scanner.repo_scanner import scan_repository
 from scanner.python_parser import analyze_python_file
-
+from agents.architecture_agent import analyze_architecture
 
 
 def run_audit(path):
@@ -20,7 +20,9 @@ def run_audit(path):
             result = analyze_python_file(file)
 
             report.extend(result)
+    architecture = analyze_architecture(path)
 
+    report["architecture"] = architecture
 
 
     return {
