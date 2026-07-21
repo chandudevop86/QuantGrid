@@ -14,6 +14,11 @@ from collections import Counter
 from scanner.finding_normalizer import deduplicate_findings
 from scanner.confidence import enrich_confidence
 from scanner.risk_filter import filter_actionable_findings
+from scanner.risk_adjuster import adjust_findings
+
+
+
+
 def safe_run(agent, path, name):
     try:
         return agent(path)
@@ -141,6 +146,7 @@ def run_audit(path: str):
 
     findings = deduplicate_findings(findings)
     findings = enrich_confidence(findings)
+    findings = adjust_findings(findings)
     findings = filter_actionable_findings(findings) 
     severity_summary = Counter(
     f.get("severity", "UNKNOWN").upper()
