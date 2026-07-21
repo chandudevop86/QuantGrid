@@ -266,35 +266,35 @@ Services:
 
     content += f"""
 
+performance = report.get("performance", {})
+    performance_score = performance.get("score", "N/A")
+
+    content += f"""
+
 ---
-content += f"""
-
-
 
 # Performance Assessment
 
 Performance Score:
 {performance_score}/100
 
-Agent :
-    
+Agent:
 {performance.get("agent", "")}
 
 Performance Findings:
 {len(performance.get("findings", []))}
 
-
 """
 
-if performance.get("findings"):
+    if performance.get("findings"):
 
-    grouped_performance = aggregate_findings(
-        performance["findings"]
-    )
+        grouped_performance = aggregate_findings(
+            performance["findings"]
+        )
 
-    for item in grouped_performance:
+        for item in grouped_performance:
 
-        content += f"""
+            content += f"""
 
 ## {item["id"]}
 
@@ -310,13 +310,12 @@ Occurrences:
 Affected Files:
 """
 
-        for file in item["files"]:
-            content += f"- {file}\n"
+            for file in item["files"]:
+                content += f"- {file}\n"
 
-        content += "\nRecommendation:\n"
-        content += recommendation(item["id"])
-        content += "\n"
-
+            content += "\nRecommendation:\n"
+            content += recommendation(item["id"])
+            content += "\n\n---\n"
 # Security Assessment
 
 Security Score:
