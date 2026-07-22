@@ -14,3 +14,12 @@ class RiskScore:
             self.likelihood +
             self.exploitability
         ) / 3 * self.confidence
+
+def risk_score(severity: Severity) -> int:
+    return {
+        Severity.CRITICAL: 10,
+        Severity.HIGH: 8,
+        Severity.MEDIUM: 5,
+        Severity.LOW: 2,
+        Severity.INFO: 1,
+    }[severity]

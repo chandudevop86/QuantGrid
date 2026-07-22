@@ -166,9 +166,23 @@ def check_api(file_path: str) -> list[Finding]:
                         category=Category.API,
                         description=description,
                         recommendation="Review this implementation.",
+
+                        cwe="N/A",
+                        owasp="API8:2023 Security Misconfiguration",
+
+                        tags=[
+                            "fastapi",
+                            "api",
+                        ],
+
+                        references=[
+                            "https://fastapi.tiangolo.com/",
+                        ],
+
                         file=file_path,
                         line=line_no,
                         confidence=0.98,
+
                         evidence=[
                             Evidence(
                                 file=file_path,
@@ -179,26 +193,39 @@ def check_api(file_path: str) -> list[Finding]:
                         ],
                     )
                 )
-        matched = True
-        break
-    if matched:
-        pass
-    if endpoint_found:
 
         if "Depends(" not in code:
-            findings.append(
-                Finding(
-                    id="API-101",
-                    title="Missing Dependency Injection",
-                    severity=Severity.HIGH,
-                    category=Category.API,
-                    description="Depends() not found.",
-                    recommendation="Use Depends() for authentication.",
-                    file=file_path,
-                    line=1,
-                    confidence=0.95,
-                    
-                )
+            Finding(
+                id="API-101",
+                title="Missing Dependency Injection",
+                severity=Severity.HIGH,
+                category=Category.API,
+                description=(
+                    "API endpoints do not use FastAPI dependency injection (Depends())."
+                ),
+                recommendation=(
+                    "Use Depends() for authentication, authorization, "
+                    "database sessions, and shared services."
+                ),
+                file=file_path,
+                line=1,
+                confidence=0.95,
+
+                cwe="CWE-306",
+                owasp="OWASP API Security Top 10 2023 - API2: Broken Authentication",
+
+                tags=[
+                    "fastapi",
+                    "authentication",
+                    "dependency-injection",
+                    "api-security",
+                ],
+
+                references=[
+                    "https://fastapi.tiangolo.com/tutorial/dependencies/",
+                    "https://owasp.org/API-Security/",
+                    "https://cwe.mitre.org/data/definitions/306.html",
+                ],
             )
 
         if "BaseModel" not in code:
