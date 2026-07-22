@@ -300,3 +300,9 @@ def observe_api_request(
             path=path,
             status_code=str(status_code),
         ).observe(latency_seconds)
+def observe_websocket_disconnect(reason: str | None = None) -> None:
+    """Record a websocket disconnect."""
+    if websocket_disconnect_total is not None:
+        websocket_disconnect_total.labels(
+            reason=reason or "unknown"
+        ).inc()
