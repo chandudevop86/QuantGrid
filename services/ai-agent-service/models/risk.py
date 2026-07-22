@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from models.severity import Severity
 
-from models.severity import Severity@dataclass(slots=True)
+
+@dataclass(slots=True)
 class RiskScore:
     impact: int
     likelihood: int
@@ -14,6 +16,7 @@ class RiskScore:
             self.likelihood +
             self.exploitability
         ) / 3 * self.confidence
+
 
 def risk_score(severity: Severity) -> int:
     return {
