@@ -1,6 +1,28 @@
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
+import json
+from pathlib import Path
+
+
+def save_findings_json(findings):
+
+    output = {
+        "total_findings": len(findings),
+        "findings": findings
+    }
+
+    path = Path("reports/QuantGrid_AI_Audit_Findings.json")
+
+    path.write_text(
+        json.dumps(
+            output,
+            indent=2,
+            default=str
+        )
+    )
+
+    return str(path)
 
 # ============================================================
 # Severity Weights
