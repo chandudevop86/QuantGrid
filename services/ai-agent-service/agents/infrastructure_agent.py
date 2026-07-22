@@ -2,6 +2,7 @@ from pathlib import Path
 
 from scanner.repo_scanner import scan_repository
 from scanner.rules.infrastructure_rules import check_infrastructure
+from scanner.utils.file_filter import is_terraform_resource_file
 
 
 def analyze_infrastructure(path):
@@ -19,27 +20,36 @@ def analyze_infrastructure(path):
     )
 
     for file in files:
+        if not is_terraform_resource_file(file):
+            continue
 
-        if (
+        if not (
             file.endswith(extensions)
             or Path(file).name == "Dockerfile"
         ):
+            continue
 
-            try:
+        try:
 
-                code = Path(file).read_text(
-                    errors="ignore"
+            code = Path(file).read_text(
+                errors="ignore"
+            )
+
+            # Terraform specific filtering
+            if file.endswith((".tf", ".tfvars")):
+
+                if not is_terraform_resource_file(file):
+                    continue
+
+            findings.extend(
+                check_infrastructure(
+                    file,
+                    code
                 )
+            )
 
-                findings.extend(
-                    check_infrastructure(
-                        file,
-                        code
-                    )
-                )
-
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     return {
         "agent": "Infrastructure Agent",
