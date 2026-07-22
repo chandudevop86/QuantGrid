@@ -149,7 +149,7 @@ def check_api(file_path: str) -> list[Finding]:
     endpoint_found = False
     lines = code.splitlines()
     for rule_id, severity, pattern, title, description in RULES:
-        
+        matched = False
         for line_no, line in enumerate(lines, start=1):
             
                 if not pattern.search(line):
@@ -179,7 +179,10 @@ def check_api(file_path: str) -> list[Finding]:
                         ],
                     )
                 )
-
+        matched = True
+        break
+    if matched:
+        pass
     if endpoint_found:
 
         if "Depends(" not in code:
