@@ -4,6 +4,19 @@ from collections import defaultdict
 import json
 from pathlib import Path
 
+import ast
+
+
+# ============================================================
+# Severity Weights
+# ============================================================
+
+SEVERITY_SCORE = {
+    "HIGH": 10,
+    "MEDIUM": 5,
+    "LOW": 2,
+}
+
 
 def save_findings_json(findings):
 
@@ -23,18 +36,6 @@ def save_findings_json(findings):
     )
 
     return str(path)
-
-# ============================================================
-# Severity Weights
-# ============================================================
-
-SEVERITY_SCORE = {
-    "HIGH": 10,
-    "MEDIUM": 5,
-    "LOW": 2,
-}
-import ast
-
 
 def detect_eval_usage(file_path):
 
