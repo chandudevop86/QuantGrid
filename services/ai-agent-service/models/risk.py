@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from models.enums import Severity
 @dataclass(slots=True)
 class RiskScore:
     impact: int
