@@ -2,8 +2,9 @@ from dataclasses import dataclass, field
 
 from models.evidence import Evidence
 from models.risk import RiskScore
-from models.enums import Severity, Category
 
+from models.severity import Severity
+from models.category import Category
 @dataclass(slots=True)
 class Finding:
     id: str
