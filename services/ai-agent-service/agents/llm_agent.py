@@ -1,11 +1,11 @@
-from llm.client import LLMClient
+from models.llm_factory import get_llm
 
 
 class LLMAuditAgent:
 
     def __init__(self):
-        self.client = LLMClient()
 
+        self.client = get_llm()
 
     def analyze_finding(
         self,
@@ -13,25 +13,6 @@ class LLMAuditAgent:
         code
     ):
 
-        prompt = f"""
+        prompt = ...
 
-You are a senior software architect.
-
-Analyze this audit finding.
-
-Finding:
-{finding}
-
-Code:
-{code}
-
-Return:
-
-1. Is this a real issue?
-2. Severity
-3. Explanation
-4. Recommended fix
-
-"""
-
-        return self.client.complete(prompt)
+        return self.client.generate(prompt)
