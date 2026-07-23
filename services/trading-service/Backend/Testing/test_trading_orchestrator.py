@@ -14,9 +14,7 @@ sys.path.append(
 from Backend.application.trading_orchestrator import TradingOrchestrator
 
 
-
-from Backend.application.trading_orchestrator import TradingOrchestrator
-from Backend.application.models.market import MarketDataInputs
+#from Backend.application..market import MarketDataInputs
 
 
 def test_execute_trade():
