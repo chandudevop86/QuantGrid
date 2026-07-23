@@ -18,7 +18,7 @@ from Backend.infrastructure.broker.dhan_status import cached_dhan_profile, check
 from Backend.presentation.api.roles import current_user, require_roles
 from Backend.presentation.api.upstream_errors import upstream_service_error
 from sqlalchemy.orm import Session
-
+from Backend.config.constants import Provider
 
 router = APIRouter(tags=["broker"])
 
@@ -171,7 +171,7 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
     settings = get_settings()
     provider = settings.broker_provider or "none"
 
-    if provider == Provider.DHAN:
+    if provider == Provider.DHAN
         status = cached_dhan_profile()
     elif provider == "none":
         status = {
