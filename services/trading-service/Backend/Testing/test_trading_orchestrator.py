@@ -1,9 +1,7 @@
 # test_trading_orchestrator.py
 
-from trading_orchestrator import (
-    TradingOrchestrator,
-    MarketDataInputs,
-)
+from Backend.application.trading_orchestrator import TradingOrchestrator
+from Backend.application.models.market import MarketDataInputs
 
 
 def test_execute_trade():
