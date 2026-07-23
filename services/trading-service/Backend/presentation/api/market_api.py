@@ -44,6 +44,7 @@ from Backend.application.volume_analysis import analyze_volume
 from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
 from Backend.infrastructure.market_data.yahoo_provider import YahooProvider
+from Backend.config.constants import Provider
 
 router = APIRouter(tags=["market"])
 logger = logging.getLogger("quantgrid.option_chain")
