@@ -844,44 +844,44 @@ def get_option_chain(
     provider_diagnostics = None
 
     try:
-    rows, expiry = _dhan_option_rows(symbol, strikes)
+                rows, expiry = _dhan_option_rows(symbol, strikes)
 
-    if any(
-        row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None
-        for row in rows
-    ):
-        source = "dhan-option-chain"
-        provider_available = True
+                if any(
+                    row["ce"].get("ltp") is not None or row["pe"].get("ltp") is not None
+                    for row in rows
+                ):
+                    source = "dhan-option-chain"
+                    provider_available = True
 
-        # Check whether OI is actually available
-        has_oi = any(
-            row.get("ce", {}).get("oi") is not None
-            or row.get("pe", {}).get("oi") is not None
-            for row in rows
-        )
+                    # Check whether OI is actually available
+                    has_oi = any(
+                        row.get("ce", {}).get("oi") is not None
+                        or row.get("pe", {}).get("oi") is not None
+                        for row in rows
+                    )
 
-        if not has_oi:
-            warning = "missing oi"
+                    if not has_oi:
+                        warning = "missing oi"
 
-        provider_diagnostics = {
-            "provider": "dhan",
-            "status": "OK",
-            "code": "live_option_chain_available",
-            "message": "Dhan option-chain rows are available.",
-            "live_rows_available": True,
-            "oi_available": has_oi,
-            "likely_causes": [] if has_oi else [
-                "Dhan response does not contain open interest field",
-                "Option row mapper may not map oi correctly"
-            ],
-            "suggested_actions": [] if has_oi else [
-                "Check _dhan_option_rows field mapping"
-            ],
-        }
-        else:
-            rows = _derived_option_rows(strikes)
-            warning = "Dhan option-chain returned no matching strikes. Option-chain rows are hidden until provider data is available."
-            provider_diagnostics = _option_chain_diagnostics(warning)
+                    provider_diagnostics = {
+                        "provider": "dhan",
+                        "status": "OK",
+                        "code": "live_option_chain_available",
+                        "message": "Dhan option-chain rows are available.",
+                        "live_rows_available": True,
+                        "oi_available": has_oi,
+                        "likely_causes": [] if has_oi else [
+                            "Dhan response does not contain open interest field",
+                            "Option row mapper may not map oi correctly"
+                        ],
+                        "suggested_actions": [] if has_oi else [
+                            "Check _dhan_option_rows field mapping"
+                        ],
+                    }
+                else:
+                    rows = _derived_option_rows(strikes)
+                    warning = "Dhan option-chain returned no matching strikes. Option-chain rows are hidden until provider data is available."
+                    provider_diagnostics = _option_chain_diagnostics(warning)
     except Exception as dhan_exc:
         logger.exception("option_chain_provider_fetch_failed", extra={"symbol": symbol, "provider": "dhan", "error_type": dhan_exc.__class__.__name__})
         observe_option_chain_failure("dhan", dhan_exc.__class__.__name__)
