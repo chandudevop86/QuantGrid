@@ -5,9 +5,15 @@ from typing import Any
 from Backend.application.market_data_service import select_market_data_provider
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider
-from Backend.infrastructure.market_data.yahoo_provider import YAHOO_SYMBOLS, YAHOO_TRADING_GRADE_WARNING, YahooProvider
+from Backend.infrastructure.market_data.yahoo_provider import (
+    YAHOO_SYMBOLS,
+    YAHOO_TRADING_GRADE_WARNING,
+    YahooProvider,
+)
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_provider import DhanProvider
+
+from Backend.config import Provider
 
 
 class YahooMarketDataProvider(YahooProvider):
@@ -17,7 +23,12 @@ class YahooMarketDataProvider(YahooProvider):
         payload = self.get_ltp(symbol)
         return {**payload, "source": "yahoo-finance"}
 
-    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:  # type: ignore[override]
+    def get_candles(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         return super().get_candles(symbol, interval, "1d", limit)
 
     def get_market_status(self, symbol: str) -> dict[str, Any]:
@@ -31,7 +42,12 @@ class FutureBrokerMarketDataProvider(EnvConfiguredProvider):
     def get_latest_price(self, symbol: str) -> dict[str, Any]:
         return self.get_ltp(symbol)
 
-    def get_candles(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:  # type: ignore[override]
+    def get_candles(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         return super().get_candles(symbol, interval, "1d", limit)
 
     def get_market_status(self, symbol: str) -> dict[str, Any]:
@@ -48,13 +64,18 @@ def market_symbol(symbol: str) -> str:
 
 
 def get_market_data_provider() -> MarketDataProvider:
-    provider = get_settings().market_data_provider
-    if provider == "yahoo":
+    provider = get_settings().market_data_provider.strip().lower()
+
+    if provider == Provider.YAHOO:
         return YahooMarketDataProvider()
+
     if provider == "broker":
         return FutureBrokerMarketDataProvider()
+
     if provider == "nse":
         return FutureNseMarketDataProvider()
-    if provider == "dhan":
+
+    if provider == Provider.DHAN:
         return DhanProvider()
+
     return select_market_data_provider(provider)

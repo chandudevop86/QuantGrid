@@ -14,7 +14,21 @@ from enum import StrEnum
 
 class Provider(StrEnum):
     YAHOO = "yahoo"
+    YAHOO_FINANCE = "yahoo-finance"
     DHAN = "dhan"
+    BROKER = "broker"
+    NSE = "nse"
+
+
+# ==========================================================
+# Brokers
+# ==========================================================
+
+class Broker(StrEnum):
+    DHAN = "dhan"
+    ZERODHA = "zerodha"
+    FYERS = "fyers"
+    ANGEL = "angel"
 
 
 # ==========================================================
@@ -69,6 +83,19 @@ class OrderType(StrEnum):
     SL = "SL"
     SL_MARKET = "SL-M"
     STOPLOSS = "STOPLOSS"
+
+
+# ==========================================================
+# Order Status
+# ==========================================================
+
+class OrderStatus(StrEnum):
+    PENDING = "PENDING"
+    OPEN = "OPEN"
+    COMPLETE = "COMPLETE"
+    CANCELLED = "CANCELLED"
+    REJECTED = "REJECTED"
+    TRIGGER_PENDING = "TRIGGER_PENDING"
 
 
 # ==========================================================
@@ -168,6 +195,8 @@ class CacheKey(StrEnum):
     PROFILE = "profile"
     POSITIONS = "positions"
     ORDERS = "orders"
+    HOLDINGS = "holdings"
+    FUNDS = "funds"
 
 
 # ==========================================================
