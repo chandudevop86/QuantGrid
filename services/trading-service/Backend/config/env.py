@@ -3,8 +3,12 @@ import os
 
 load_dotenv()
 
-APP_NAME = os.getenv("APP_NAME")
-BROKER = os.getenv("BROKER")
+BROKER = os.getenv("QUANTGRID_BROKER_PROVIDER")
+
 DATABASE_URL = os.getenv("DATABASE_URL")
-JWT_SECRET = os.getenv("JWT_SECRET")
-AWS_REGION = os.getenv("AWS_REGION")
+
+MARKET_PROVIDER = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER")
+
+CAPITAL = int(os.getenv("QUANTGRID_CAPITAL", "100000"))
+
+RISK_PER_TRADE = float(os.getenv("QUANTGRID_RISK_PER_TRADE_PCT", "1"))
