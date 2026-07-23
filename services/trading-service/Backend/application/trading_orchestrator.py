@@ -14,7 +14,7 @@ class TradingOrchestrator:
         self.pipeline = DecisionPipelineService()
         self.scoring = SignalScoringEngine()
         self.selector = StrategySelector()
-        self.risk = RiskManager()
+        self.risk = RiskEngine()
         self.trading_service = TradingService()
         self.oms = OrderManagementService()
         self.analytics = TradeAnalytics()
