@@ -11,3 +11,17 @@ class Settings:
     DEFAULT_BROKER = BROKER
 
 settings = Settings()
+from .env import (
+    BROKER,
+    MARKET_PROVIDER,
+    CAPITAL,
+    RISK_PER_TRADE,
+)
+
+class Settings:
+    DEFAULT_BROKER = BROKER
+    MARKET_PROVIDER = MARKET_PROVIDER
+    DEFAULT_CAPITAL = CAPITAL
+    RISK_PERCENT = RISK_PER_TRADE
+
+settings = Settings()
