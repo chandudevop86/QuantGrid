@@ -415,7 +415,7 @@ def _dhan_failure_message(payload: Any) -> str | None:
     return None
 
 
-def _option_chain_diagnostics(message: str | None, *, provider: str = "dhan") -> dict[str, Any]:
+def _option_chain_diagnostics(message: str | None, *, provider: str = Provider.DHAN) -> dict[str, Any]:
     text = str(message or "")
     lower = text.lower()
     likely_causes: list[str] = []
