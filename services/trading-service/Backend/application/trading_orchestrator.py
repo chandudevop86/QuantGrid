@@ -4,7 +4,7 @@ from Backend.application.strategy_selection_engine import StrategySelector
 from Backend.application.risk_engine import RiskEngine
 from Backend.application.trading_service import TradingService
 from Backend.application.order_management import OrderManagementService
-from Backend.application.trade_analytics_engine import TradeAnalytics
+from Backend.application.trade_analytics_engine import TradeAnalyticsService
 from Backend.application.feedback_engine import FeedbackEngine
 
 
@@ -17,7 +17,7 @@ class TradingOrchestrator:
         self.risk = RiskEngine()
         self.trading_service = TradingService()
         self.oms = OrderManagementService()
-        self.analytics = TradeAnalytics()
+        self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine()
 
     def execute_cycle(self):
