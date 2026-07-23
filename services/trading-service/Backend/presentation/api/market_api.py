@@ -664,10 +664,7 @@ def _dhan_option_rows(symbol: str, strikes: list[int]) -> tuple[list[dict[str, A
                 raise RuntimeError("Dhan did not return an option-chain expiry.")
 
             chain_payload = _dhan_option_provider_payload("optionchain", base_body | {"Expiry": expiry})
-            logger.warning(
-                    "DHAN RAW OPTION SAMPLE: %s",
-                    json.dumps(chain_payload, default=str)[:2000]
-                )
+            logger.info("Dhan option chain received successfully")
             option_chain = _dhan_option_chain(chain_payload)
         except Exception as exc:
             detail = str(exc).lower()
