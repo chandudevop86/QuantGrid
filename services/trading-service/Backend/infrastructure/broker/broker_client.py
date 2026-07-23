@@ -9,7 +9,7 @@ from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.domain.models.order import Order
 from Backend.domain.shared import IBrokerAdapter
-
+from Backend.config import Provider
 
 @dataclass(slots=True)
 class BrokerOrderResult:
@@ -220,6 +220,6 @@ def _dhan_configured(settings: Any) -> bool:
     provider = str(getattr(settings, "broker_provider", "") or "").strip().lower()
     credentials = dhan_credentials()
     return bool(
-        provider == "dhan"
+        if provider == Provider.DHAN:
         or (credentials.get("client_id") and credentials.get("access_token"))
     )

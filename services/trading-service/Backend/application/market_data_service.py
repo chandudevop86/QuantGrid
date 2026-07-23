@@ -15,7 +15,7 @@ from Backend.application.redis_service import redis_service
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
 from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
-
+from Backend.config import Provider
 
 _MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
 
@@ -212,7 +212,7 @@ def select_market_data_provider(name: str) -> MarketDataProvider:
         return KiteProvider()
     if provider == "upstox":
         return UpstoxProvider()
-    if provider == "dhan":
+    if provider == Provider.DHAN:
         return DhanProvider()
     if provider == "fyers":
         return FyersProvider()

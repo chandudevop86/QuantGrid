@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
-
+from Backend.config import Provider
 
 SECURITY_MASTER = None
 
@@ -40,7 +40,7 @@ def _safe_index(values: list[Any], index: int) -> float | None:
     except (TypeError, ValueError):
         return None
 class DhanProvider(EnvConfiguredProvider):
-    provider_name = "dhan"
+    if provider == Provider.DHAN:
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
     def normalize_symbol(self, symbol: str) -> str:
         return symbol.upper()

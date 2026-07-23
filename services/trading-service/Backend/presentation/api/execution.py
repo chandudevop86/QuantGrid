@@ -50,6 +50,7 @@ from Backend.application.monitoring import observe_paper_order, observe_rejected
 from Backend.presentation.api.roles import current_user, require_trade_execute
 from Backend.application.market_data_service import MarketDataService
 from Backend.presentation.api.market_api import get_price
+from Backend.config import Provider
 
 router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
@@ -168,7 +169,7 @@ def _live_guardrail_failure(
 
 def _broker_session_valid(settings: Any) -> bool:
     provider = str(settings.broker_provider or "").lower()
-    if provider == "dhan":
+    if provider == Provider.DHAN:
         return bool(check_dhan_profile(timeout=3.0).get("connected"))
     return bool(settings.broker_configured and provider)
 

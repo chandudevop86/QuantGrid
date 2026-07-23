@@ -33,7 +33,7 @@ from Backend.infrastructure.broker.dhan_status import cached_dhan_profile
 from Backend.presentation.api.auth import current_user
 from Backend.presentation.api.roles import require_roles
 from Backend.presentation.api.websocket_manager import manager
-
+from Backend.config import Provider
 router = APIRouter()
 compatibility_router = APIRouter()
 logger = logging.getLogger("quantgrid.dashboard")
@@ -324,7 +324,7 @@ def operations(
             db.close()
 
     execution_mode = "LIVE" if settings.live_trading_enabled else "PAPER"
-    if settings.broker_provider == "dhan":
+    if settings.broker_provider == Provider.DHAN:
         broker_health = cached_dhan_profile()
         broker_health["session_verified"] = bool(broker_health.get("connected"))
     else:
