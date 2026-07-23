@@ -1,10 +1,10 @@
 from Backend.application.decision_pipeline import DecisionPipelineService
-from Backend.application.signal_scoring import SignalScoringEngine
-from Backend.application.strategy_selector import StrategySelector
-from Backend.application.risk_manager import RiskManager
+from Backend.application.signal_scoring_engine import SignalScoringEngine
+from Backend.application.strategy_selection_engine import StrategySelector
+from Backend.application.risk_engine import RiskManager
 from Backend.application.trading_service import TradingService
 from Backend.application.order_management import OrderManagementService
-from Backend.application.trade_analytics import TradeAnalytics
+from Backend.application.trade_analytics_engine import TradeAnalytics
 from Backend.application.feedback_engine import FeedbackEngine
 
 
