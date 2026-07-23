@@ -1,4 +1,19 @@
 # test_trading_orchestrator.py
+import sys
+import os
+
+sys.path.append(
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../.."
+        )
+    )
+)
+
+from Backend.application.trading_orchestrator import TradingOrchestrator
+
+
 
 from Backend.application.trading_orchestrator import TradingOrchestrator
 from Backend.application.models.market import MarketDataInputs
