@@ -15,7 +15,6 @@ class OllamaLLM:
         )
 
     def generate(self, prompt):
-
         response = requests.post(
             f"{self.url}/api/generate",
             json={
@@ -29,3 +28,14 @@ class OllamaLLM:
         response.raise_for_status()
 
         return response.json()["response"]
+
+
+if __name__ == "__main__":
+    llm = OllamaLLM()
+
+    print("Testing Ollama...")
+    print("-" * 40)
+
+    result = llm.generate("Say hello in one sentence.")
+
+    print(result)
