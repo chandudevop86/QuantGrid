@@ -296,11 +296,11 @@ class DecisionPipelineService:
             feed_delay_seconds=getattr(validation, "delay_seconds", 0) or 0,
             warnings=[*list(getattr(validation, "warnings", []) or []), *context_warnings],
             candles=candles,
-            candles_1m=candles_by_interval.get("1m", candles),
-            candles_5m=candles_by_interval.get("5m", []),
-            candles_15m=candles_by_interval.get("15m", []),
-            candles_1h=candles_by_interval.get("1h", []),
-            candles_daily=candles_by_interval.get("1d", []),
+            candles_1m=candles_by_interval.get("TimeFrame.M1", candles),
+            candles_5m=candles_by_interval.get("TimeFrame.M5", []),
+            candles_15m=candles_by_interval.get("TimeFrame.M15", []),
+            candles_1h=candles_by_interval.get("TimeFrame.H1", []),
+            candles_daily=candles_by_interval.get("TimeFrame.D1", []),
             trend=_context_text(context_values, "trend"),
             momentum=_context_text(context_values, "momentum"),
             price_action=_context_text(context_values, "price_action"),
@@ -736,13 +736,13 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
     from app.validation.data_quality import validate_candles
 
     series = {
-        "1m": market.candles_1m or market.candles,
-        "5m": market.candles_5m,
-        "15m": market.candles_15m,
-        "1h": market.candles_1h,
-        "1d": market.candles_daily,
+        "TimeFrame.M1": market.candles_1m or market.candles,
+        "TimeFrame.M5": market.candles_5m,
+        "TimeFrame.M15": market.candles_15m,
+        "TimeFrame.H1": market.candles_1h,
+        "TimeFrame.D1": market.candles_daily,
     }
-    required = {"1m", "15m", "1h"}
+    required = {"TimeFrame.M1", "TimeFrame.M15", "TimeFrame.H1"}
     critical_errors: list[str] = []
     warnings: list[str] = []
     components: dict[str, dict[str, Any]] = {}
@@ -810,7 +810,7 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
 
 
 def _candle_series_integrity(candles: list[dict[str, Any]], timeframe: str, minimum_rows: int = 20) -> dict[str, Any]:
-    interval_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}.get(timeframe, 0)
+    interval_seconds = {"TimeFrame.M1": 60, "TimeFrame.M5": 300, "TimeFrame.M15": 900, "TimeFrame.H1": 3600, "TimeFrame.D1": 86400}.get(timeframe, 0)
     parsed: list[datetime] = []
     awareness: set[bool] = set()
     for candle in candles:
@@ -827,7 +827,7 @@ def _candle_series_integrity(candles: list[dict[str, Any]], timeframe: str, mini
     comparable = [value.timestamp() if value.tzinfo is not None else value.replace(tzinfo=timezone.utc).timestamp() for value in parsed]
     duplicate_count = len(comparable) - len(set(comparable))
     out_of_order = any(current <= previous for previous, current in zip(comparable, comparable[1:]))
-    gap_limit = interval_seconds * (4 if timeframe == "1d" else 1.5)
+    gap_limit = interval_seconds * (4 if timeframe == "TimeFrame.D1" else 1.5)
     gap_count = 0
     session_gap_count = 0
     for previous_value, current_value, previous_ts, current_ts in zip(parsed, parsed[1:], comparable, comparable[1:]):
@@ -871,10 +871,10 @@ def _as_kolkata_naive(value: datetime) -> datetime:
 
 def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
     series = {
-        "1m": market.candles_1m or market.candles,
-        "5m": market.candles_5m,
-        "15m": market.candles_15m,
-        "1h": market.candles_1h,
+        "TimeFrame.M1": market.candles_1m or market.candles,
+        "TimeFrame.M5": market.candles_5m,
+        "TimeFrame.M15": market.candles_15m,
+        "TimeFrame.H1": market.candles_1h,
         "daily": market.candles_daily,
     }
     reads = {
@@ -882,15 +882,15 @@ def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
         for timeframe, candles in series.items()
     }
     availability = {timeframe: bool(candles) for timeframe, candles in series.items()}
-    required_timeframes = ("15m", "1h")
+    required_timeframes = ("TimeFrame.M15", "TimeFrame.H1")
     missing_required = [timeframe for timeframe in required_timeframes if not availability[timeframe]]
-    h1_bias = _bias_from_direction(reads["1h"])
+    h1_bias = _bias_from_direction(reads["TimeFrame.H1"])
     available_reads = [value for timeframe, value in reads.items() if availability[timeframe]]
     directional = {_bias_from_direction(value) for value in available_reads if _bias_from_direction(value) != "NEUTRAL"}
     conflict = bool(
         missing_required
         or len(directional) > 1
-        or (_bias_from_direction(reads["15m"]) not in {"NEUTRAL", h1_bias})
+        or (_bias_from_direction(reads["TimeFrame.M15"]) not in {"NEUTRAL", h1_bias})
     )
     allowed_direction = "CE" if h1_bias == "BULLISH" else "PE" if h1_bias == "BEARISH" else "NONE"
     aligned = sum(1 for value in available_reads if _bias_from_direction(value) == h1_bias and h1_bias != "NEUTRAL")
@@ -907,7 +907,7 @@ def analyze_higher_timeframe(market: MarketDataInputs) -> dict[str, Any]:
         "availability": availability,
         "missing_required_timeframes": missing_required,
         "primary_trend": h1_bias,
-        "lower_timeframe_signal": _bias_from_direction(reads["1m"]),
+        "lower_timeframe_signal": _bias_from_direction(reads["TimeFrame.M1"]),
         "higher_timeframe_bias": h1_bias,
         "alignment_score": int(aligned / max(available_count, 1) * 100),
         "h1_bias": h1_bias,
@@ -1687,7 +1687,7 @@ def _no_trade_reason_detail(reason: str) -> dict[str, str]:
         (("stale", "fresh", "data quality", "timeframe", "provider", "unavailable"), "DATA_NOT_TRUSTED", "data", "critical", "Wait for complete, verified, fresh market data."),
         (("risk/reward", "risk reward", "rr "), "RISK_REWARD_INSUFFICIENT", "risk", "high", "Wait for an entry that provides at least the configured minimum risk/reward."),
         (("risk engine", "daily loss", "consecutive losses", "over trading", "revenge"), "RISK_LIMIT_ACTIVE", "risk", "critical", "Do not trade until the active risk control has cleared."),
-        (("higher timeframe", "15m", "1h"), "TIMEFRAME_CONFIRMATION_MISSING", "confirmation", "high", "Wait for the required higher timeframes to align."),
+        (("higher timeframe", "TimeFrame.M15", "TimeFrame.H1"), "TIMEFRAME_CONFIRMATION_MISSING", "confirmation", "high", "Wait for the required higher timeframes to align."),
         (("price action", "rejection", "engulfing"), "PRICE_CONFIRMATION_MISSING", "confirmation", "high", "Wait for a confirmed price-action trigger."),
         (("volume",), "VOLUME_CONFIRMATION_MISSING", "confirmation", "medium", "Wait for volume to confirm the move."),
         (("confluence", "trade quality", "checklist"), "CONFLUENCE_INSUFFICIENT", "quality", "high", "Wait until the minimum confluence and trade-quality thresholds pass."),
