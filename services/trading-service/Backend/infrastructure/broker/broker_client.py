@@ -220,6 +220,6 @@ def _dhan_configured(settings: Any) -> bool:
     provider = str(getattr(settings, "broker_provider", "") or "").strip().lower()
     credentials = dhan_credentials()
     return bool(
-        provider == Provider.DHAN:
+        provider == Provider.DHAN
         or (credentials.get("client_id") and credentials.get("access_token"))
     )
