@@ -471,7 +471,7 @@ def _option_chain_diagnostics(message: str | None, *, provider: str = "dhan") ->
         "status": "BLOCKED",
         "code": code,
         "message": text,
-        "profile_login_can_pass": provider == "dhan",
+        "profile_login_can_pass": provider == Provider.DHAN,
         "live_rows_available": False,
         "likely_causes": likely_causes,
         "suggested_actions": suggested_actions,

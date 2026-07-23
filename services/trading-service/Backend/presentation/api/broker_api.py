@@ -171,7 +171,7 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
     settings = get_settings()
     provider = settings.broker_provider or "none"
 
-    if provider == "dhan":
+    if provider == Provider.DHAN:
         status = cached_dhan_profile()
     elif provider == "none":
         status = {
