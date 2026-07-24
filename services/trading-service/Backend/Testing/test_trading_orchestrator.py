@@ -108,31 +108,51 @@ def test_low_confidence():
 
     market = MarketDataInputs(
 
-        trend="Weak",
+    symbol="NIFTY",
 
-        market_regime="Range",
+    market_live=True,
 
-        volume="Low",
+    valid_for_execution=True,
 
-        volatility="Low",
+    trend="Weak",
 
-        oi_bias="Bearish",
+    momentum="Weak",
 
-        pcr=0.4,
+    price_action="Range",
 
-        vwap_relation="Below",
+    oi_bias="Bearish",
 
-        atr=10,
+    pcr=0.4,
 
-        spread=3.5,
+    vwap_relation="Below",
 
-        news=True,
+    liquidity="Low",
 
-        institutional=False,
+    expiry_day=False,
 
-        expiry_day=False,
+    capital=100000,
 
-    )
+    risk_per_trade=1500,
+
+    candles=[
+        {
+            "timestamp": "2026-07-24T09:15:00",
+            "open": 23800,
+            "high": 23820,
+            "low": 23780,
+            "close": 23790,
+            "volume": 50000
+        },
+        {
+            "timestamp": "2026-07-24T09:20:00",
+            "open": 23790,
+            "high": 23800,
+            "low": 23750,
+            "close": 23760,
+            "volume": 45000
+        }
+    ]
+)
 
 
     orchestrator = create_orchestrator()
