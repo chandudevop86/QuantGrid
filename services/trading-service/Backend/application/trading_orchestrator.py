@@ -21,7 +21,7 @@ class TradingOrchestrator:
         self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine(trade_repository=self.trade_repository)
 
-    def execute_cycle(self, market):
+def execute_cycle(self, market):
 
     # 1. AI Decision
     decision = self.pipeline.run(
