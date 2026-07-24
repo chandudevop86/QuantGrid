@@ -61,11 +61,31 @@ def test_execute_trade():
     expiry_day=False,
 
     candles=[
-        {
-            "close":23800,
-            "volume":100000
-        }
-    ]
+    {
+        "timestamp": "2026-07-24T09:15:00",
+        "open": 23750,
+        "high": 23850,
+        "low": 23720,
+        "close": 23800,
+        "volume": 100000
+    },
+    {
+        "timestamp": "2026-07-24T09:20:00",
+        "open": 23800,
+        "high": 23880,
+        "low": 23790,
+        "close": 23850,
+        "volume": 120000
+    },
+    {
+        "timestamp": "2026-07-24T09:25:00",
+        "open": 23850,
+        "high": 23900,
+        "low": 23830,
+        "close": 23870,
+        "volume": 110000
+    }
+]
 
 )
 
