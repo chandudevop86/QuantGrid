@@ -470,15 +470,15 @@ def live_nse_option_chain(
                     "iv": _nse_number(pe.get("impliedVolatility")),
                     "oi_change": _nse_number(pe.get("changeinOpenInterest")),
                     "greeks": _black_scholes_greeks(
-                    option_type="put",
-                    spot=underlying,
-                    strike=strike,
-                    time_to_expiry=tte,
-                    volatility=pe_iv,
-                    rate=0.06,
-                ),
-            },
-        })
+                                    option_type="put",
+                                    spot=underlying,
+                                    strike=strike,
+                                    time_to_expiry=tte,
+                                    volatility=pe_iv,
+                                    rate=0.06,
+                                ),
+                            },
+                    })
 
                     # PERFORMANCE FIX: Sort the complete rows array ONCE outside the collection loop
         rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
