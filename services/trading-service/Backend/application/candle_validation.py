@@ -409,19 +409,20 @@ def validate_live_candle(
     if delay.missing_candles > settings.max_missing_candles:
         warnings.append(f"Possible missing candles detected: {delay.missing_candles}.")
     valid = delay.delay_seconds is not None and delay.delay_seconds <= delayed_limit
+    status = (
+                "LIVE MARKET"
+                if valid
+                and delay.delay_seconds is not None
+                and delay.delay_seconds <= settings.warning_after_seconds
+                else "DELAYED FEED"
+            )
     if mode == "live" and delay.missing_candles > settings.max_missing_candles:
         valid = False
         diagnostics.append(
                 f"Missing candle count {delay.missing_candles} exceeds live limit {settings.max_missing_candles}."
             )
 
-        status = (
-            "LIVE MARKET"
-            if valid
-            and delay.delay_seconds is not None
-            and delay.delay_seconds <= settings.warning_after_seconds
-            else "DELAYED FEED"
-        )
+    
     if not valid:
         diagnostics.append(
             f"Latest candle is stale during live market: delay {delay.delay_seconds}s, "
