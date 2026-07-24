@@ -101,7 +101,33 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                 {"version": SUBSCRIPTION_ENTITLEMENTS_VERSION},
             )
 
+    with engine.begin() as connection:
+        applied = {row[0] for row in connection.execute(
+            text(f"SELECT version FROM {MIGRATION_TABLE}")
+        )}
 
+        if INSTITUTIONAL_METRICS_VERSION not in applied:
+            connection.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS institutional_metrics (
+                    id SERIAL PRIMARY KEY,
+                    fii_cash FLOAT,
+                    dii_cash FLOAT,
+                    fii_index_future FLOAT,
+                    gift_nifty FLOAT,
+                    india_vix FLOAT,
+                    usdinr FLOAT,
+                    crude_oil FLOAT,
+                    gold FLOAT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            ))
+
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                {"version": INSTITUTIONAL_METRICS_VERSION},
+            )
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
     """Apply the small, idempotent upgrades that predate versioned migrations."""
     with engine.begin() as connection:
