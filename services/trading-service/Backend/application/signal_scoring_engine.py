@@ -288,7 +288,7 @@ class TradingOrchestrator:
         self.trading_service = TradingService()
         self.scoring = SignalScoringEngine()
         self.risk = RiskManager()
-        self.oms = OrderManagementService()
+        self.oms = OrderManagementService( broker="dhan")
         self.analytics = TradeAnalytics()
         self.feedback = FeedbackEngine()
 

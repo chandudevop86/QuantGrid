@@ -16,7 +16,7 @@ class TradingOrchestrator:
         self.selector = StrategySelector()
         self.risk = RiskEngine()
         self.trading_service = TradingService()
-        self.oms = OrderManagementService()
+        self.oms = OrderManagementService( broker="dhan")
         self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine()
 
