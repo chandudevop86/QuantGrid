@@ -889,7 +889,7 @@ def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
     spread = float(payload.get("spread_bps", 8.0))
 
 # 2. Compute your calculated metric cleanly using standard math
-effective_slippage = slippage + (spread / 2.0)
+    effective_slippage = slippage + (spread / 2.0)
 
     model = {
         "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
