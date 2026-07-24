@@ -103,17 +103,17 @@ def pain(candidate: dict[str, Any]) -> float:
 result = min(rows, key=pain)
 strike = result.get("strike")
 
-if isinstance(strike, (int, float)):
-    
-    return int(strike)
+        if isinstance(strike, (int, float)):
+            return int(strike)
 
-if isinstance(strike, str):
-    try:
-        return int(float(strike))
-    except ValueError:
+        if isinstance(strike, str):
+            try:
+                return int(float(strike))
+            except ValueError:
+                return None
+
         return None
 
-return None
 
 def _professional_option_signal(
     rows: list[dict[str, Any]],
