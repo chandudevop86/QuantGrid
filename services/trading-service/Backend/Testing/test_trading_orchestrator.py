@@ -173,31 +173,59 @@ def test_expiry_day():
 
     market = MarketDataInputs(
 
-        trend="Strong Trend",
+    symbol="NIFTY",
 
-        market_regime="Trending",
+    market_live=True,
 
-        volume="High",
+    valid_for_execution=True,
 
-        volatility="High",
+    trend="Strong Trend",
 
-        oi_bias="Bullish",
+    momentum="Strong",
 
-        pcr=0.95,
+    price_action="Breakout",
 
-        vwap_relation="Above",
+    oi_bias="Bullish",
 
-        atr=140,
+    pcr=0.95,
 
-        spread=0.2,
+    vwap_relation="Above",
 
-        news=False,
+    liquidity="High",
 
-        institutional=True,
+    expiry_day=True,
 
-        expiry_day=True,
+    capital=100000,
 
-    )
+    risk_per_trade=1500,
+
+    candles=[
+        {
+            "timestamp": "2026-07-24T09:15:00",
+            "open": 23800,
+            "high": 23900,
+            "low": 23790,
+            "close": 23880,
+            "volume": 150000
+        },
+        {
+            "timestamp": "2026-07-24T09:20:00",
+            "open": 23880,
+            "high": 23950,
+            "low": 23870,
+            "close": 23920,
+            "volume": 180000
+        },
+        {
+            "timestamp": "2026-07-24T09:25:00",
+            "open": 23920,
+            "high": 23980,
+            "low": 23910,
+            "close": 23960,
+            "volume": 200000
+        }
+    ]
+)
 
 
     orchestrator = create_orchestrator()
