@@ -136,7 +136,12 @@ class StrategyEngine:
         if governance and (not governance.enabled or governance.rollout_pct <= 0):
             self._audit("blocked", self._normalize(strategy_name), governance.to_dict())
             raise ValueError(f"Strategy '{strategy_name}' is disabled by governance.")
-        return strategy.run(data, context)
+        print(f"Running strategy: {strategy_name}")
+        print(f"Candles received: {len(data)}")
+        signals = strategy.run(data, context)
+        print(f"Signals generated: {len(signals)}")
+        return signals
+# return strategy.run(data, context)
 
     def run_many(self, strategy_names: list[str], data: Any, context: StrategyContext) -> dict[str, list[StrategySignal]]:
         return {name: self.run(name, data, context) for name in strategy_names}
