@@ -56,11 +56,7 @@ def fetch_nse_option_chain(symbol="NIFTY"):
         try:
 
             # First visit NSE homepage
-            page.goto(
-                BASE_URL,
-                wait_until="domcontentloaded",
-                timeout=60000,
-            )
+            
 
             page.wait_for_timeout(5000)
 

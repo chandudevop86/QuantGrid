@@ -387,17 +387,21 @@ def _nse_number(value: Any) -> float | int | None:
             return int(number) if number.is_integer() else round(number, 4)
 
 
+import concurrent.futures
+
 def live_nse_option_chain(
     symbol: str = "NIFTY",
     *,
     strikes_each_side: int = 8,
     step: int = 50,
-    ) -> dict[str, Any]:
+) -> dict[str, Any]:
 
     nse_symbol = _nse_index_symbol(symbol)
 
     try:
-        payload = fetch_nse_option_chain(nse_symbol)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(fetch_nse_option_chain, nse_symbol)
+            payload = future.result(timeout=15)
 
     except Exception as exc:
         logger.exception("live_nse_option_chain_fetch_failed")
@@ -412,9 +416,11 @@ def live_nse_option_chain(
                 symbol,
                 strikes_each_side=strikes_each_side,
                 step=step,
-        ),
-        exc,
-    )
+            ),
+            exc,
+        )
+
+    return payload
 
     records = payload.get("records") or {}
     raw_rows = records.get("data") or []
