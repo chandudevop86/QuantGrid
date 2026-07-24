@@ -194,7 +194,7 @@ class DhanProvider(EnvConfiguredProvider):
 # --- Helper Functions (Outside Class Block) ---
 
 def _exchange_segment() -> str:
-    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", NSE")
+    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "NSE")
 
 
 def _period_days(period: str) -> int:
@@ -209,19 +209,27 @@ def _period_days(period: str) -> int:
 
 def _extract_quote(raw: Any, security_id: str) -> dict[str, Any]:
     data = raw.get("data", raw) if isinstance(raw, dict) else raw
+
     if isinstance(data, dict):
-        for key in (security_id, str(security_id), "NSE", "IDX_I"):
+        for key in (
+            security_id,
+            str(security_id),
+            "NSE",
+            "NSE_FNO",
+        ):
             item = data.get(key)
             if isinstance(item, dict):
                 return item
+
         for item in data.values():
             if isinstance(item, dict):
                 nested = _extract_quote(item, security_id)
                 if nested:
                     return nested
-        return data
-    return {}
 
+        return data
+
+    return {}
 
 def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
     data = raw.get("data", raw) if isinstance(raw, dict) else raw
