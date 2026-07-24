@@ -525,7 +525,7 @@ def live_nse_option_chain(
 # -------------------------------------------------
 #        Build professional signal
 # -------------------------------------------------
-        signal_data = _professional_option_signal(
+    signal_data = _professional_option_signal(
                 rows,
                 spot=underlying,
                 atm=atm,
@@ -535,7 +535,7 @@ def live_nse_option_chain(
         # -------------------------------------------------
         #           SUCCESS PAYLOAD
         # -------------------------------------------------
-        return _option_chain_compat_payload(
+    return _option_chain_compat_payload(
                 
             {
                 "module": "live_nse_option_chain",
@@ -559,7 +559,7 @@ def live_nse_option_chain(
                 "signals": signal_data,
             })
 
-        def _live_nse_fallback_payload(
+def _live_nse_fallback_payload(
             payload: dict[str, Any],
             exc: Exception,
             ) -> dict[str, Any]:
@@ -567,7 +567,7 @@ def live_nse_option_chain(
                 return _option_chain_compat_payload()
 
             
-        def option_chain_engine(
+def option_chain_engine(
                 symbol: str = "NIFTY",
                 *,
                 strikes_each_side: int = 5,
