@@ -13,7 +13,7 @@ sys.path.append(
 
 from Backend.application.trading_orchestrator import TradingOrchestrator
 from Backend.application.signal_scoring_engine import MarketDataInputs
-
+from Backend.application.trade_repository import TradeRepository
 
 
 
@@ -34,8 +34,10 @@ def test_execute_trade():
         expiry_day=False,
     )
 
-    orchestrator = TradingOrchestrator()
-
+    repository = TradeRepository()
+    orchestrator = TradingOrchestrator(
+    trade_repository=repository
+)
     orchestrator.execute(
         market=market,
         strategy="breakout",
