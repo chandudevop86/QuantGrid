@@ -525,12 +525,12 @@ max_pain = _max_pain(rows)
 # -------------------------------------------------
 #        Build professional signal
 # -------------------------------------------------
-    signal_data = _professional_option_signal(
-    rows,
-    spot=underlying,
-    atm=atm,
-    pcr=pcr,
-    max_pain=max_pain,
+signal_data = _professional_option_signal(
+        rows,
+        spot=underlying,
+        atm=atm,
+        pcr=pcr,
+        max_pain=max_pain,
 )
 # -------------------------------------------------
 #           SUCCESS PAYLOAD
@@ -560,7 +560,7 @@ max_pain = _max_pain(rows)
 }
 )
 
-    def _live_nse_fallback_payload(
+def _live_nse_fallback_payload(
     payload: dict[str, Any],
     exc: Exception,
     ) -> dict[str, Any]:
