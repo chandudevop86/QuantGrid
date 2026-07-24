@@ -29,6 +29,8 @@ def fetch_nse_option_chain(symbol="NIFTY"):
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
+                "--disable-http2",
+                "--disable-features=NetworkService",
             ],
         )
 
@@ -43,17 +45,24 @@ def fetch_nse_option_chain(symbol="NIFTY"):
             locale="en-US",
         )
 
-        page = context.new_page()
-
+    
+        page.set_extra_http_headers(
+                {
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Referer": "https://www.nseindia.com/option-chain",
+                }
+            )
 
         try:
 
             # First visit NSE homepage
             page.goto(
                 BASE_URL,
-                wait_until="networkidle",
+                wait_until="domcontentloaded",
                 timeout=60000,
             )
+
+            page.wait_for_timeout(5000)
 
 
             # Get API response inside browser
