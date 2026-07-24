@@ -36,10 +36,14 @@ class TradingOrchestrator:
 
 
         # 3. Generate trading signal
-        signal = self.trading_service.generate_signal(
-            strategy,
-            market
-        )
+        signals = self.trading_service.run_strategy(
+                strategy,
+                market  )
+
+        if not signals:
+                return None
+
+        signal = signals[0]
 
 
         # 4. Score signal
