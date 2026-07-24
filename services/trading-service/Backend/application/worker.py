@@ -6,12 +6,18 @@ import logging
 import os
 import socket
 import time
+
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable
 
+
 from Backend.application.broker_reconciliation import reconcile_broker_state
-from Backend.application.fno_narrative_service import run_fno_narrative
+
+from Backend.application.fno_narrative_service import (
+    run_fno_narrative
+)
+
 from Backend.application.investment_research_service import (
     IST,
     is_after_market_close_ist,
@@ -21,361 +27,1132 @@ from Backend.application.investment_research_service import (
     run_portfolio_watchlist_loop,
     run_stock_research_loop,
 )
-from Backend.application.job_queue import dequeue_job, mark_job_completed, mark_job_failed
-from Backend.application.job_store import claim_job
-from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
-from Backend.application.notifications import send_alert
-from Backend.application.redis_service import redis_service
-from Backend.application.trade_exit_engine import monitor_open_positions
-from Backend.core.database import SessionLocal, init_database
-from Backend.infrastructure.broker.broker_client import broker_client_for_mode
-from app.narratives.fo_narrative_loop import is_market_hours_ist
-from app.security.security_ops_loop import SecurityCheckInput, run_security_scan
+
+from Backend.application.job_queue import (
+    dequeue_job,
+    mark_job_completed,
+    mark_job_failed,
+)
+
+from Backend.application.job_store import (
+    claim_job
+)
+
+from Backend.application.live_analysis_worker import (
+    LiveAnalysisPayload,
+    run_live_analysis,
+)
+
+from Backend.application.notifications import (
+    send_alert
+)
+
+from Backend.application.redis_service import (
+    redis_service
+)
+
+from Backend.application.trade_exit_engine import (
+    monitor_open_positions
+)
+
+from Backend.core.database import (
+    SessionLocal,
+    init_database
+)
+
+from Backend.infrastructure.broker.broker_client import (
+    broker_client_for_mode
+)
+
+from app.narratives.fo_narrative_loop import (
+    is_market_hours_ist
+)
+
+from app.security.security_ops_loop import (
+    SecurityCheckInput,
+    run_security_scan
+)
 
 
-# Kept in sync with presentation/api/execution.py:AUTO_SCAN_STRATEGIES. Duplicated locally
-# rather than imported, since application/ importing from presentation/ would be a layering
-# violation (and would pull in FastAPI router setup just for a constant list).
-AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
+# NEW IMPORTS FOR CANDLE STORAGE
+
+from Backend.application.market_data_service import (
+    get_market_data_service
+)
+
+from Backend.application.market_data_store import (
+    store_candles
+)
+
+
+
+AUTO_SCAN_STRATEGIES = [
+    "amd",
+    "breakout",
+    "btst",
+    "cbt",
+    "crt_tbs",
+    "mean_reversion",
+    "mtf",
+    "mtfa",
+    "supply_demand",
+]
+
 
 logger = logging.getLogger(__name__)
+
+
 WORKER_ID = socket.gethostname()
+
+
 _LAST_STOCK_RESEARCH_DATE: str | None = None
 _LAST_FUND_RESEARCH_WEEK: str | None = None
 
 
-def _job_type(job: dict[str, Any], payload: dict[str, Any]) -> str:
-    return str(job.get("job_type") or payload.get("job_type") or "live-analysis")
+
+# =====================================================
+# ENV HELPERS
+# =====================================================
 
 
 def _truthy(value: str | None) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes"}
+
+    return str(value or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
-def _not_falsey(value: str | None, *, default: bool) -> bool:
+
+def _not_falsey(
+    value: str | None,
+    *,
+    default: bool
+) -> bool:
+
     if value is None:
         return default
-    return str(value).strip().lower() not in {"0", "false", "no", "off"}
+
+    return str(value).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
 
-def _float_env(name: str, default: float) -> float:
+
+def _float_env(
+    name: str,
+    default: float
+) -> float:
+
     try:
-        return float(os.getenv(name, default))
-    except (TypeError, ValueError):
+        return float(
+            os.getenv(
+                name,
+                default
+            )
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
         return default
 
 
-def _exit_monitor_enabled() -> bool:
-    return _truthy(os.getenv("QUANTGRID_EXIT_MONITOR_ENABLED"))
+
+# =====================================================
+# CANDLE INGESTION CONFIG
+# =====================================================
 
 
-def _exit_monitor_interval() -> float:
-    return max(1.0, _float_env("QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS", 5.0))
+def _candle_ingestion_enabled() -> bool:
+
+    return _not_falsey(
+        os.getenv(
+            "QUANTGRID_CANDLE_INGESTION_ENABLED"
+        ),
+        default=True,
+    )
 
 
-def _exit_monitor_mode() -> str:
-    mode = str(os.getenv("QUANTGRID_EXIT_MONITOR_MODE") or "paper").strip().lower()
-    return mode if mode in {"paper", "live"} else "paper"
+
+def _candle_ingestion_interval() -> float:
+
+    return max(
+        10.0,
+        _float_env(
+            "QUANTGRID_CANDLE_INGESTION_INTERVAL_SECONDS",
+            60.0,
+        ),
+    )
 
 
-def _narrative_loop_enabled() -> bool:
-    return _not_falsey(os.getenv("QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED"), default=True)
+
+def _candle_symbols() -> list[str]:
+
+    configured = os.getenv(
+        "QUANTGRID_CANDLE_SYMBOLS",
+        "NIFTY",
+    )
+
+    return [
+        item.strip().upper()
+        for item in configured.split(",")
+        if item.strip()
+    ]
 
 
-def _narrative_loop_interval() -> float:
-    return max(60.0, _float_env("QUANTGRID_FNO_NARRATIVE_INTERVAL_SECONDS", 300.0))
+
+def _candle_interval() -> str:
+
+    return os.getenv(
+        "QUANTGRID_CANDLE_INTERVAL",
+        "1m",
+    )
 
 
-def _narrative_symbols() -> list[str]:
-    configured = os.getenv("QUANTGRID_FNO_NARRATIVE_SYMBOLS", "NIFTY,BANKNIFTY")
-    return [item.strip().upper() for item in configured.split(",") if item.strip()]
+
+# =====================================================
+# CANDLE FETCH + DATABASE STORAGE
+# =====================================================
 
 
-def _investment_loop_enabled() -> bool:
-    return _not_falsey(os.getenv("QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED"), default=True)
+def _run_candle_ingestion():
+
+    service = get_market_data_service()
+
+    symbols = _candle_symbols()
+
+    interval = _candle_interval()
 
 
-def _investment_loop_interval() -> float:
-    return max(300.0, _float_env("QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS", 900.0))
+    for symbol in symbols:
+
+        response = service.get_candles(
+            symbol,
+            interval=interval,
+            period="1d",
+            limit=200,
+        )
 
 
-def _security_loop_enabled() -> bool:
-    return _not_falsey(os.getenv("QUANTGRID_SECURITY_LOOP_ENABLED"), default=True)
+        candles = response.get(
+            "candles",
+            []
+        )
 
 
-def _security_full_interval() -> float:
-    return max(900.0, _float_env("QUANTGRID_SECURITY_FULL_SCAN_SECONDS", 21600.0))
+        if not candles:
+
+            logger.warning(
+                "candle_ingestion_empty symbol=%s source=%s",
+                symbol,
+                response.get("source"),
+            )
+
+            continue
 
 
-def _security_health_interval() -> float:
-    return max(300.0, _float_env("QUANTGRID_SECURITY_HEALTH_SCAN_SECONDS", 900.0))
+
+        store_candles(
+            symbol=symbol,
+            market_symbol=response.get(
+                "market_symbol"
+            ),
+            interval=interval,
+            source=response.get(
+                "source"
+            ),
+            candles=candles,
+        )
 
 
-def _run_live_analysis_job(payload: dict[str, Any]) -> dict[str, Any]:
-    return run_live_analysis(LiveAnalysisPayload(**payload))
+        logger.info(
+            "candle_ingestion_completed symbol=%s interval=%s candles=%s source=%s",
+            symbol,
+            interval,
+            len(candles),
+            response.get("source"),
+        )
+        
+        
+        # =====================================================
+# JOB EXECUTION HANDLERS
+# =====================================================
 
 
-def _run_auto_paper_job(payload: dict[str, Any]) -> dict[str, Any]:
-    # This used to build ONE LiveAnalysisPayload with
-    # `strategy=(payload.get("strategies") or ["breakout"])[0] if isinstance(...) else
-    # payload.get("strategy") or "breakout"`. Since this payload dict only ever has a
-    # "strategies" (plural) key -- never "strategy" singular -- and `isinstance(None, list)`
-    # is False when "strategies" wasn't provided, it fell through to
-    # `payload.get("strategy") or "breakout"`, which is ALWAYS "breakout" (the key doesn't
-    # exist). Even when "strategies" WAS provided as a real list, only `[0]` was used. Net
-    # effect: every strategy after the first in the list -- or every strategy except
-    # "breakout" when no list was given -- was silently never executed by this background
-    # job, indefinitely. Fixed to loop over every requested strategy, matching what
-    # presentation/api/execution.py's synchronous /execution/auto-paper endpoint already
-    # does correctly (`strategies = payload.strategies or AUTO_SCAN_STRATEGIES`).
-    raw_strategies = payload.get("strategies")
-    if isinstance(raw_strategies, list) and raw_strategies:
-        strategies = [str(item) for item in raw_strategies]
+def _job_type(
+    job: dict[str, Any],
+    payload: dict[str, Any]
+) -> str:
+
+    return str(
+        job.get("job_type")
+        or payload.get("job_type")
+        or "live-analysis"
+    )
+
+
+
+def _run_live_analysis_job(
+    payload: dict[str, Any]
+) -> dict[str, Any]:
+
+    return run_live_analysis(
+        LiveAnalysisPayload(**payload)
+    )
+
+
+
+def _run_auto_paper_job(
+    payload: dict[str, Any]
+) -> dict[str, Any]:
+
+    raw_strategies = payload.get(
+        "strategies"
+    )
+
+
+    if isinstance(
+        raw_strategies,
+        list
+    ) and raw_strategies:
+
+        strategies = [
+            str(item)
+            for item in raw_strategies
+        ]
+
     else:
-        strategies = list(AUTO_SCAN_STRATEGIES)
+
+        strategies = list(
+            AUTO_SCAN_STRATEGIES
+        )
+
+
 
     results: dict[str, Any] = {}
+
+
     for strategy_name in strategies:
+
         live_payload = LiveAnalysisPayload(
-            symbol=str(payload.get("symbol") or "NIFTY"),
-            interval=str(payload.get("interval") or "1m"),
-            period=str(payload.get("period") or "1d"),
+
+            symbol=str(
+                payload.get("symbol")
+                or "NIFTY"
+            ),
+
+            interval=str(
+                payload.get("interval")
+                or "1m"
+            ),
+
+            period=str(
+                payload.get("period")
+                or "1d"
+            ),
+
             strategy=strategy_name,
-            capital=float(payload.get("capital") or 100000),
-            risk_pct=float(payload.get("risk_pct") or 1),
-            rr_ratio=float(payload.get("rr_ratio") or 2),
+
+
+            capital=float(
+                payload.get("capital")
+                or 100000
+            ),
+
+
+            risk_pct=float(
+                payload.get("risk_pct")
+                or 1
+            ),
+
+
+            rr_ratio=float(
+                payload.get("rr_ratio")
+                or 2
+            ),
+
+
             auto_trade=True,
+
             execution_mode="paper",
         )
+
+
+
         try:
-            results[strategy_name] = run_live_analysis(live_payload)
-        except Exception as exc:  # noqa: BLE001 - one bad strategy shouldn't block the rest
-            results[strategy_name] = {"error": str(exc)}
+
+            results[strategy_name] = (
+                run_live_analysis(
+                    live_payload
+                )
+            )
+
+
+        except Exception as exc:
+
+            results[strategy_name] = {
+                "error": str(exc)
+            }
+
+
 
     if len(strategies) == 1:
+
         return results[strategies[0]]
-    return {"strategies": results}
 
 
-async def _run_reconciliation_job_async(payload: dict[str, Any]) -> dict[str, Any]:
-    execution_mode = str(payload.get("execution_mode") or "paper").strip().lower()
-    actor = SimpleNamespace(id=None, username="worker", role="ops")
+    return {
+        "strategies": results
+    }
+
+
+
+# =====================================================
+# BROKER RECONCILIATION
+# =====================================================
+
+
+async def _run_reconciliation_job_async(
+    payload: dict[str, Any]
+) -> dict[str, Any]:
+
+    execution_mode = str(
+        payload.get(
+            "execution_mode"
+        )
+        or "paper"
+    ).lower()
+
+
+    actor = SimpleNamespace(
+        id=None,
+        username="worker",
+        role="ops",
+    )
+
+
     with SessionLocal() as db:
+
         return await reconcile_broker_state(
             db=db,
-            broker_client=broker_client_for_mode(execution_mode),
-            actor=actor,  # type: ignore[arg-type]
+            broker_client=
+                broker_client_for_mode(
+                    execution_mode
+                ),
+            actor=actor,
             request=None,
         )
 
 
-def _run_reconciliation_job(payload: dict[str, Any]) -> dict[str, Any]:
-    return asyncio.run(_run_reconciliation_job_async(payload))
+
+def _run_reconciliation_job(
+    payload: dict[str, Any]
+):
+
+    return asyncio.run(
+        _run_reconciliation_job_async(
+            payload
+        )
+    )
 
 
-async def _run_exit_monitor_job_async(payload: dict[str, Any]) -> dict[str, Any]:
-    execution_mode = str(payload.get("execution_mode") or "paper").strip().lower()
-    actor = SimpleNamespace(id=None, username="worker", role="ops")
+
+# =====================================================
+# EXIT MONITOR
+# =====================================================
+
+
+async def _run_exit_monitor_job_async(
+    payload: dict[str, Any]
+):
+
+    execution_mode = str(
+        payload.get(
+            "execution_mode"
+        )
+        or "paper"
+    ).lower()
+
+
+
+    actor = SimpleNamespace(
+        id=None,
+        username="worker",
+        role="ops",
+    )
+
+
+
     with SessionLocal() as db:
+
         return await monitor_open_positions(
             db=db,
-            actor=actor,  # type: ignore[arg-type]
+            actor=actor,
             request=None,
             execution_mode=execution_mode,
-            broker_client=broker_client_for_mode(execution_mode),
+            broker_client=
+                broker_client_for_mode(
+                    execution_mode
+                ),
         )
 
 
-def _run_exit_monitor_job(payload: dict[str, Any]) -> dict[str, Any]:
-    return asyncio.run(_run_exit_monitor_job_async(payload))
+
+def _run_exit_monitor_job(
+    payload: dict[str, Any]
+):
+
+    return asyncio.run(
+        _run_exit_monitor_job_async(
+            payload
+        )
+    )
 
 
-def _run_notification_job(payload: dict[str, Any]) -> dict[str, str]:
-    subject = str(payload.get("subject") or "QuantGrid notification")
-    message = str(payload.get("message") or payload.get("body") or "")
-    send_alert(subject, message)
-    return {"status": "sent", "subject": subject}
+
+# =====================================================
+# NOTIFICATION
+# =====================================================
 
 
-def _run_fno_narrative_job(payload: dict[str, Any]) -> dict[str, Any]:
-    symbol = str(payload.get("symbol") or "NIFTY").upper()
-    result = run_fno_narrative(symbol)
-    return result.model_dump() if hasattr(result, "model_dump") else result.dict()
+def _run_notification_job(
+    payload: dict[str, Any]
+):
+
+    subject = str(
+        payload.get(
+            "subject"
+        )
+        or "QuantGrid notification"
+    )
 
 
-def _run_investment_research_job(payload: dict[str, Any]) -> dict[str, Any]:
-    scope = str(payload.get("scope") or "dashboard").strip().lower()
+    message = str(
+        payload.get("message")
+        or payload.get("body")
+        or ""
+    )
+
+
+    send_alert(
+        subject,
+        message
+    )
+
+
+    return {
+        "status": "sent",
+        "subject": subject,
+    }
+
+
+
+# =====================================================
+# FNO NARRATIVE
+# =====================================================
+
+
+def _run_fno_narrative_job(
+    payload: dict[str, Any]
+):
+
+    symbol = str(
+        payload.get("symbol")
+        or "NIFTY"
+    ).upper()
+
+
+
+    result = run_fno_narrative(
+        symbol
+    )
+
+
+    if hasattr(
+        result,
+        "model_dump"
+    ):
+
+        return result.model_dump()
+
+
+    return result.dict()
+
+
+
+# =====================================================
+# INVESTMENT RESEARCH
+# =====================================================
+
+
+def _run_investment_research_job(
+    payload: dict[str, Any]
+):
+
+    scope = str(
+        payload.get(
+            "scope"
+        )
+        or "dashboard"
+    ).lower()
+
+
+
     if scope == "stocks":
-        scores = run_stock_research_loop(persist=True)
-        return {"status": "completed", "scope": "stocks", "items": [item.model_dump() for item in scores]}
-    if scope in {"mutual_funds", "funds"}:
-        scores = run_mutual_fund_research_loop(persist=True)
-        return {"status": "completed", "scope": "mutual_funds", "items": [item.model_dump() for item in scores]}
-    if scope == "watchlist":
-        return {"status": "completed", "scope": "watchlist", "dashboard": run_portfolio_watchlist_loop(persist=True)}
-    return {"status": "completed", "scope": "dashboard", "dashboard": latest_investment_dashboard()}
+
+        scores = (
+            run_stock_research_loop(
+                persist=True
+            )
+        )
 
 
-def _run_security_scan_job(payload: dict[str, Any]) -> dict[str, Any]:
-    scan_type = str(payload.get("scan_type") or payload.get("scope") or "full").strip().lower()
-    result = run_security_scan(SecurityCheckInput(scan_type=scan_type), persist=True)
-    return result.model_dump(mode="json") if hasattr(result, "model_dump") else result.dict()
+        return {
+            "status": "completed",
+            "scope": "stocks",
+            "items": [
+                item.model_dump()
+                for item in scores
+            ],
+        }
 
 
-HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
-    "live-analysis": _run_live_analysis_job,
-    "auto-paper": _run_auto_paper_job,
-    "order-reconciliation": _run_reconciliation_job,
-    "exit-monitor": _run_exit_monitor_job,
-    "notification": _run_notification_job,
-    "fno-narrative": _run_fno_narrative_job,
-    "investment-research": _run_investment_research_job,
-    "security-scan": _run_security_scan_job,
+
+    if scope in {
+        "mutual_funds",
+        "funds"
+    }:
+
+        scores = (
+            run_mutual_fund_research_loop(
+                persist=True
+            )
+        )
+
+
+        return {
+            "status": "completed",
+            "scope": "mutual_funds",
+            "items": [
+                item.model_dump()
+                for item in scores
+            ],
+        }
+
+
+
+    return {
+        "status": "completed",
+        "scope": scope,
+        "dashboard":
+            latest_investment_dashboard(),
+    }
+
+
+
+# =====================================================
+# SECURITY SCAN
+# =====================================================
+
+
+def _run_security_scan_job(
+    payload: dict[str, Any]
+):
+
+    scan_type = str(
+        payload.get(
+            "scan_type"
+        )
+        or "full"
+    ).lower()
+
+
+
+    result = run_security_scan(
+        SecurityCheckInput(
+            scan_type=scan_type
+        ),
+        persist=True,
+    )
+
+
+    if hasattr(
+        result,
+        "model_dump"
+    ):
+
+        return result.model_dump(
+            mode="json"
+        )
+
+
+    return result.dict()
+
+
+
+# =====================================================
+# JOB HANDLER MAP
+# =====================================================
+
+
+HANDLERS: dict[
+    str,
+    Callable[[dict[str, Any]], Any]
+] = {
+
+
+    "live-analysis":
+        _run_live_analysis_job,
+
+
+    "auto-paper":
+        _run_auto_paper_job,
+
+
+    "order-reconciliation":
+        _run_reconciliation_job,
+
+
+    "exit-monitor":
+        _run_exit_monitor_job,
+
+
+    "notification":
+        _run_notification_job,
+
+
+    "fno-narrative":
+        _run_fno_narrative_job,
+
+
+    "investment-research":
+        _run_investment_research_job,
+
+
+    "security-scan":
+        _run_security_scan_job,
+
 }
+# =====================================================
+# JOB PROCESSING
+# =====================================================
 
 
-def _process_claimed_job(claimed: tuple[dict[str, Any], dict[str, Any]]) -> dict[str, Any] | None:
+def _process_claimed_job(
+    claimed: tuple[dict[str, Any], dict[str, Any]]
+) -> dict[str, Any] | None:
+
     job, payload = claimed
-    job_id = str(job["job_id"])
-    job_type = _job_type(job, payload)
-    handler = HANDLERS.get(job_type)
+
+    job_id = str(
+        job["job_id"]
+    )
+
+    job_type = _job_type(
+        job,
+        payload
+    )
+
+
+    handler = HANDLERS.get(
+        job_type
+    )
+
+
     if handler is None:
-        return mark_job_failed(job_id, f"Unsupported job type: {job_type}")
+
+        return mark_job_failed(
+            job_id,
+            f"Unsupported job type: {job_type}"
+        )
+
 
     try:
-        logger.info("Worker processing %s job %s", job_type, job_id)
-        result = handler(payload)
-        return mark_job_completed(job_id, result)
+
+        logger.info(
+            "Worker processing %s job %s",
+            job_type,
+            job_id,
+        )
+
+
+        result = handler(
+            payload
+        )
+
+
+        return mark_job_completed(
+            job_id,
+            result
+        )
+
+
     except Exception as exc:
-        logger.exception("Worker failed %s job %s", job_type, job_id)
-        return mark_job_failed(job_id, str(exc))
+
+        logger.exception(
+            "Worker failed %s job %s",
+            job_type,
+            job_id,
+        )
 
 
-def process_next_job() -> dict[str, Any] | None:
+        return mark_job_failed(
+            job_id,
+            str(exc)
+        )
+
+
+
+def process_next_job():
+
     claimed = dequeue_job()
+
     if claimed is None:
+
         return None
-    return _process_claimed_job(claimed)
 
 
-def process_job(job_id: str) -> dict[str, Any] | None:
-    claimed = claim_job(job_id)
+    return _process_claimed_job(
+        claimed
+    )
+
+
+
+def process_job(
+    job_id: str
+):
+
+    claimed = claim_job(
+        job_id
+    )
+
+
     if claimed is None:
+
         return None
-    return _process_claimed_job(claimed)
 
 
-def _run_periodic_exit_monitor() -> dict[str, Any]:
-    payload = {"execution_mode": _exit_monitor_mode()}
-    logger.info("Worker running periodic exit monitor in %s mode", payload["execution_mode"])
-    return _run_exit_monitor_job(payload)
+    return _process_claimed_job(
+        claimed
+    )
 
 
-def _run_periodic_fno_narratives() -> dict[str, Any]:
+
+# =====================================================
+# PERIODIC TASK HELPERS
+# =====================================================
+
+
+def _exit_monitor_enabled():
+
+    return _truthy(
+        os.getenv(
+            "QUANTGRID_EXIT_MONITOR_ENABLED"
+        )
+    )
+
+
+
+def _exit_monitor_interval():
+
+    return max(
+        1.0,
+        _float_env(
+            "QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS",
+            5,
+        )
+    )
+
+
+
+def _run_periodic_exit_monitor():
+
+    payload = {
+        "execution_mode": "paper"
+    }
+
+    return _run_exit_monitor_job(
+        payload
+    )
+
+
+
+def _narrative_loop_enabled():
+
+    return _not_falsey(
+        os.getenv(
+            "QUANTGRID_FNO_NARRATIVE_LOOP_ENABLED"
+        ),
+        default=True,
+    )
+
+
+
+def _narrative_loop_interval():
+
+    return max(
+        60,
+        _float_env(
+            "QUANTGRID_FNO_NARRATIVE_INTERVAL_SECONDS",
+            300,
+        )
+    )
+
+
+
+def _run_periodic_fno_narratives():
+
     if not is_market_hours_ist():
-        return {"status": "outside_market_hours", "symbols": _narrative_symbols()}
-    results = {}
-    for symbol in _narrative_symbols():
-        signal = run_fno_narrative(symbol)
-        results[symbol] = signal.model_dump() if hasattr(signal, "model_dump") else signal.dict()
-    logger.info("Worker generated F&O narratives for %s", ",".join(results))
-    return {"status": "completed", "results": results}
+
+        return {
+            "status":
+                "outside_market_hours"
+        }
 
 
-def _run_periodic_investment_research() -> dict[str, Any]:
-    global _LAST_FUND_RESEARCH_WEEK, _LAST_STOCK_RESEARCH_DATE
-    now = datetime.now(timezone.utc)
-    ist_now = now.astimezone(IST)
-    ran: dict[str, Any] = {}
-    stock_date_key = ist_now.date().isoformat()
-    fund_week = ist_now.isocalendar()
-    fund_week_key = f"{fund_week.year}-{fund_week.week}"
-    if is_after_market_close_ist(now) and _LAST_STOCK_RESEARCH_DATE != stock_date_key:
-        scores = run_stock_research_loop(persist=True)
-        ran["stocks"] = [item.model_dump() for item in scores]
-        _LAST_STOCK_RESEARCH_DATE = stock_date_key
-    if is_weekend_ist(now) and _LAST_FUND_RESEARCH_WEEK != fund_week_key:
-        scores = run_mutual_fund_research_loop(persist=True)
-        ran["mutual_funds"] = [item.model_dump() for item in scores]
-        _LAST_FUND_RESEARCH_WEEK = fund_week_key
-    if not ran:
-        return {"status": "not_due"}
-    ran["dashboard"] = latest_investment_dashboard()
-    logger.info("Worker completed investment research loop scopes: %s", ",".join(ran.keys()))
-    return {"status": "completed", **ran}
+    for symbol in [
+        "NIFTY",
+        "BANKNIFTY"
+    ]:
+
+        run_fno_narrative(
+            symbol
+        )
 
 
-def _run_periodic_security_scan(scan_type: str) -> dict[str, Any]:
-    result = run_security_scan(SecurityCheckInput(scan_type=scan_type), persist=True)
-    logger.info("Worker completed %s security scan: %s/%s", scan_type, result.overall_status.value, result.security_score)
-    return result.model_dump(mode="json") if hasattr(result, "model_dump") else result.dict()
+    return {
+        "status":
+            "completed"
+    }
 
 
-def run_worker_loop(poll_interval: float = 1.0) -> None:
+
+# =====================================================
+# MAIN WORKER LOOP
+# =====================================================
+
+
+def run_worker_loop(
+    poll_interval: float = 1.0
+):
+
     init_database()
+
     redis_service.configure()
-    logger.info("QuantGrid worker started with id %s", WORKER_ID)
-    next_exit_check = time.monotonic()
-    next_narrative_check = time.monotonic()
-    next_investment_check = time.monotonic()
-    next_security_full_check = time.monotonic()
-    next_security_health_check = time.monotonic()
+
+
+    logger.info(
+        "QuantGrid worker started id=%s",
+        WORKER_ID
+    )
+
+
     next_heartbeat = time.monotonic()
+
+    next_candle_ingestion = time.monotonic()
+
+    next_exit_check = time.monotonic()
+
+    next_narrative_check = time.monotonic()
+
+
+
     while True:
+
+
+        # -------------------------
+        # heartbeat
+        # -------------------------
+
         if time.monotonic() >= next_heartbeat:
+
             redis_service.write_worker_heartbeat(
-                {"worker_id": WORKER_ID, "status": "RUNNING", "last_seen": datetime.now(timezone.utc).isoformat()},
+                {
+                    "worker_id":
+                        WORKER_ID,
+
+                    "status":
+                        "RUNNING",
+
+                    "last_seen":
+                        datetime.now(
+                            timezone.utc
+                        ).isoformat(),
+                },
+
                 ttl_seconds=15,
             )
-            next_heartbeat = time.monotonic() + 5
-        processed = process_next_job()
-        if _exit_monitor_enabled() and time.monotonic() >= next_exit_check:
+
+
+            next_heartbeat = (
+                time.monotonic()
+                + 5
+            )
+
+
+
+        # -------------------------
+        # candle ingestion
+        # -------------------------
+
+        if (
+            _candle_ingestion_enabled()
+            and
+            time.monotonic()
+            >= next_candle_ingestion
+        ):
+
             try:
+
+                _run_candle_ingestion()
+
+
+            except Exception:
+
+                logger.exception(
+                    "Candle ingestion failed"
+                )
+
+
+            next_candle_ingestion = (
+                time.monotonic()
+                +
+                _candle_ingestion_interval()
+            )
+
+
+
+        # -------------------------
+        # queued jobs
+        # -------------------------
+
+        process_next_job()
+
+
+
+        # -------------------------
+        # exit monitor
+        # -------------------------
+
+        if (
+            _exit_monitor_enabled()
+            and
+            time.monotonic()
+            >= next_exit_check
+        ):
+
+            try:
+
                 _run_periodic_exit_monitor()
+
             except Exception:
-                logger.exception("Periodic exit monitor failed")
-            next_exit_check = time.monotonic() + _exit_monitor_interval()
-        if _narrative_loop_enabled() and time.monotonic() >= next_narrative_check:
+
+                logger.exception(
+                    "Exit monitor failed"
+                )
+
+
+            next_exit_check = (
+                time.monotonic()
+                +
+                _exit_monitor_interval()
+            )
+
+
+
+        # -------------------------
+        # FNO loop
+        # -------------------------
+
+        if (
+            _narrative_loop_enabled()
+            and
+            time.monotonic()
+            >= next_narrative_check
+        ):
+
             try:
+
                 _run_periodic_fno_narratives()
-            except Exception:
-                logger.exception("Periodic F&O narrative loop failed")
-            next_narrative_check = time.monotonic() + _narrative_loop_interval()
-        if _investment_loop_enabled() and time.monotonic() >= next_investment_check:
-            try:
-                _run_periodic_investment_research()
-            except Exception:
-                logger.exception("Periodic investment research loop failed")
-            next_investment_check = time.monotonic() + _investment_loop_interval()
-        if _security_loop_enabled() and time.monotonic() >= next_security_health_check:
-            try:
-                _run_periodic_security_scan("health")
-            except Exception:
-                logger.exception("Periodic security health scan failed")
-            next_security_health_check = time.monotonic() + _security_health_interval()
-        if _security_loop_enabled() and time.monotonic() >= next_security_full_check:
-            try:
-                _run_periodic_security_scan("full")
-            except Exception:
-                logger.exception("Periodic security full scan failed")
-            next_security_full_check = time.monotonic() + _security_full_interval()
-        if processed is None:
-            time.sleep(poll_interval)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the QuantGrid background worker.")
-    parser.add_argument("--poll-interval", type=float, default=1.0)
-    parser.add_argument("--once", action="store_true", help="Process at most one queued job and exit.")
+            except Exception:
+
+                logger.exception(
+                    "FNO narrative failed"
+                )
+
+
+            next_narrative_check = (
+                time.monotonic()
+                +
+                _narrative_loop_interval()
+            )
+
+
+
+        time.sleep(
+            poll_interval
+        )
+
+
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+
+def main():
+
+    parser = argparse.ArgumentParser(
+        description=
+        "Run QuantGrid worker"
+    )
+
+
+    parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=1.0
+    )
+
+
+    parser.add_argument(
+        "--once",
+        action="store_true"
+    )
+
+
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
-    init_database()
+
+    logging.basicConfig(
+        level=logging.INFO
+    )
+
+
     if args.once:
+
         process_next_job()
+
         return
-    run_worker_loop(poll_interval=args.poll_interval)
+
+
+
+    run_worker_loop(
+        poll_interval=
+        args.poll_interval
+    )
+
 
 
 if __name__ == "__main__":
+
     main()
