@@ -38,31 +38,36 @@ def test_execute_trade():
 
     market = MarketDataInputs(
 
-        trend="Strong Trend",
+    symbol="NIFTY",
 
-        market_regime="Trending",
+    market_live=True,
 
-        volume="High",
+    valid_for_execution=True,
 
-        volatility="High",
+    trend="Strong Trend",
 
-        oi_bias="Bullish",
+    momentum="Strong",
 
-        pcr=1.0,
+    price_action="Breakout",
 
-        vwap_relation="Above",
+    oi_bias="Bullish",
 
-        atr=120,
+    pcr=1.0,
 
-        spread=0.4,
+    vwap_relation="Above",
 
-        news=False,
+    india_vix=15,
 
-        institutional=True,
+    expiry_day=False,
 
-        expiry_day=False,
+    candles=[
+        {
+            "close":23800,
+            "volume":100000
+        }
+    ]
 
-    )
+)
 
 
     orchestrator = create_orchestrator()
