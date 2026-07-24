@@ -10,15 +10,16 @@ from Backend.application.feedback_engine import FeedbackEngine
 
 class TradingOrchestrator:
 
-    def __init__(self):
+    def __init__(self,trade_repository):
         self.pipeline = DecisionPipelineService()
+        self.trade_repository = trade_repository
         self.scoring = SignalScoringEngine()
         self.selector = StrategySelector()
         self.risk = RiskEngine()
         self.trading_service = TradingService()
         self.oms = OrderManagementService( broker="dhan")
         self.analytics = TradeAnalyticsService()
-        self.feedback = FeedbackEngine()
+        self.feedback = FeedbackEngine(trade_repository=self.trade_repository)
 
     def execute_cycle(self):
 
