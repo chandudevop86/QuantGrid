@@ -396,42 +396,42 @@ def live_nse_option_chain(
         strikes_each_side: int = 8,
         step: int = 50,
         ) -> dict[str, Any]:
-            """Fetches real-time NSE options chain data, filters metrics, and constructs the processing payload."""
-            nse_symbol = _nse_index_symbol(symbol)
+        """Fetches real-time NSE options chain data, filters metrics, and constructs the processing payload."""
+        nse_symbol = _nse_index_symbol(symbol)
 
-            try:
+        try:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(fetch_nse_option_chain, nse_symbol)
                     payload = future.result(timeout=15)
-            except Exception as exc:
+        except Exception as exc:
                 logger.exception("live_nse_option_chain_fetch_failed")
                 observe_option_chain_failure(
                     "nse",
                     exc.__class__.__name__,
                 )
                 return _live_nse_fallback_payload(
-                    option_chain_engine(
-                        symbol,
-                        strikes_each_side=strikes_each_side,
-                        step=step,
-                    ),
-                    exc,
+                            option_chain_engine(
+                            symbol,
+                            strikes_each_side=strikes_each_side,
+                            step=step,
+                        ),
+                exc,
                 )
 
 # Core data parsing extraction
-            records = payload.get("records") or {}
-            raw_rows = records.get("data") or []
-            expiry = next((x for x in records.get("expiryDates") or [] if x), None)
-            underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
-            tte = _time_to_expiry(expiry)
-            expiry_days = round(tte * 365, 2)
-            atm = _round_to_step(underlying, step)
-            lower = atm - strikes_each_side * step
-            upper = atm + strikes_each_side * step
+        records = payload.get("records") or {}
+        raw_rows = records.get("data") or []
+        expiry = next((x for x in records.get("expiryDates") or [] if x), None)
+        underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+        tte = _time_to_expiry(expiry)
+        expiry_days = round(tte * 365, 2)
+        atm = _round_to_step(underlying, step)
+        lower = atm - strikes_each_side * step
+        upper = atm + strikes_each_side * step
 
-            rows = []
+        rows = []
 
-            for item in raw_rows:
+        for item in raw_rows:
                         if expiry and item.get("expiryDate") != expiry:
                             continue
 
@@ -447,13 +447,13 @@ def live_nse_option_chain(
                         rows.append({
                             "strike": strike,
                             "ce": {
-                                "ltp": _nse_number(ce.get("lastPrice")),
-                                "change": _nse_number(ce.get("change")),
-                                "volume": _nse_number(ce.get("totalTradedVolume")),
-                                "oi": _nse_number(ce.get("openInterest")),
-                                "iv": _nse_number(ce.get("impliedVolatility")),
-                                "oi_change": _nse_number(ce.get("changeinOpenInterest")),
-                                "greeks": _black_scholes_greeks(
+                                    "ltp": _nse_number(ce.get("lastPrice")),
+                                    "change": _nse_number(ce.get("change")),
+                                    "volume": _nse_number(ce.get("totalTradedVolume")),
+                                    "oi": _nse_number(ce.get("openInterest")),
+                                    "iv": _nse_number(ce.get("impliedVolatility")),
+                                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),
+                                    "greeks": _black_scholes_greeks(
                                     option_type="call",
                                     spot=underlying,
                                     strike=strike,
@@ -463,13 +463,13 @@ def live_nse_option_chain(
                                 ),
                             },
                             "pe": {
-                                "ltp": _nse_number(pe.get("lastPrice")),
-                                "change": _nse_number(pe.get("change")),
-                                "volume": _nse_number(pe.get("totalTradedVolume")),
-                                "oi": _nse_number(pe.get("openInterest")),
-                                "iv": _nse_number(pe.get("impliedVolatility")),
-                                "oi_change": _nse_number(pe.get("changeinOpenInterest")),
-                                "greeks": _black_scholes_greeks(
+                                    "ltp": _nse_number(pe.get("lastPrice")),
+                                    "change": _nse_number(pe.get("change")),
+                                    "volume": _nse_number(pe.get("totalTradedVolume")),
+                                    "oi": _nse_number(pe.get("openInterest")),
+                                    "iv": _nse_number(pe.get("impliedVolatility")),
+                                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),
+                                    "greeks": _black_scholes_greeks(
                                     option_type="put",
                                     spot=underlying,
                                     strike=strike,
@@ -481,9 +481,9 @@ def live_nse_option_chain(
                         })
 
                     # PERFORMANCE FIX: Sort the complete rows array ONCE outside the collection loop
-            rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
+        rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
 
-            if not rows:
+        if not rows:
                         empty_chain_error = RuntimeError("NSE returned empty option chain")
                         observe_option_chain_failure(
                             "nse",
@@ -499,17 +499,17 @@ def live_nse_option_chain(
                         )
 
                 # Compile tracking aggregates and analytical indicators
-            typed_rows = cast(list[dict[str, Any]], rows)   
-            total_call_oi = sum(float((r.get("ce") or {}).get("oi") or 0) for r in typed_rows)
-            total_put_oi = sum(float((r.get("pe") or {}).get("oi") or 0) for r in typed_rows)
-            total_call_oi_change = sum(float((r.get("ce") or {}).get("oi_change") or 0) for r in typed_rows)
-            total_put_oi_change = sum(float((r.get("pe") or {}).get("oi_change") or 0) for r in typed_rows)
+        typed_rows = cast(list[dict[str, Any]], rows)   
+        total_call_oi = sum(float((r.get("ce") or {}).get("oi") or 0) for r in typed_rows)
+        total_put_oi = sum(float((r.get("pe") or {}).get("oi") or 0) for r in typed_rows)
+        total_call_oi_change = sum(float((r.get("ce") or {}).get("oi_change") or 0) for r in typed_rows)
+        total_put_oi_change = sum(float((r.get("pe") or {}).get("oi_change") or 0) for r in typed_rows)
 
-            pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else None
-            max_pain = _max_pain(rows)
+        pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else None
+        max_pain = _max_pain(rows)
 
                     # Return unified payload format back to engine caller
-                return {
+        return {
                         "underlying_price": underlying,
                         "atm_strike": atm,
                         "expiry_days": expiry_days,
@@ -536,7 +536,7 @@ def live_nse_option_chain(
         #           SUCCESS PAYLOAD
         # -------------------------------------------------
         return _option_chain_compat_payload(
-                    
+                
             {
                 "module": "live_nse_option_chain",
                 "symbol": symbol.upper(),
@@ -559,50 +559,23 @@ def live_nse_option_chain(
                 "signals": signal_data,
             })
 
-def _live_nse_fallback_payload(
-    payload: dict[str, Any],
-    exc: Exception,
-    ) -> dict[str, Any]:
+        def _live_nse_fallback_payload(
+            payload: dict[str, Any],
+            exc: Exception,
+            ) -> dict[str, Any]:
 
-    return _option_chain_compat_payload(
+                return _option_chain_compat_payload()
 
-        {
-            "module": "live_nse_option_chain",
-            "symbol": payload.get("symbol") or "NIFTY",
-            "underlying_price": None,
-            "atm_strike": None,
-            "expiry": None,
-            "step": payload.get("step") or 50,
-            "source": "option-chain-unavailable",
-            "synthetic": False,
-            "provider_available": False,
-            "fallback_reason": exc.__class__.__name__,
-            "provider_warning": "Live NSE option-chain provider unavailable.",
-            "fallback_detail": str(exc),
-            "rows": [],
-            "pcr": None,
-            "max_pain": None,
-            "signals": {
-                "signal": "NO_TRADE",
-                "bias": "NEUTRAL",
-                "confidence": 0,
-                "reason": "Live NSE option-chain unavailable.",
-                "support": None,
-                "resistance": None,
-                "max_pain": None,
-            },
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-    )
-def option_chain_engine(
-        symbol: str = "NIFTY",
-        *,
-        strikes_each_side: int = 5,
-        step: int = 50,
-        ) -> dict[str, Any]:
-        return _option_chain_compat_payload(
             
-            {
+        def option_chain_engine(
+                symbol: str = "NIFTY",
+                *,
+                strikes_each_side: int = 5,
+                step: int = 50,
+                ) -> dict[str, Any]:
+                return _option_chain_compat_payload(
+                
+                {
                 "module": "option_chain_engine",
                 "symbol": symbol.upper(),
                 "underlying_price": None,
@@ -739,74 +712,74 @@ def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
 
 
 def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        payload = payload or {}
-        symbol = str(payload.get("symbol") or "NIFTY").upper()
-        capital = float(payload.get("capital") or 100000)
-        candles = payload.get("candles") or _stored_provider_candles(symbol)
-        if not candles:
-            raise ValueError(f"Backtest requires provider-backed candles for {symbol}; synthetic candle generation is disabled.")
-        max_candles = int(payload.get("max_candles") or 0)
-        if max_candles > 0 and len(candles) > max_candles:
-            candles = candles[-max_candles:]
-        cost_model = _backtest_cost_model(payload)
-        effective_slippage_bps = cost_model["slippage_bps"] + cost_model["spread_bps"] / 2.0
-        engine = BacktestEngine(
-            risk_manager=GlobalRiskManager(),
-            slippage_model=SlippageModel(
-                SlippageConfig(
-                    mode="fixed",
-                    fixed_bps=effective_slippage_bps,
-                    max_slippage_bps=max(effective_slippage_bps, 0.0),
-                )
-            ),
-            brokerage_per_order=cost_model["brokerage_per_order"],
-            brokerage_bps=cost_model["brokerage_bps"],
-            taxes_bps=cost_model["taxes_bps"],
-            latency_ms=cost_model["entry_delay_seconds"] * 1000
-        )
-        result = engine.run(
-            candles=candles,
-            strategy_name=str(payload.get("strategy_name") or "amd"),
-            symbol=symbol,
-            capital=capital,
-            risk_pct=float(payload.get("risk_pct") or 1.0),
-            rr_ratio=float(payload.get("rr_ratio") or 2.0),
-            min_score=float(payload.get("min_score") or 0.0),
-        ).to_dict()
-        trades = result.get("trades", [])
-        equity = capital
-        curve = [{"index": 0, "equity": round(equity, 2)}]
-        for index, trade in enumerate(trades, start=1):
-            equity += float(trade.get("pnl") or 0.0)
-            curve.append({"index": index, "equity": round(equity, 2), "time": trade.get("exit_time")})
-        metrics = {
-            key: result.get(key)
-            for key in (
-                "total_trades",
-                "win_rate",
-                "gross_pnl",
-                "total_costs",
-                "net_pnl",
-                "pnl",
-                "expectancy",
-                "max_drawdown",
-                "sharpe_ratio",
-                "rejected_signal_count",
-                "rejection_reasons",
-                "average_latency_ms",
+    payload = payload or {}
+    symbol = str(payload.get("symbol") or "NIFTY").upper()
+    capital = float(payload.get("capital") or 100000)
+    candles = payload.get("candles") or _stored_provider_candles(symbol)
+    if not candles:
+        raise ValueError(f"Backtest requires provider-backed candles for {symbol}; synthetic candle generation is disabled.")
+    max_candles = int(payload.get("max_candles") or 0)
+    if max_candles > 0 and len(candles) > max_candles:
+        candles = candles[-max_candles:]
+    cost_model = _backtest_cost_model(payload)
+    effective_slippage_bps = cost_model["slippage_bps"] + cost_model["spread_bps"] / 2.0
+    engine = BacktestEngine(
+        risk_manager=GlobalRiskManager(),
+        slippage_model=SlippageModel(
+            SlippageConfig(
+                mode="fixed",
+                fixed_bps=effective_slippage_bps,
+                max_slippage_bps=max(effective_slippage_bps, 0.0),
             )
-        }
-        metrics.update(_professional_backtest_metrics(candles, trades, curve, capital))
-        return {
-            "module": "backtesting",
-            "symbol": symbol,
-            "payload": {key: value for key, value in payload.items() if key != "candles"} | {"candles": len(candles)},
-            "metrics": metrics,
-            "cost_model": cost_model,
-            "equity_curve": curve,
-            "recent_outcomes": trades[-10:],
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+        ),
+        brokerage_per_order=cost_model["brokerage_per_order"],
+        brokerage_bps=cost_model["brokerage_bps"],
+        taxes_bps=cost_model["taxes_bps"],
+        latency_ms=cost_model["entry_delay_seconds"] * 1000
+    )
+    result = engine.run(
+        candles=candles,
+        strategy_name=str(payload.get("strategy_name") or "amd"),
+        symbol=symbol,
+        capital=capital,
+        risk_pct=float(payload.get("risk_pct") or 1.0),
+        rr_ratio=float(payload.get("rr_ratio") or 2.0),
+        min_score=float(payload.get("min_score") or 0.0),
+    ).to_dict()
+    trades = result.get("trades", [])
+    equity = capital
+    curve = [{"index": 0, "equity": round(equity, 2)}]
+    for index, trade in enumerate(trades, start=1):
+        equity += float(trade.get("pnl") or 0.0)
+        curve.append({"index": index, "equity": round(equity, 2), "time": trade.get("exit_time")})
+    metrics = {
+        key: result.get(key)
+        for key in (
+            "total_trades",
+            "win_rate",
+            "gross_pnl",
+            "total_costs",
+            "net_pnl",
+            "pnl",
+            "expectancy",
+            "max_drawdown",
+            "sharpe_ratio",
+            "rejected_signal_count",
+            "rejection_reasons",
+            "average_latency_ms",
+        )
+    }
+    metrics.update(_professional_backtest_metrics(candles, trades, curve, capital))
+    return {
+        "module": "backtesting",
+        "symbol": symbol,
+        "payload": {key: value for key, value in payload.items() if key != "candles"} | {"candles": len(candles)},
+        "metrics": metrics,
+        "cost_model": cost_model,
+        "equity_curve": curve,
+        "recent_outcomes": trades[-10:],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def backtesting_comparison(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -884,32 +857,32 @@ from typing import Any
 
 def _backtest_cost_model(payload: dict[str, Any]) -> dict[str, Any]:
 # 1. Parse your numeric values into explicit float variables first
-    slippage = float(payload.get("slippage_bps", 5.0))
-    spread = float(payload.get("spread_bps", 8.0))
+        slippage = float(payload.get("slippage_bps", 5.0))
+        spread = float(payload.get("spread_bps", 8.0))
 
 # 2. Compute your calculated metric cleanly using standard math
-    effective_slippage = slippage + (spread / 2.0)
+        effective_slippage = slippage + (spread / 2.0)
 
-    model = {
-        "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
-        "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
-        "taxes_bps": float(payload.get("taxes_bps", 2.5)),
-        "slippage_bps": slippage,
-        "spread_bps": spread,
-        "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
-        "candle_confirmation": bool(payload.get("candle_confirmation", True)),
-        "gap_opening_policy": str(payload.get("gap_opening_policy") or "skip first candle after large gap"),
-        "liquidity_filter": str(payload.get("liquidity_filter") or "block LOW/THIN/WEAK option liquidity"),
-        "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
-        "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
-    }
+        model = {
+            "brokerage_per_order": float(payload.get("brokerage_per_order", 20.0)),
+            "brokerage_bps": float(payload.get("brokerage_bps", 0.0)),
+            "taxes_bps": float(payload.get("taxes_bps", 2.5)),
+            "slippage_bps": slippage,
+            "spread_bps": spread,
+            "entry_delay_seconds": int(payload.get("entry_delay_seconds", 60)),
+            "candle_confirmation": bool(payload.get("candle_confirmation", True)),
+            "gap_opening_policy": str(payload.get("gap_opening_policy") or "skip first candle after large gap"),
+            "liquidity_filter": str(payload.get("liquidity_filter") or "block LOW/THIN/WEAK option liquidity"),
+            "expiry_behavior": str(payload.get("expiry_behavior") or "reduce confidence and prefer No Trade on elevated expiry risk"),
+            "false_breakout_handling": str(payload.get("false_breakout_handling") or "require candle close confirmation before entry"),
+        }
 
     # 3. Assign the pre-calculated float directly to the dictionary
-    model["effective_slippage_per_side_bps"] = effective_slippage
-    model["applied_to_results"] = True
-    model["applied_components"] = ["brokerage", "brokerage_bps", "taxes", "slippage", "spread"]
-    model["entry_delay_application"] = "recorded_as_latency_not_fill_shift"
-    return model
+        model["effective_slippage_per_side_bps"] = effective_slippage
+        model["applied_to_results"] = True
+        model["applied_components"] = ["brokerage", "brokerage_bps", "taxes", "slippage", "spread"]
+        model["entry_delay_application"] = "recorded_as_latency_not_fill_shift"
+        return model
 
 
 
@@ -1044,23 +1017,23 @@ def _trade_risk_reward(trade: dict[str, Any]) -> float | None:
     stop_raw = trade.get("stop_loss")
     target_raw = trade.get("target") or trade.get("target_price")
 
-if entry_raw is None or stop_raw is None or target_raw is None:
-    return None
+    if entry_raw is None or stop_raw is None or target_raw is None:
+        return None
 
-try:
-    entry = float(entry_raw)
-    stop = float(stop_raw)
-    target = float(target_raw)
+    try:
+        entry = float(entry_raw)
+        stop = float(stop_raw)
+        target = float(target_raw)
 
-except (TypeError, ValueError):
-    return None
+    except (TypeError, ValueError):
+        return None
 
-risk = abs(entry - stop)
+    risk = abs(entry - stop)
 
-if risk <= 0:
-    return None
+    if risk <= 0:
+        return None
 
-return abs(target - entry) / risk
+    return abs(target - entry) / risk
 
 def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -1083,4 +1056,3 @@ def module_dashboard(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "risk_engine": risk_engine_summary(),
             "trade_journal": trade_journal_summary(),
         }
-
