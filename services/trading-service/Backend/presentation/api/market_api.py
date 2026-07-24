@@ -62,9 +62,9 @@ def latest_verified_option_context(symbol: str = "NIFTY") -> dict[str, dict[str,
     return dict(_LATEST_OPTION_CONTEXT.get(symbol.upper(), {}))
 
 DHAN_UNDERLYING_DEFAULTS: dict[str, tuple[int, str]] = {
-    "NIFTY": (13, "IDX_I"),
-    "BANKNIFTY": (25, "IDX_I"),
-    "FINNIFTY": (27, "IDX_I"),
+    "NIFTY": (13, "NSE"),
+    "BANKNIFTY": (25, "NSE"),
+    "FINNIFTY": (27, "NSE"),
 }
 
 

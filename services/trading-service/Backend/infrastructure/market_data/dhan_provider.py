@@ -194,7 +194,7 @@ class DhanProvider(EnvConfiguredProvider):
 # --- Helper Functions (Outside Class Block) ---
 
 def _exchange_segment() -> str:
-    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "IDX_I")
+    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", NSE")
 
 
 def _period_days(period: str) -> int:
