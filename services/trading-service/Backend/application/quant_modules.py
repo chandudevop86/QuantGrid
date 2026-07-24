@@ -391,112 +391,112 @@ def _max_pain(rows: list[dict[str, Any]]) -> int | None:
 import concurrent.futures
 
 def live_nse_option_chain(
-        symbol: str = "NIFTY",
-        *,
-        strikes_each_side: int = 8,
-        step: int = 50,
-        ) -> dict[str, Any]:
-        """Fetches real-time NSE options chain data, filters metrics, and constructs the processing payload."""
-        nse_symbol = _nse_index_symbol(symbol)
+    symbol: str = "NIFTY",
+    *,
+    strikes_each_side: int = 8,
+    step: int = 50,
+    ) -> dict[str, Any]:
+    """Fetches real-time NSE options chain data, filters metrics, and constructs the processing payload."""
+    nse_symbol = _nse_index_symbol(symbol)
 
-        try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(fetch_nse_option_chain, nse_symbol)
-                    payload = future.result(timeout=15)
-        except Exception as exc:
-                logger.exception("live_nse_option_chain_fetch_failed")
-                observe_option_chain_failure(
-                    "nse",
-                    exc.__class__.__name__,
-                )
-                return _live_nse_fallback_payload(
-                            option_chain_engine(
-                            symbol,
-                            strikes_each_side=strikes_each_side,
-                            step=step,
-                        ),
-                exc,
-                )
+    try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(fetch_nse_option_chain, nse_symbol)
+                payload = future.result(timeout=15)
+    except Exception as exc:
+            logger.exception("live_nse_option_chain_fetch_failed")
+            observe_option_chain_failure(
+                "nse",
+                exc.__class__.__name__,
+            )
+            return _live_nse_fallback_payload(
+                        option_chain_engine(
+                        symbol,
+                        strikes_each_side=strikes_each_side,
+                        step=step,
+                    ),
+            exc,
+            )
 
 # Core data parsing extraction
-        records = payload.get("records") or {}
-        raw_rows = records.get("data") or []
-        expiry = next((x for x in records.get("expiryDates") or [] if x), None)
-        underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
-        tte = _time_to_expiry(expiry)
-        expiry_days = round(tte * 365, 2)
-        atm = _round_to_step(underlying, step)
-        lower = atm - strikes_each_side * step
-        upper = atm + strikes_each_side * step
+    records = payload.get("records") or {}
+    raw_rows = records.get("data") or []
+    expiry = next((x for x in records.get("expiryDates") or [] if x), None)
+    underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+    tte = _time_to_expiry(expiry)
+    expiry_days = round(tte * 365, 2)
+    atm = _round_to_step(underlying, step)
+    lower = atm - strikes_each_side * step
+    upper = atm + strikes_each_side * step
 
-        rows = []
+    rows = []
 
-        for item in raw_rows:
-                        if expiry and item.get("expiryDate") != expiry:
-                            continue
+    for item in raw_rows:
+        if expiry and item.get("expiryDate") != expiry:
+            continue
 
-                        strike = int(item["strikePrice"])
-                        if strike < lower or strike > upper:
-                            continue
+        strike = int(item["strikePrice"])
+        if strike < lower or strike > upper:
+            continue
 
-                        ce = item.get("CE") or {}
-                        pe = item.get("PE") or {}
-                        ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
-                        pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
-                        
-                        rows.append({
-                            "strike": strike,
-                            "ce": {
-                                    "ltp": _nse_number(ce.get("lastPrice")),
-                                    "change": _nse_number(ce.get("change")),
-                                    "volume": _nse_number(ce.get("totalTradedVolume")),
-                                    "oi": _nse_number(ce.get("openInterest")),
-                                    "iv": _nse_number(ce.get("impliedVolatility")),
-                                    "oi_change": _nse_number(ce.get("changeinOpenInterest")),
-                                    "greeks": _black_scholes_greeks(
-                                    option_type="call",
-                                    spot=underlying,
-                                    strike=strike,
-                                    time_to_expiry=tte,
-                                    volatility=ce_iv,
-                                    rate=0.06,
-                                ),
-                            },
-                            "pe": {
-                                    "ltp": _nse_number(pe.get("lastPrice")),
-                                    "change": _nse_number(pe.get("change")),
-                                    "volume": _nse_number(pe.get("totalTradedVolume")),
-                                    "oi": _nse_number(pe.get("openInterest")),
-                                    "iv": _nse_number(pe.get("impliedVolatility")),
-                                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),
-                                    "greeks": _black_scholes_greeks(
-                                    option_type="put",
-                                    spot=underlying,
-                                    strike=strike,
-                                    time_to_expiry=tte,
-                                    volatility=pe_iv,
-                                    rate=0.06,
-                                ),
-                            },
-                        })
+        ce = item.get("CE") or {}
+        pe = item.get("PE") or {}
+        ce_iv = max(float(ce.get("impliedVolatility") or 20) / 100, 0.01)
+        pe_iv = max(float(pe.get("impliedVolatility") or 20) / 100, 0.01)
+        
+        rows.append({
+            "strike": strike,
+        "ce": {
+                "ltp": _nse_number(ce.get("lastPrice")),
+                "change":_nse_number(ce.get("change")),
+                "volume": _nse_number(ce.get("totalTradedVolume")),
+                "oi": _nse_number(ce.get("openInterest")),
+                "iv": _nse_number(ce.get("impliedVolatility")),
+                "oi_change": _nse_number(ce.get("changeinOpenInterest")),
+                "greeks": _black_scholes_greeks(
+                option_type="call",
+                spot=underlying,
+                strike=strike,
+                time_to_expiry=tte,
+                volatility=ce_iv,
+                rate=0.06,
+            ),
+        },
+            "pe": {
+                    "ltp": _nse_number(pe.get("lastPrice")),
+                    "change": _nse_number(pe.get("change")),
+                    "volume": _nse_number(pe.get("totalTradedVolume")),
+                    "oi": _nse_number(pe.get("openInterest")),
+                    "iv": _nse_number(pe.get("impliedVolatility")),
+                    "oi_change": _nse_number(pe.get("changeinOpenInterest")),
+                    "greeks": _black_scholes_greeks(
+                    option_type="put",
+                    spot=underlying,
+                    strike=strike,
+                    time_to_expiry=tte,
+                    volatility=pe_iv,
+                    rate=0.06,
+                ),
+            },
+        })
 
                     # PERFORMANCE FIX: Sort the complete rows array ONCE outside the collection loop
         rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
 
         if not rows:
-                        empty_chain_error = RuntimeError("NSE returned empty option chain")
-                        observe_option_chain_failure(
-                            "nse",
-                            empty_chain_error.__class__.__name__,
-                        )
-                        return _live_nse_fallback_payload(
-                            option_chain_engine(
-                                symbol,
-                                strikes_each_side=strikes_each_side,
-                                step=step,
-                            ),
-                            empty_chain_error,
-                        )
+            empty_chain_error = RuntimeError("NSE returned empty option chain")
+            observe_option_chain_failure(
+                "nse",
+                empty_chain_error.__class__.__name__,
+            )
+            return _live_nse_fallback_payload(
+            option_chain_engine(
+                symbol,
+                strikes_each_side=strikes_each_side,
+                step=step,
+            ),
+            empty_chain_error,
+        )
 
                 # Compile tracking aggregates and analytical indicators
         typed_rows = cast(list[dict[str, Any]], rows)   
