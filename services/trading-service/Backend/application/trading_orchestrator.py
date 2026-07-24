@@ -21,78 +21,77 @@ class TradingOrchestrator:
         self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine(trade_repository=self.trade_repository)
 
-def execute_cycle(self, market):
+    def execute_cycle(self, market):
 
-    # 1. AI Decision
-    decision = self.pipeline.run(
-        market,
-        risk_blocked=False
-    )
-
-
-    # 2. Select strategy
-    strategy = self.selector.select(
-        market
-    )
-
-
-    # 3. Generate trading signal
-    signal = self.trading_service.generate_signal(
-        strategy,
-        market
-    )
-
-
-    # 4. Score signal
-    score = self.scoring.score(
-        SignalScoringInput(
-            signal=signal,
-            market=market,
-            decision=decision,
-            strategy_name=strategy
+        # 1. AI Decision
+        decision = self.pipeline.run(
+            market,
+            risk_blocked=False
         )
-    )
+
+        # 2. Select strategy
+        strategy = self.selector.select(
+            market
+        )
 
 
-    # 5. Risk validation
-    approval = self.risk.validate(
-        strategy,
-        score
-    )
+        # 3. Generate trading signal
+        signal = self.trading_service.generate_signal(
+            strategy,
+            market
+        )
 
 
-    if not approval.allowed:
-
-        return approval
-
-
-
-    # 6. Create trade
-    trade = self.trading_service.generate_trade(
-        strategy=strategy,
-        signal=signal,
-    )
+        # 4. Score signal
+        score = self.scoring.score(
+            SignalScoringInput(
+                signal=signal,
+                market=market,
+                decision=decision,
+                strategy_name=strategy
+            )
+        )
 
 
+        # 5. Risk validation
+        approval = self.risk.validate(
+            strategy,
+            score
+        )
 
-    # 7. Execute order
-    order = self.oms.execute(
-        trade
-    )
 
+        if not approval.allowed:
 
-
-    # 8. Analytics
-    self.analytics.record(
-        order
-    )
+            return approval
 
 
 
-    # 9. Feedback
-    self.feedback.update(
-        order
-    )
+        # 6. Create trade
+        trade = self.trading_service.generate_trade(
+            strategy=strategy,
+            signal=signal,
+        )
 
 
-    return order
+
+        # 7. Execute order
+        order = self.oms.execute(
+            trade
+        )
+
+
+
+        # 8. Analytics
+        self.analytics.record(
+            order
+        )
+
+
+
+        # 9. Feedback
+        self.feedback.update(
+            order
+        )
+
+
+        return order
