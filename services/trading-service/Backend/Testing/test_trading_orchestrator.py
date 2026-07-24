@@ -68,8 +68,9 @@ def test_execute_trade():
     orchestrator = create_orchestrator()
 
 
-    result = orchestrator.execute_cycle()
-
+    result = orchestrator.execute_cycle(
+    market
+)
 
     print(result)
 
@@ -112,8 +113,9 @@ def test_low_confidence():
     orchestrator = create_orchestrator()
 
 
-    result = orchestrator.execute_cycle()
-
+    result = orchestrator.execute_cycle(
+    market
+)
 
     print(result)
 
@@ -156,8 +158,9 @@ def test_expiry_day():
     orchestrator = create_orchestrator()
 
 
-    result = orchestrator.execute_cycle()
-
+    result = orchestrator.execute_cycle(
+    market
+)
 
     print(result)
 
