@@ -12,7 +12,7 @@ sys.path.append(
 )
 
 from Backend.application.trading_orchestrator import TradingOrchestrator
-from Backend.application.decision_pipeline import MarketDataInputs
+from Backend.application.signal_scoring_engine import MarketDataInputs
 
 
 
