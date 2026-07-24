@@ -21,36 +21,78 @@ class TradingOrchestrator:
         self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine(trade_repository=self.trade_repository)
 
-    def execute_cycle(self):
+    def execute_cycle(self, market):
 
-        # 1. Collect market snapshot
-        market = self.pipeline.collect_market_data()
+    # 1. AI Decision
+    decision = self.pipeline.run(
+        market,
+        risk_blocked=False
+    )
 
-        # 2. Score signal quality
-        signal = self.scoring.score(market)
 
-        # 3. Select best strategy
-        strategy = self.selector.select(signal)
+    # 2. Select strategy
+    strategy = self.selector.select(
+        market
+    )
 
-        # 4. Risk validation
-        approval = self.risk.validate(strategy, signal)
 
-        if not approval.allowed:
-            return approval
+    # 3. Generate trading signal
+    signal = self.trading_service.generate_signal(
+        strategy,
+        market
+    )
 
-        # 5. Create trade
-        trade = self.trading_service.generate_trade(
-            strategy=strategy,
+
+    # 4. Score signal
+    score = self.scoring.score(
+        SignalScoringInput(
             signal=signal,
+            market=market,
+            decision=decision,
+            strategy_name=strategy
         )
+    )
 
-        # 6. Execute order
-        order = self.oms.execute(trade)
 
-        # 7. Record analytics
-        self.analytics.record(order)
+    # 5. Risk validation
+    approval = self.risk.validate(
+        strategy,
+        score
+    )
 
-        # 8. Learn from execution
-        self.feedback.update(order)
 
-        return order
+    if not approval.allowed:
+
+        return approval
+
+
+
+    # 6. Create trade
+    trade = self.trading_service.generate_trade(
+        strategy=strategy,
+        signal=signal,
+    )
+
+
+
+    # 7. Execute order
+    order = self.oms.execute(
+        trade
+    )
+
+
+
+    # 8. Analytics
+    self.analytics.record(
+        order
+    )
+
+
+
+    # 9. Feedback
+    self.feedback.update(
+        order
+    )
+
+
+    return order
