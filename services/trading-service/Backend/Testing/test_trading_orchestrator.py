@@ -12,9 +12,9 @@ sys.path.append(
 )
 
 from Backend.application.trading_orchestrator import TradingOrchestrator
+from Backend.application.decision_pipeline import MarketDataInputs
 
 
-#from Backend.application..market import MarketDataInputs
 
 
 def test_execute_trade():
