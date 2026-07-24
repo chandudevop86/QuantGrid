@@ -45,7 +45,7 @@ def fetch_nse_option_chain(symbol="NIFTY"):
             locale="en-US",
         )
 
-    
+        page = context.new_page()
         page.set_extra_http_headers(
                 {
                     "Accept-Language": "en-US,en;q=0.9",
