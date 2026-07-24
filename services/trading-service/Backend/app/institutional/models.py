@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, Float, DateTime
 from sqlalchemy.sql import func
 
-from app.database import Base
+from Backend.core.database import Base
 
 
 class InstitutionalMetrics(Base):
