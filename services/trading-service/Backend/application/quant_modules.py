@@ -419,19 +419,19 @@ def live_nse_option_chain(
                 )
 
 # Core data parsing extraction
-    records = payload.get("records") or {}
-    raw_rows = records.get("data") or []
-    expiry = next((x for x in records.get("expiryDates") or [] if x), None)
-    underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
-    tte = _time_to_expiry(expiry)
-    expiry_days = round(tte * 365, 2)
-    atm = _round_to_step(underlying, step)
-    lower = atm - strikes_each_side * step
-    upper = atm + strikes_each_side * step
+records = payload.get("records") or {}
+raw_rows = records.get("data") or []
+expiry = next((x for x in records.get("expiryDates") or [] if x), None)
+underlying = float(records.get("underlyingValue") or _latest_underlying_price(symbol))
+tte = _time_to_expiry(expiry)
+expiry_days = round(tte * 365, 2)
+atm = _round_to_step(underlying, step)
+lower = atm - strikes_each_side * step
+upper = atm + strikes_each_side * step
 
-    rows = []
+rows = []
 
-    for item in raw_rows:
+for item in raw_rows:
         if expiry and item.get("expiryDate") != expiry:
             continue
 
@@ -481,9 +481,9 @@ def live_nse_option_chain(
         })
 
     # PERFORMANCE FIX: Sort the complete rows array ONCE outside the collection loop
-    rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
+rows = sorted(rows, key=lambda row: int(cast(dict[str, Any], row).get("strike") or 0))
 
-    if not rows:
+if not rows:
         empty_chain_error = RuntimeError("NSE returned empty option chain")
         observe_option_chain_failure(
             "nse",
@@ -499,14 +499,14 @@ def live_nse_option_chain(
         )
 
 # Compile tracking aggregates and analytical indicators
-    typed_rows = cast(list[dict[str, Any]], rows)   
-    total_call_oi = sum(float((r.get("ce") or {}).get("oi") or 0) for r in typed_rows)
-    total_put_oi = sum(float((r.get("pe") or {}).get("oi") or 0) for r in typed_rows)
-    total_call_oi_change = sum(float((r.get("ce") or {}).get("oi_change") or 0) for r in typed_rows)
-    total_put_oi_change = sum(float((r.get("pe") or {}).get("oi_change") or 0) for r in typed_rows)
+typed_rows = cast(list[dict[str, Any]], rows)   
+total_call_oi = sum(float((r.get("ce") or {}).get("oi") or 0) for r in typed_rows)
+total_put_oi = sum(float((r.get("pe") or {}).get("oi") or 0) for r in typed_rows)
+total_call_oi_change = sum(float((r.get("ce") or {}).get("oi_change") or 0) for r in typed_rows)
+total_put_oi_change = sum(float((r.get("pe") or {}).get("oi_change") or 0) for r in typed_rows)
 
-    pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else None
-    max_pain = _max_pain(rows)
+pcr = round(total_put_oi / total_call_oi, 3) if total_call_oi else None
+max_pain = _max_pain(rows)
 
     # Return unified payload format back to engine caller
     return {
