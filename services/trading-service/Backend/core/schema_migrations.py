@@ -52,7 +52,7 @@ MIGRATION_TABLE = "quantgrid_schema_migrations"
 BASELINE_VERSION = "0001_metadata_baseline"
 COMPATIBILITY_VERSION = "0002_legacy_columns"
 SUBSCRIPTION_ENTITLEMENTS_VERSION = "0003_subscription_entitlements"
-
+INSTITUTIONAL_METRICS_VERSION = "0004_institutional_metrics"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
