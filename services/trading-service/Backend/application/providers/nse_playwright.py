@@ -1,48 +1,97 @@
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from __future__ import annotations
+
+import json
+import logging
+from playwright.sync_api import sync_playwright
+
+logger = logging.getLogger("quantgrid.option_chain")
+
 
 BASE_URL = "https://www.nseindia.com"
 
-
-def _session():
-    s = requests.Session()
-
-    retries = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-
-    s.mount("https://", HTTPAdapter(max_retries=retries))
-
-    s.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/126.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json,text/plain,*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.nseindia.com/option-chain",
-    })
-
-    return s
+API_URL = (
+    "https://www.nseindia.com/api/"
+    "option-chain-indices?symbol={symbol}"
+)
 
 
 def fetch_nse_option_chain(symbol="NIFTY"):
-    s = _session()
 
-    # Get cookies
-    r = s.get(BASE_URL, timeout=20)
-    r.raise_for_status()
+    symbol = symbol.upper()
 
-    # Fetch option chain
-    api = (
-        f"{BASE_URL}/api/option-chain-indices?symbol={symbol}"
-    )
+    result = None
 
-    r = s.get(api, timeout=20)
-    r.raise_for_status()
+    with sync_playwright() as p:
 
-    return r.json()
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/126 Safari/537.36"
+            ),
+            locale="en-US",
+        )
+
+        page = context.new_page()
+
+
+        try:
+
+            # First visit NSE homepage
+            page.goto(
+                BASE_URL,
+                wait_until="networkidle",
+                timeout=60000,
+            )
+
+
+            # Get API response inside browser
+            response = page.evaluate(
+                """
+                async (url) => {
+
+                    const res = await fetch(
+                        url,
+                        {
+                            headers:{
+                                "accept":
+                                "application/json"
+                            }
+                        }
+                    );
+
+                    return await res.text();
+                }
+                """,
+                API_URL.format(symbol=symbol),
+            )
+
+
+            result = json.loads(response)
+
+
+        except Exception:
+
+            logger.exception(
+                "NSE playwright fetch failed"
+            )
+
+            raise
+
+
+        finally:
+            browser.close()
+
+
+    return result
