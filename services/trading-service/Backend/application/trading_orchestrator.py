@@ -108,10 +108,17 @@ class TradingOrchestrator:
         )
 
         if not signals:
+                print(
+                        f"No signals generated for strategy={strategy}"
+                )
                 return None
+                
 
         signal = signals[0]
-
+        print(
+                "Generated Signal:",
+                            signal
+                )
 
         # 4. Score signal
         score = self.scoring.score(
@@ -134,7 +141,10 @@ class TradingOrchestrator:
         if not approval.allowed:
 
             return approval
-
+        print(
+            "Risk rejected:",
+            approval
+        )
 
 
         # 6. Create trade
@@ -164,5 +174,8 @@ class TradingOrchestrator:
             order
         )
 
-
+        print(
+                "Order Created:",
+                order
+        )
         return order
