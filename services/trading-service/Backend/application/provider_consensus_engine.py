@@ -433,10 +433,67 @@ class ProviderConsensusEngine:
         }
 
     def calculate_feed_delay(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, int]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Calculate feed delay statistics.
+
+    Returns:
+    - delay per provider
+    - average delay
+    - maximum delay
+    - stale providers
+    """
+
+        delays = {}
+
+        valid_delays = []
+
+        stale_providers = []
+
+
+        for snapshot in snapshots:
+
+            delay = snapshot.feed_delay_seconds
+
+            delays[snapshot.provider] = delay
+
+            valid_delays.append(delay)
+
+
+            if delay > 5:
+                stale_providers.append(
+                    snapshot.provider
+                )
+
+
+        if not valid_delays:
+            return {
+                "status": "NO_DATA",
+                "providers": {},
+            }
+
+
+        average_delay = (
+            sum(valid_delays)
+            /
+            len(valid_delays)
+        )
+
+
+        return {
+            "status": "OK",
+            "providers": delays,
+            "average_delay_seconds": round(
+                average_delay,
+                2,
+            ),
+            "max_delay_seconds": max(
+                valid_delays
+            ),
+            "stale_providers": stale_providers,
+        }
 
     def calculate_provider_scores(
         self,

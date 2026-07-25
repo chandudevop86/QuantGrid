@@ -204,4 +204,32 @@ def test_calculate_latency():
     assert result["average_latency_ms"] == 120
 
 
-    print("LATENCY TEST PASSED")    
+    print("LATENCY TEST PASSED")
+    
+def test_calculate_feed_delay():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    snapshots[0].feed_delay_seconds = 2
+
+
+    result = engine.calculate_feed_delay(
+        snapshots
+    )
+
+    print(result)
+
+
+    assert result["status"] == "OK"
+    assert result["average_delay_seconds"] == 2
+
+
+    print("FEED DELAY TEST PASSED")        
