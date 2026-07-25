@@ -574,10 +574,94 @@ class ProviderConsensusEngine:
         return scores
 
     def calculate_confidence(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> float:
-        ...
+        """
+    Calculate overall consensus confidence.
+
+    Returns:
+        Confidence score 0-100
+    """
+
+        if not snapshots:
+            return 0.0
+
+
+        healthy_count = sum(
+            1
+            for snapshot in snapshots
+            if snapshot.healthy
+        )
+
+
+        healthy_ratio = (
+            healthy_count / len(snapshots)
+        )
+
+
+        average_provider_confidence = (
+            sum(
+                snapshot.confidence
+                for snapshot in snapshots
+            )
+            /
+            len(snapshots)
+        )
+
+
+        agreement_score = 100.0
+
+
+        prices = [
+            snapshot.ltp
+            for snapshot in snapshots
+            if snapshot.healthy
+        ]
+
+
+        if len(prices) > 1:
+
+            max_price = max(prices)
+            min_price = min(prices)
+
+            spread = max_price - min_price
+
+            average_price = (
+                sum(prices)
+                /
+                len(prices)
+            )
+
+
+            if average_price:
+
+                difference_percent = (
+                    spread /
+                    average_price
+                    *
+                    100
+                )
+
+                agreement_score = max(
+                    0,
+                    100 - (difference_percent * 10)
+                )
+
+
+        confidence = (
+            (healthy_ratio * 40)
+            +
+            (average_provider_confidence * 0.30)
+            +
+            (agreement_score * 0.30)
+        )
+
+
+        return round(
+            min(confidence, 100),
+            2,
+        )
 
     def select_best_provider(
         self,

@@ -261,4 +261,32 @@ def test_provider_scores():
 
 
     print("PROVIDER SCORE TEST PASSED")
+    
+def test_calculate_confidence():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+
+    result = engine.calculate_confidence(
+        snapshots
+    )
+
+
+    print(result)
+
+
+    assert result > 0
+    assert result <= 100
+
+
+    print("CONFIDENCE TEST PASSED")    
                 
