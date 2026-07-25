@@ -31,9 +31,9 @@ class ProviderConsensusEngine:
         symbol: str,
     ) -> list[ProviderSnapshot]:
         ...
-    snapshots = []
+        snapshots = []
 
-    for provider in self.providers:
+        for provider in self.providers:
 
             try:
                 data = provider.get_quote(symbol)
