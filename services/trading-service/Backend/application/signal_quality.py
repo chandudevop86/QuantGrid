@@ -115,7 +115,7 @@ def decide_signal(
         return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
     if score < min_signal_score():
         return SignalDecision(False, "REJECTED", "LOW_SCORE", age, latest.isoformat() if latest else None, score, regime.regime, bias)
-    if regime.regime == "CHOPPY":
+    if regime.regime in ["CHOPPY","HIGH_VOLATILITY",]:
         return SignalDecision(False, "REJECTED", "CHOPPY_MARKET", age, latest.isoformat() if latest else None, score, regime.regime, bias)
     if (signal.side == "BUY" and bias == "BEARISH") or (signal.side == "SELL" and bias == "BULLISH"):
         return SignalDecision(False, "REJECTED", "MTF_CONFLICT", age, latest.isoformat() if latest else None, score, regime.regime, bias)
