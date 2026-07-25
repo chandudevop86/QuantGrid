@@ -146,10 +146,59 @@ class ProviderConsensusEngine:
         return snapshots
 
     def compare_prices(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, float]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Compare LTP across providers.
+
+    Returns:
+    - average price
+    - minimum price
+    - maximum price
+    - spread
+    - difference percentage
+    """
+
+        prices = {
+            snapshot.provider: snapshot.ltp
+            for snapshot in snapshots
+            if snapshot.healthy
+        }
+
+        if not prices:
+            return {
+                "status": "NO_DATA",
+                "providers": {},
+            }
+
+        values = list(prices.values())
+
+        minimum = min(values)
+        maximum = max(values)
+
+        average = sum(values) / len(values)
+
+        spread = maximum - minimum
+
+        difference_percent = (
+            (spread / average) * 100
+            if average
+            else 0
+        )
+
+        return {
+        "status": "OK",
+        "providers": prices,
+        "average_price": round(average, 2),
+        "min_price": minimum,
+        "max_price": maximum,
+        "price_spread": round(spread, 2),
+        "difference_percent": round(
+            difference_percent,
+            4,
+        ),
+    }
 
     def compare_bid_ask(
         self,

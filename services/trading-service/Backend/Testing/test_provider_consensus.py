@@ -88,4 +88,27 @@ def test_live_suitability():
 
     assert snapshots[0].live_suitable is True
 
-    print("LIVE SUITABILITY TEST PASSED")    
+    print("LIVE SUITABILITY TEST PASSED")
+def test_compare_prices():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    result = engine.compare_prices(
+        snapshots
+    )
+
+    print(result)
+
+    assert result["status"] == "OK"
+    assert result["average_price"] == 23850
+
+
+    print("PRICE COMPARE TEST PASSED")        
