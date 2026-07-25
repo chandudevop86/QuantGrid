@@ -105,120 +105,563 @@ def _exit_monitor_live_ready() -> bool:
 
 
 def _live_stop_protection_failure(signal: StrategySignal | None) -> str | None:
+    """
+    Validate that live trading has adequate stop-loss protection.
+
+    Returns:
+        None if stop protection is acceptable.
+        Error message describing why live execution must be rejected.
+    """
+
+    # No signal to validate.
     if signal is None:
         return None
-    if signal.stop_loss is None or float(signal.stop_loss) <= 0:
-        return "Live trading requires a stop loss."
-    if signal.target_price is None or float(signal.target_price) <= 0:
-        return "Live trading requires a target."
-    if _app_managed_stops_allowed() and _exit_monitor_live_ready():
-        return None
-    if _app_managed_stops_allowed():
-        return "Live app-managed stops require QUANTGRID_EXIT_MONITOR_ENABLED=true, QUANTGRID_EXIT_MONITOR_MODE=live, and interval <= 10 seconds."
-    return (
-        "Live trading requires broker-native stop protection. "
-        "Current SL/TSL exits are app-managed; set QUANTGRID_ALLOW_APP_MANAGED_STOPS=true only when the exit monitor is running."
-    )
 
+    # ------------------------------------------------------------------
+    # Stop Loss
+    # ------------------------------------------------------------------
+    try:
+        stop_loss = float(signal.stop_loss)
+    except (TypeError, ValueError):
+        stop_loss = 0.0
+
+    if stop_loss <= 0:
+        return "Live trading requires a valid stop-loss."
+
+    # ------------------------------------------------------------------
+    # Target
+    # ------------------------------------------------------------------
+    try:
+        target = float(signal.target_price)
+    except (TypeError, ValueError):
+        target = 0.0
+
+    if target <= 0:
+        return "Live trading requires a valid target."
+
+    # ------------------------------------------------------------------
+    # Broker-native stops are preferred.
+    # ------------------------------------------------------------------
+    if not _app_managed_stops_allowed():
+        return (
+            "Live trading requires broker-native stop protection. "
+            "App-managed SL/TSL is disabled. "
+            "Enable QUANTGRID_ALLOW_APP_MANAGED_STOPS=true only when the "
+            "Exit Monitor is continuously running."
+        )
+
+    # ------------------------------------------------------------------
+    # App-managed stops require a healthy exit monitor.
+    # ------------------------------------------------------------------
+    if not _exit_monitor_live_ready():
+        return (
+            "App-managed stop protection is enabled but the Exit Monitor "
+            "is not ready. "
+            "Required configuration:\n"
+            "- QUANTGRID_EXIT_MONITOR_ENABLED=true\n"
+            "- QUANTGRID_EXIT_MONITOR_MODE=live\n"
+            "- QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS <= 10"
+        )
+
+    # ------------------------------------------------------------------
+    # Stop protection verified.
+    # ------------------------------------------------------------------
+    return None
 
 def _live_guardrail_failure(
     *,
     request: Request,
     actor: User,
-    settings: Any,
+    settings,
     candles_1m: list[dict[str, Any]],
     risk_decision: Any,
     signal: StrategySignal | None = None,
 ) -> str | None:
+    """
+    Returns a rejection reason if any live-trading guardrail fails.
+    Returns None when live execution is allowed.
+    """
+
+    # ------------------------------------------------------------------
+    # HTTPS
+    # ------------------------------------------------------------------
     if not _request_is_https(request) and not _allow_insecure_live():
         return "Live trading requires HTTPS."
+
+    # ------------------------------------------------------------------
+    # Feature flags
+    # ------------------------------------------------------------------
     if not settings.broker_live_enabled:
         return "Live trading requires BROKER_LIVE_ENABLED=true."
+
     if not settings.risk_engine_enabled:
         return "Live trading requires risk engine enabled."
-    if getattr(settings, "market_data_provider", None) == "yahoo" and not getattr(settings, "allow_yahoo_for_live", False):
-        return "Live trading requires trading-grade market data; Yahoo is paper/demo only."
-    if kill_switch_status()["active"]:
-        return "Trading halted by kill switch."
+
+    # ------------------------------------------------------------------
+    # Market data provider
+    # ------------------------------------------------------------------
+    if (
+        getattr(settings, "market_data_provider", None) == "yahoo"
+        and not getattr(settings, "allow_yahoo_for_live", False)
+    ):
+        return (
+            "Live trading requires trading-grade market data. "
+            "Yahoo is supported only for paper/demo trading."
+        )
+
+    # ------------------------------------------------------------------
+    # Kill switch
+    # ------------------------------------------------------------------
+    halt = kill_switch_status()
+
+    if halt.get("active", False):
+        return f"Trading halted: {halt.get('reason') or 'Kill switch active'}"
+
+    # ------------------------------------------------------------------
+    # Broker circuit breaker
+    # ------------------------------------------------------------------
     circuit = broker_circuit_status()
-    if circuit.get("active"):
-        return f"Broker circuit breaker active: {circuit.get('reason') or 'broker unstable'}"
-    market_validation = validate_live_candle(candles_1m, interval="1m", mode="live")
-    if not market_validation.valid_for_execution:
-        return f"Live trading requires fresh market data: {market_validation.market_status}."
+
+    if circuit.get("active", False):
+        return (
+            f"Broker circuit breaker active: "
+            f"{circuit.get('reason') or 'Broker unavailable'}"
+        )
+
+    # ------------------------------------------------------------------
+    # Market validation
+    # ------------------------------------------------------------------
+    market_validation = validate_live_candle(
+        candles_1m,
+        interval="1m",
+        mode="live",
+    )
+
+    if (
+        not market_validation.valid_for_execution
+        or str(market_validation.market_status).upper() != "LIVE MARKET"
+    ):
+        return (
+            "Live trading requires fresh market data. "
+            f"Current status: {market_validation.market_status}"
+        )
+
+    # ------------------------------------------------------------------
+    # Role validation
+    # ------------------------------------------------------------------
     if actor.role not in {"admin", "trader"}:
-        return "Live trading requires trader or admin role."
+        return "Live trading requires Trader or Admin role."
+
+    # ------------------------------------------------------------------
+    # Broker configuration
+    # ------------------------------------------------------------------
     if not settings.broker_configured:
         return "Live trading requires broker credentials."
-    if not _broker_session_valid(settings):
-        return "Live trading requires valid broker session."
+
+    # ------------------------------------------------------------------
+    # Broker session
+    # ------------------------------------------------------------------
+    try:
+        if not _broker_session_valid(settings):
+            return "Live trading requires a valid broker session."
+    except Exception as exc:
+        return f"Broker session validation failed: {exc}"
+
+    # ------------------------------------------------------------------
+    # Risk engine
+    # ------------------------------------------------------------------
     if not risk_decision.allowed:
-        return f"Live trading rejected by risk engine: {risk_decision.reason}"
-    details = risk_decision.details if hasattr(risk_decision, "details") else {}
+        return f"Risk engine rejected trade: {risk_decision.reason}"
+
+    details = getattr(risk_decision, "details", {}) or {}
+
     daily_pnl = float(details.get("daily_pnl") or 0.0)
     max_daily_loss = float(details.get("max_daily_loss") or 0.0)
-    if abs(min(0.0, daily_pnl)) >= max_daily_loss:
-        return "Live trading blocked: max daily loss breached."
+
+    daily_loss = max(0.0, -daily_pnl)
+
+    if max_daily_loss > 0 and daily_loss >= max_daily_loss:
+        return "Live trading blocked: maximum daily loss reached."
+
+    # ------------------------------------------------------------------
+    # Audit logging
+    # ------------------------------------------------------------------
     if not settings.audit_logging_enabled:
         return "Live trading requires audit logging enabled."
-    stop_protection_failure = _live_stop_protection_failure(signal)
-    if stop_protection_failure:
-        return stop_protection_failure
+
+    # ------------------------------------------------------------------
+    # Stop protection
+    # ------------------------------------------------------------------
+    stop_failure = _live_stop_protection_failure(signal)
+
+    if stop_failure:
+        return stop_failure
+
+    # ------------------------------------------------------------------
+    # Passed all guardrails
+    # ------------------------------------------------------------------
     return None
 
 
 def _broker_session_valid(settings: Any) -> bool:
-    provider = str(settings.broker_provider or "").lower()
-    if provider == Provider.DHAN:
-        return bool(check_dhan_profile(timeout=3.0).get("connected"))
-    return bool(settings.broker_configured and provider)
+    """
+    Validate broker connectivity for live trading.
+    """
+
+    provider = str(getattr(settings, "broker_provider", "")).strip().lower()
+
+    if not provider:
+        return False
+
+    if provider == str(Provider.DHAN).lower() or provider == "dhan":
+        try:
+            profile = check_dhan_profile(timeout=3.0)
+            return bool(profile.get("connected", False))
+        except Exception:
+            return False
+
+    return bool(getattr(settings, "broker_configured", False))
+
+from typing import Final
+
+MAX_ENTRY_PRICE_DEVIATION: Final[float] = 0.02  # 2%
 
 
 def _market_aligned(signal: StrategySignal) -> bool:
-    price_response = get_price(signal.symbol)
-    if price_response.get("source") in {"sample-fallback", "stored-live-cache"}:
+    """
+    Validate that the signal entry price is reasonably aligned with
+    the current market price.
+
+    Returns:
+        True if the entry price is within the allowed deviation.
+        False otherwise.
+    """
+
+    try:
+        price_response = get_price(signal.symbol)
+    except Exception:
         return False
-    market_price = price_response.get("price")
-    if market_price is None or float(market_price) <= 0:
+
+    # Reject cached/sample prices for execution.
+    source = str(price_response.get("source", "")).lower()
+    if source in {"sample-fallback", "stored-live-cache"}:
         return False
-    return abs(float(signal.entry_price) - float(market_price)) / float(market_price) <= 0.02
+
+    try:
+        market_price = float(price_response.get("price"))
+        entry_price = float(signal.entry_price)
+    except (TypeError, ValueError):
+        return False
+
+    if market_price <= 0:
+        return False
+
+    deviation = abs(entry_price - market_price) / market_price
+
+    return deviation <= MAX_ENTRY_PRICE_DEVIATION
+
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class AutoPaperExecutionRequest(BaseModel):
-    symbol: str = "NIFTY"
-    interval: str = "1m"
-    period: str = "1d"
-    capital: float = Field(default=100000, gt=0)
-    risk_pct: float = Field(default=2, gt=0)
-    rr_ratio: float = Field(default=2, gt=0)
-    strategies: list[str] | None = None
+    """
+    Request model for automated paper trading.
+    """
+
+    symbol: str = Field(
+        default="NIFTY",
+        min_length=1,
+        max_length=30,
+        description="Trading symbol",
+    )
+
+    interval: Literal[
+        "1m",
+        "3m",
+        "5m",
+        "10m",
+        "15m",
+        "30m",
+        "1h",
+        "1d",
+    ] = Field(
+        default="1m",
+        description="Candle interval",
+    )
+
+    period: Literal[
+        "1d",
+        "5d",
+        "1mo",
+        "3mo",
+        "6mo",
+        "1y",
+    ] = Field(
+        default="1d",
+        description="Historical period",
+    )
+
+    capital: float = Field(
+        default=100000.0,
+        gt=0,
+        le=100000000,
+        description="Trading capital",
+    )
+
+    risk_pct: float = Field(
+        default=2.0,
+        gt=0,
+        le=10,
+        description="Risk percentage per trade",
+    )
+
+    rr_ratio: float = Field(
+        default=2.0,
+        gt=0,
+        le=10,
+        description="Risk-reward ratio",
+    )
+
+    strategies: list[str] = Field(
+        default_factory=list,
+        description="Strategies to scan",
+    )
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, value: str) -> str:
+        value = value.strip().upper()
+
+        if not value:
+            raise ValueError("Symbol cannot be empty.")
+
+        return value
+
+    @field_validator("strategies")
+    @classmethod
+    def validate_strategies(cls, strategies: list[str]) -> list[str]:
+        return [strategy.strip().lower() for strategy in strategies if strategy.strip()]
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TradingEngineBasketLeg(BaseModel):
-    strategy: str = "manual_basket"
-    symbol: str = "NIFTY"
-    side: str = "BUY"
-    quantity: int = Field(default=1, gt=0)
-    entry: float = Field(gt=0)
-    stop_loss: float = Field(gt=0)
-    target: float = Field(gt=0)
-    trailing_stop_loss: float | None = None
-    trailing_stop_pct: float | None = None
-    score: float = 0
+    """
+    Single basket order leg.
+    """
+
+    strategy: str = Field(
+        default="manual_basket",
+        min_length=1,
+        max_length=100,
+    )
+
+    symbol: str = Field(
+        default="NIFTY",
+        min_length=1,
+        max_length=30,
+    )
+
+    side: Literal["BUY", "SELL"] = "BUY"
+
+    quantity: int = Field(
+        default=1,
+        gt=0,
+        le=100000,
+    )
+
+    entry: float = Field(
+        gt=0,
+        description="Entry price",
+    )
+
+    stop_loss: float = Field(
+        gt=0,
+        description="Stop-loss price",
+    )
+
+    target: float = Field(
+        gt=0,
+        description="Target price",
+    )
+
+    trailing_stop_loss: float | None = Field(
+        default=None,
+        gt=0,
+    )
+
+    trailing_stop_pct: float | None = Field(
+        default=None,
+        gt=0,
+        le=100,
+    )
+
+    score: float = Field(
+        default=0.0,
+        ge=0,
+        le=100,
+    )
+
+    @field_validator("symbol")
+    @classmethod
+    def validate_symbol(cls, value: str) -> str:
+        value = value.strip().upper()
+
+        if not value:
+            raise ValueError("Symbol cannot be empty.")
+
+        return value
+
+    @field_validator("strategy")
+    @classmethod
+    def validate_strategy(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @model_validator(mode="after")
+    def validate_trade_prices(self):
+        if self.side == "BUY":
+            if self.stop_loss >= self.entry:
+                raise ValueError(
+                    "BUY order: stop_loss must be below entry."
+                )
+
+            if self.target <= self.entry:
+                raise ValueError(
+                    "BUY order: target must be above entry."
+                )
+
+        else:  # SELL
+
+            if self.stop_loss <= self.entry:
+                raise ValueError(
+                    "SELL order: stop_loss must be above entry."
+                )
+
+            if self.target >= self.entry:
+                raise ValueError(
+                    "SELL order: target must be below entry."
+                )
+
+        if (
+            self.trailing_stop_loss is not None
+            and self.trailing_stop_loss <= 0
+        ):
+            raise ValueError(
+                "Trailing stop-loss must be greater than zero."
+            )
+
+        return self
+
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class TradingEngineBasketRequest(BaseModel):
-    execution_mode: str = "paper"
-    reason: str | None = None
-    legs: list[TradingEngineBasketLeg] = Field(default_factory=list)
+    """
+    Basket order execution request.
+    """
+
+    execution_mode: Literal["paper", "live"] = Field(
+        default="paper",
+        description="Execution mode.",
+    )
+
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Optional reason for basket execution.",
+    )
+
+    legs: list[TradingEngineBasketLeg] = Field(
+        default_factory=list,
+        min_length=1,
+        max_length=50,
+        description="Basket order legs.",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+
+        return value or None
+
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class TradingEngineScaleRequest(BaseModel):
-    execution_mode: str = "paper"
-    action: str
-    quantity: int = Field(gt=0)
-    price: float | None = Field(default=None, gt=0)
-    reason: str | None = None
+    """
+    Request model for scaling an existing position.
+    """
+
+    execution_mode: Literal["paper", "live"] = Field(
+        default="paper",
+        description="Execution mode.",
+    )
+
+    action: Literal[
+        "scale_in",
+        "scale_out",
+        "increase",
+        "decrease",
+    ] = Field(
+        description="Scaling action.",
+    )
+
+    quantity: int = Field(
+        gt=0,
+        le=100000,
+        description="Quantity to scale.",
+    )
+
+    price: float | None = Field(
+        default=None,
+        gt=0,
+        description="Execution price (optional).",
+    )
+
+    reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Optional reason for scaling.",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        value = value.strip()
+
+        return value or None
+
+from typing import Any
+
+def _safe_float(value: Any) -> float | None:
+    """
+    Safely convert a value to float.
+
+    Returns:
+        float value if conversion succeeds.
+        None otherwise.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _paper_response(
@@ -232,25 +675,51 @@ def _paper_response(
     strategy_diagnostics: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """
+    Build a standardized execution response.
+    """
+
     response: dict[str, Any] = {
         "status": status_value,
         "symbol": symbol.upper(),
         "strategy": strategy,
         "signal": signal.side if signal else None,
-        "entry": float(signal.entry_price) if signal else None,
-        "stop": float(signal.stop_loss) if signal else None,
-        "target": float(signal.target_price) if signal else None,
-        "trailing_stop_loss": float(signal.trailing_stop_loss) if signal and signal.trailing_stop_loss is not None else None,
-        "trailing_stop_pct": float(signal.trailing_stop_pct) if signal and signal.trailing_stop_pct is not None else None,
+        "entry": _safe_float(signal.entry_price) if signal else None,
+        "stop": _safe_float(signal.stop_loss) if signal else None,
+        "target": _safe_float(signal.target_price) if signal else None,
+        "trailing_stop_loss": (
+            _safe_float(signal.trailing_stop_loss)
+            if signal
+            else None
+        ),
+        "trailing_stop_pct": (
+            _safe_float(signal.trailing_stop_pct)
+            if signal
+            else None
+        ),
         "reason": reason,
         "execution_mode": execution_mode,
         "strategy_diagnostics": strategy_diagnostics or {},
     }
+
     if extra:
         response.update(extra)
-    if signal and "trade_qualification" in signal.metadata:
-        response.setdefault("trade_qualification", signal.metadata["trade_qualification"])
+
+    if signal:
+        metadata = getattr(signal, "metadata", {}) or {}
+
+        trade_qualification = metadata.get("trade_qualification")
+
+        if trade_qualification is not None:
+            response.setdefault(
+                "trade_qualification",
+                trade_qualification,
+            )
+
     return response
+
+
+from typing import Any
 
 
 def _audit_execution_result(
@@ -259,33 +728,63 @@ def _audit_execution_result(
     actor: User,
     result: dict[str, Any],
 ) -> None:
-    submitted = result.get("status") in {"paper_order_submitted", "live_order_submitted"}
-    action = "live_order_submitted" if result.get("status") == "live_order_submitted" else "paper_order_submitted"
+    """
+    Audit the final execution result.
+    """
+
+    status = str(result.get("status", ""))
+
+    submitted = status in {
+        "paper_order_submitted",
+        "live_order_submitted",
+    }
+
+    action = (
+        "live_order_submitted"
+        if status == "live_order_submitted"
+        else (
+            "paper_order_submitted"
+            if status == "paper_order_submitted"
+            else "execution_blocked"
+        )
+    )
+
+    metadata: dict[str, Any] = {
+        "status": "submitted" if submitted else "rejected",
+        "strategy": result.get("strategy"),
+        "side": result.get("signal"),
+        "reason": result.get("reason"),
+        "execution_mode": result.get("execution_mode"),
+        "risk_decision": result.get("risk_decision"),
+        "trade_qualification": result.get("trade_qualification"),
+        "quality_grade": result.get("quality_grade"),
+        "tqe_score": result.get("tqe_score"),
+        "local_order_id": result.get("local_order_id"),
+        "broker_order_id": result.get("broker_order_id"),
+        "broker_status": result.get("broker_status"),
+        "trailing_stop_loss": result.get("trailing_stop_loss"),
+        "trailing_stop_pct": result.get("trailing_stop_pct"),
+        "broker_order": result.get("broker_order"),
+        "raw_safe_broker_response": result.get("raw_safe_broker_response"),
+    }
+
+    # Remove empty values to keep audit logs compact.
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
     write_audit_log(
-        db,
-        action=action if submitted else "execution_blocked",
+        db=db,
+        action=action,
         actor=actor,
         target_type="symbol",
         target_id=result.get("symbol"),
         request=request,
-        metadata={
-            "strategy": result.get("strategy"),
-            "side": result.get("signal"),
-            "reason": result.get("reason"),
-            "status": "submitted" if submitted else "rejected",
-            "risk_decision": result.get("risk_decision"),
-            "trade_qualification": result.get("trade_qualification"),
-            "quality_grade": result.get("quality_grade"),
-            "tqe_score": result.get("tqe_score"),
-            "local_order_id": result.get("local_order_id"),
-            "broker_order_id": result.get("broker_order_id"),
-            "broker_status": result.get("broker_status"),
-            "trailing_stop_loss": result.get("trailing_stop_loss"),
-            "trailing_stop_pct": result.get("trailing_stop_pct"),
-            "broker_order": result.get("broker_order"),
-            "raw_safe_broker_response": result.get("raw_safe_broker_response"),
-        },
+        metadata=metadata,
     )
+from typing import Any
 
 
 def _audit_order_transition(
@@ -296,31 +795,47 @@ def _audit_order_transition(
     previous_status: str,
     broker_response: dict[str, Any] | None = None,
 ) -> None:
+    """
+    Audit an order lifecycle status transition.
+    """
+
     if db is None or request is None or actor is None:
         return
+
+    metadata: dict[str, Any] = {
+        "from_status": previous_status,
+        "to_status": order.get("status"),
+        "status_reason": order.get("status_reason"),
+        "broker_order_id": order.get("broker_order_id"),
+        "symbol": order.get("symbol"),
+        "side": order.get("side"),
+        "quantity": order.get("quantity"),
+        "entry_price": order.get("entry_price"),
+        "stop_loss": order.get("stop_loss"),
+        "target": order.get("target"),
+        "trailing_stop_loss": order.get("trailing_stop_loss"),
+        "trailing_stop_pct": order.get("trailing_stop_pct"),
+        "broker_response": broker_response,
+    }
+
+    # Remove empty values
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
     write_audit_log(
-        db,
+        db=db,
         action="order_status_transition",
         actor=actor,
         target_type="order",
-        target_id=order["local_order_id"],
+        target_id=order.get("local_order_id"),
         request=request,
-        metadata={
-            "status": order["status"],
-            "from_status": previous_status,
-            "to_status": order["status"],
-            "status_reason": order.get("status_reason"),
-            "broker_order_id": order.get("broker_order_id"),
-            "symbol": order.get("symbol"),
-            "side": order.get("side"),
-            "quantity": order.get("quantity"),
-            "stop_loss": order.get("stop_loss"),
-            "target": order.get("target"),
-            "trailing_stop_loss": order.get("trailing_stop_loss"),
-            "trailing_stop_pct": order.get("trailing_stop_pct"),
-            "broker_response": broker_response,
-        },
+        metadata=metadata,
     )
+
+from typing import Any
 
 
 def _create_lifecycle_order(
@@ -332,18 +847,37 @@ def _create_lifecycle_order(
     request: Request | None,
     actor: User | None,
 ) -> dict[str, Any]:
-    order_key = f"{signal.symbol.upper()}:{signal.side.upper()}:{signal.strategy_name.upper()}"
+    """
+    Create a tracked lifecycle order after duplicate detection.
+    """
+
+    order_key = (
+        f"{signal.symbol.upper()}:"
+        f"{signal.side.upper()}:"
+        f"{signal.strategy_name.upper()}"
+    )
+
     duplicate = get_active_order_by_key(order_key)
-    if duplicate:
-        _audit_order_transition(
-            db,
-            request,
-            actor,
-            {**duplicate, "status_reason": "Duplicate active order suppressed before broker submission."},
-            duplicate.get("status", "active"),
-            {"duplicate_order_key": order_key},
+
+    if duplicate is not None:
+        duplicate_copy = dict(duplicate)
+        duplicate_copy["status_reason"] = (
+            "Duplicate active order suppressed before broker submission."
         )
-        raise ValueError(f"DUPLICATE_ACTIVE_ORDER: {duplicate['local_order_id']}")
+
+        _audit_order_transition(
+            db=db,
+            request=request,
+            actor=actor,
+            order=duplicate_copy,
+            previous_status=duplicate.get("status", "active"),
+            broker_response={"duplicate_order_key": order_key},
+        )
+
+        raise ValueError(
+            f"DUPLICATE_ACTIVE_ORDER: {duplicate['local_order_id']}"
+        )
+
     local_order = create_order(
         {
             "order_key": order_key,
@@ -358,11 +892,23 @@ def _create_lifecycle_order(
             "trailing_stop_pct": order.trailing_stop_pct,
             "execution_mode": execution_mode,
             "status": "requested",
-            "status_reason": "Order request accepted for risk review.",
+            "status_reason": (
+                "Order request accepted for risk review."
+            ),
         }
     )
-    _audit_order_transition(db, request, actor, local_order, "new")
+
+    _audit_order_transition(
+        db=db,
+        request=request,
+        actor=actor,
+        order=local_order,
+        previous_status="new",
+    )
+
     return local_order
+
+from typing import Any
 
 
 def _transition_lifecycle_order(
@@ -378,18 +924,35 @@ def _transition_lifecycle_order(
     entry_price: float | None = None,
     broker_response: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    """
+    Transition an order to its next lifecycle state.
+    """
+
     if local_order is None:
         return None
-    updated, previous = transition_order(
-        local_order["local_order_id"],
-        status_value,
+
+    updated_order, previous_status = transition_order(
+        local_order_id=local_order["local_order_id"],
+        status=status_value,
         status_reason=reason,
         broker_order_id=broker_order_id,
         broker_status=broker_status,
         entry_price=entry_price,
     )
-    _audit_order_transition(db, request, actor, updated, previous, broker_response)
-    return updated
+
+    _audit_order_transition(
+        db=db,
+        request=request,
+        actor=actor,
+        order=updated_order,
+        previous_status=previous_status,
+        broker_response=broker_response,
+    )
+
+    return updated_order
+
+
+from typing import Any
 
 
 def _reject_live_guardrail(
@@ -402,6 +965,10 @@ def _reject_live_guardrail(
     execution_mode: str,
     risk_decision: Any,
 ) -> dict[str, Any]:
+    """
+    Reject a live order because a live trading guardrail failed.
+    """
+
     result = _paper_response(
         status_value="rejected",
         symbol=signal.symbol,
@@ -409,25 +976,41 @@ def _reject_live_guardrail(
         signal=signal,
         reason=reason,
         execution_mode=execution_mode,
-        extra={**_risk_response_fields(risk_decision), "live_guardrail": "failed"},
+        extra={
+            **_risk_response_fields(risk_decision),
+            "live_guardrail": "failed",
+        },
     )
+
+    metadata = {
+        "status": "rejected",
+        "reason": reason,
+        "strategy": signal.strategy_name,
+        "side": signal.side,
+        "execution_mode": execution_mode,
+        "risk_decision": result.get("risk_decision"),
+        "live_guardrail": "failed",
+    }
+
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
     write_audit_log(
-        db,
+        db=db,
         action="execution_blocked",
         actor=actor,
         target_type="symbol",
         target_id=signal.symbol,
         request=request,
-        metadata={
-            "reason": reason,
-            "status": "rejected",
-            "strategy": signal.strategy_name,
-            "side": signal.side,
-            "risk_decision": result.get("risk_decision"),
-            "live_guardrail": "failed",
-        },
+        metadata=metadata,
     )
+
     return result
+
+from typing import Any
 
 
 def _audit_risk_decision(
@@ -437,12 +1020,29 @@ def _audit_risk_decision(
     *,
     symbol: str,
     strategy: str | None,
-    side: str | None,
+    side: str |None,
     risk_decision: Any,
 ) -> None:
-    payload = risk_decision.to_dict() if hasattr(risk_decision, "to_dict") else dict(risk_decision or {})
+    """
+    Audit the risk engine decision.
+
+    Records both the risk evaluation and, if applicable,
+    the activation of the kill switch.
+    """
+
+    if hasattr(risk_decision, "to_dict"):
+        payload = risk_decision.to_dict()
+    else:
+        payload = dict(risk_decision or {})
+
+    allowed = bool(payload.get("allowed"))
+    reason = str(payload.get("reason") or "")
+
+    # ------------------------------------------------------------------
+    # Audit risk decision
+    # ------------------------------------------------------------------
     write_audit_log(
-        db,
+        db=db,
         action="risk_decision",
         actor=actor,
         target_type="symbol",
@@ -451,13 +1051,17 @@ def _audit_risk_decision(
         metadata={
             "strategy": strategy,
             "side": side,
-            "status": "allowed" if payload.get("allowed") else "rejected",
+            "status": "allowed" if allowed else "rejected",
             "risk_decision": payload,
         },
     )
-    if not payload.get("allowed") and str(payload.get("reason") or "").upper() == "MAX_DAILY_LOSS_EXCEEDED":
+
+    # ------------------------------------------------------------------
+    # Audit kill switch activation
+    # ------------------------------------------------------------------
+    if not allowed and reason.upper() == "MAX_DAILY_LOSS_EXCEEDED":
         write_audit_log(
-            db,
+            db=db,
             action="kill_switch_activated",
             actor=actor,
             target_type="symbol",
@@ -467,25 +1071,55 @@ def _audit_risk_decision(
                 "strategy": strategy,
                 "side": side,
                 "status": "activated",
-                "reason": "MAX_DAILY_LOSS_EXCEEDED",
+                "reason": reason,
                 "risk_decision": payload,
             },
         )
 
+from typing import Any
+
 
 def _risk_response_fields(risk_decision: Any) -> dict[str, Any]:
-    payload = risk_decision.to_dict() if hasattr(risk_decision, "to_dict") else dict(risk_decision or {})
+    """
+    Build standardized risk response fields.
+    """
+
+    if hasattr(risk_decision, "to_dict"):
+        payload = risk_decision.to_dict()
+    else:
+        payload = dict(risk_decision or {})
+
+    allowed = bool(payload.get("allowed"))
+    reason = str(payload.get("reason") or "UNKNOWN")
+
+    try:
+        risk_amount = float(payload.get("risk_amount", 0.0))
+    except (TypeError, ValueError):
+        risk_amount = 0.0
+
+    try:
+        max_allowed_risk = float(payload.get("max_allowed_risk", 0.0))
+    except (TypeError, ValueError):
+        max_allowed_risk = 0.0
+
     return {
-        "allowed": bool(payload.get("allowed")),
-        "reason": str(payload.get("reason") or "UNKNOWN"),
-        "risk_amount": float(payload.get("risk_amount") or 0.0),
-        "max_allowed_risk": float(payload.get("max_allowed_risk") or 0.0),
+        "allowed": allowed,
+        "reason": reason,
+        "risk_amount": risk_amount,
+        "max_allowed_risk": max_allowed_risk,
         "risk_decision": payload,
     }
 
 
-def _tqe_response_fields(qualification: TradeQualification) -> dict[str, Any]:
+def _tqe_response_fields(
+    qualification: TradeQualification,
+) -> dict[str, Any]:
+    """
+    Build standardized Trade Qualification Engine (TQE) response fields.
+    """
+
     payload = qualification.to_dict()
+
     return {
         "trade_qualification": payload,
         "tqe_score": qualification.score,
@@ -493,7 +1127,11 @@ def _tqe_response_fields(qualification: TradeQualification) -> dict[str, Any]:
         "market_context": qualification.market_context,
         "volume_status": qualification.volume_status,
         "volatility_status": qualification.volatility_status,
-        "position_size": qualification.position_sizing.position_size,
+        "position_size": (
+            qualification.position_sizing.position_size
+            if qualification.position_sizing
+            else None
+        ),
     }
 
 
@@ -504,10 +1142,15 @@ def _execution_qualification(
     candles_15m: list[dict[str, Any]] | None,
     execution_mode: str,
 ) -> TradeQualification | None:
+    """
+    Run the Trade Qualification Engine (TQE) and enrich the signal metadata.
+    """
+
     if len(candles_1m) < 20:
         return None
+
     qualification = TradeQualificationEngine().qualify(
-        signal,
+        signal=signal,
         candles=candles_1m,
         capital=100_000,
         risk_pct=2,
@@ -515,55 +1158,103 @@ def _execution_qualification(
         enforce_execution_checks=True,
         execution_mode=execution_mode,
     )
-    signal.metadata["trade_qualification"] = qualification.to_dict()
-    signal.metadata["tqe_score"] = qualification.score
-    signal.metadata["quality_grade"] = qualification.quality_grade
-    signal.metadata["market_context"] = qualification.market_context
-    signal.metadata["volume_status"] = qualification.volume_status
-    signal.metadata["volatility_status"] = qualification.volatility_status
+
+    signal.metadata.update(
+        {
+            "trade_qualification": qualification.to_dict(),
+            "tqe_score": qualification.score,
+            "quality_grade": qualification.quality_grade,
+            "market_context": qualification.market_context,
+            "volume_status": qualification.volume_status,
+            "volatility_status": qualification.volatility_status,
+        }
+    )
+
     return qualification
 
-
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
+    """
+    Validate the basic shape of a trading signal.
+
+    Returns:
+        None if valid, otherwise the rejection reason.
+    """
+
     try:
         entry = float(signal.entry_price)
         stop = float(signal.stop_loss)
         target = float(signal.target_price)
+        trailing_stop = (
+            float(signal.trailing_stop_loss)
+            if signal.trailing_stop_loss is not None
+            else None
+        )
+        trailing_pct = (
+            float(signal.trailing_stop_pct)
+            if signal.trailing_stop_pct is not None
+            else None
+        )
     except (TypeError, ValueError):
-        return "Entry, stop, and target must be numeric."
+        return "Entry, stop, target, and trailing values must be numeric."
+
     side = str(signal.side or "").upper()
+
     if side not in {"BUY", "SELL"}:
         return "Signal side must be BUY or SELL."
-    if entry <= 0 or stop <= 0 or target <= 0:
+
+    if min(entry, stop, target) <= 0:
         return "Entry, stop, and target must be positive."
-    if side == "BUY" and not stop < entry < target:
-        return "BUY signal requires stop < entry < target."
-    if side == "SELL" and not target < entry < stop:
-        return "SELL signal requires target < entry < stop."
-    if signal.trailing_stop_pct is not None and float(signal.trailing_stop_pct) <= 0:
+
+    if side == "BUY":
+        if not stop < entry < target:
+            return "BUY signal requires stop < entry < target."
+    else:
+        if not target < entry < stop:
+            return "SELL signal requires target < entry < stop."
+
+    if trailing_pct is not None and trailing_pct <= 0:
         return "Trailing stop percent must be greater than 0."
-    if signal.trailing_stop_loss is not None:
-        trailing_stop = float(signal.trailing_stop_loss)
+
+    if trailing_stop is not None:
         if trailing_stop <= 0:
             return "Trailing stop price must be positive."
+
         if side == "BUY" and trailing_stop >= entry:
-            return "BUY signal requires trailing stop price below entry."
+            return "BUY signal requires trailing stop below entry."
+
         if side == "SELL" and trailing_stop <= entry:
-            return "SELL signal requires trailing stop price above entry."
+            return "SELL signal requires trailing stop above entry."
+
     risk = abs(entry - stop)
     reward = abs(target - entry)
-    if risk <= 0 or reward <= 0:
-        return "Risk/reward is invalid."
+
+    if risk <= 0:
+        return "Risk must be greater than 0."
+
+    if reward <= 0:
+        return "Reward must be greater than 0."
+
     return None
 
 
-def _strategy_candles(candles_response: dict[str, Any]) -> list[dict[str, Any]]:
-    candles = list(candles_response.get("candles", []))
-    if candles_response.get("volume_status") == "not_reported_for_index":
-        return [{**candle, "volume": None} for candle in candles]
+def _strategy_candles(
+    candles_response: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Return candles formatted for strategy execution.
+    """
+
+    candles = list(candles_response.get("candles") or [])
+    volume_missing = (
+        candles_response.get("volume_status")
+        == "not_reported_for_index"
+    )
+
+    if volume_missing:
+        for candle in candles:
+            candle["volume"] = None
+
     return candles
-
-
 async def _submit_paper_signal(
     signal: StrategySignal,
     *,
@@ -601,31 +1292,18 @@ async def _submit_paper_signal(
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
         )
-
-    candles_1m = candles_1m if candles_1m is not None else latest_candles(signal.symbol, "1m", 100)
-    candles_15m = candles_15m if candles_15m is not None else latest_candles(signal.symbol, "15m", 100)
-    if not candles_1m:
-        try:
-            candles_1m = _strategy_candles(market_service.get_candles(signal.symbol, interval="1m", period="1d", limit=100))
-        except Exception:
-            candles_1m = []
-    candles_15m = latest_candles(signal.symbol, "15m", 100)
-    if not candles_15m:
-        try:
-            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
-        except Exception:
-            candles_15m = []
-    if not candles_15m:
-        try:
-            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
-        except Exception:
-            candles_15m = []
-    qualification = _execution_qualification(
-        signal,
-        candles_1m=candles_1m,
-        candles_15m=candles_15m,
-        execution_mode=execution_mode,
+    candles_1m, candles_15m = _load_execution_candles(
+    signal.symbol,
+    candles_1m=candles_1m,
+    candles_15m=candles_15m,
     )
+    qualification = _execution_qualification(
+    signal,
+    candles_1m=candles_1m,
+    candles_15m=candles_15m,
+    execution_mode=execution_mode,
+    )
+
     if qualification is not None and not qualification.allowed:
         observe_rejected_order(qualification.reason, execution_mode)
         return _paper_response(
@@ -1035,11 +1713,15 @@ async def submit_trading_engine_scale(
     return result
 
 
-def _model_to_dict(model: BaseModel) -> dict[str, Any]:
+from typing import Any
+from pydantic import BaseModel
+
+
+def model_to_dict(model: BaseModel) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump()
-    return model.dict()
 
+    return model.dict()
 
 @router.post("/auto-paper")
 async def auto_paper_order(
@@ -1237,36 +1919,30 @@ async def enqueue_auto_paper_order(
     actor: User = Depends(require_trade_execute),
     access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
-    db: Session = Depends(get_db),
+    execution_service: ExecutionService = Depends(get_execution_service),
 ):
     if not access.can("paper_trade.automated"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": "paper_trade.automated", "current_plan": access.snapshot["plan_code"].upper(), "message": "Automated paper trading requires a Pro or Premium plan."})
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "subscription_required",
+                "feature": "paper_trade.automated",
+                "current_plan": access.snapshot["plan_code"].upper(),
+                "message": "Automated paper trading requires a Pro or Premium plan.",
+            },
+        )
+
     if execution_mode != "paper":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Auto-paper jobs are paper-only.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Auto-paper jobs are paper-only.",
+        )
 
-    payload_data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
-    job = enqueue_job(
-        "auto-paper",
-        payload_data,
-        metadata={
-            "symbol": payload.symbol.upper(),
-            "strategy": ",".join(payload.strategies or AUTO_SCAN_STRATEGIES),
-            "interval": payload.interval,
-            "period": payload.period,
-        },
-    )
-    write_audit_log(
-        db,
-        action="trading_job_created",
+    return await execution_service.enqueue_auto_paper_job(
+        payload=payload,
         actor=actor,
-        target_type="job",
-        target_id=job["job_id"],
         request=request,
-        metadata={"job_type": "auto-paper", "symbol": payload.symbol.upper(), "status": "queued"},
     )
-    return job
-
-
 @router.post("/order")
 async def place_order(
     signal: StrategySignal,
@@ -1379,7 +2055,7 @@ async def place_order(
     qualification = _execution_qualification(
         signal,
         candles_1m=candles_1m,
-        candles_15m=candles_15m,
+        candles_by_timeframe=candles_by_timeframe,
         execution_mode=execution_mode,
     )
     if qualification is not None and not qualification.allowed:
@@ -1652,7 +2328,7 @@ async def place_order(
         engine=engine,
         execution_mode=execution_mode,
         candles_1m=candles_1m,
-        candles_15m=candles_15m,
+        candles_by_timeframe=candles_by_timeframe,
         db=db,
         request=request,
         actor=actor,
