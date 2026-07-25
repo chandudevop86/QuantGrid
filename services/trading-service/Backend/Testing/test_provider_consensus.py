@@ -156,4 +156,25 @@ def test_compare_volume():
     assert result["status"] == "OK"
     assert result["average_volume"] == 100000
 
-    print("VOLUME TEST PASSED")                
+    print("VOLUME TEST PASSED")
+def test_compare_timestamps():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    result = engine.compare_timestamps(
+        snapshots
+    )
+
+    print(result)
+
+    assert result["status"] == "OK"
+
+    print("TIMESTAMP TEST PASSED")

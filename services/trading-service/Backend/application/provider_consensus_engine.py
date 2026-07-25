@@ -318,10 +318,56 @@ class ProviderConsensusEngine:
         }
 
     def compare_timestamps(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, Any]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Compare provider timestamps.
+
+    Returns:
+    - latest timestamp
+    - oldest timestamp
+    - time difference between feeds
+    """
+
+        timestamps = {}
+
+        valid_times = []
+
+        for snapshot in snapshots:
+
+            if snapshot.timestamp is None:
+                continue
+
+            timestamps[snapshot.provider] = snapshot.timestamp
+
+            valid_times.append(
+                snapshot.timestamp
+            )
+
+        if not valid_times:
+            return {
+                "status": "NO_DATA",
+                "providers": {},
+            }
+
+        latest = max(valid_times)
+        oldest = min(valid_times)
+
+        difference_seconds = (
+            latest - oldest
+        ).total_seconds()
+
+        return {
+            "status": "OK",
+            "providers": timestamps,
+            "latest_timestamp": latest,
+            "oldest_timestamp": oldest,
+            "difference_seconds": round(
+                difference_seconds,
+                3,
+            ),
+        }
 
     def calculate_latency(
         self,
