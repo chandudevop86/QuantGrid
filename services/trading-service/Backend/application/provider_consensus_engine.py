@@ -58,7 +58,7 @@ class ProviderConsensusEngine:
 
                 snapshots.append(
                     ProviderSnapshot(
-                        provider=provider.name,
+                        provider=provider.provider_name,
                         symbol=symbol,
                         ltp=0.0,
                         healthy=False,
