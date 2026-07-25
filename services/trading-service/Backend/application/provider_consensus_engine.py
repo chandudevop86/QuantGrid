@@ -70,10 +70,37 @@ class ProviderConsensusEngine:
 
         return snapshots
     def validate_provider_health(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> list[ProviderSnapshot]:
-        ...
+
+        for snapshot in snapshots:
+
+            if snapshot.ltp <= 0:
+                snapshot.healthy = False
+                snapshot.warnings.append(
+                    "invalid_ltp"
+                )
+
+            if snapshot.timestamp is None:
+                snapshot.warnings.append(
+                    "missing_timestamp"
+                )
+
+            if snapshot.latency_ms > 1000:
+                snapshot.warnings.append(
+                    "high_latency"
+                )
+
+            if len(snapshot.warnings) > 0:
+                snapshot.confidence -= (
+                    len(snapshot.warnings) * 10
+                )
+
+                if snapshot.confidence < 0:
+                    snapshot.confidence = 0
+
+        return snapshots
 
     def validate_live_suitability(
         self,

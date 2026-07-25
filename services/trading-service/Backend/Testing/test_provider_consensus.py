@@ -45,3 +45,23 @@ if __name__ == "__main__":
     test_provider_snapshot()
 
     print("TEST PASSED")
+    
+def test_provider_health():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    result = engine.validate_provider_health(
+        snapshots
+    )
+
+    assert result[0].healthy is True
+
+    print("HEALTH TEST PASSED")    
