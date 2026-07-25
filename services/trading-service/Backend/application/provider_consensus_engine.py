@@ -20,6 +20,11 @@ class ProviderConsensusEngine:
     • Automatically perform provider failover
     • Return a final provider consensus
     """
+    def __init__(
+        self,
+        providers: list,
+    ):
+        self.providers = providers
 
     def get_provider_snapshots(
         self,
