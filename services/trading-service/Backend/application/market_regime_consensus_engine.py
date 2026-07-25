@@ -593,7 +593,157 @@ class MarketRegimeConsensusEngine:
         return "NO_TRADE"
 
     def build_market_regime(
-            self,
-            candles_by_timeframe: dict[str, list[dict]],
-        ) -> MarketRegime:
-            ...
+    self,
+    candles_by_timeframe: dict[str, list[dict]],
+    ) -> MarketRegime:
+        """
+    Build complete market regime.
+
+    Input:
+        {
+            "5m": candles,
+            "15m": candles,
+            "1h": candles
+        }
+
+    Output:
+        MarketRegime
+    """
+
+        trends: list[TimeframeTrend] = []
+
+        diagnostics = {}
+
+
+        for timeframe, candles in candles_by_timeframe.items():
+
+            trend = self.detect_trend(
+                timeframe,
+                candles,
+            )
+
+            structure = self.detect_market_structure(
+                timeframe,
+                candles,
+            )
+
+            volatility = self.detect_volatility(
+                timeframe,
+                candles,
+            )
+
+
+            trend.market_structure = (
+                structure.get("structure", "")
+            )
+
+            trend.atr = volatility.get(
+                "atr",
+                0.0,
+            )
+
+
+            trends.append(trend)
+
+
+            diagnostics[timeframe] = {
+                "trend": trend.trend,
+                "confidence": trend.confidence,
+                "structure": structure,
+                "volatility": volatility,
+            }
+
+
+        alignment = self.calculate_alignment(
+            trends
+        )
+
+
+        bias = self.calculate_bias(
+            trends
+        )
+
+
+        confidence = self.calculate_confidence(
+            trends
+        )
+
+
+        combined = self.combine_timeframes(
+            trends
+        )
+
+
+        # Determine regime
+
+        breakout = any(
+            t.market_structure == "BREAKOUT"
+            for t in trends
+        )
+
+
+        if breakout:
+
+            regime = "BREAKOUT"
+
+
+        elif alignment >= 70:
+
+            regime = "TRENDING"
+
+
+        elif alignment <= 40:
+
+            regime = "RANGING"
+
+
+        else:
+
+            regime = "REVERSAL"
+
+
+
+        strategy = self.recommend_strategy(
+            regime,
+            bias,
+        )
+
+
+        return MarketRegime(
+
+            regime=regime,
+
+            bias=bias,
+
+            confidence=confidence,
+
+            recommended_strategy=strategy,
+
+
+            allowed_strategies=[
+                strategy
+            ],
+
+
+            timeframe_alignment=alignment,
+
+
+            trend_strength=combined.get(
+                "average_confidence",
+                0.0,
+            ),
+
+
+            execution_allowed=(
+                confidence >= 60
+            ),
+
+
+            primary_timeframe="15m",
+
+            confirmation_timeframe="5m",
+
+
+            diagnostics=diagnostics,
+
+        )
