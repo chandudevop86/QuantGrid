@@ -4,7 +4,7 @@ from Backend.application.provider_consensus import (
     ProviderConsensus,
     ProviderSnapshot,
 )
-
+from datetime import datetime
 
 
 class ProviderConsensusEngine:
@@ -323,11 +323,6 @@ class ProviderConsensusEngine:
     ) -> dict:
         """
     Compare provider timestamps.
-
-    Returns:
-    - latest timestamp
-    - oldest timestamp
-    - time difference between feeds
     """
 
         timestamps = {}
@@ -339,11 +334,16 @@ class ProviderConsensusEngine:
             if snapshot.timestamp is None:
                 continue
 
-            timestamps[snapshot.provider] = snapshot.timestamp
+            timestamp = snapshot.timestamp
 
-            valid_times.append(
-                snapshot.timestamp
-            )
+            if isinstance(timestamp, str):
+                timestamp = datetime.fromisoformat(
+                    timestamp.replace("Z", "+00:00")
+                )
+
+            timestamps[snapshot.provider] = timestamp
+
+            valid_times.append(timestamp)
 
         if not valid_times:
             return {
@@ -368,7 +368,6 @@ class ProviderConsensusEngine:
                 3,
             ),
         }
-
     def calculate_latency(
     self,
     snapshots: list[ProviderSnapshot],
