@@ -33,7 +33,7 @@ class ProviderConsensusEngine:
         ...
     snapshots = []
 
-        for provider in self.providers:
+    for provider in self.providers:
 
             try:
                 data = provider.get_quote(symbol)
