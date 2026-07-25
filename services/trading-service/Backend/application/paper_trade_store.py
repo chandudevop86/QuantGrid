@@ -741,7 +741,7 @@ def risk_status() -> dict[str, Any]:
             if trade_created_at < week_start:
                 continue
 
-    weekly_closed_pnl += float(trade.get("pnl") or 0.0)
+            weekly_closed_pnl += float(trade.get("pnl") or 0.0)
     weekly_pnl = round(float(positions["unrealized_pnl"]) + weekly_closed_pnl, 2)
     consecutive_losses = 0
     for trade in trades:

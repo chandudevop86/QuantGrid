@@ -1,5 +1,5 @@
 from Backend.application.decision_pipeline import DecisionPipelineService
-from Backend.application.signal_scoring_engine import SignalScoringEngine
+from Backend.application.signal_scoring_engine import SignalScoringEngine, SignalScoringInput
 
 from Backend.application.risk_engine import RiskEngine
 from Backend.application.trading_service import TradingService

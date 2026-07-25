@@ -74,12 +74,25 @@ def _allowed_origins() -> list[str]:
 def _allowed_origin_regex() -> str | None:
     if os.getenv("CORS_ALLOWED_ORIGINS"):
         return None
-    if os.getenv("QUANTGRID_ENV", "local").strip().lower() in {"prod", "production"}:
-        return None
-    if os.getenv("QUANTGRID_ALLOW_PRIVATE_DEV_CORS", "").strip().lower() in {"1", "true", "yes"}:
-        return r"^http://((localhost|127\.0\.0\.1)|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|192\.168\.\d+\.\d+):(517[3-9])$"
-    return r"^http://(localhost|127\.0\.0\.1):(517[3-9])$"
 
+    environment = os.getenv("QUANTGRID_ENV", "local").strip().lower()
+    if environment in {"prod", "production"}:
+        return None
+
+    private_dev_cors = (
+        os.getenv("QUANTGRID_ALLOW_PRIVATE_DEV_CORS", "")
+        .strip()
+        .lower()
+    )
+    if private_dev_cors in {"1", "true", "yes"}:
+        return (
+            r"^http://((localhost|127\.0\.0\.1)|"
+            r"10\.\d+\.\d+\.\d+|"
+            r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|"
+            r"192\.168\.\d+\.\d+):(517[3-9])$"
+        )
+
+    return r"^http://(localhost|127\.0\.0\.1):(517[3-9])$"
 
 def _allow_anonymous_websocket() -> bool:
     explicit = os.getenv("QUANTGRID_ALLOW_ANONYMOUS_WEBSOCKET")

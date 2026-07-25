@@ -7,6 +7,7 @@ import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
+from typing import Any
 from urllib import request
 
 from Backend.infrastructure.http_safety import require_https_url

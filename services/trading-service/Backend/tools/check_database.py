@@ -87,6 +87,10 @@ def mask_database_url(database_url: str) -> str:
     )
 
 
+# Backward-compatible private name used by tests and older automation.
+_mask_database_url = mask_database_url
+
+
 # ==========================================================
 # Initialize DB
 # ==========================================================

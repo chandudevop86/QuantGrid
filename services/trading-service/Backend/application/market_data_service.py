@@ -147,6 +147,10 @@ class MarketDataService:
             source=self.provider.provider_name,
             provider_fetched_at=fetched_at,
         )
+        print("\n========== CANDLE VALIDATION ==========")
+        print(validation.model_dump())
+        print("=======================================\n")
+        
         if mode == "live" and not validation.valid_for_execution:
             raise MarketDataProviderError(f"Live market feed is stale or invalid: {validation.market_status}")
         payload = {
@@ -167,11 +171,20 @@ class MarketDataService:
         }
         self._cache_set(key, payload)
         observe_market_data_delay(self.provider.provider_name, symbol, validation.delay_seconds)
+        print("\n========== MARKET DATA PAYLOAD ==========")
+        print({
+            "fresh": payload["fresh"],
+            "stale": payload["stale"],
+            "feed_delay_seconds": payload["feed_delay_seconds"],
+            "market_status": payload["validation"]["market_status"],
+            "valid_for_execution": payload["validation"]["valid_for_execution"],
+            })
+        print("=========================================\n")
         return {**payload, "cache_status": "fresh"}
 
     def health(self, symbol: str = "NIFTY", interval: str = "1m") -> dict[str, Any]:
         status = self.provider.health_check()
-        errors: list[str] = []
+        errors: list[str] = [] 
         ltp_payload = None
         candle_payload = None
         try:
