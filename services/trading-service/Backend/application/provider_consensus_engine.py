@@ -36,10 +36,10 @@ class ProviderConsensusEngine:
         for provider in self.providers:
 
             try:
-                data = provider.get_quote(symbol)
+                data = provider.get_ltp(symbol)
 
                 snapshot = ProviderSnapshot(
-                    provider=provider.name,
+                    provider=provider.provider_name,
                     symbol=symbol,
                     ltp=data["ltp"],
                     bid=data.get("bid"),
