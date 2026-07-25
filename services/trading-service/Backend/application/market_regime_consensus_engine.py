@@ -206,11 +206,110 @@ class MarketRegimeConsensusEngine:
         }
 
     def detect_market_structure(
-            self,
-            timeframe: str,
-            candles: list[dict],
-        ) -> dict[str, str]:
-            ...
+    self,
+    timeframe: str,
+    candles: list[dict],
+    ) -> dict[str, str]:
+        """
+    Detect market structure.
+
+    Checks:
+    - Higher highs
+    - Higher lows
+    - Lower highs
+    - Lower lows
+    - Breakout / Breakdown
+    """
+
+        if len(candles) < 10:
+            return {
+                "timeframe": timeframe,
+                "structure": "UNKNOWN",
+            }
+
+
+        highs = [
+            float(c["high"])
+            for c in candles[-10:]
+        ]
+
+        lows = [
+            float(c["low"])
+            for c in candles[-10:]
+        ]
+
+
+        current_high = highs[-1]
+        current_low = lows[-1]
+
+
+        previous_high = max(
+            highs[:-1]
+        )
+
+        previous_low = min(
+            lows[:-1]
+        )
+
+
+        if current_high > previous_high:
+
+            structure = "BREAKOUT"
+
+
+        elif current_low < previous_low:
+
+            structure = "BREAKDOWN"
+
+
+        else:
+
+            higher_highs = (
+                highs[-1] > highs[-3]
+            )
+
+            higher_lows = (
+                lows[-1] > lows[-3]
+            )
+
+
+            lower_highs = (
+                highs[-1] < highs[-3]
+            )
+
+            lower_lows = (
+                lows[-1] < lows[-3]
+            )
+
+
+            if higher_highs and higher_lows:
+
+                structure = "UPTREND_STRUCTURE"
+
+
+            elif lower_highs and lower_lows:
+
+                structure = "DOWNTREND_STRUCTURE"
+
+
+            else:
+
+                structure = "RANGE"
+
+
+        return {
+            "timeframe": timeframe,
+
+            "structure": structure,
+
+            "current_high": current_high,
+
+            "current_low": current_low,
+
+            "previous_high": previous_high,
+
+            "previous_low": previous_low,
+        }
 
     def combine_timeframes(
             self,
