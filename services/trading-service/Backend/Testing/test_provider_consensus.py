@@ -7,9 +7,13 @@ from Backend.application.provider_consensus_engine import (
 
 class FakeProvider:
 
+    provider_name = "fake_provider"
+
     name = "fake_provider"
 
-    def get_quote(self, symbol):
+    live_suitable = True
+
+    def get_ltp(self, symbol):
 
         return {
             "ltp": 23850,
@@ -17,7 +21,6 @@ class FakeProvider:
             "ask": 23851,
             "volume": 100000,
             "timestamp": datetime.now(),
-            "received_at": datetime.now(),
         }
 
 
