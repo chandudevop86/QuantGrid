@@ -51,7 +51,6 @@ from Backend.presentation.api.roles import current_user, require_trade_execute
 from Backend.application.market_data_service import MarketDataService
 from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
-from Backend.application.execution_service import ExecutionService
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Final
@@ -60,11 +59,7 @@ router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
 
 market_service = MarketDataService()
-_execution_service = ExecutionService()
 
-
-def get_execution_service() -> ExecutionService:
-    return _execution_service
 # dependency injection (cleaner + testable)
 def get_engine():
     return ExecutionEngine()
