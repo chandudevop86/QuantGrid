@@ -9,11 +9,12 @@ from Backend.application.candle_validation import normalize_timestamp, validate_
 
 from Backend.domain.models.signal import StrategySignal
 from Backend.application.market_regime_consensus_engine import MarketRegimeConsensusEngine
-# from Backend.application.market_regime_consensus import MarketRegime
+
 
 
 
 market_regime_engine = MarketRegimeConsensusEngine()
+
 SignalStatus = Literal["ACTIVE", "STALE", "REJECTED"]
 RejectReason = Literal[
     "LOW_SCORE",
@@ -107,22 +108,115 @@ def decide_signal(
         if latest is not None
         else None
     )
+    latest_time = latest.isoformat() if latest else None
 
     if age is None or age > max_signal_age_minutes():
-        return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
-    if wall_clock_age_seconds is None or wall_clock_age_seconds > validation_settings().reject_after_seconds:
-        return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+        return SignalDecision(
+            False,
+            "STALE",
+            "STALE_SIGNAL",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
+
+    if (
+        wall_clock_age_seconds is None
+        or wall_clock_age_seconds > validation_settings().reject_after_seconds
+    ):
+        return SignalDecision(
+            False,
+            "STALE",
+            "STALE_SIGNAL",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
+
     if not candle_validation.valid_for_analysis:
-        return SignalDecision(False, "STALE", "STALE_SIGNAL", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+        return SignalDecision(
+            False,
+            "STALE",
+            "STALE_SIGNAL",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
+
     if score < min_signal_score():
-        return SignalDecision(False, "REJECTED", "LOW_SCORE", age, latest.isoformat() if latest else None, score, regime.regime, bias)
-    if regime.regime in ["CHOPPY","HIGH_VOLATILITY",]:
-        return SignalDecision(False, "REJECTED", "CHOPPY_MARKET", age, latest.isoformat() if latest else None, score, regime.regime, bias)
-    if (signal.side == "BUY" and bias == "BEARISH") or (signal.side == "SELL" and bias == "BULLISH"):
-        return SignalDecision(False, "REJECTED", "MTF_CONFLICT", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+        return SignalDecision(
+            False,
+            "REJECTED",
+            "LOW_SCORE",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
 
-    return SignalDecision(True, "ACTIVE", "OK", age, latest.isoformat() if latest else None, score, regime.regime, bias)
+    if regime.regime in {
+        "CHOPPY",
+        "HIGH_VOLATILITY",
+    }:
+        return SignalDecision(
+            False,
+            "REJECTED",
+            "CHOPPY_MARKET",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
 
+    if (
+        signal.side == "BUY"
+        and bias in {"BEARISH", "STRONG_BEARISH"}
+    ):
+        return SignalDecision(
+            False,
+            "REJECTED",
+            "MTF_CONFLICT",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
+
+    if (
+        signal.side == "SELL"
+        and bias in {"BULLISH", "STRONG_BULLISH"}
+    ):
+        return SignalDecision(
+            False,
+            "REJECTED",
+            "MTF_CONFLICT",
+            age,
+            latest_time,
+            score,
+            regime.regime,
+            bias,
+        )
+
+    return SignalDecision(
+        True,
+        "ACTIVE",
+        "OK",
+        age,
+        latest_time,
+        score,
+        regime.regime,
+        bias,
+    )
+    
 
 def split_signals(
     signals: list[StrategySignal],
