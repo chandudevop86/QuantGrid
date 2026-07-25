@@ -127,11 +127,83 @@ class MarketRegimeConsensusEngine:
                 },
             )
     def detect_volatility(
-            self,
-            timeframe: str,
-            candles: list[dict],
-        ) -> dict[str, float]:
-            ...
+    self,
+    timeframe: str,
+    candles: list[dict],
+    ) -> dict[str, float]:
+        """
+    Detect volatility.
+
+    Uses:
+    - ATR style range calculation
+    - Average candle movement
+    """
+
+        if len(candles) < 2:
+            return {
+                "atr": 0.0,
+                "volatility_percent": 0.0,
+            }
+
+
+        ranges = []
+
+        for candle in candles[-20:]:
+
+            high = float(candle["high"])
+
+            low = float(candle["low"])
+
+            close = float(candle["close"])
+
+
+            ranges.append(
+                high - low
+            )
+
+
+        atr = (
+            sum(ranges)
+            /
+            len(ranges)
+        )
+
+
+        current_price = float(
+            candles[-1]["close"]
+        )
+
+
+        volatility_percent = (
+            atr /
+            current_price
+            *
+            100
+            if current_price
+            else 0
+        )
+
+
+        return {
+            "timeframe": timeframe,
+
+            "atr": round(
+                atr,
+                2,
+            ),
+
+            "volatility_percent": round(
+                volatility_percent,
+                2,
+            ),
+
+            "level": (
+                "HIGH"
+                if volatility_percent > 1
+                else
+                "LOW"
+            ),
+        }
 
     def detect_market_structure(
             self,
