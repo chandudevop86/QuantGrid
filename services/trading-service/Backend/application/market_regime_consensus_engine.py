@@ -1,3 +1,10 @@
+from Backend.application.market_regime_consensus import (
+    TimeframeTrend,
+    MarketRegime,
+)
+
+
+
 class MarketRegimeConsensusEngine:
     """Multi-timeframe market regime detection engine."""
 

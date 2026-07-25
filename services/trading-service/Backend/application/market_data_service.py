@@ -16,7 +16,13 @@ from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
 from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
 from Backend.config import Provider
+from Backend.application.provider_consensus_engine import (
+    ProviderConsensusEngine,
+)
 
+from Backend.infrastructure.market_data.consensus_adapter import (
+    ConsensusProviderAdapter,
+)
 _MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
 
 
