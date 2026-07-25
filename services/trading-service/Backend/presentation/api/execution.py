@@ -1344,10 +1344,14 @@ async def _submit_paper_signal(
             strategy_diagnostics=strategy_diagnostics,
             extra={**_risk_response_fields(risk_decision), "allowed": False, "validation": candle_validation.model_dump()},
         )
-    decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
+    candles_by_timeframe = {
+    "1m": candles_1m,
+    "15m": candles_15m or [],
+}   
+    decision = decide_signal(signal, candles_1m=candles_1m, candles_by_timeframe=candles_by_timeframe)
     gate = evaluate_risk_gate(decision)
     if not gate.allowed:
-        observe_rejected_order(gate.reason, execution_mode)
+        observe_rejected_order(gate.reason, execution_mode) 
         return _paper_response(
             status_value="rejected",
             symbol=signal.symbol,
