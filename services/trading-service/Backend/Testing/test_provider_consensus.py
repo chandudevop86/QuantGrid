@@ -178,3 +178,30 @@ def test_compare_timestamps():
     assert result["status"] == "OK"
 
     print("TIMESTAMP TEST PASSED")
+def test_calculate_latency():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    snapshots[0].latency_ms = 120
+
+
+    result = engine.calculate_latency(
+        snapshots
+    )
+
+    print(result)
+
+
+    assert result["status"] == "OK"
+    assert result["average_latency_ms"] == 120
+
+
+    print("LATENCY TEST PASSED")    

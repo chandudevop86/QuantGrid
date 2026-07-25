@@ -370,10 +370,67 @@ class ProviderConsensusEngine:
         }
 
     def calculate_latency(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, float]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Calculate provider latency statistics.
+
+    Returns:
+    - latency per provider
+    - average latency
+    - fastest provider
+    - slowest provider
+    """
+
+        latencies = {}
+
+        valid_latencies = []
+
+        for snapshot in snapshots:
+
+            latency = snapshot.latency_ms
+
+            latencies[snapshot.provider] = latency
+
+            valid_latencies.append(latency)
+
+
+        if not valid_latencies:
+            return {
+                "status": "NO_DATA",
+                "providers": {},
+            }
+
+
+        average_latency = (
+            sum(valid_latencies)
+            /
+            len(valid_latencies)
+        )
+
+
+        fastest_provider = min(
+            latencies,
+            key=latencies.get,
+        )
+
+        slowest_provider = max(
+            latencies,
+            key=latencies.get,
+        )
+
+
+        return {
+            "status": "OK",
+            "providers": latencies,
+            "average_latency_ms": round(
+                average_latency,
+                2,
+            ),
+            "fastest_provider": fastest_provider,
+            "slowest_provider": slowest_provider,
+        }
 
     def calculate_feed_delay(
         self,
