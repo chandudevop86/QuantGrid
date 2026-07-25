@@ -312,10 +312,85 @@ class MarketRegimeConsensusEngine:
         }
 
     def combine_timeframes(
-            self,
-            trends: list[TimeframeTrend],
-        ) -> dict[str, float]:
-            ...
+    self,
+    trends: list[TimeframeTrend],
+    ) -> dict[str, float]:
+        """
+    Combine multiple timeframe trends.
+
+    Returns:
+    - bullish percentage
+    - bearish percentage
+    - sideways percentage
+    - average confidence
+    """
+
+        if not trends:
+            return {
+                "bullish_percent": 0.0,
+                "bearish_percent": 0.0,
+                "sideways_percent": 0.0,
+                "average_confidence": 0.0,
+            }
+
+
+        total = len(trends)
+
+
+        bullish = sum(
+            1
+            for trend in trends
+            if trend.trend == "BULLISH"
+        )
+
+
+        bearish = sum(
+            1
+            for trend in trends
+            if trend.trend == "BEARISH"
+        )
+
+
+        sideways = sum(
+            1
+            for trend in trends
+            if trend.trend == "SIDEWAYS"
+        )
+
+
+        average_confidence = (
+            sum(
+                trend.confidence
+                for trend in trends
+            )
+            /
+            total
+        )
+
+
+        return {
+            "bullish_percent": round(
+                bullish / total * 100,
+                2,
+            ),
+
+            "bearish_percent": round(
+                bearish / total * 100,
+                2,
+            ),
+
+            "sideways_percent": round(
+                sideways / total * 100,
+                2,
+            ),
+
+            "average_confidence": round(
+                average_confidence,
+                2,
+            ),
+
+            "timeframes": total,
+        }
 
     def calculate_alignment(
             self,
