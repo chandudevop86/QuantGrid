@@ -126,52 +126,52 @@ def detect_trend(
                 "current_price": current_price,
             },
         )
-    def detect_volatility(
+def detect_volatility(
         self,
         timeframe: str,
         candles: list[dict],
     ) -> dict[str, float]:
         ...
 
-    def detect_market_structure(
+def detect_market_structure(
         self,
         timeframe: str,
         candles: list[dict],
     ) -> dict[str, str]:
         ...
 
-    def combine_timeframes(
+def combine_timeframes(
         self,
         trends: list[TimeframeTrend],
     ) -> dict[str, float]:
         ...
 
-    def calculate_alignment(
+def calculate_alignment(
         self,
         trends: list[TimeframeTrend],
     ) -> float:
         ...
 
-    def calculate_bias(
+def calculate_bias(
         self,
         trends: list[TimeframeTrend],
     ) -> str:
         ...
 
-    def calculate_confidence(
+def calculate_confidence(
         self,
         trends: list[TimeframeTrend],
     ) -> float:
         ...
 
-    def recommend_strategy(
+def recommend_strategy(
         self,
         regime: str,
         bias: str,
     ) -> str:
         ...
 
-    def build_market_regime(
+def build_market_regime(
         self,
         candles_by_timeframe: dict[str, list[dict]],
     ) -> MarketRegime:
