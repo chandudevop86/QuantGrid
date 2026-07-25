@@ -134,4 +134,26 @@ def test_compare_bid_ask():
     assert result["status"] == "OK"
     assert result["average_spread"] == 2
 
-    print("BID ASK TEST PASSED")            
+    print("BID ASK TEST PASSED")
+def test_compare_volume():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    result = engine.compare_volume(
+        snapshots
+    )
+
+    print(result)
+
+    assert result["status"] == "OK"
+    assert result["average_volume"] == 100000
+
+    print("VOLUME TEST PASSED")                

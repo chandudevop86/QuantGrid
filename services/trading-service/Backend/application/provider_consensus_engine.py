@@ -257,10 +257,65 @@ class ProviderConsensusEngine:
             }
 
     def compare_volume(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, Any]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Compare volume across providers.
+    """
+
+        volumes = {}
+
+        valid_volumes = []
+
+        for snapshot in snapshots:
+
+            if snapshot.volume is None:
+                continue
+
+            volumes[snapshot.provider] = snapshot.volume
+
+            valid_volumes.append(
+                snapshot.volume
+            )
+
+        if not valid_volumes:
+            return {
+                "status": "NO_DATA",
+                "providers": {},
+            }
+
+        average_volume = (
+            sum(valid_volumes) /
+            len(valid_volumes)
+        )
+
+        deviations = {}
+
+        for provider, volume in volumes.items():
+
+            deviation = (
+                abs(volume - average_volume)
+                / average_volume
+                * 100
+                if average_volume
+                else 0
+            )
+
+            deviations[provider] = round(
+                deviation,
+                2,
+            )
+
+        return {
+            "status": "OK",
+            "providers": volumes,
+            "average_volume": round(
+                average_volume,
+                2,
+            ),
+            "deviation_percent": deviations,
+        }
 
     def compare_timestamps(
         self,
