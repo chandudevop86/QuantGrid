@@ -111,4 +111,27 @@ def test_compare_prices():
     assert result["average_price"] == 23850
 
 
-    print("PRICE COMPARE TEST PASSED")        
+    print("PRICE COMPARE TEST PASSED")
+    
+def test_compare_bid_ask():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    result = engine.compare_bid_ask(
+        snapshots
+    )
+
+    print(result)
+
+    assert result["status"] == "OK"
+    assert result["average_spread"] == 2
+
+    print("BID ASK TEST PASSED")            

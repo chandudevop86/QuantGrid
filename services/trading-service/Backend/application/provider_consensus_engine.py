@@ -201,10 +201,60 @@ class ProviderConsensusEngine:
     }
 
     def compare_bid_ask(
-        self,
-        snapshots: list[ProviderSnapshot],
-    ) -> dict[str, Any]:
-        ...
+    self,
+    snapshots: list[ProviderSnapshot],
+    ) -> dict:
+        """
+    Compare bid/ask spread across providers.
+
+    Calculates:
+    - bid values
+    - ask values
+    - spread
+    - average spread
+    """
+
+        result = {}
+
+        spreads = []
+
+        for snapshot in snapshots:
+
+                if snapshot.bid is None or snapshot.ask is None:
+                    continue
+
+                spread = snapshot.ask - snapshot.bid
+
+                spreads.append(spread)
+
+                result[snapshot.provider] = {
+                    "bid": snapshot.bid,
+                    "ask": snapshot.ask,
+                    "spread": round(spread, 2),
+                }
+
+        if not spreads:
+                return {
+                    "status": "NO_DATA",
+                    "providers": {},
+                }
+
+        return {
+                "status": "OK",
+                "providers": result,
+                "average_spread": round(
+                    sum(spreads) / len(spreads),
+                    2,
+                ),
+                "max_spread": round(
+                    max(spreads),
+                    2,
+                ),
+                "min_spread": round(
+                    min(spreads),
+                    2,
+                ),
+            }
 
     def compare_volume(
         self,
