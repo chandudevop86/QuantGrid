@@ -8,6 +8,7 @@ from datetime import datetime
 
 
 class ProviderConsensusEngine:
+    
     """
     Cross-provider validation engine.
 
@@ -34,6 +35,10 @@ class ProviderConsensusEngine:
         snapshots = []
 
         for provider in self.providers:
+            health = provider.health_check()
+            
+            if health.get("configured") is False:
+                continue
 
             try:
                 data = provider.get_ltp(symbol)
