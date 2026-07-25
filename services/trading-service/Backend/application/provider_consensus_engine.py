@@ -54,15 +54,15 @@ class ProviderConsensusEngine:
         except Exception as exc:
 
             snapshots.append(
-                ProviderSnapshot(
-                    provider=provider.name,
-                    symbol=symbol,
-                    healthy=False,
-                    warnings=[str(exc)],
+            ProviderSnapshot(
+                provider=provider.name,
+                symbol=symbol,
+                healthy=False,
+                warnings=[str(exc)],
                 )
             )
 
-            return snapshots
+        return snapshots
     def validate_provider_health(
         self,
         snapshots: list[ProviderSnapshot],
