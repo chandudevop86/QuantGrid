@@ -550,11 +550,47 @@ class MarketRegimeConsensusEngine:
         )
 
     def recommend_strategy(
-            self,
-            regime: str,
-            bias: str,
-        ) -> str:
-            ...
+    self,
+    regime: str,
+    bias: str,
+    ) -> str:
+        """
+    Recommend strategy based on
+    market regime and directional bias.
+    """
+
+        if regime == "BREAKOUT":
+
+            return "BREAKOUT"
+
+
+        if regime == "TRENDING":
+
+            if bias in (
+                "STRONG_BULLISH",
+                "BULLISH",
+            ):
+                return "TREND_FOLLOWING"
+
+
+            if bias in (
+                "STRONG_BEARISH",
+                "BEARISH",
+            ):
+                return "SHORT_TREND"
+
+
+        if regime == "RANGING":
+
+            return "MEAN_REVERSION"
+
+
+        if regime == "REVERSAL":
+
+            return "REVERSAL"
+
+
+        return "NO_TRADE"
 
     def build_market_regime(
             self,
