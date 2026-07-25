@@ -33,36 +33,36 @@ class ProviderConsensusEngine:
         ...
     snapshots = []
 
-    for provider in self.providers:
+        for provider in self.providers:
 
-        try:
-            data = provider.get_quote(symbol)
+            try:
+                data = provider.get_quote(symbol)
 
-            snapshot = ProviderSnapshot(
-                provider=provider.name,
-                symbol=symbol,
-                ltp=data.get("ltp"),
-                bid=data.get("bid"),
-                ask=data.get("ask"),
-                volume=data.get("volume"),
-                timestamp=data.get("timestamp"),
-                received_at=data.get("received_at"),
-            )
-
-            snapshots.append(snapshot)
-
-        except Exception as exc:
-
-            snapshots.append(
-            ProviderSnapshot(
-                provider=provider.name,
-                symbol=symbol,
-                healthy=False,
-                warnings=[str(exc)],
+                snapshot = ProviderSnapshot(
+                    provider=provider.name,
+                    symbol=symbol,
+                    ltp=data.get("ltp"),
+                    bid=data.get("bid"),
+                    ask=data.get("ask"),
+                    volume=data.get("volume"),
+                    timestamp=data.get("timestamp"),
+                    received_at=data.get("received_at"),
                 )
-            )
 
-        return snapshots
+                snapshots.append(snapshot)
+
+            except Exception as exc:
+
+                snapshots.append(
+                ProviderSnapshot(
+                    provider=provider.name,
+                    symbol=symbol,
+                    healthy=False,
+                    warnings=[str(exc)],
+                    )
+                )
+
+                return snapshots
     def validate_provider_health(
         self,
         snapshots: list[ProviderSnapshot],
