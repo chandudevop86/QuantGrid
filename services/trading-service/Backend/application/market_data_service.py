@@ -23,6 +23,14 @@ from Backend.application.provider_consensus_engine import (
 from Backend.infrastructure.market_data.consensus_adapter import (
     ConsensusProviderAdapter,
 )
+from Backend.infrastructure.market_data import (
+    AngelProvider,
+    DhanProvider,
+    FyersProvider,
+    KiteProvider,
+    UpstoxProvider,
+    YahooProvider
+)
 _MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
 
 
@@ -274,9 +282,26 @@ def select_market_data_provider(name: str) -> MarketDataProvider:
         return AngelProvider()
     raise MarketDataProviderError(f"Unsupported market data provider: {provider}")
 
+def get_provider_consensus_engine():
 
+    return ProviderConsensusEngine(
+        providers=[
+            DhanProvider(),
+            FyersProvider(),
+            KiteProvider(),
+            UpstoxProvider(),
+            AngelProvider(),
+        ]
+    )
 def get_market_data_service() -> MarketDataService:
-    return MarketDataService()
+
+    consensus_engine = (
+        get_provider_consensus_engine()
+    )
+
+    return MarketDataService(
+        consensus_engine=consensus_engine
+    )
 
 
 def _utc_now() -> str:
