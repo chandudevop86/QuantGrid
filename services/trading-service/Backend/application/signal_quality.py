@@ -6,10 +6,13 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from Backend.application.candle_validation import normalize_timestamp, validate_live_candle, validation_settings
-from Backend.domain.indicators.indicators import IndicatorService
+
 from Backend.domain.models.signal import StrategySignal
+from Backend.application.market_regime_consensus_engine import MarketRegimeConsensusEngine
 
 
+
+market_regime_engine = MarketRegimeConsensusEngine()
 SignalStatus = Literal["ACTIVE", "STALE", "REJECTED"]
 RejectReason = Literal[
     "LOW_SCORE",
@@ -23,11 +26,6 @@ RejectReason = Literal[
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class MarketRegime:
-    regime: str
-    reason: str
-    atr_pct: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,62 +87,19 @@ def signal_age_minutes(signal: StrategySignal, candles: list[dict[str, Any]]) ->
     return round(max(0.0, (latest - signal_time).total_seconds() / 60.0), 2)
 
 
-def detect_market_regime(candles: list[dict[str, Any]]) -> MarketRegime:
-    if len(candles) < 20:
-        return MarketRegime("CHOPPY", "Insufficient candles for regime confidence.", 0.0)
-
-    frame = IndicatorService().prepare(candles)
-    row = frame.iloc[-1]
-    close = max(float(row["close"]), 0.01)
-    atr_pct = float(row.get("atr_14", 0.0) or 0.0) / close
-    ema9, ema21, ema50, ema200 = (float(row[key]) for key in ("ema_9", "ema_21", "ema_50", "ema_200"))
-    recent = frame.tail(12)
-    range_size = float(recent["high"].max() - recent["low"].min())
-    body_sum = float(recent["body_size"].sum())
-
-    if atr_pct < 0.00035:
-        return MarketRegime("LOW_VOLATILITY", "ATR percent is below tradable threshold.", round(atr_pct, 6))
-    if atr_pct > 0.004:
-        return MarketRegime("HIGH_VOLATILITY", "ATR percent is elevated; widen filters and reduce risk.", round(atr_pct, 6))
-    if range_size > 0 and body_sum / range_size < 2.2:
-        return MarketRegime("CHOPPY", "Recent bodies are inefficient inside the active range.", round(atr_pct, 6))
-    if ema9 > ema21 > ema50 > ema200 or ema9 < ema21 < ema50 < ema200:
-        return MarketRegime("TRENDING", "EMA stack is directionally aligned.", round(atr_pct, 6))
-    return MarketRegime("RANGING", "No clean EMA stack; market is rotating.", round(atr_pct, 6))
-
-
-def mtf_bias(candles_15m: list[dict[str, Any]] | None) -> str:
-    if not candles_15m or len(candles_15m) < 20:
-        return "UNKNOWN"
-    frame = IndicatorService().prepare(candles_15m)
-    row = frame.iloc[-1]
-    ema9, ema21, ema50, ema200 = (float(row[key]) for key in ("ema_9", "ema_21", "ema_50", "ema_200"))
-    close = float(row["close"])
-    if close > float(row["vwap"]) and ema9 > ema21 > ema50 > ema200:
-        return "BULLISH"
-    if close < float(row["vwap"]) and ema9 < ema21 < ema50 < ema200:
-        return "BEARISH"
-    return "RANGE"
 
 
 def decide_signal(
     signal: StrategySignal,
     *,
     candles_1m: list[dict[str, Any]],
-    candles_15m: list[dict[str, Any]] | None = None,
+    candles_by_timeframe: dict[str, list[dict[str, Any]]],
 ) -> SignalDecision:
     latest = latest_candle_time(candles_1m)
     age = signal_age_minutes(signal, candles_1m)
     score = _score(signal)
-    regime = detect_market_regime(candles_1m)
-    bias = mtf_bias(candles_15m)
-    # BUG FIX: this used to pass `now=latest` -- the LATEST CANDLE'S OWN TIMESTAMP -- as the
-    # reference "current time" for freshness validation. That makes the check tautological: a
-    # candle is always "fresh" relative to itself, no matter how many hours old it actually is
-    # in the real world. This is why a data feed that silently stopped updating hours ago could
-    # still produce signals that pass every staleness check -- the check was never comparing
-    # candle time to *actual* wall-clock time. Omitting `now` lets validate_live_candle use its
-    # own correct default (real current time), which is what actually catches a stale feed.
+    regime = market_regime_engine.build_market_regime(candles_by_timeframe)
+    bias = regime.bias
     candle_validation = validate_live_candle(candles_1m, mode="paper")
     wall_clock_age_seconds = (
         max(0.0, (datetime.now(timezone.utc) - latest).total_seconds())
@@ -172,13 +127,13 @@ def split_signals(
     signals: list[StrategySignal],
     *,
     candles_1m: list[dict[str, Any]],
-    candles_15m: list[dict[str, Any]] | None = None,
+    candles_by_timeframe: dict[str, list[dict[str, Any]]],
 ) -> tuple[list[StrategySignal], list[dict[str, Any]], list[dict[str, Any]]]:
     active: list[StrategySignal] = []
     rejected: list[dict[str, Any]] = []
     stale: list[dict[str, Any]] = []
     for signal in signals:
-        decision = decide_signal(signal, candles_1m=candles_1m, candles_15m=candles_15m)
+        decision = decide_signal(signal, candles_1m=candles_1m, candles_by_timeframe=candles_by_timeframe)
         signal.metadata.update(decision.to_dict())
         if decision.allowed:
             active.append(signal)
