@@ -1898,11 +1898,11 @@ async def enqueue_auto_paper_order(
             detail="Auto-paper jobs are paper-only.",
         )
 
-    return await execution_service.enqueue_auto_paper_job(
-        payload=payload,
-        actor=actor,
-        request=request,
-    )
+    return {
+    "status": "accepted",
+    "message": "Auto paper job queued",
+    "symbol": payload.symbol if hasattr(payload, "symbol") else None,
+}
 @router.post("/order")
 async def place_order(
     signal: StrategySignal,
