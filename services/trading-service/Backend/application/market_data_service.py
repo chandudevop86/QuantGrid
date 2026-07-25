@@ -34,11 +34,24 @@ def cache_ttl_seconds() -> int:
 
 
 class MarketDataService:
-    def __init__(self, provider: MarketDataProvider | None = None) -> None:
-        self.settings = get_settings()
-        self.provider = provider or select_market_data_provider(self.settings.market_data_provider)
-        self.ttl = cache_ttl_seconds()
+    def __init__(
+    self,
+    provider: MarketDataProvider | None = None,
+    consensus_engine=None,
+    ) -> None:
 
+        self.settings = get_settings()
+
+        self.provider = (
+            provider
+            or select_market_data_provider(
+                self.settings.market_data_provider
+            )
+        )
+
+        self.consensus_engine = consensus_engine
+
+        self.ttl = cache_ttl_seconds()
     def get_ltp(self, symbol: str, *, mode: str = "paper") -> dict[str, Any]:
         self._assert_provider_allowed(mode)
         key = self._cache_key("ltp", symbol.upper())
@@ -62,7 +75,42 @@ class MarketDataService:
         observe_market_data_tick(self.provider.provider_name, symbol)
         observe_market_data_delay(self.provider.provider_name, symbol, normalized.get("feed_delay_seconds"))
         return {**normalized, "cache_status": "fresh"}
+    def get_consensus_ltp(
+        self,
+        symbol: str,
+    ) -> dict[str, Any]:
 
+        if self.consensus_engine is None:
+            raise RuntimeError(
+                "Provider consensus engine not configured"
+            )
+
+
+        consensus = (
+            self.consensus_engine
+            .build_consensus(symbol)
+        )
+
+
+        return {
+            "symbol": symbol,
+
+            "ltp": consensus.consensus_price,
+
+            "price": consensus.consensus_price,
+
+            "provider": consensus.selected_provider,
+
+            "confidence": consensus.confidence,
+
+            "accepted": consensus.accepted,
+
+            "failover_used": consensus.failover_used,
+
+            "warnings": consensus.warnings,
+
+            "diagnostics": consensus.diagnostics,
+        }
     def get_candles(self, symbol: str, interval: str, period: str = "1d", limit: int = 100, *, mode: str = "paper") -> dict[str, Any]:
         self._assert_provider_allowed(mode)
         limit = max(1, min(int(limit), 500))
