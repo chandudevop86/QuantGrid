@@ -288,5 +288,91 @@ def test_calculate_confidence():
     assert result <= 100
 
 
-    print("CONFIDENCE TEST PASSED")    
+    print("CONFIDENCE TEST PASSED")
+    
+def test_select_best_provider():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+
+    result = engine.select_best_provider(
+        snapshots
+    )
+
+
+    print(result)
+
+
+    assert result.provider == "fake_provider"
+
+    print("SELECT PROVIDER TEST PASSED")
+def test_failover_provider():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+
+    result = engine.perform_failover(
+        snapshots
+    )
+
+
+    print(result)
+
+
+    assert result.provider == "fake_provider"
+
+    assert (
+        result.diagnostics["failover_selected"]
+        is True
+    )
+
+
+    print("FAILOVER TEST PASSED")
+def test_build_consensus():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+
+    result = engine.build_consensus(
+        "NIFTY"
+    )
+
+
+    print(result)
+
+
+    assert result.accepted is True
+
+    assert result.selected_provider == (
+        "fake_provider"
+    )
+
+    assert result.consensus_price == 23850
+
+
+    print(
+        "BUILD CONSENSUS TEST PASSED"
+    )                
                 

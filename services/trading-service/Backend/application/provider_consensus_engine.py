@@ -664,19 +664,261 @@ class ProviderConsensusEngine:
         )
 
     def select_best_provider(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> ProviderSnapshot:
-        ...
+        """
+    Select highest scoring provider.
+    """
+
+        if not snapshots:
+            raise ValueError(
+                "No provider snapshots available"
+            )
+
+
+        scores = self.calculate_provider_scores(
+            snapshots
+        )
+
+
+        eligible = [
+            snapshot
+            for snapshot in snapshots
+            if snapshot.healthy
+            and snapshot.live_suitable
+            and snapshot.ltp > 0
+        ]
+
+
+        if not eligible:
+            raise RuntimeError(
+                "No suitable provider available"
+            )
+
+
+        best_provider = max(
+            eligible,
+            key=lambda snapshot:
+                scores.get(
+                    snapshot.provider,
+                    0,
+                ),
+        )
+
+
+        best_provider.diagnostics.update(
+            {
+                "provider_score":
+                    scores.get(
+                        best_provider.provider,
+                        0,
+                    )
+            }
+        )
+
+
+        return best_provider
 
     def perform_failover(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> ProviderSnapshot:
-        ...
+        """
+    Select backup provider when primary fails.
+    """
+
+        if not snapshots:
+            raise ValueError(
+                "No provider snapshots available"
+            )
+
+
+        scores = self.calculate_provider_scores(
+            snapshots
+        )
+
+
+        available = [
+            snapshot
+            for snapshot in snapshots
+            if snapshot.healthy
+            and snapshot.live_suitable
+            and snapshot.ltp > 0
+        ]
+
+
+        if not available:
+            raise RuntimeError(
+                "No failover provider available"
+            )
+
+
+        selected = sorted(
+            available,
+            key=lambda snapshot:
+                scores.get(
+                    snapshot.provider,
+                    0,
+                ),
+            reverse=True,
+        )[0]
+
+
+        selected.diagnostics.update(
+            {
+                "failover_selected": True,
+                "provider_score":
+                    scores.get(
+                        selected.provider,
+                        0,
+                    ),
+            }
+        )
+
+
+        return selected
 
     def build_consensus(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    symbol: str,
     ) -> ProviderConsensus:
-        ...
+        """
+    Main consensus pipeline.
+
+    Flow:
+    1. Collect provider snapshots
+    2. Validate health
+    3. Validate live suitability
+    4. Compare market feeds
+    5. Score providers
+    6. Calculate confidence
+    7. Select best provider
+    8. Return consensus
+    """
+
+        snapshots = self.get_provider_snapshots(
+            symbol
+        )
+
+
+        snapshots = self.validate_provider_health(
+            snapshots
+        )
+
+
+        snapshots = self.validate_live_suitability(
+            snapshots
+        )
+
+
+        price_data = self.compare_prices(
+            snapshots
+        )
+
+        bid_ask_data = self.compare_bid_ask(
+            snapshots
+        )
+
+        volume_data = self.compare_volume(
+            snapshots
+        )
+
+        timestamp_data = self.compare_timestamps(
+            snapshots
+        )
+
+
+        latency_data = self.calculate_latency(
+            snapshots
+        )
+
+        feed_delay_data = self.calculate_feed_delay(
+            snapshots
+        )
+
+
+        scores = self.calculate_provider_scores(
+            snapshots
+        )
+
+
+        confidence = self.calculate_confidence(
+            snapshots
+        )
+
+
+        try:
+
+            selected = self.select_best_provider(
+                snapshots
+            )
+
+            failover_used = False
+
+
+        except RuntimeError:
+
+            selected = self.perform_failover(
+                snapshots
+            )
+
+            failover_used = True
+
+
+
+        healthy_count = sum(
+            1
+            for snapshot in snapshots
+            if snapshot.healthy
+        )
+
+
+        prices = [
+            snapshot.ltp
+            for snapshot in snapshots
+            if snapshot.healthy
+        ]
+
+
+        average_price = (
+            sum(prices) / len(prices)
+            if prices
+            else None
+        )
+
+
+        return ProviderConsensus(
+
+            accepted=confidence >= 50,
+
+            consensus_price=selected.ltp,
+
+            selected_provider=selected.provider,
+
+            confidence=confidence,
+
+            provider_count=len(
+                snapshots
+            ),
+
+            healthy_provider_count=healthy_count,
+
+            average_price=average_price,
+
+            provider_scores=scores,
+
+            failover_used=failover_used,
+
+            snapshots=snapshots,
+
+            diagnostics={
+                "price": price_data,
+                "bid_ask": bid_ask_data,
+                "volume": volume_data,
+                "timestamps": timestamp_data,
+                "latency": latency_data,
+                "feed_delay": feed_delay_data,
+            },
+
+        )
