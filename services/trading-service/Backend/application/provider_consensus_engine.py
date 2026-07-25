@@ -31,7 +31,7 @@ class ProviderConsensusEngine:
         symbol: str,
     ) -> list[ProviderSnapshot]:
         ...
-
+        raise NotImplementedError
     def validate_provider_health(
         self,
         snapshots: list[ProviderSnapshot],
