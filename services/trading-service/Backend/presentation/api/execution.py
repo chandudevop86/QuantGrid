@@ -51,12 +51,20 @@ from Backend.presentation.api.roles import current_user, require_trade_execute
 from Backend.application.market_data_service import MarketDataService
 from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
+from Backend.application.execution_service import ExecutionService
+from typing import Literal
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Final
 
 router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
 
 market_service = MarketDataService()
+_execution_service = ExecutionService()
 
+
+def get_execution_service() -> ExecutionService:
+    return _execution_service
 # dependency injection (cleaner + testable)
 def get_engine():
     return ExecutionEngine()
@@ -322,7 +330,6 @@ def _broker_session_valid(settings: Any) -> bool:
 
     return bool(getattr(settings, "broker_configured", False))
 
-from typing import Final
 
 MAX_ENTRY_PRICE_DEVIATION: Final[float] = 0.02  # 2%
 
@@ -359,13 +366,6 @@ def _market_aligned(signal: StrategySignal) -> bool:
     deviation = abs(entry_price - market_price) / market_price
 
     return deviation <= MAX_ENTRY_PRICE_DEVIATION
-
-
-from typing import Literal
-
-from pydantic import BaseModel, Field, field_validator
-
-
 class AutoPaperExecutionRequest(BaseModel):
     """
     Request model for automated paper trading.
@@ -445,9 +445,7 @@ class AutoPaperExecutionRequest(BaseModel):
     def validate_strategies(cls, strategies: list[str]) -> list[str]:
         return [strategy.strip().lower() for strategy in strategies if strategy.strip()]
 
-from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TradingEngineBasketLeg(BaseModel):
@@ -557,12 +555,6 @@ class TradingEngineBasketLeg(BaseModel):
 
         return self
 
-
-from typing import Literal
-
-from pydantic import BaseModel, Field, field_validator
-
-
 class TradingEngineBasketRequest(BaseModel):
     """
     Basket order execution request.
@@ -596,9 +588,6 @@ class TradingEngineBasketRequest(BaseModel):
 
         return value or None
 
-from typing import Literal
-
-from pydantic import BaseModel, Field, field_validator
 
 
 class TradingEngineScaleRequest(BaseModel):
@@ -648,7 +637,6 @@ class TradingEngineScaleRequest(BaseModel):
 
         return value or None
 
-from typing import Any
 
 def _safe_float(value: Any) -> float | None:
     """
@@ -711,16 +699,11 @@ def _paper_response(
         trade_qualification = metadata.get("trade_qualification")
 
         if trade_qualification is not None:
-            response.setdefault(
-                "trade_qualification",
+            response.setdefault("trade_qualification",
                 trade_qualification,
             )
 
     return response
-
-
-from typing import Any
-
 
 def _audit_execution_result(
     db: Session,
@@ -784,7 +767,6 @@ def _audit_execution_result(
         request=request,
         metadata=metadata,
     )
-from typing import Any
 
 
 def _audit_order_transition(
@@ -834,9 +816,6 @@ def _audit_order_transition(
         request=request,
         metadata=metadata,
     )
-
-from typing import Any
-
 
 def _create_lifecycle_order(
     order: Any,
@@ -908,9 +887,6 @@ def _create_lifecycle_order(
 
     return local_order
 
-from typing import Any
-
-
 def _transition_lifecycle_order(
     local_order: dict[str, Any] | None,
     status_value: str,
@@ -950,10 +926,6 @@ def _transition_lifecycle_order(
     )
 
     return updated_order
-
-
-from typing import Any
-
 
 def _reject_live_guardrail(
     *,
@@ -1009,9 +981,6 @@ def _reject_live_guardrail(
     )
 
     return result
-
-from typing import Any
-
 
 def _audit_risk_decision(
     db: Session,
@@ -1075,9 +1044,6 @@ def _audit_risk_decision(
                 "risk_decision": payload,
             },
         )
-
-from typing import Any
-
 
 def _risk_response_fields(risk_decision: Any) -> dict[str, Any]:
     """
@@ -1716,11 +1682,6 @@ async def submit_trading_engine_scale(
     )
     return result
 
-
-from typing import Any
-from pydantic import BaseModel
-
-
 def model_to_dict(model: BaseModel) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump()
@@ -1923,7 +1884,7 @@ async def enqueue_auto_paper_order(
     actor: User = Depends(require_trade_execute),
     access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
-    execution_service: ExecutionService = Depends(get_execution_service),
+    engine: ExecutionEngine = Depends(get_engine),
 ):
     if not access.can("paper_trade.automated"):
         raise HTTPException(
