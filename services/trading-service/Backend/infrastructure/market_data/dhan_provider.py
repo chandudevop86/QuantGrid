@@ -40,6 +40,7 @@ def _safe_index(values: list[Any], index: int) -> float | None:
     except (TypeError, ValueError):
         return None
 class DhanProvider(EnvConfiguredProvider):
+    provider_name = "dhan"
     provider = Provider.DHAN
     required_env = ("QUANTGRID_BROKER_CLIENT_ID", "QUANTGRID_BROKER_ACCESS_TOKEN")
     def normalize_symbol(self, symbol: str) -> str:
