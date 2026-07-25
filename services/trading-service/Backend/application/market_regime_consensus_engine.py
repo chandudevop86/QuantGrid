@@ -393,10 +393,64 @@ class MarketRegimeConsensusEngine:
         }
 
     def calculate_alignment(
-            self,
-            trends: list[TimeframeTrend],
-        ) -> float:
-            ...
+    self,
+    trends: list[TimeframeTrend],
+    ) -> float:
+        """
+    Calculate multi timeframe trend alignment.
+
+    Returns:
+        0 - 100 percentage
+    """
+
+        if not trends:
+            return 0.0
+
+
+        trend_count = len(trends)
+
+
+        bullish = sum(
+            1
+            for t in trends
+            if t.trend == "BULLISH"
+        )
+
+
+        bearish = sum(
+            1
+            for t in trends
+            if t.trend == "BEARISH"
+        )
+
+
+        sideways = sum(
+            1
+            for t in trends
+            if t.trend == "SIDEWAYS"
+        )
+
+
+        highest_alignment = max(
+            bullish,
+            bearish,
+            sideways,
+        )
+
+
+        alignment = (
+            highest_alignment
+            /
+            trend_count
+            *
+            100
+        )
+
+
+        return round(
+            alignment,
+            2,
+        )
 
     def calculate_bias(
             self,
