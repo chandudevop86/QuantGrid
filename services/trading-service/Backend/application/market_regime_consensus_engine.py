@@ -505,10 +505,49 @@ class MarketRegimeConsensusEngine:
         return "NEUTRAL"
 
     def calculate_confidence(
-            self,
-            trends: list[TimeframeTrend],
-        ) -> float:
-            ...
+    self,
+    trends: list[TimeframeTrend],
+    ) -> float:
+        """
+    Calculate final market regime confidence.
+
+    Factors:
+    - Average timeframe confidence
+    - Multi timeframe alignment
+    """
+
+        if not trends:
+            return 0.0
+
+
+        average_confidence = (
+            sum(
+                t.confidence
+                for t in trends
+            )
+            /
+            len(trends)
+        )
+
+
+        alignment = self.calculate_alignment(
+            trends
+        )
+
+
+        confidence = (
+            average_confidence
+            *
+            alignment
+            /
+            100
+        )
+
+
+        return round(
+            min(confidence, 100),
+            2,
+        )
 
     def recommend_strategy(
             self,
