@@ -103,10 +103,47 @@ class ProviderConsensusEngine:
         return snapshots
 
     def validate_live_suitability(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> list[ProviderSnapshot]:
-        ...
+        
+        """
+    Validate providers for live execution.
+
+    Rules:
+    - Provider must be healthy
+    - LTP must be valid
+    - Feed delay must be acceptable
+    - Confidence must be above threshold
+    """
+
+        for snapshot in snapshots:
+
+            if not snapshot.healthy:
+                snapshot.live_suitable = False
+                snapshot.warnings.append(
+                    "provider_unhealthy"
+                )
+
+            if snapshot.ltp <= 0:
+                snapshot.live_suitable = False
+                snapshot.warnings.append(
+                    "invalid_market_price"
+                )
+
+            if snapshot.feed_delay_seconds > 5:
+                snapshot.live_suitable = False
+                snapshot.warnings.append(
+                    "feed_delay_exceeded"
+                )
+
+            if snapshot.confidence < 50:
+                snapshot.live_suitable = False
+                snapshot.warnings.append(
+                    "low_confidence"
+                )
+
+        return snapshots
 
     def compare_prices(
         self,
