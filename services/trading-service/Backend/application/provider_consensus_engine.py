@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from Backend.application.provider_consensus import (
+    ProviderConsensus,
+    ProviderSnapshot,
+)
+
+
+
 class ProviderConsensusEngine:
     """
     Cross-provider validation engine.
