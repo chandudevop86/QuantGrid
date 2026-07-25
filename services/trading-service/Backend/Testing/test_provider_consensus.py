@@ -65,3 +65,27 @@ def test_provider_health():
     assert result[0].healthy is True
 
     print("HEALTH TEST PASSED")    
+    
+def test_live_suitability():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+    snapshots = engine.validate_provider_health(
+        snapshots
+    )
+
+    snapshots = engine.validate_live_suitability(
+        snapshots
+    )
+
+    assert snapshots[0].live_suitable is True
+
+    print("LIVE SUITABILITY TEST PASSED")    
