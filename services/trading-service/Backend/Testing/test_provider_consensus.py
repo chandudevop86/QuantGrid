@@ -232,4 +232,33 @@ def test_calculate_feed_delay():
     assert result["average_delay_seconds"] == 2
 
 
-    print("FEED DELAY TEST PASSED")        
+    print("FEED DELAY TEST PASSED")
+def test_provider_scores():
+
+    engine = ProviderConsensusEngine(
+        providers=[
+            FakeProvider()
+        ]
+    )
+
+
+    snapshots = engine.get_provider_snapshots(
+        "NIFTY"
+    )
+
+
+    result = engine.calculate_provider_scores(
+        snapshots
+    )
+
+
+    print(result)
+
+
+    assert "fake_provider" in result
+
+    assert result["fake_provider"] > 0
+
+
+    print("PROVIDER SCORE TEST PASSED")
+                

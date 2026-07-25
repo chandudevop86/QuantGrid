@@ -496,10 +496,82 @@ class ProviderConsensusEngine:
         }
 
     def calculate_provider_scores(
-        self,
-        snapshots: list[ProviderSnapshot],
+    self,
+    snapshots: list[ProviderSnapshot],
     ) -> dict[str, float]:
-        ...
+        """
+    Calculate provider reliability score.
+
+    Score range:
+    0 - 100
+
+    Factors:
+    - Healthy provider        +40
+    - Live suitable           +30
+    - Confidence contribution +20
+    - Latency penalty
+    - Feed delay penalty
+    """
+
+        scores: dict[str, float] = {}
+
+        for snapshot in snapshots:
+
+            score = 0.0
+
+
+            # Health score
+            if snapshot.healthy:
+                score += 40
+
+
+            # Live execution suitability
+            if snapshot.live_suitable:
+                score += 30
+
+
+            # Confidence contribution
+            score += (
+                snapshot.confidence * 0.20
+            )
+
+
+            # Latency penalty
+            if snapshot.latency_ms > 500:
+                score -= 10
+
+            elif snapshot.latency_ms > 1000:
+                score -= 20
+
+
+            # Feed delay penalty
+            if snapshot.feed_delay_seconds > 5:
+                score -= 15
+
+            elif snapshot.feed_delay_seconds > 10:
+                score -= 25
+
+
+            # Warning penalty
+            score -= (
+                len(snapshot.warnings) * 5
+            )
+
+
+            # Clamp score
+            score = max(
+                0,
+                min(score, 100)
+            )
+
+
+            scores[snapshot.provider] = round(
+                score,
+                2,
+            )
+
+
+        return scores
 
     def calculate_confidence(
         self,
