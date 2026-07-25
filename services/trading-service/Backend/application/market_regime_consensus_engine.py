@@ -453,10 +453,56 @@ class MarketRegimeConsensusEngine:
         )
 
     def calculate_bias(
-            self,
-            trends: list[TimeframeTrend],
-        ) -> str:
-            ...
+    self,
+    trends: list[TimeframeTrend],
+    ) -> str:
+        """
+    Calculate overall market bias
+    from multi timeframe trends.
+    """
+
+        if not trends:
+            return "NEUTRAL"
+
+
+        bullish = sum(
+            1
+            for t in trends
+            if t.trend == "BULLISH"
+        )
+
+
+        bearish = sum(
+            1
+            for t in trends
+            if t.trend == "BEARISH"
+        )
+
+
+        total = len(trends)
+
+
+        if bullish == total:
+
+            return "STRONG_BULLISH"
+
+
+        if bearish == total:
+
+            return "STRONG_BEARISH"
+
+
+        if bullish > bearish:
+
+            return "BULLISH"
+
+
+        if bearish > bullish:
+
+            return "BEARISH"
+
+
+        return "NEUTRAL"
 
     def calculate_confidence(
             self,
