@@ -9,7 +9,7 @@ import pandas as pd
 from Backend.domain.indicators.indicators import IndicatorService
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
-
+from Backend.domain.market_data.validator import MarketDataValidator
 
 @dataclass(slots=True)
 class StrategyConfig:
@@ -27,6 +27,12 @@ class BaseStrategy(ABC):
 
     def run(self, data: Any, context: StrategyContext) -> list[StrategySignal]:
         candles = self.prepare_data(data)
+        validation = MarketDataValidator.validate(candles)
+
+        if not validation.valid:
+            raise ValueError(
+            "; ".join(validation.errors)
+        )
         if candles.empty:
             return []
         self.validate_inputs(candles, context)
