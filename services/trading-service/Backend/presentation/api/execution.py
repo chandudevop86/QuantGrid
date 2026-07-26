@@ -68,7 +68,6 @@ from Backend.application.trading_engine_upgrade import (
     trading_engine_dashboard,
 )
 from Backend.application.subscriptions import SubscriptionAccess, subscription_access
-from Backend.domain.engine.order_factory import ExecutionEngine
 from Backend.domain.execution_constraints import (
     apply_order_constraints,
     requested_quantity,
