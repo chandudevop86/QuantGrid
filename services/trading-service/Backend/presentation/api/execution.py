@@ -7,6 +7,10 @@ from Backend.application.market_data_service import (
     MarketDataService,
     _strategy_candles,
 )
+from Backend.application.execution.execution_service import (
+    ExecutionEngine,
+    _audit_execution_result,
+)
 from Backend.application.execution.execution_response import _paper_response
 from Backend.application.execution.execution_pipeline import _submit_paper_signal
 from Backend.application.execution.execution_guardrails import (
