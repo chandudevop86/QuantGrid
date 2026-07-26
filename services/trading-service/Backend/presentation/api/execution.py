@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-
-from Backend.application.execution.execution_service import ExecutionService
+from Backend.application.execution.execution_service import submit_order
 from Backend.application.subscriptions import (
     SubscriptionAccess,
     subscription_access,
@@ -77,12 +76,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Final
 
 
-router = APIRouter(
-    prefix="/execution",
-    tags=["Execution"],
-)
-
-service = ExecutionService()
 
 def get_engine():
     return ExecutionEngine()
@@ -92,29 +85,10 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
     return mode
 
-@router.post("/order")
-async def place_order(
-    signal: StrategySignal,
-    request: Request,
-    engine: ExecutionEngine = Depends(get_engine),
-    actor: User = Depends(require_trade_execute),
-    access: SubscriptionAccess = Depends(subscription_access),
-    execution_mode: str = Depends(_execution_mode),
-    db: Session = Depends(get_db),
-):
-    return await service.execute(
-        signal=signal,
-        request=request,
-        engine=engine,
-        actor=actor,
-        access=access,
-        execution_mode=execution_mode,
-        db=db,
-    )
     
 router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
-service = ExecutionService()
+#service = ExecutionService()
 @router.post("/order")
 async def place_order(
     signal: StrategySignal,
