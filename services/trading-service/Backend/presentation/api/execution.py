@@ -307,6 +307,11 @@ async def place_order(
         candles_by_timeframe=candles_by_timeframe,
         execution_mode=execution_mode,
     )
+
+    print(
+        "TQE RESULT:",
+        qualification.to_dict() if qualification else None,
+    )
     if qualification is not None and not qualification.allowed:
         result = _paper_response(
             status_value="rejected",
