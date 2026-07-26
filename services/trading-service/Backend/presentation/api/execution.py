@@ -10,6 +10,7 @@ from Backend.application.market_data_service import (
 from Backend.application.execution.execution_service import (
     ExecutionEngine,
     _audit_execution_result,
+    _execution_qualification,
 )
 from Backend.application.execution.execution_response import _paper_response
 from Backend.application.execution.execution_pipeline import _submit_paper_signal
@@ -17,7 +18,6 @@ from Backend.application.execution.execution_guardrails import (
     _live_guardrail_failure,
     _request_is_https,
     _allow_insecure_live,
-    _execution_qualification,
 )
 from Backend.application.execution.lifecycle_manager import (
     _create_lifecycle_order,
