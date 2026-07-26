@@ -133,21 +133,31 @@ def _trade_shape_reason(signal: StrategySignal) -> str | None:
 
     return None
 def _tqe_response_fields(
+    qualification=None,
     *,
-    qualification: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Build Trade Quality Evaluation response fields.
+    Supports TradeQualification object or dict.
     """
+
+    if qualification is not None and hasattr(qualification, "to_dict"):
+        qualification = qualification.to_dict()
 
     qualification = qualification or {}
     diagnostics = diagnostics or {}
 
     return {
         "trade_quality": {
-            "qualified": qualification.get("qualified", False),
-            "risk_reward": qualification.get("risk_reward"),
+            "qualified": qualification.get(
+                "allowed",
+                qualification.get("qualified", False),
+            ),
+            "risk_reward": qualification.get(
+                "rr",
+                qualification.get("risk_reward"),
+            ),
             "checks": qualification,
         },
         "strategy_diagnostics": diagnostics,
