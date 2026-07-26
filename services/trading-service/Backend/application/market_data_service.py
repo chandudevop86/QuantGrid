@@ -348,3 +348,21 @@ def _feed_status(provider: MarketDataProvider, *, fresh: bool, errors: list[str]
     if fresh:
         return "LIVE FEED"
     return "DELAYED FEED"
+def _strategy_candles(
+    candles_response: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Return candles formatted for strategy execution.
+    """
+
+    candles = list(candles_response.get("candles") or [])
+    volume_missing = (
+        candles_response.get("volume_status")
+        == "not_reported_for_index"
+    )
+
+    if volume_missing:
+        for candle in candles:
+            candle["volume"] = None
+
+    return candles

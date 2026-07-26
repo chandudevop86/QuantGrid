@@ -1,0 +1,611 @@
+
+market_service = MarketDataService()
+
+def _audit_execution_result(
+    db: Session,
+    request: Request,
+    actor: User,
+    result: dict[str, Any],
+) -> None:
+    """
+    Audit the final execution result.
+    """
+
+    status = str(result.get("status", ""))
+
+    submitted = status in {
+        "paper_order_submitted",
+        "live_order_submitted",
+    }
+
+    action = (
+        "live_order_submitted"
+        if status == "live_order_submitted"
+        else (
+            "paper_order_submitted"
+            if status == "paper_order_submitted"
+            else "execution_blocked"
+        )
+    )
+
+    metadata: dict[str, Any] = {
+        "status": "submitted" if submitted else "rejected",
+        "strategy": result.get("strategy"),
+        "side": result.get("signal"),
+        "reason": result.get("reason"),
+        "execution_mode": result.get("execution_mode"),
+        "risk_decision": result.get("risk_decision"),
+        "trade_qualification": result.get("trade_qualification"),
+        "quality_grade": result.get("quality_grade"),
+        "tqe_score": result.get("tqe_score"),
+        "local_order_id": result.get("local_order_id"),
+        "broker_order_id": result.get("broker_order_id"),
+        "broker_status": result.get("broker_status"),
+        "trailing_stop_loss": result.get("trailing_stop_loss"),
+        "trailing_stop_pct": result.get("trailing_stop_pct"),
+        "broker_order": result.get("broker_order"),
+        "raw_safe_broker_response": result.get("raw_safe_broker_response"),
+    }
+
+    # Remove empty values to keep audit logs compact.
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
+    write_audit_log(
+        db=db,
+        action=action,
+        actor=actor,
+        target_type="symbol",
+        target_id=result.get("symbol"),
+        request=request,
+        metadata=metadata,
+    )
+
+
+def _audit_order_transition(
+    db: Session | None,
+    request: Request | None,
+    actor: User | None,
+    order: dict[str, Any],
+    previous_status: str,
+    broker_response: dict[str, Any] | None = None,
+) -> None:
+    """
+    Audit an order lifecycle status transition.
+    """
+
+    if db is None or request is None or actor is None:
+        return
+
+    metadata: dict[str, Any] = {
+        "from_status": previous_status,
+        "to_status": order.get("status"),
+        "status_reason": order.get("status_reason"),
+        "broker_order_id": order.get("broker_order_id"),
+        "symbol": order.get("symbol"),
+        "side": order.get("side"),
+        "quantity": order.get("quantity"),
+        "entry_price": order.get("entry_price"),
+        "stop_loss": order.get("stop_loss"),
+        "target": order.get("target"),
+        "trailing_stop_loss": order.get("trailing_stop_loss"),
+        "trailing_stop_pct": order.get("trailing_stop_pct"),
+        "broker_response": broker_response,
+    }
+
+    # Remove empty values
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
+    write_audit_log(
+        db=db,
+        action="order_status_transition",
+        actor=actor,
+        target_type="order",
+        target_id=order.get("local_order_id"),
+        request=request,
+        metadata=metadata,
+    )
+
+
+
+
+def _execution_qualification(
+    signal: StrategySignal,
+    *,
+    candles_1m: list[dict[str, Any]],
+    candles_15m: list[dict[str, Any]] | None,
+    execution_mode: str,
+) -> TradeQualification | None:
+    """
+    Run the Trade Qualification Engine (TQE) and enrich the signal metadata.
+    """
+
+    if len(candles_1m) < 20:
+        return None
+
+    qualification = TradeQualificationEngine().qualify(
+        signal=signal,
+        candles=candles_1m,
+        capital=100_000,
+        risk_pct=2,
+        m15_candles=candles_15m,
+        enforce_execution_checks=True,
+        execution_mode=execution_mode,
+    )
+
+    signal.metadata.update(
+        {
+            "trade_qualification": qualification.to_dict(),
+            "tqe_score": qualification.score,
+            "quality_grade": qualification.quality_grade,
+            "market_context": qualification.market_context,
+            "volume_status": qualification.volume_status,
+            "volatility_status": qualification.volatility_status,
+        }
+    )
+
+    return qualification
+
+
+
+from typing import Any
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from Backend.application.candle_validation import validate_live_candle
+from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
+from Backend.application.dto import serialize_signal
+from Backend.application.job_queue import enqueue_job
+from Backend.core.config import get_settings
+from Backend.core.database import get_db
+from Backend.application.notifications import alert_execution_event
+from Backend.application.order_management import OrderManagementService
+from Backend.application.order_store import (
+    broker_status_to_order_status,
+    create_order,
+    get_active_order_by_key,
+    should_create_position,
+    transition_order,
+)
+from Backend.application.paper_trade_store import create_paper_trade
+from Backend.application.position_store import create_open_position
+from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
+from Backend.application.signal_quality import decide_signal
+from Backend.application.signal_validation import diagnose_signal_run, validate_signals
+from Backend.application.trade_qualification_engine import TradeQualificationEngine, TradeQualification
+from Backend.application.trading_service import TradingService
+from Backend.application.trading_engine_upgrade import (
+    scale_position,
+    submit_paper_basket,
+    trading_engine_dashboard,
+)
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
+from Backend.domain.engine.order_factory import ExecutionEngine
+from Backend.domain.execution_constraints import (
+    apply_order_constraints,
+    requested_quantity,
+    validate_execution_constraints,
+)
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.models import User
+from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
+from Backend.infrastructure.broker.dhan_status import check_dhan_profile
+from Backend.application.market_data_store import latest_candles
+from Backend.application.kill_switch import kill_switch_status
+from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
+from Backend.presentation.api.roles import current_user, require_trade_execute
+from Backend.application.market_data_service import MarketDataService
+from Backend.presentation.api.market_api import get_price
+from Backend.config import Provider
+from typing import Literal
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Final
+
+
+router = APIRouter()
+AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
+service = ExecutionService()
+@router.post("/order")
+async def place_order(
+    signal: StrategySignal,
+    request: Request,
+    engine: ExecutionEngine = Depends(get_engine),
+    actor: User = Depends(require_trade_execute),
+    access: SubscriptionAccess = Depends(subscription_access),
+    execution_mode: str = Depends(_execution_mode),
+    db: Session = Depends(get_db),
+):
+    required_feature = "live_trade.execute" if execution_mode == "live" else "paper_trade.manual"
+    if not access.can(required_feature):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": required_feature, "current_plan": access.snapshot["plan_code"].upper(), "message": "Your active subscription does not include this execution mode."})
+    write_audit_log(
+        db,
+        action="execution_triggered",
+        actor=actor,
+        target_type="symbol",
+        target_id=signal.symbol,
+        request=request,
+        metadata={"mode": execution_mode, "strategy": signal.strategy_name},
+    )
+
+    if execution_mode == "live":
+        settings = get_settings()
+        if not getattr(settings, "live_trading_enabled", False):
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "live_trading_disabled"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading is disabled. Paper trading only.")
+        if not getattr(settings, "broker_configured", False):
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "broker_not_configured"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
+
+    candles_1m = latest_candles(signal.symbol, "1m", 100)
+    if not candles_1m:
+        try:
+            candles_1m = _strategy_candles(market_service.get_candles(signal.symbol, interval="1m", period="1d", limit=100))
+        except Exception:
+            candles_1m = []
+    candles_15m = latest_candles(signal.symbol, "15m", 100)
+    if not candles_15m:
+        try:
+            candles_15m = _strategy_candles(market_service.get_candles(signal.symbol, interval="15m", period="1d", limit=100))
+        except Exception:
+            candles_15m = []
+
+    shape_reason = _trade_shape_reason(signal)
+    if shape_reason:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=shape_reason,
+            execution_mode=execution_mode,
+            extra={"allowed": False},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
+    if execution_mode == "live" and not _request_is_https(request) and not _allow_insecure_live():
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason="Live trading requires HTTPS.",
+            execution_mode=execution_mode,
+            extra={
+                "allowed": False,
+                "risk_amount": 0.0,
+                "max_allowed_risk": 0.0,
+                "live_guardrail": "failed",
+            },
+        )
+        write_audit_log(
+            db,
+            action="execution_blocked",
+            actor=actor,
+            target_type="symbol",
+            target_id=signal.symbol,
+            request=request,
+            metadata={
+                "reason": "Live trading requires HTTPS.",
+                "status": "rejected",
+                "strategy": signal.strategy_name,
+                "side": signal.side,
+                "live_guardrail": "failed",
+            },
+        )
+        alert_execution_event(result)
+        return result
+
+    qualification = _execution_qualification(
+        signal,
+        candles_1m=candles_1m,
+        candles_by_timeframe=candles_by_timeframe,
+        execution_mode=execution_mode,
+    )
+    if qualification is not None and not qualification.allowed:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=f"TQE_REJECTED: {qualification.reason}",
+            execution_mode=execution_mode,
+            extra={"allowed": False, **_tqe_response_fields(qualification)},
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
+    risk_decision = validate_order_risk(signal, execution_mode=execution_mode, candles_1m=candles_1m)
+    _audit_risk_decision(
+        db,
+        request,
+        actor,
+        symbol=signal.symbol,
+        strategy=signal.strategy_name,
+        side=signal.side,
+        risk_decision=risk_decision,
+    )
+    if not risk_decision.allowed:
+        result = _paper_response(
+            status_value="rejected",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason=risk_decision.reason,
+            execution_mode=execution_mode,
+            extra=_risk_response_fields(risk_decision),
+        )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
+    if execution_mode == "live":
+        settings = get_settings()
+        guardrail_reason = _live_guardrail_failure(
+            request=request,
+            actor=actor,
+            settings=settings,
+            candles_1m=candles_1m,
+            risk_decision=risk_decision,
+            signal=signal,
+        )
+        if guardrail_reason:
+            result = _reject_live_guardrail(
+                db=db,
+                request=request,
+                actor=actor,
+                signal=signal,
+                reason=guardrail_reason,
+                execution_mode=execution_mode,
+                risk_decision=risk_decision,
+            )
+            alert_execution_event(result)
+            return result
+        if not settings.live_trading_enabled or not settings.broker_live_enabled:
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "live_trading_disabled"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading is disabled. Set BROKER_LIVE_ENABLED=true and enable live trading.")
+        if not settings.broker_configured:
+            write_audit_log(
+                db,
+                action="execution_blocked",
+                actor=actor,
+                target_type="symbol",
+                target_id=signal.symbol,
+                request=request,
+                metadata={"reason": "broker_not_configured"},
+            )
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
+        order = engine.order_from_signal(signal)
+        lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            "risk_approved",
+            db=db,
+            request=request,
+            actor=actor,
+            reason="Risk engine and live guardrails approved order.",
+        )
+        try:
+            broker_client = broker_client_for_mode(execution_mode)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "broker_submitted",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="Submitted to broker adapter.",
+            )
+            broker_order = await broker_client.place_order(order)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "broker_submitted",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="Broker accepted submission.",
+                broker_order_id=broker_order.broker_order_id,
+                broker_status=broker_order.status,
+                entry_price=broker_order.price,
+                broker_response=broker_order.to_dict(),
+            )
+            broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
+        except Exception as exc:
+            record_broker_failure(
+                reason=str(exc),
+                db=db,
+                actor=actor,
+                request=request,
+                metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
+            )
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "failed",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"BROKER_FAILURE: {exc}",
+            )
+            result = _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"BROKER_FAILURE: {exc}",
+                execution_mode=execution_mode,
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    **(_tqe_response_fields(qualification) if qualification is not None else {}),
+                    "broker_confirmed": False,
+                },
+            )
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
+        if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+            record_broker_failure(
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                db=db,
+                actor=actor,
+                request=request,
+                metadata={
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "phase": "broker_confirm",
+                    "broker_order_id": broker_status.broker_order_id,
+                    "broker_status": broker_status.status,
+                },
+            )
+            mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                mapped_status if mapped_status in {"rejected", "failed", "cancelled"} else "rejected",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                broker_order_id=broker_status.broker_order_id,
+                broker_status=broker_status.status,
+                entry_price=broker_status.price,
+                broker_response=broker_status.to_dict(),
+            )
+            result = _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                execution_mode=execution_mode,
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    **(_tqe_response_fields(qualification) if qualification is not None else {}),
+                    "broker_order_id": broker_status.broker_order_id,
+                    "broker_status": broker_status.status,
+                    "broker_confirmed": False,
+                    "broker_order": broker_status.to_dict(),
+                    "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+                },
+            )
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
+        order_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order,
+            order_status,
+            db=db,
+            request=request,
+            actor=actor,
+            reason=f"Broker status confirmed: {broker_status.status}",
+            broker_order_id=broker_status.broker_order_id,
+            broker_status=broker_status.status,
+            entry_price=broker_status.price or signal.entry_price,
+            broker_response=broker_status.to_dict(),
+        )
+        result = _paper_response(
+            status_value="live_order_submitted",
+            symbol=signal.symbol,
+            strategy=signal.strategy_name,
+            signal=signal,
+            reason="OK",
+            execution_mode=execution_mode,
+            extra={
+                **_risk_response_fields(risk_decision),
+                **(_tqe_response_fields(qualification) if qualification is not None else {}),
+                "broker_order_id": broker_status.broker_order_id,
+                "local_order_id": lifecycle_order.get("local_order_id") if lifecycle_order else None,
+                "broker_status": broker_status.status,
+                "broker_confirmed": True,
+                "broker_order": broker_status.to_dict(),
+                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+            },
+        )
+        create_paper_trade(
+            {
+                "strategy": signal.strategy_name,
+                "symbol": signal.symbol,
+                "side": signal.side,
+                "entry": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "target": signal.target_price,
+                "trailing_stop_loss": signal.trailing_stop_loss,
+                "trailing_stop_pct": signal.trailing_stop_pct,
+                "status": "live_order_submitted",
+                "pnl": 0.0,
+                "reason": "OK",
+                "broker_order_id": broker_status.broker_order_id,
+                "broker_status": broker_status.status,
+                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+                "signal_time": signal.signal_time.isoformat(),
+            }
+        )
+        if should_create_position(order_status):
+            create_open_position(
+                {
+                    "broker_order_id": broker_status.broker_order_id,
+                    "symbol": signal.symbol,
+                    "side": signal.side,
+                    "quantity": requested_quantity(signal),
+                    "entry_price": signal.entry_price,
+                    "stop_loss": signal.stop_loss,
+                    "target": signal.target_price,
+                    "trailing_stop_loss": signal.trailing_stop_loss,
+                    "trailing_stop_pct": signal.trailing_stop_pct,
+                    "current_price": broker_status.price or signal.entry_price,
+                    "opened_at": signal.signal_time.isoformat(),
+                }
+            )
+        _audit_execution_result(db, request, actor, result)
+        alert_execution_event(result)
+        return result
+
+    result = await _submit_paper_signal(
+        signal,
+        engine=engine,
+        execution_mode=execution_mode,
+        candles_1m=candles_1m,
+        candles_by_timeframe=candles_by_timeframe,
+        db=db,
+        request=request,
+        actor=actor,
+    )
+    _audit_execution_result(db, request, actor, result)
+    alert_execution_event(result)
+    return result

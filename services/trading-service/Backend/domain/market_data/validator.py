@@ -54,8 +54,36 @@ class MarketDataValidator:
             if (candles["high"] < candles["low"]).any():
                 errors.append("High < Low")
 
-        if candles.isna().any().any():
-            errors.append("NaN values present")
+        required_columns = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+        ]
+
+        missing_required = [
+            c for c in required_columns
+            if c not in candles.columns
+        ]
+
+        if missing_required:
+            errors.append(
+                f"Missing required columns: {missing_required}"
+            )
+
+        if not missing_required:
+            ohlcv = candles[required_columns]
+
+            if ohlcv.isna().any().any():
+                errors.append(
+                    "OHLCV contains NaN values"
+                )
+
+            if (ohlcv <= 0).any().any():
+                errors.append(
+                    "OHLCV contains invalid values"
+                )
 
         return ValidationResult(
             valid=len(errors) == 0,
