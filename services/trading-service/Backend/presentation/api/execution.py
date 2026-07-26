@@ -112,7 +112,7 @@ async def place_order(
         db=db,
     )
     
-  router = APIRouter()
+router = APIRouter()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
 service = ExecutionService()
 @router.post("/order")
