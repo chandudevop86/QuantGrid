@@ -318,10 +318,10 @@ async def place_order(
     "15m": candles_15m,
 }
     qualification = _execution_qualification(
-        signal,
-        candles_1m=candles_1m,
-        candles_by_timeframe=candles_by_timeframe,
-        execution_mode=execution_mode,
+    signal,
+    candles_1m=candles_1m,
+    candles_15m=candles_15m,
+    execution_mode=execution_mode,
     )
 
     print(
