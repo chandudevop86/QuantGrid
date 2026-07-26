@@ -27,6 +27,11 @@ class BaseStrategy(ABC):
 
     def run(self, data: Any, context: StrategyContext) -> list[StrategySignal]:
         candles = self.prepare_data(data)
+        print("========== CANDLE DEBUG ==========")
+        print(candles.tail(5))
+        print(candles.isna().sum())
+        print("==================================")
+
         validation = MarketDataValidator.validate(candles)
 
         if not validation.valid:
