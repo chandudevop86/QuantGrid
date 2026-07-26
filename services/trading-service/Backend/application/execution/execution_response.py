@@ -1,7 +1,8 @@
 from typing import Any
 
-from .models import StrategySignal, TradeQualification
 
+from Backend.domain.models.signal import StrategySignal
+from Backend.application.trade_qualification_engine import TradeQualification
 
 def _safe_float(value: Any) -> float | None:
     """
