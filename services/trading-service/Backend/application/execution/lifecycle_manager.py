@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+from typing import Any
+from fastapi import Request
+
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.security.models import User
+
+
+
 def _create_lifecycle_order(
     order: Any,
     *,
