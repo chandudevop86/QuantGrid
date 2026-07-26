@@ -1,8 +1,26 @@
 from __future__ import annotations
+from typing import Any
+import os
 
-from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from Backend.application.execution.execution_service import submit_order
+from Backend.application.market_data_service import (
+    MarketDataService,
+    _strategy_candles,
+)
+from Backend.application.execution.execution_response import _paper_response
+from Backend.application.execution.execution_pipeline import _submit_paper_signal
+from Backend.application.execution.execution_guardrails import (
+    _live_guardrail_failure,
+    _request_is_https,
+    _allow_insecure_live,
+)
+from Backend.application.execution.lifecycle_manager import (
+    _create_lifecycle_order,
+    _transition_lifecycle_order,
+)
+from Backend.application.execution.audit_manager import (
+    _audit_risk_decision,
+)
 from Backend.application.subscriptions import (
     SubscriptionAccess,
     subscription_access,
@@ -12,25 +30,14 @@ from Backend.domain.engine.order_factory import ExecutionEngine
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.models import User
 from Backend.presentation.api.roles import require_trade_execute
-
-#from .dependencies import (
-#   get_engine,
-#   _execution_mode,
-#)
-
-from typing import Any
-import os
-
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 #from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
 from Backend.application.dto import serialize_signal
 from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
-from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
 from Backend.application.order_management import OrderManagementService
 from Backend.application.order_store import (
@@ -59,9 +66,8 @@ from Backend.domain.execution_constraints import (
     requested_quantity,
     validate_execution_constraints,
 )
-from Backend.domain.models.signal import StrategySignal
+
 from Backend.domain.security.audit import write_audit_log
-from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import check_dhan_profile
 from Backend.application.market_data_store import latest_candles
@@ -75,7 +81,10 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Final
 
-
+router = APIRouter()
+market_service = MarketDataService()
+AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
+#service = ExecutionService()
 
 def get_engine():
     return ExecutionEngine()
@@ -84,11 +93,8 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
     if mode not in {"paper", "live"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid execution mode.")
     return mode
-
     
-router = APIRouter()
-AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
-#service = ExecutionService()
+
 @router.post("/order")
 async def place_order(
     signal: StrategySignal,
@@ -197,7 +203,10 @@ async def place_order(
         )
         alert_execution_event(result)
         return result
-
+    candles_by_timeframe = {
+    "1m": candles_1m,
+    "15m": candles_15m,
+}
     qualification = _execution_qualification(
         signal,
         candles_1m=candles_1m,
@@ -482,3 +491,4 @@ async def place_order(
     _audit_execution_result(db, request, actor, result)
     alert_execution_event(result)
     return result
+    
