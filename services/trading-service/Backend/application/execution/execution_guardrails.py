@@ -1,3 +1,12 @@
+from __future__ import annotations
+
+from fastapi import Request
+from typing import Any
+
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.security.models import User
+
+
 def _request_is_https(request: Request) -> bool:
     proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     return proto.split(",", 1)[0].strip().lower() == "https"
