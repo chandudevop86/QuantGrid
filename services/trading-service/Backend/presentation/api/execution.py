@@ -8,7 +8,7 @@ from Backend.application.market_data_service import (
     _strategy_candles,
 )
 from Backend.application.execution.execution_service import (
-    ExecutionEngine,
+    
     _audit_execution_result,
     _execution_qualification,
 )
