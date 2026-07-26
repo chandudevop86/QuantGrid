@@ -1,3 +1,8 @@
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
 class TradingEngineBasketLeg(BaseModel):
     """
     Single basket order leg.
@@ -83,8 +88,7 @@ class TradingEngineBasketLeg(BaseModel):
                     "BUY order: target must be above entry."
                 )
 
-        else:  # SELL
-
+        else:
             if self.stop_loss <= self.entry:
                 raise ValueError(
                     "SELL order: stop_loss must be above entry."
@@ -104,7 +108,9 @@ class TradingEngineBasketLeg(BaseModel):
             )
 
         return self
-    class TradingEngineBasketRequest(BaseModel):
+
+
+class TradingEngineBasketRequest(BaseModel):
     """
     Basket order execution request.
     """
@@ -136,7 +142,6 @@ class TradingEngineBasketLeg(BaseModel):
         value = value.strip()
 
         return value or None
-
 
 
 class TradingEngineScaleRequest(BaseModel):
@@ -185,4 +190,3 @@ class TradingEngineScaleRequest(BaseModel):
         value = value.strip()
 
         return value or None
-
