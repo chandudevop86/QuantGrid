@@ -88,34 +88,50 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Final
 
-def _trade_shape_reason(signal: StrategySignal) -> str:
+def _trade_shape_reason(signal: StrategySignal) -> str | None:
     """
-    Generate a human-readable explanation for the trade shape.
+    Validate trade shape.
+    Returns rejection reason only when invalid.
     """
+
+    entry = float(signal.entry_price)
+    stop = float(signal.stop_loss)
+    target = float(signal.target_price)
 
     side = str(signal.side).upper()
-    strategy = signal.strategy_name
 
-    entry = signal.entry_price
-    stop = signal.stop_loss
-    target = signal.target_price
+    if entry <= 0 or stop <= 0 or target <= 0:
+        return "INVALID_PRICE_VALUES"
 
     risk = abs(entry - stop)
     reward = abs(target - entry)
 
-    rr = 0
+    if risk <= 0:
+        return "INVALID_STOP_LOSS"
 
-    if risk > 0:
-        rr = reward / risk
+    rr = reward / risk
 
-    return (
-        f"{strategy} signal | "
-        f"{side} {signal.symbol} | "
-        f"Entry={entry} "
-        f"SL={stop} "
-        f"Target={target} "
-        f"RiskReward={rr:.2f}"
-    )
+    if rr < 1:
+        return f"INVALID_RISK_REWARD:{rr:.2f}"
+
+    if side == "BUY":
+        if stop >= entry:
+            return "BUY_STOP_MUST_BE_BELOW_ENTRY"
+
+        if target <= entry:
+            return "BUY_TARGET_MUST_BE_ABOVE_ENTRY"
+
+    elif side == "SELL":
+        if stop <= entry:
+            return "SELL_STOP_MUST_BE_ABOVE_ENTRY"
+
+        if target >= entry:
+            return "SELL_TARGET_MUST_BE_BELOW_ENTRY"
+
+    else:
+        return "INVALID_SIDE"
+
+    return None
 def _tqe_response_fields(
     *,
     qualification: dict[str, Any] | None = None,
