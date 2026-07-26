@@ -17,6 +17,7 @@ from Backend.application.execution.execution_guardrails import (
     _live_guardrail_failure,
     _request_is_https,
     _allow_insecure_live,
+    _execution_qualification,
 )
 from Backend.application.execution.lifecycle_manager import (
     _create_lifecycle_order,
@@ -28,6 +29,9 @@ from Backend.application.execution.audit_manager import (
 from Backend.application.subscriptions import (
     SubscriptionAccess,
     subscription_access,
+)
+from Backend.application.execution.audit_manager import (
+    _reject_live_guardrail,
 )
 from Backend.core.database import get_db
 from Backend.domain.engine.order_factory import ExecutionEngine
@@ -113,8 +117,65 @@ def _trade_shape_reason(signal: StrategySignal) -> str:
         f"Target={target} "
         f"RiskReward={rr:.2f}"
     )
+def _tqe_response_fields(
+    *,
+    qualification: dict[str, Any] | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Build Trade Quality Evaluation response fields.
+    """
 
+    qualification = qualification or {}
+    diagnostics = diagnostics or {}
 
+    return {
+        "trade_quality": {
+            "qualified": qualification.get("qualified", False),
+            "risk_reward": qualification.get("risk_reward"),
+            "checks": qualification,
+        },
+        "strategy_diagnostics": diagnostics,
+    }
+def _risk_response_fields(
+    *,
+    signal: StrategySignal,
+    qualification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Build risk evaluation fields for execution response.
+    """
+
+    qualification = qualification or {}
+
+    risk_amount = abs(
+        float(signal.entry_price) - float(signal.stop_loss)
+    )
+
+    reward_amount = abs(
+        float(signal.target_price) - float(signal.entry_price)
+    )
+
+    risk_reward = (
+        round(reward_amount / risk_amount, 2)
+        if risk_amount > 0
+        else 0.0
+    )
+
+    return {
+        "risk": {
+            "entry_price": signal.entry_price,
+            "stop_loss": signal.stop_loss,
+            "target_price": signal.target_price,
+            "risk_amount": round(risk_amount, 2),
+            "reward_amount": round(reward_amount, 2),
+            "risk_reward": risk_reward,
+            "passed": qualification.get(
+                "risk_reward_passed",
+                risk_reward >= 1.5,
+            ),
+        }
+    }
 router = APIRouter()
 market_service = MarketDataService()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
