@@ -14,10 +14,68 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.models import User
 from Backend.presentation.api.roles import require_trade_execute
 
-from .dependencies import (
-    get_engine,
-    _execution_mode,
+#from .dependencies import (
+#   get_engine,
+#   _execution_mode,
+#)
+
+from typing import Any
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+#from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from Backend.application.candle_validation import validate_live_candle
+from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
+from Backend.application.dto import serialize_signal
+from Backend.application.job_queue import enqueue_job
+from Backend.core.config import get_settings
+from Backend.core.database import get_db
+from Backend.application.notifications import alert_execution_event
+from Backend.application.order_management import OrderManagementService
+from Backend.application.order_store import (
+    broker_status_to_order_status,
+    create_order,
+    get_active_order_by_key,
+    should_create_position,
+    transition_order,
 )
+from Backend.application.paper_trade_store import create_paper_trade
+from Backend.application.position_store import create_open_position
+from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
+from Backend.application.signal_quality import decide_signal
+from Backend.application.signal_validation import diagnose_signal_run, validate_signals
+from Backend.application.trade_qualification_engine import TradeQualificationEngine, TradeQualification
+from Backend.application.trading_service import TradingService
+from Backend.application.trading_engine_upgrade import (
+    scale_position,
+    submit_paper_basket,
+    trading_engine_dashboard,
+)
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
+from Backend.domain.engine.order_factory import ExecutionEngine
+from Backend.domain.execution_constraints import (
+    apply_order_constraints,
+    requested_quantity,
+    validate_execution_constraints,
+)
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.models import User
+from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
+from Backend.infrastructure.broker.dhan_status import check_dhan_profile
+from Backend.application.market_data_store import latest_candles
+from Backend.application.kill_switch import kill_switch_status
+from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
+from Backend.presentation.api.roles import current_user, require_trade_execute
+from Backend.application.market_data_service import MarketDataService
+from Backend.presentation.api.market_api import get_price
+from Backend.config import Provider
+from typing import Literal
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Final
+
 
 router = APIRouter(
     prefix="/execution",

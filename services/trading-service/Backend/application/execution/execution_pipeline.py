@@ -1,3 +1,59 @@
+from typing import Any, Final, Literal
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.orm import Session
+from Backend.application.candle_validation import validate_live_candle
+from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
+from Backend.application.dto import serialize_signal
+from Backend.application.job_queue import enqueue_job
+from Backend.core.config import get_settings
+from Backend.core.database import get_db
+from Backend.application.notifications import alert_execution_event
+from Backend.application.order_management import OrderManagementService
+from Backend.application.order_store import (
+    broker_status_to_order_status,
+    create_order,
+    get_active_order_by_key,
+    should_create_position,
+    transition_order,
+)
+from Backend.application.paper_trade_store import create_paper_trade
+from Backend.application.position_store import create_open_position
+from Backend.application.risk_gate import evaluate_risk_gate, validate_order_risk
+from Backend.application.signal_quality import decide_signal
+from Backend.application.signal_validation import diagnose_signal_run, validate_signals
+from Backend.application.trade_qualification_engine import TradeQualificationEngine, TradeQualification
+from Backend.application.trading_service import TradingService
+from Backend.application.trading_engine_upgrade import (
+    scale_position,
+    submit_paper_basket,
+    trading_engine_dashboard,
+)
+from Backend.application.subscriptions import SubscriptionAccess, subscription_access
+from Backend.domain.engine.order_factory import ExecutionEngine
+from Backend.domain.execution_constraints import (
+    apply_order_constraints,
+    requested_quantity,
+    validate_execution_constraints,
+)
+from Backend.domain.models.signal import StrategySignal
+from Backend.domain.security.audit import write_audit_log
+from Backend.domain.security.models import User
+from Backend.infrastructure.broker.broker_client import BrokerClient, broker_client_for_mode
+from Backend.infrastructure.broker.dhan_status import check_dhan_profile
+from Backend.application.market_data_store import latest_candles
+from Backend.application.kill_switch import kill_switch_status
+from Backend.application.monitoring import observe_paper_order, observe_rejected_order, observe_signal_generation
+from Backend.presentation.api.roles import current_user, require_trade_execute
+from Backend.application.market_data_service import MarketDataService
+from Backend.presentation.api.market_api import get_price
+from Backend.config import Provider
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+
 async def _submit_paper_signal(
     signal: StrategySignal,
     *,
@@ -72,6 +128,7 @@ async def _submit_paper_signal(
             strategy_diagnostics=strategy_diagnostics,
             extra=_risk_response_fields(risk_decision),
         )
+    metadata = getattr(signal, "metadata", {}) or {}    
     candle_validation = validate_live_candle(candles_1m, interval="1m", mode="paper")
     market_status = str(getattr(candle_validation, "market_status", "LIVE MARKET"))
     if not candle_validation.valid_for_execution or market_status.upper() != "LIVE MARKET":
@@ -85,7 +142,7 @@ async def _submit_paper_signal(
             reason=reason,
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
-            extra={**_risk_response_fields(risk_decision), "allowed": False, "validation": candle_validation.model_dump()},
+            extra={**_risk_response_fields(risk_decision), "allowed": False, "validation":candle_validation.dict()},
         )
     candles_by_timeframe = {
     "1m": candles_1m,
@@ -278,7 +335,7 @@ async def _submit_paper_signal(
                 "broker_status": broker_status.status,
                 "broker_confirmed": False,
                 "broker_order": broker_status.to_dict(),
-                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+                "raw_safe_broker_response": (broker_status.metadata or {}).get("raw_safe"),
             },
         )
 
@@ -314,7 +371,7 @@ async def _submit_paper_signal(
             "broker_status": broker_status.status,
             "broker_confirmed": True,
             "broker_order": broker_status.to_dict(),
-            "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+            "raw_safe_broker_response": (broker_status.metadata or {}).get("raw_safe")
         },
     )
     create_paper_trade(
@@ -332,12 +389,12 @@ async def _submit_paper_signal(
             "reason": "OK",
             "broker_order_id": broker_status.broker_order_id,
             "score": decision.score,
-            "tqe_score": qualification.score if qualification is not None else signal.metadata.get("tqe_score", 0),
-            "quality_grade": qualification.quality_grade if qualification is not None else signal.metadata.get("quality_grade"),
+            "tqe_score": qualification.score if qualification is not None else metadata.get("tqe_score", 0),
+            "quality_grade": qualification.quality_grade if qualification is not None else metadata.get("quality_grade"),
             "regime": decision.regime,
             "signal_time": signal.signal_time.isoformat(),
             "broker_status": broker_status.status,
-            "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
+            "raw_safe_broker_response": (broker_status.metadata or {}).get("raw_safe")
         }
     )
     if should_create_position(order_status):
