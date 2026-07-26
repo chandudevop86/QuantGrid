@@ -81,6 +81,36 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Final
 
+def _trade_shape_reason(signal: StrategySignal) -> str:
+    """
+    Generate a human-readable explanation for the trade shape.
+    """
+
+    side = str(signal.side).upper()
+    strategy = signal.strategy_name
+
+    entry = signal.entry_price
+    stop = signal.stop_loss
+    target = signal.target_price
+
+    risk = abs(entry - stop)
+    reward = abs(target - entry)
+
+    rr = 0
+
+    if risk > 0:
+        rr = reward / risk
+
+    return (
+        f"{strategy} signal | "
+        f"{side} {signal.symbol} | "
+        f"Entry={entry} "
+        f"SL={stop} "
+        f"Target={target} "
+        f"RiskReward={rr:.2f}"
+    )
+
+
 router = APIRouter()
 market_service = MarketDataService()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
