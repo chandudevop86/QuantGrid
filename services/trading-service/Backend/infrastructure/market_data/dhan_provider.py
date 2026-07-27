@@ -213,7 +213,12 @@ class DhanProvider(EnvConfiguredProvider):
         self.mark_fetch()
 
         candles = _normalize_candles(symbol, raw)
-        return candles[-max(1, min(int(limit), 500)):]
+        limit = max(1, min(int(limit or 500), 500))
+
+        candles.sort(key=lambda c: c["timestamp"])
+
+        return candles[-limit:]
+    
 
     def subscribe_ticks(self, symbols: Iterable[str]) -> None:
         self._require_configured()
@@ -261,9 +266,10 @@ def _exchange_segment(symbol: str | None = None) -> str:
         value = os.getenv(f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}")
         if value:
             return value
-
+    
+    
     return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "NSE")
-
+    
 def _period_days(period: str) -> int:
     value = str(period or "1d").lower()
     if value.endswith("d"):
@@ -298,8 +304,15 @@ def _extract_quote(raw: Any, security_id: str) -> dict[str, Any]:
 
     return {}
 
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
+
 def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
     data = raw.get("data", raw) if isinstance(raw, dict) else raw
+
+    rows: list[dict[str, Any]] = []
+
     if isinstance(data, dict):
         timestamps = data.get("timestamp") or data.get("time") or data.get("start_Time") or []
         opens = data.get("open") or []
@@ -307,37 +320,80 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
         lows = data.get("low") or []
         closes = data.get("close") or []
         volumes = data.get("volume") or []
-        rows = []
-        for index, timestamp in enumerate(timestamps):
+
+        for index, ts in enumerate(timestamps):
+
+            volume = int(_safe_index(volumes, index) or 0)
+
+            # Skip fake Dhan candle
+            if volume == 0:
+                continue
+
+            dt = datetime.fromtimestamp(
+                float(ts),
+                ZoneInfo("Asia/Kolkata"),
+            )
+
+            # Ignore anything outside NSE trading hours
+            if (
+                dt.time() < time(9, 15)
+                or dt.time() > time(15, 29)
+            ):
+                continue
+
             rows.append(
                 {
                     "symbol": symbol.upper(),
-                    "timestamp": _timestamp_to_ist(timestamp),
+                    "timestamp": dt.isoformat(),
                     "exchange_timezone": "Asia/Kolkata",
                     "open": _to_float(_safe_index(opens, index)),
                     "high": _to_float(_safe_index(highs, index)),
                     "low": _to_float(_safe_index(lows, index)),
                     "close": _to_float(_safe_index(closes, index)),
-                    "volume": int(_safe_index(volumes, index) or 0),
+                    "volume": volume,
                 }
             )
+
         return rows
-        
+
     if isinstance(data, list):
-        return [
-            {
-                "symbol": symbol.upper(),
-                "timestamp": _timestamp_to_ist(item.get("timestamp") or item.get("time") or item.get("start_Time")),
-                "exchange_timezone": "Asia/Kolkata",
-                "open": _to_float(item.get("open")),
-                "high": _to_float(item.get("high")),
-                "low": _to_float(item.get("low")),
-                "close": _to_float(item.get("close")),
-                "volume": int(item.get("volume") or 0),
-            }
-            for item in data
-            if isinstance(item, dict) and item.get("close") is not None
-        ]
+        for item in data:
+
+            if not isinstance(item, dict):
+                continue
+
+            volume = int(item.get("volume") or 0)
+
+            if volume == 0:
+                continue
+
+            ts = item.get("timestamp") or item.get("time") or item.get("start_Time")
+
+            dt = datetime.fromisoformat(
+                _timestamp_to_ist(ts)
+            )
+
+            if (
+                dt.time() < time(9, 15)
+                or dt.time() > time(15, 29)
+            ):
+                continue
+
+            rows.append(
+                {
+                    "symbol": symbol.upper(),
+                    "timestamp": dt.isoformat(),
+                    "exchange_timezone": "Asia/Kolkata",
+                    "open": _to_float(item.get("open")),
+                    "high": _to_float(item.get("high")),
+                    "low": _to_float(item.get("low")),
+                    "close": _to_float(item.get("close")),
+                    "volume": volume,
+                }
+            )
+
+        return rows
+
     return []
 
 
