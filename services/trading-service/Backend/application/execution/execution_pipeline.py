@@ -60,7 +60,11 @@ from Backend.application.execution.execution_validator import market_aligned
 from Backend.application.execution.execution_service import (
     _execution_qualification,
 )
-
+from Backend.presentation.api.execution import (
+    _tqe_response_fields,
+    _transition_lifecycle_order,
+    _trade_shape_reason,
+)
 async def _submit_paper_signal(
     signal: StrategySignal,
     *,
@@ -68,6 +72,7 @@ async def _submit_paper_signal(
     execution_mode: str,
     candles_1m: list[dict[str, Any]] | None = None,
     candles_15m: list[dict[str, Any]] | None = None,
+    candles_by_timeframe: dict[str, list[dict[str, Any]]] | None = None,
     strategy_diagnostics: dict[str, Any] | None = None,
     broker_client: BrokerClient | None = None,
     db: Session | None = None,
