@@ -86,6 +86,8 @@ class TradeQualificationEngine:
             "h1": self._trend(h1) if h1 is not None else self._trend(frame),
             "m15": self._trend(m15) if m15 is not None else self._trend(frame),
         }
+        print("TQE Trends:", trends)
+        print("Signal Side:", signal.side)
         trend_aligned = self._trend_aligned(signal.side, trends)
         volume_score, volume_status = self._volume_score(row, signal)
         volatility_score, volatility_status, volatility_reject = self._volatility_score(row)
