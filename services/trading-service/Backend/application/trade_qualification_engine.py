@@ -255,7 +255,7 @@ class TradeQualificationEngine:
 
             # Need positive confirmation
             return score >= 3
-            @staticmethod
+    @staticmethod
     def _support_resistance(frame: pd.DataFrame, row: pd.Series, side: str) -> dict[str, Any]:
         recent = frame.tail(60)
         swing_high = float(recent["high"].max())
