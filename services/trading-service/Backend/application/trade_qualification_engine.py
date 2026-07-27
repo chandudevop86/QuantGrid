@@ -237,6 +237,12 @@ class TradeQualificationEngine:
         desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
         opposite = "DOWNTREND" if desired == "UPTREND" else "UPTREND"
         votes = list(trends.values())
+        
+        print("SIDE =", side)
+        print("DESIRED =", desired)
+        print("VOTES =", votes)
+        print("OPPOSITE COUNT =", votes.count(opposite))
+        
         return desired in votes and votes.count(opposite) == 0
 
     @staticmethod
