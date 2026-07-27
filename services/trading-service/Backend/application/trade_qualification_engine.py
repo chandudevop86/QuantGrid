@@ -232,29 +232,39 @@ class TradeQualificationEngine:
             return "DOWNTREND"
         return "RANGE"
 
-    @staticmethod
+    @@staticmethod
     def _trend_aligned(side: str, trends: dict[str, str]) -> bool:
-            desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
+        desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
 
-            weights = {
-                "h4": 3,
-                "h1": 2,
-                "m15": 1,
+        weights = {
+            "h4": 3,
+            "h1": 2,
+            "m15": 1,
+        }
+
+        aligned = 0
+        opposed = 0
+
+        for timeframe, trend in trends.items():
+            weight = weights.get(timeframe, 0)
+
+            if trend == desired:
+                aligned += weight
+            elif trend in ("UPTREND", "DOWNTREND"):
+                opposed += weight
+            # RANGE is neutral
+
+        print(
+            {
+                "desired": desired,
+                "aligned": aligned,
+                "opposed": opposed,
+                "trends": trends,
             }
+        )
 
-            score = 0
-
-            for timeframe, trend in trends.items():
-                if trend == desired:
-                    score += weights.get(timeframe, 0)
-                elif trend != "RANGE":
-                    score -= weights.get(timeframe, 0)
-
-            print("TREND SCORE:", score)
-            print("TRENDS:", trends)
-
-            # Need positive confirmation
-            return score >= 3
+        # Require at least one aligned trend and no stronger opposition
+        return aligned > 0 and aligned >= opposed
     @staticmethod
     def _support_resistance(frame: pd.DataFrame, row: pd.Series, side: str) -> dict[str, Any]:
         recent = frame.tail(60)
