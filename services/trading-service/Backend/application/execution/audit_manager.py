@@ -3,7 +3,10 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.models import User
-
+from Backend.application.execution.audit_manager import write_audit_log
+from Backend.application.execution.execution_response import _paper_response
+from Backend.application.execution.execution_pipeline import _risk
+from Backend.application.execution.helpers import risk_response_fields
     # ---------------------------------------------------------
     # Risk Decision Serializer
     # ---------------------------------------------------------

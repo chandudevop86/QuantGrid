@@ -1,8 +1,10 @@
+
+
 from typing import Any
 
-
 from Backend.domain.models.signal import StrategySignal
-from Backend.application.trade_qualification_engine import TradeQualification
+
+
 
 def _safe_float(value: Any) -> float | None:
     """
@@ -17,7 +19,40 @@ def _safe_float(value: Any) -> float | None:
 
     except (TypeError, ValueError):
         return None
+def _risk_response_fields(
+        risk_decision: Any,
+    ) -> dict[str, Any]:
+        """
+        Serialize risk decision into execution API response fields.
+        """
 
+        if risk_decision is None:
+            return {
+                "trade_quality": {},
+                "trade_qualification": {},
+            }
+
+        if hasattr(risk_decision, "model_dump"):
+            data = risk_decision.model_dump()
+
+        elif hasattr(risk_decision, "to_dict"):
+            data = risk_decision.to_dict()
+
+        elif isinstance(risk_decision, dict):
+            data = risk_decision
+
+        else:
+            try:
+                data = vars(risk_decision)
+            except TypeError:
+                data = {
+                    "value": str(risk_decision)
+                }
+
+        return {
+            "trade_quality": data,
+            "trade_qualification": data,
+        }
 
 
 def _paper_response(
