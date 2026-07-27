@@ -162,28 +162,38 @@ class DhanProvider(EnvConfiguredProvider):
             "raw_safe": _safe_raw(raw),
         }
 
-    def get_candles(self, symbol: str, interval: str, period: str, limit: int) -> list[dict[str, Any]]:
+    def get_candles(
+    self,
+    symbol: str,
+    interval: str,
+    period: str,
+    limit: int,
+) -> list[dict[str, Any]]:
         self._require_configured()
+
         dhan = dhan_sdk_client()
         instrument = self.resolve_instrument(symbol)
+
         security_id = instrument["security_id"]
         security = int(security_id) if str(security_id).isdigit() else security_id
         exchange_segment = instrument["exchange_segment"]
-        
+
         to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         from_date = to_date - timedelta(days=max(1, _period_days(period)))
+
+        # <<< ADD HERE >>>
         print(
-                "DHAN REQUEST:",
-                {
-                    "security_id": str(security),
-                    "exchange_segment": exchange_segment,
-                    "instrument_type": os.getenv(
-                        "DHAN_INSTRUMENT_TYPE",
-                        "INDEX"
-                    ),
-                    "from_date": from_date.isoformat(),
-                    "to_date": to_date.isoformat(),
-                }
+            "DHAN REQUEST:",
+            {
+                "security_id": str(security),
+                "exchange_segment": exchange_segment,
+                "instrument_type": os.getenv(
+                    "DHAN_INSTRUMENT_TYPE",
+                    "INDEX",
+                ),
+                "from_date": from_date.isoformat(),
+                "to_date": to_date.isoformat(),
+            },
         )
 
         raw = dhan.intraday_minute_data(
@@ -192,17 +202,12 @@ class DhanProvider(EnvConfiguredProvider):
             instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),
             from_date=from_date.isoformat(),
             to_date=to_date.isoformat(),
-            )
-        raw = dhan.intraday_minute_data(
-            security_id=str(security),
-            exchange_segment=exchange_segment,
-            instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),
-            from_date=from_date.isoformat(),
-            to_date=to_date.isoformat(),
         )
+
         print("========== DHAN RAW ==========")
         print(raw)
         print("========== END RAW ==========")
+
         self.mark_fetch()
         candles = _normalize_candles(symbol, raw)
         return candles[-max(1, min(int(limit), 500)):]
