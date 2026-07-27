@@ -425,15 +425,14 @@ def validate_live_candle(
     
     if not valid:
         diagnostics.append(
-            f"Latest candle is stale during live market: delay {delay.delay_seconds}s, "
-            f"reject threshold {settings.reject_after_seconds}s plus tolerance "
-            f"{settings.delayed_feed_tolerance_seconds}s."
-        )
-
+        f"Latest candle is stale: delay {delay.delay_seconds}s, "
+        f"reject threshold {settings.reject_after_seconds}s plus tolerance "
+        f"{settings.delayed_feed_tolerance_seconds}s."
+    )
     result = CandleValidationResult(
         valid=valid,
         valid_for_analysis=valid,
-        valid_for_execution=valid and status == "LIVE MARKET",
+        valid_for_execution=(valid and (status == "LIVE MARKET" or mode == "paper")),
         market_live=True,
         market_status=status,
         ui_status=_status_icon(status),
