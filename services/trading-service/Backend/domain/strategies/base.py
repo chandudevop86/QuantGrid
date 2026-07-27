@@ -10,6 +10,9 @@ from Backend.domain.indicators.indicators import IndicatorService
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.market_data.validator import MarketDataValidator
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class StrategyConfig:
@@ -25,24 +28,47 @@ class BaseStrategy(ABC):
         self.config = config or StrategyConfig()
         self.indicators = indicators or IndicatorService()
 
-    def run(self, data: Any, context: StrategyContext) -> list[StrategySignal]:
+    def run(
+    self,
+    data: Any,
+    context: StrategyContext
+    ) -> list[StrategySignal]:
+
         candles = self.prepare_data(data)
-        print("========== CANDLE DEBUG ==========")
-        print(candles.tail(5))
-        print(candles.isna().sum())
-        print("==================================")
+
+        logger.debug(
+            "Prepared candles: rows=%s columns=%s",
+            len(candles),
+            list(candles.columns)
+        )
+
+        if candles.empty:
+            logger.warning("Empty candle dataframe received")
+            return []
 
         validation = MarketDataValidator.validate(candles)
 
         if not validation.valid:
-            raise ValueError(
-            "; ".join(validation.errors)
-        )
-        if candles.empty:
+            logger.warning(
+                "Market data validation failed: %s",
+                validation.errors
+            )
             return []
-        self.validate_inputs(candles, context)
-        return self.generate_signals(candles, context)
 
+        self.validate_inputs(candles, context)
+
+        signals = self.generate_signals(
+            candles,
+            context
+        )
+
+        logger.info(
+            "Strategy=%s generated signals=%s",
+            self.__class__.__name__,
+            len(signals)
+        )
+
+        return signals
     def generate_signal(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
         return self.generate_signals(candles, context)
 
