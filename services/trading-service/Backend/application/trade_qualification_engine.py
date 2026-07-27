@@ -335,22 +335,81 @@ class TradeQualificationEngine:
         size = int(risk_amount // per_unit) if per_unit > 0 else 0
         return PositionSizing(round(float(capital), 2), round(float(risk_pct), 4), round(risk_amount, 2), max(0, size))
 
-    def _execution_checks(self, frame: pd.DataFrame, signal: StrategySignal, execution_mode: str) -> dict[str, Any]:
+    from datetime import timezone
+
+    def _execution_checks(
+        self,
+        frame: pd.DataFrame,
+        signal: StrategySignal,
+        execution_mode: str,
+        ) -> dict[str, Any]:
         candles = frame.tail(100).to_dict("records")
-        validation = validate_live_candle(candles, interval="1m", mode=execution_mode)
+        validation = validate_live_candle(
+            candles,
+            interval="1m",
+            mode=execution_mode,
+        )
+
+        # Debug: show latest candles
+        try:
+            print("=" * 80)
+            print("LAST 5 CANDLES")
+            print(frame[["timestamp", "close"]].tail(5).to_string(index=False))
+            print("=" * 80)
+        except Exception as exc:
+            print("Unable to print candle frame:", exc)
+
         latest = normalize_timestamp(candles[-1].get("timestamp")) if candles else None
         signal_time = normalize_timestamp(signal.signal_time)
+
         age_seconds = None
+
         if latest is not None and signal_time is not None:
-            age_seconds = max(0.0, (latest.astimezone(timezone.utc) - signal_time.astimezone(timezone.utc)).total_seconds())
+            latest = latest.astimezone(timezone.utc)
+            signal_time = signal_time.astimezone(timezone.utc)
+
+            age_seconds = max(
+                0.0,
+                (latest - signal_time).total_seconds(),
+            )
+
+            print("=" * 80)
+            print("EXECUTION CHECKS")
+            print("LATEST CANDLE :", latest.isoformat())
+            print("SIGNAL TIME   :", signal_time.isoformat())
+            print("AGE_SECONDS   :", age_seconds)
+            print("SIGNAL_FRESH  :", age_seconds <= 300)
+            print("=" * 80)
+        else:
+            print("=" * 80)
+            print("EXECUTION CHECKS")
+            print("LATEST CANDLE :", latest)
+            print("SIGNAL TIME   :", signal_time)
+            print("AGE_SECONDS   : None")
+            print("=" * 80)
+
         status = risk_status()
+
         return {
-            "market_open": bool(validation.market_live) if execution_mode == "live" else bool(validation.valid_for_analysis),
+            "market_open": (
+                bool(validation.market_live)
+                if execution_mode == "live"
+                else bool(validation.valid_for_analysis)
+            ),
             "feed_fresh": bool(validation.valid_for_execution),
             "signal_fresh": age_seconds is not None and age_seconds <= 300,
-            "risk_limit_available": int(status["open_positions"]) < int(status["max_open_positions"]),
-            "daily_loss_available": abs(min(0.0, float(status["daily_pnl"]))) < float(status["max_daily_loss"]),
-            "consecutive_losses_ok": int(status["consecutive_losses"]) < int(status["max_consecutive_losses"]),
+            "risk_limit_available": (
+                int(status["open_positions"])
+                < int(status["max_open_positions"])
+            ),
+            "daily_loss_available": (
+                abs(min(0.0, float(status["daily_pnl"])))
+                < float(status["max_daily_loss"])
+            ),
+            "consecutive_losses_ok": (
+                int(status["consecutive_losses"])
+                < int(status["max_consecutive_losses"])
+            ),
         }
 
     @staticmethod
