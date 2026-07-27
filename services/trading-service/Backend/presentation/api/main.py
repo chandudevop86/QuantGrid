@@ -195,7 +195,13 @@ def create_app():
             )
             if "response" in locals():
                 response.headers["X-Request-ID"] = request_id
-
+    @app.get("/")
+    def root():
+        return {
+        "service": "QuantGrid Trading API",
+        "status": "running",
+        "environment": "production"
+    }
     @app.get("/health")
     @app.get("/api/health")
     def health():
