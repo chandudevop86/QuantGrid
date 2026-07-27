@@ -53,25 +53,22 @@ from Backend.config import Provider
 from pydantic import BaseModel, Field, field_validator, model_validator
 from Backend.application.execution.execution_response import _paper_response,_risk_response_fields
 from Backend.application.execution.lifecycle_manager import _create_lifecycle_order
-from Backend.presentation.api.execution import _tqe_response_fields,_transition_lifecycle_order,_trade_shape_reason
+#from Backend.presentation.api.execution import _tqe_response_fields,_transition_lifecycle_order,_trade_shape_reason
 from Backend.application.execution.execution_validator import market_aligned
-from Backend.application.execution.execution_response import (
-    _paper_response,
-    _risk_response_fields,
-)
+
 
 from Backend.application.execution.execution_service import (
     _execution_qualification,
 )
 
-async def submit_paper_signal(
+async def _submit_paper_signal(
     signal: StrategySignal,
     *,
     engine: ExecutionEngine,
     execution_mode: str,
     candles_1m: list[dict[str, Any]] | None = None,
     candles_15m: list[dict[str, Any]] | None = None,
-    candles_by_timeframe: dict[str, list[dict[str, Any]]] | None = None,    strategy_diagnostics: dict[str, Any] | None = None,
+    strategy_diagnostics: dict[str, Any] | None = None,
     broker_client: BrokerClient | None = None,
     db: Session | None = None,
     request: Request | None = None,
