@@ -9,7 +9,7 @@ from Backend.application.recommendation_store import recommendation_metrics, rec
 from Backend.application.volume_analysis import analyze_volume as analyze_institutional_volume
 from Backend.domain.engine.strategy_engine import StrategyEngine
 
-
+candle_source="dhan"
 @dataclass(frozen=True, slots=True)
 class MarketDataInputs:
     symbol: str = "NIFTY"
@@ -749,7 +749,7 @@ def assess_trade_data_quality(market: MarketDataInputs, htf: dict[str, Any]) -> 
     scores: list[int] = []
 
     for timeframe, candles in series.items():
-        _valid, report = validate_candles(candles, source="stored-live-cache" if candles else "unavailable")
+        _valid, report = validate_candles(candles, source=candle_source if candles else "unavailable")
         payload = report.model_dump()
         integrity = _candle_series_integrity(candles, timeframe)
         payload["series_integrity"] = integrity
