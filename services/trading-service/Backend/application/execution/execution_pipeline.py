@@ -64,7 +64,7 @@ from Backend.application.execution.execution_service import (
     _execution_qualification,
 )
 
-async def _submit_paper_signal(
+async def submit_paper_signal(
     signal: StrategySignal,
     *,
     engine: ExecutionEngine,
