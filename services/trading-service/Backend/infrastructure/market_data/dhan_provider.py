@@ -180,6 +180,9 @@ class DhanProvider(EnvConfiguredProvider):
             from_date=from_date.isoformat(),
             to_date=to_date.isoformat(),
         )
+        print("========== DHAN RAW ==========")
+        print(raw)
+        print("========== END RAW ==========")
         self.mark_fetch()
         candles = _normalize_candles(symbol, raw)
         return candles[-max(1, min(int(limit), 500)):]
