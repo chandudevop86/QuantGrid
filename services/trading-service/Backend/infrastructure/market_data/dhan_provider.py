@@ -89,7 +89,7 @@ class DhanProvider(EnvConfiguredProvider):
         if security_id:
             return {
                 "security_id": security_id,
-                "exchange_segment": _exchange_segment(),
+                "exchange_segment": _exchange_segment(normalized_symbol),
                 "symbol": symbol.upper(),
             }
 
@@ -211,9 +211,18 @@ class DhanProvider(EnvConfiguredProvider):
 
 # --- Helper Functions (Outside Class Block) ---
 
-def _exchange_segment() -> str:
-    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "NSE")
+def _exchange_segment(symbol: str | None = None) -> str:
+    if symbol:
+        value = os.getenv(
+            f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}"
+        )
+        if value:
+            return value
 
+    return os.getenv(
+        "DHAN_MARKET_EXCHANGE_SEGMENT",
+        "NSE"
+    )
 
 def _period_days(period: str) -> int:
     value = str(period or "1d").lower()
