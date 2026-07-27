@@ -283,14 +283,19 @@ class TradeQualificationEngine:
             return 1, "Volume Supported"
         return 0, "Volume Neutral"
 
+    
     @staticmethod
     def _volatility_score(row: pd.Series) -> tuple[int, VolatilityRegime, bool]:
         close = max(float(row["close"]), 0.01)
         atr_pct = float(row.get("atr_14", 0.0) or 0.0) / close
-        if atr_pct < 0.00035:
-            return 0, "LOW", True
-        if atr_pct > 0.006:
+
+        # NIFTY intraday
+        if atr_pct < 0.00025:
+            return 0, "LOW", False
+
+        if atr_pct > 0.008:
             return 0, "HIGH", True
+
         return 1, "NORMAL", False
 
     @staticmethod
