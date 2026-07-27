@@ -5,6 +5,7 @@ from fastapi import Request
 
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.models import User
+from Backend.application.execution.execution_validator import market_aligned
 
 
 

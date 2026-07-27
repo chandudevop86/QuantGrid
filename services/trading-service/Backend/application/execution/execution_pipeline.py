@@ -51,6 +51,8 @@ from Backend.application.market_data_service import MarketDataService
 from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
 from pydantic import BaseModel, Field, field_validator, model_validator
+from Backend.application.execution.execution_response import _paper_response,_risk_response_fields
+from Backend.application.execution.lifecycle_manager import _create_lifecycle_order
 
 
 
@@ -61,13 +63,16 @@ async def _submit_paper_signal(
     execution_mode: str,
     candles_1m: list[dict[str, Any]] | None = None,
     candles_15m: list[dict[str, Any]] | None = None,
-    strategy_diagnostics: dict[str, Any] | None = None,
+    candles_by_timeframe: dict[str, list[dict[str, Any]]] | None = None,    strategy_diagnostics: dict[str, Any] | None = None,
     broker_client: BrokerClient | None = None,
     db: Session | None = None,
     request: Request | None = None,
     actor: User | None = None,
 ) -> dict[str, Any]:
     if execution_mode != "paper":
+        if candles_by_timeframe:
+            candles_1m = candles_by_timeframe.get("1m") or candles_1m
+            candles_15m = candles_by_timeframe.get("15m") or candles_15m
         observe_rejected_order("paper_mode_required", execution_mode)
         return _paper_response(
             status_value="rejected",
