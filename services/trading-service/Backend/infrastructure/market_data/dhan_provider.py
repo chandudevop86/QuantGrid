@@ -172,7 +172,27 @@ class DhanProvider(EnvConfiguredProvider):
         
         to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         from_date = to_date - timedelta(days=max(1, _period_days(period)))
-        
+        print(
+                "DHAN REQUEST:",
+                {
+                    "security_id": str(security),
+                    "exchange_segment": exchange_segment,
+                    "instrument_type": os.getenv(
+                        "DHAN_INSTRUMENT_TYPE",
+                        "INDEX"
+                    ),
+                    "from_date": from_date.isoformat(),
+                    "to_date": to_date.isoformat(),
+                }
+        )
+
+        raw = dhan.intraday_minute_data(
+            security_id=str(security),
+            exchange_segment=exchange_segment,
+            instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),
+            from_date=from_date.isoformat(),
+            to_date=to_date.isoformat(),
+            )
         raw = dhan.intraday_minute_data(
             security_id=str(security),
             exchange_segment=exchange_segment,
