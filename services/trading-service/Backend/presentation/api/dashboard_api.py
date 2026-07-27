@@ -36,7 +36,8 @@ from Backend.presentation.api.websocket_manager import manager
 from Backend.config import Provider
 from Backend.core.timezone import utc_to_ist
 
-display_time = utc_to_ist(timestamp)
+
+
 router = APIRouter()
 compatibility_router = APIRouter()
 logger = logging.getLogger("quantgrid.dashboard")
