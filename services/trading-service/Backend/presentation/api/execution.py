@@ -86,7 +86,7 @@ from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Final
+
 
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
     """
