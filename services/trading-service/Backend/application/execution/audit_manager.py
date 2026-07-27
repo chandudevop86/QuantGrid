@@ -5,7 +5,7 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.models import User
 
 from Backend.application.execution.execution_response import _paper_response, _risk_response_fields
-
+from Backend.domain.security.audit import write_audit_log
 
     # ---------------------------------------------------------
     # Risk Decision Serializer
