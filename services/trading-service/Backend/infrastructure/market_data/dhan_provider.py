@@ -163,17 +163,17 @@ class DhanProvider(EnvConfiguredProvider):
         }
 
     def get_candles(
-    self,
-    symbol: str,
-    interval: str,
-    period: str,
-    limit: int,
-) -> list[dict[str, Any]]:
+        self,
+        symbol: str,
+        interval: str,
+        period: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         self._require_configured()
 
         dhan = dhan_sdk_client()
-        instrument = self.resolve_instrument(symbol)
 
+        instrument = self.resolve_instrument(symbol)
         security_id = instrument["security_id"]
         security = int(security_id) if str(security_id).isdigit() else security_id
         exchange_segment = instrument["exchange_segment"]
@@ -181,7 +181,6 @@ class DhanProvider(EnvConfiguredProvider):
         to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date()
         from_date = to_date - timedelta(days=max(1, _period_days(period)))
 
-        # <<< ADD HERE >>>
         print(
             "DHAN REQUEST:",
             {
@@ -199,7 +198,10 @@ class DhanProvider(EnvConfiguredProvider):
         raw = dhan.intraday_minute_data(
             security_id=str(security),
             exchange_segment=exchange_segment,
-            instrument_type=os.getenv("DHAN_INSTRUMENT_TYPE", "INDEX"),
+            instrument_type=os.getenv(
+                "DHAN_INSTRUMENT_TYPE",
+                "INDEX",
+            ),
             from_date=from_date.isoformat(),
             to_date=to_date.isoformat(),
         )
@@ -209,6 +211,7 @@ class DhanProvider(EnvConfiguredProvider):
         print("========== END RAW ==========")
 
         self.mark_fetch()
+
         candles = _normalize_candles(symbol, raw)
         return candles[-max(1, min(int(limit), 500)):]
 
@@ -237,17 +240,29 @@ class DhanProvider(EnvConfiguredProvider):
 # --- Helper Functions (Outside Class Block) ---
 
 def _exchange_segment(symbol: str | None = None) -> str:
+    print("SYMBOL =", repr(symbol))
+
+    print(
+        "ENV LOOKUP =",
+        f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}" if symbol else None,
+    )
+
+    print(
+        "ENV VALUE =",
+        os.getenv(f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}") if symbol else None,
+    )
+
+    print(
+        "DEFAULT =",
+        os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT"),
+    )
+
     if symbol:
-        value = os.getenv(
-            f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}"
-        )
+        value = os.getenv(f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}")
         if value:
             return value
 
-    return os.getenv(
-        "DHAN_MARKET_EXCHANGE_SEGMENT",
-        "NSE"
-    )
+    return os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT", "NSE")
 
 def _period_days(period: str) -> int:
     value = str(period or "1d").lower()
