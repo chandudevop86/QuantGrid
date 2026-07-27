@@ -379,27 +379,27 @@ class TradeQualificationEngine:
             latest = latest.astimezone(timezone.utc)
             signal_time = signal_time.astimezone(timezone.utc)
 
-            age_seconds = max(
-                0.0,
-                (latest - signal_time).total_seconds(),
-            )
+            raw_age_seconds = (
+                latest - signal_time
+            ).total_seconds()
+
+            if raw_age_seconds < 0:
+                age_seconds = None
+            else:
+                age_seconds = raw_age_seconds
 
             print("=" * 80)
             print("EXECUTION CHECKS")
             print("LATEST CANDLE :", latest.isoformat())
             print("SIGNAL TIME   :", signal_time.isoformat())
+            print("RAW AGE       :", raw_age_seconds)
             print("AGE_SECONDS   :", age_seconds)
-            print("SIGNAL_FRESH  :", age_seconds <= 300)
+            print(
+                "SIGNAL_FRESH  :",
+                age_seconds is not None and age_seconds <= 300
+            )
             print("=" * 80)
-        else:
-            print("=" * 80)
-            print("EXECUTION CHECKS")
-            print("LATEST CANDLE :", latest)
-            print("SIGNAL TIME   :", signal_time)
-            print("AGE_SECONDS   : None")
-            print("=" * 80)
-
-        status = risk_status()
+            status = risk_status()
 
         return {
             "market_open": (
