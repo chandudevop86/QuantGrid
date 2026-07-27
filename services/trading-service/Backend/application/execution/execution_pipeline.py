@@ -53,9 +53,43 @@ from Backend.config import Provider
 from pydantic import BaseModel, Field, field_validator, model_validator
 from Backend.application.execution.execution_response import _paper_response,_risk_response_fields
 from Backend.application.execution.lifecycle_manager import _create_lifecycle_order
+from Backend.presentation.api.execution import _tqe_response_fields,_transition_lifecycle_order,_trade_shape_reason
+from Backend.application.execution.execution_validator import market_aligned
 
 
+def _load_execution_candles(
+    symbol: str,
+    *,
+    candles_1m: list[dict[str, Any]] | None = None,
+    candles_15m: list[dict[str, Any]] | None = None,
+) -> tuple[
+    list[dict[str, Any]] | None,
+    list[dict[str, Any]] | None,
+]:
+    """
+    Load execution candles.
+    Uses provided candles first, otherwise fetches latest cached candles.
+    """
 
+    if candles_1m is None:
+        try:
+            candles_1m = latest_candles(
+                symbol=symbol,
+                timeframe="1m",
+            )
+        except Exception:
+            candles_1m = None
+
+    if candles_15m is None:
+        try:
+            candles_15m = latest_candles(
+                symbol=symbol,
+                timeframe="15m",
+            )
+        except Exception:
+            candles_15m = None
+
+    return candles_1m, candles_15m
 async def _submit_paper_signal(
     signal: StrategySignal,
     *,
@@ -168,7 +202,7 @@ async def _submit_paper_signal(
             extra={**_risk_response_fields(risk_decision), "allowed": False, "decision": decision.to_dict()},
         )
 
-    if not _market_aligned(signal):
+    if not market_aligned(signal):
         observe_rejected_order("market_alignment_failed", execution_mode)
         return _paper_response(
             status_value="rejected",
