@@ -23,6 +23,7 @@ def _safe_float(value: Any) -> float | None:
 
 YAHOO_TRADING_GRADE_WARNING = "Yahoo data is not trading-grade and should not be used for live execution."
 YAHOO_SYMBOLS = {
+    "NIFT": "^NSEI",
     "NIFTY": "^NSEI",
     "NIFTY50": "^NSEI",
     "NIFTY_50": "^NSEI",
