@@ -55,7 +55,10 @@ from Backend.application.execution.execution_response import _paper_response,_ri
 from Backend.application.execution.lifecycle_manager import _create_lifecycle_order
 #from Backend.presentation.api.execution import _tqe_response_fields,_transition_lifecycle_order,_trade_shape_reason
 from Backend.application.execution.execution_validator import market_aligned
-
+from Backend.application.execution.execution_utils import (
+    _tqe_response_fields,
+    _risk_response_fields,
+)
 
 from Backend.application.execution.execution_service import (
     _execution_qualification,

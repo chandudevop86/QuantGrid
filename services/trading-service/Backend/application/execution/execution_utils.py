@@ -1,19 +1,30 @@
+from __future__ import annotations
+
+from typing import Any
+
+from Backend.domain.models.signal import StrategySignal
+
+
 def _safe_float(value: Any) -> float | None:
     """
     Safely convert a value to float.
 
     Returns:
-        float value if conversion succeeds.
-        None otherwise.
+        float if conversion succeeds, otherwise None.
     """
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
 def _trade_shape_reason(signal: StrategySignal) -> str | None:
     """
     Validate trade shape.
-    Returns rejection reason only when invalid.
+
+    Returns:
+        Rejection reason when invalid.
+        None when valid.
     """
 
     entry = float(signal.entry_price)
@@ -54,14 +65,15 @@ def _trade_shape_reason(signal: StrategySignal) -> str | None:
         return "INVALID_SIDE"
 
     return None
+
+
 def _tqe_response_fields(
-    qualification=None,
+    qualification: Any = None,
     *,
     diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Build Trade Quality Evaluation response fields.
-    Supports TradeQualification object or dict.
+    Build Trade Qualification Engine response fields.
     """
 
     if qualification is not None and hasattr(qualification, "to_dict"):
@@ -82,8 +94,11 @@ def _tqe_response_fields(
             ),
             "checks": qualification,
         },
+        "trade_qualification": qualification,
         "strategy_diagnostics": diagnostics,
     }
+
+
 def _risk_response_fields(
     *,
     signal: StrategySignal,
@@ -123,5 +138,3 @@ def _risk_response_fields(
             ),
         }
     }
-
-
