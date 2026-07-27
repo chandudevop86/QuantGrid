@@ -201,7 +201,7 @@ class TradeQualificationEngine:
         return matches.iloc[-1] if not matches.empty else frame.iloc[-1]
 
     def _market_context(self, frame: pd.DataFrame) -> MarketContext:
-        recent = frame.tail(12)
+        recent = frame.tail(60)
         if len(recent) < 6:
             return "RANGE"
         highs = recent["high"].astype(float)
@@ -234,18 +234,28 @@ class TradeQualificationEngine:
 
     @staticmethod
     def _trend_aligned(side: str, trends: dict[str, str]) -> bool:
-        desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
-        opposite = "DOWNTREND" if desired == "UPTREND" else "UPTREND"
-        votes = list(trends.values())
-        
-        print("SIDE =", side)
-        print("DESIRED =", desired)
-        print("VOTES =", votes)
-        print("OPPOSITE COUNT =", votes.count(opposite))
-        
-        return desired in votes and votes.count(opposite) == 0
+            desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
 
-    @staticmethod
+            weights = {
+                "h4": 3,
+                "h1": 2,
+                "m15": 1,
+            }
+
+            score = 0
+
+            for timeframe, trend in trends.items():
+                if trend == desired:
+                    score += weights.get(timeframe, 0)
+                elif trend != "RANGE":
+                    score -= weights.get(timeframe, 0)
+
+            print("TREND SCORE:", score)
+            print("TRENDS:", trends)
+
+            # Need positive confirmation
+            return score >= 3
+            @staticmethod
     def _support_resistance(frame: pd.DataFrame, row: pd.Series, side: str) -> dict[str, Any]:
         recent = frame.tail(60)
         swing_high = float(recent["high"].max())
