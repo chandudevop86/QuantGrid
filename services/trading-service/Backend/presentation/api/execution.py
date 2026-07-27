@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-import os
+
 
 from sqlalchemy.orm import Session
 from Backend.application.market_data_service import (
@@ -42,7 +42,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 #from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from Backend.application.candle_validation import validate_live_candle
-from Backend.application.broker_circuit_breaker import broker_circuit_status, record_broker_failure
+from Backend.application.broker_circuit_breaker import  record_broker_failure
 from Backend.application.dto import serialize_signal
 from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
