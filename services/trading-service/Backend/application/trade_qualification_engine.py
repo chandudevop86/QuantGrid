@@ -232,7 +232,7 @@ class TradeQualificationEngine:
             return "DOWNTREND"
         return "RANGE"
 
-    @@staticmethod
+    @staticmethod
     def _trend_aligned(side: str, trends: dict[str, str]) -> bool:
         desired = "UPTREND" if side.upper() == "BUY" else "DOWNTREND"
 
