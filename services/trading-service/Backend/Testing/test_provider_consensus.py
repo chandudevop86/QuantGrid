@@ -12,7 +12,12 @@ class FakeProvider:
     name = "fake_provider"
 
     live_suitable = True
-
+    def health_check(self):
+            return {
+            "healthy": True,
+            "latency_ms": 50,
+            "message": "OK"
+        }
     def get_ltp(self, symbol):
 
         return {
@@ -22,7 +27,7 @@ class FakeProvider:
             "volume": 100000,
             "timestamp": datetime.now(),
         }
-
+    
 
 def test_provider_snapshot():
 
