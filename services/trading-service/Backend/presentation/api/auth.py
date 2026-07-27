@@ -16,7 +16,9 @@ from Backend.domain.security.audit import request_ip, write_audit_log
 from Backend.domain.security.models import User
 from Backend.domain.security.passwords import hash_password, validate_password_policy, verify_password
 from Backend.domain.security.rate_limit import rate_limiter
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 admin_router = APIRouter()
 
@@ -149,7 +151,7 @@ def current_user(
     authorization: str | None = Header(default=None),
     db: Session = Depends(get_db),
 ) -> User:
-    print("AUTH HEADER =", repr(authorization))
+    logger.info("Authorization header received",extra={"token_present": bool(authorization)})
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
