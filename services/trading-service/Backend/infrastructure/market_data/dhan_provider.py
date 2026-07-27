@@ -70,7 +70,21 @@ class DhanProvider(EnvConfiguredProvider):
             )
 
         # Cash / Index instrument
-        security_id = os.getenv(f"DHAN_SECURITY_ID_{symbol.upper()}")
+        normalized_symbol = str(symbol).strip().upper()
+
+        print(
+            "DHAN DEBUG:",
+            {
+                "raw_symbol": repr(symbol),
+                "normalized": normalized_symbol,
+                "env_key": f"DHAN_SECURITY_ID_{normalized_symbol}",
+                "value": os.getenv(f"DHAN_SECURITY_ID_{normalized_symbol}"),
+            }
+        )
+
+        security_id = os.getenv(
+            f"DHAN_SECURITY_ID_{normalized_symbol}"
+        )
 
         if security_id:
             return {
