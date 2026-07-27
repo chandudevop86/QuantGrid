@@ -4,12 +4,14 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from Backend.core.timezone import ist_now
+
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": ist_now().isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
