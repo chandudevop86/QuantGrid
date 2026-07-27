@@ -86,7 +86,11 @@ from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
-
+from Backend.application.execution.execution_utils import (
+    _trade_shape_reason,
+    _tqe_response_fields,
+    _risk_response_fields,
+)
 
 router = APIRouter()
 market_service = MarketDataService()
