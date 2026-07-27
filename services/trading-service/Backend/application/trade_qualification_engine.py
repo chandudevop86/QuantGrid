@@ -383,10 +383,15 @@ class TradeQualificationEngine:
                 latest - signal_time
             ).total_seconds()
 
-            if raw_age_seconds < 0:
+            # Allow small clock/feed latency differences
+            if raw_age_seconds < -60:
                 age_seconds = None
+                freshness_reason = "signal_from_future"
             else:
-                age_seconds = raw_age_seconds
+                age_seconds = max(raw_age_seconds, 0)
+                freshness_reason = "fresh"
+
+            print("FRESHNESS STATUS:", freshness_reason)
 
             print("=" * 80)
             print("EXECUTION CHECKS")
