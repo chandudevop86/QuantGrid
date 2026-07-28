@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
-
+import numpy as np
 
 OHLCV_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
 
