@@ -1,7 +1,10 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.database.connection import SessionLocal
+
 from app.scheduler.downloader import market_downloader
+
+from app.config import settings
 
 
 
@@ -15,28 +18,57 @@ def download_market_data():
     db = SessionLocal()
 
 
+    symbols = [
+
+        (
+            "NIFTY",
+            settings.DHAN_SECURITY_ID_NIFTY
+        ),
+
+        (
+            "BANKNIFTY",
+            settings.DHAN_SECURITY_ID_BANKNIFTY
+        ),
+
+        (
+            "FINNIFTY",
+            settings.DHAN_SECURITY_ID_FINNIFTY
+        )
+
+    ]
+
+
     try:
 
-        # NIFTY example
-        market_downloader.download_symbol(
+        for symbol, security_id in symbols:
 
-            db,
 
-            symbol="NIFTY",
+            result = market_downloader.download_symbol(
 
-            security_id="13",
+                db,
 
-            exchange_segment="IDX_I",
+                symbol=symbol,
 
-            interval="1"
+                security_id=security_id,
 
-        )
+                exchange_segment=settings.DHAN_EXCHANGE_SEGMENT_INDEX,
+
+                interval="1"
+
+            )
+
+
+            print(
+                "Market download:",
+                result
+            )
 
 
     except Exception as e:
 
         print(
-            f"Market download failed: {e}"
+            "Market download failed:",
+            e
         )
 
 
@@ -47,6 +79,7 @@ def download_market_data():
 
 
 def start_scheduler():
+
 
     scheduler.add_job(
 
