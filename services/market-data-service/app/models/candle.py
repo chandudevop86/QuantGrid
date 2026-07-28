@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from sqlalchemy import (
     Column,
-    Integer,
     String,
     Float,
-    DateTime,
-    UniqueConstraint
+    Integer,
+    Text,
+    PrimaryKeyConstraint,
 )
 
 from app.database.connection import Base
@@ -15,33 +17,26 @@ class Candle(Base):
     __tablename__ = "market_candles"
 
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
-
-
     symbol = Column(
-        String(50),
+        String(32),
         nullable=False
     )
 
 
-    exchange = Column(
+    interval = Column(
         String(20),
         nullable=False
     )
 
 
-    timeframe = Column(
-        String(10),
+    timestamp = Column(
+        String(40),
         nullable=False
     )
 
 
-    timestamp = Column(
-        DateTime,
+    market_symbol = Column(
+        String(64),
         nullable=False
     )
 
@@ -71,22 +66,40 @@ class Candle(Base):
 
 
     volume = Column(
-        Float,
-        default=0
+        Integer,
+        nullable=True
     )
 
 
     source = Column(
-        String(30),
-        default="dhan"
+        String(80),
+        nullable=False
+    )
+
+
+    exchange_timezone = Column(
+        String(80),
+        nullable=True
+    )
+
+
+    stored_at = Column(
+        String(40),
+        nullable=False
+    )
+
+
+    payload_json = Column(
+        Text,
+        nullable=False
     )
 
 
     __table_args__ = (
 
-        UniqueConstraint(
+        PrimaryKeyConstraint(
             "symbol",
-            "timeframe",
+            "interval",
             "timestamp"
         ),
 
