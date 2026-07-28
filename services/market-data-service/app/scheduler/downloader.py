@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.providers.dhan_provider import DhanProvider
 from app.repository.candle_repository import candle_repository
 from app.cache.redis_client import set_latest_candle
-
+from zoneinfo import ZoneInfo
 class MarketDataDownloader:
 
 
@@ -66,6 +66,13 @@ class MarketDataDownloader:
 
         # Store latest candle in Redis
 
+        candles = candles.sort_values(
+            by="timestamp"
+        ).reset_index(
+            drop=True
+        )
+
+
         latest = candles.iloc[-1]
 
 
@@ -80,6 +87,11 @@ class MarketDataDownloader:
 
                 "timestamp": str(
                     latest["timestamp"]
+                    .tz_convert(
+                        ZoneInfo("Asia/Kolkata")
+                    )
+                    if latest["timestamp"].tzinfo
+                    else latest["timestamp"]
                 ),
 
                 "open": float(
