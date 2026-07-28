@@ -5,7 +5,7 @@ import pandas as pd
 from dhanhq import DhanContext, dhanhq
 
 from app.config import settings
-
+from datetime import date, timedelta
 
 class DhanProvider:
 
@@ -52,67 +52,104 @@ class DhanProvider:
 
 
     def get_intraday_candles(
-        self,
-        security_id: str,
-        exchange_segment: str,
-        interval: str = "1"
-    ) -> pd.DataFrame:
+    self,
+    security_id: str,
+    exchange_segment: str,
+    interval: str = "1"
+):
+
+    if not self.client:
+
+        raise Exception(
+            "Dhan credentials missing"
+        )
 
 
-        if not self.client:
+    try:
 
-            raise Exception(
-                "Dhan connection not initialized"
-            )
+        today = date.today()
 
-
-        try:
-
-            response = self.client.intraday_minute_data(
-
-                security_id=security_id,
-
-                exchange_segment=exchange_segment,
-
-                instrument_type="INDEX",
-
-                interval=interval
-
-            )
+        from_date = (
+            today - timedelta(days=5)
+        ).strftime("%Y-%m-%d")
 
 
-            if not response:
-
-                return pd.DataFrame()
-
-
-            data = response.get(
-                "data",
-                {}
-            )
+        to_date = today.strftime(
+            "%Y-%m-%d"
+        )
 
 
-            df = pd.DataFrame(data)
+        response = self.client.intraday_minute_data(
+
+            security_id=security_id,
+
+            exchange_segment=exchange_segment,
+
+            instrument_type="INDEX",
+
+            interval=interval,
+
+            from_date=from_date,
+
+            to_date=to_date
+
+        )
 
 
-            if df.empty:
+        if not response:
 
-                return df
+            return pd.DataFrame()
 
 
-            if "timestamp" in df.columns:
 
-                df["timestamp"] = pd.to_datetime(
-                    df["timestamp"],
-                    unit="s"
-                )
+        data = response.get(
+            "data",
+            {}
+        )
 
+
+        if not data:
+
+            return pd.DataFrame()
+
+
+
+        df = pd.DataFrame(data)
+
+
+
+        if df.empty:
 
             return df
 
 
-        except Exception as e:
 
-            raise Exception(
-                f"Dhan intraday failed: {e}"
-            )
+        df["timestamp"] = pd.to_datetime(
+
+            df["timestamp"],
+
+            unit="s"
+
+        )
+
+
+
+        return df[
+            [
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+            ]
+        ]
+
+
+
+    except Exception as e:
+
+
+        raise Exception(
+            f"Dhan intraday failed: {e}"
+        )
