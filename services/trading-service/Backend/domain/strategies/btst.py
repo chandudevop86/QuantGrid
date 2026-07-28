@@ -135,11 +135,14 @@ class BTSTStrategy(BaseStrategy):
                     row["timestamp"],
                     side,
                 )
-            if eod is None:
+            
                 logger.info(
-                    "[%s] Reject: EOD confirmation failed",
+                    "BTST rejected | "
+                    "time=%s side=%s reason=EOD_FAILED",
                     row["timestamp"],
+                    side,
                 )
+
                 continue
 
             momentum_ok = self.scoring.momentum_confirmed(
