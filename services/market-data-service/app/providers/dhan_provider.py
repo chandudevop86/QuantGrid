@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pandas as pd
-from dhanhq import dhanhq
+
+from dhanhq import DhanContext, dhanhq
 
 from app.config import settings
 
@@ -12,12 +13,24 @@ class DhanProvider:
     def __init__(self):
 
         self.client = None
+        self.context = None
 
-        if settings.DHAN_ACCESS_TOKEN:
+
+        if (
+            settings.DHAN_CLIENT_ID
+            and settings.DHAN_ACCESS_TOKEN
+        ):
+
+            self.context = DhanContext(
+                settings.DHAN_CLIENT_ID,
+                settings.DHAN_ACCESS_TOKEN
+            )
+
 
             self.client = dhanhq(
-                access_token=settings.DHAN_ACCESS_TOKEN
+                self.context
             )
+
 
 
     def connected(self) -> bool:
@@ -26,27 +39,35 @@ class DhanProvider:
 
 
 
-    def get_historical_candles(
+    def get_connection_status(self):
+
+        return {
+
+            "provider": "dhan",
+
+            "connected": self.connected()
+
+        }
+
+
+
+    def get_intraday_candles(
         self,
         security_id: str,
         exchange_segment: str,
-        timeframe: str,
-        start_date: str,
-        end_date: str
-
+        interval: str = "1"
     ) -> pd.DataFrame:
 
 
         if not self.client:
 
             raise Exception(
-                "Dhan access token missing"
+                "Dhan connection not initialized"
             )
 
 
         try:
 
-            # Dhan intraday candles
             response = self.client.intraday_minute_data(
 
                 security_id=security_id,
@@ -55,7 +76,7 @@ class DhanProvider:
 
                 instrument_type="INDEX",
 
-                interval=timeframe
+                interval=interval
 
             )
 
@@ -79,21 +100,6 @@ class DhanProvider:
                 return df
 
 
-            df.rename(
-                columns={
-
-                    "timestamp": "timestamp",
-                    "open": "open",
-                    "high": "high",
-                    "low": "low",
-                    "close": "close",
-                    "volume": "volume"
-
-                },
-                inplace=True
-            )
-
-
             if "timestamp" in df.columns:
 
                 df["timestamp"] = pd.to_datetime(
@@ -102,32 +108,11 @@ class DhanProvider:
                 )
 
 
-            return df[
-                [
-                    "timestamp",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "volume"
-                ]
-            ]
+            return df
 
 
         except Exception as e:
 
             raise Exception(
-                f"Dhan historical API failed: {e}"
+                f"Dhan intraday failed: {e}"
             )
-
-
-
-    def get_connection_status(self):
-
-        return {
-
-            "provider": "dhan",
-
-            "connected": self.connected()
-
-        }
