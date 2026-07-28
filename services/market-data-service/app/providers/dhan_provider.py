@@ -81,7 +81,9 @@ class DhanProvider:
                     today - timedelta(days=5)
                 ).strftime("%Y-%m-%d")
 
-
+            print("latest_timestamp:", latest_timestamp)
+            print("from_date:", from_date)
+            print("to_date:", to_date)
             response = self.client.intraday_minute_data(
 
                 security_id=security_id,
@@ -97,7 +99,9 @@ class DhanProvider:
                 to_date=to_date
 
             )
-
+            print("status:", response.get("status"))
+            print("remarks:", response.get("remarks"))
+            print("data length:", len(response.get("data", [])))
 
             if not response:
 
