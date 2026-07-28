@@ -6,18 +6,22 @@ import pandas as pd
 
 from Backend.domain.btst.models import EODConfirmation, Side
 
+
 logger = logging.getLogger(__name__)
 
 
 class EODConfirmationEngine:
+
     def __init__(
         self,
         *,
-        close_window_minutes: int = 30,
-        close_strength_threshold: float = 0.75,
+        close_window_minutes: int = 60,
+        close_strength_threshold: float = 0.70,
     ) -> None:
+
         self.close_window_minutes = int(close_window_minutes)
         self.close_strength_threshold = float(close_strength_threshold)
+
 
     def confirm(
         self,
@@ -27,101 +31,135 @@ class EODConfirmationEngine:
     ) -> EODConfirmation | None:
 
         if candles.empty:
-            logger.info("BTST EOD Reject: empty dataframe")
             return None
+
 
         row = candles.iloc[index]
 
         session = str(row["session_day"])
 
-        session_frame = candles[candles["session_day"] == session]
+        session_frame = candles[
+            candles["session_day"] == session
+        ]
+
 
         if session_frame.empty:
-            logger.info(
-                "BTST EOD Reject: session=%s not found",
-                session,
+            logger.debug(
+                "BTST EOD reject: empty session"
             )
             return None
 
-        timestamp = pd.Timestamp(row["timestamp"])
-        session_end = pd.Timestamp(session_frame["timestamp"].max())
+
+        timestamp = pd.Timestamp(
+            row["timestamp"]
+        )
+
+        session_end = pd.Timestamp(
+            session_frame["timestamp"].max()
+        )
+
 
         minutes_to_close = (
             session_end - timestamp
-        ).total_seconds() / 60.0
+        ).total_seconds() / 60
 
+
+        #
+        # Allow last hour candles
+        #
         near_close = (
-            0.0 <= minutes_to_close <= self.close_window_minutes
+            0 <= minutes_to_close <= self.close_window_minutes
         )
+
 
         if not near_close:
-            logger.info(
-                "BTST EOD Reject: %s "
-                "minutes_to_close=%.1f allowed<=%d",
+
+            logger.debug(
+                "BTST EOD reject: not near close "
+                "time=%s minutes_left=%.2f",
                 timestamp,
                 minutes_to_close,
-                self.close_window_minutes,
             )
+
             return None
 
-        history = session_frame[
-            session_frame["timestamp"] <= timestamp
+
+
+        current_session = session_frame.loc[
+            session_frame.index <= index
         ]
 
-        if history.empty:
-            logger.info(
-                "BTST EOD Reject: no intraday history"
-            )
+
+        if current_session.empty:
             return None
 
-        day_high = float(history["high"].max())
-        day_low = float(history["low"].min())
 
-        day_range = max(day_high - day_low, 0.01)
+        day_high = float(
+            current_session["high"].max()
+        )
 
-        close = float(row["close"])
+        day_low = float(
+            current_session["low"].min()
+        )
+
+        close = float(
+            row["close"]
+        )
+
+
+        day_range = max(
+            day_high - day_low,
+            0.01,
+        )
+
 
         if side == "BUY":
-            strength = (close - day_low) / day_range
-        else:
-            strength = (day_high - close) / day_range
 
-        if strength < self.close_strength_threshold:
-            logger.info(
-                "BTST EOD Reject: %s "
-                "strength=%.3f required=%.3f "
-                "side=%s close=%.2f high=%.2f low=%.2f",
-                timestamp,
-                strength,
-                self.close_strength_threshold,
-                side,
-                close,
-                day_high,
-                day_low,
+            strength = (
+                close - day_low
+            ) / day_range
+
+            reason = (
+                "BUY close strength near day high"
             )
-            return None
 
-        reason = (
-            "close near day high into EOD"
-            if side == "BUY"
-            else "close near day low into EOD"
-        )
+        else:
+
+            strength = (
+                day_high - close
+            ) / day_range
+
+            reason = (
+                "SELL close strength near day low"
+            )
+
+
 
         logger.info(
-            "BTST EOD PASS: %s "
-            "side=%s strength=%.3f "
-            "minutes_to_close=%.1f",
-            timestamp,
+            "BTST EOD check side=%s strength=%.2f "
+            "threshold=%.2f",
             side,
             strength,
-            minutes_to_close,
+            self.close_strength_threshold,
         )
 
+
+        if strength < self.close_strength_threshold:
+
+            logger.debug(
+                "BTST EOD reject: weak close strength %.2f",
+                strength,
+            )
+
+            return None
+
+
+
         return EODConfirmation(
-            side=side,
-            near_close=True,
-            close_strength=min(1.0, strength),
-            day_high=day_high,
-            day_low=day_low,
-            reason=reason,
+            side,
+            True,
+            min(1.0, strength),
+            day_high,
+            day_low,
+            reason,
         )
