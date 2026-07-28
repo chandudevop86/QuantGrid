@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
+import json
 
 import pandas as pd
 
@@ -13,22 +14,28 @@ from app.models.candle import Candle
 class CandleRepository:
 
 
-
     def save_candle(
         self,
         db: Session,
         candle_data: dict
     ):
 
-
         existing = (
+
             db.query(Candle)
+
             .filter(
+
                 Candle.symbol == candle_data["symbol"],
-                Candle.timeframe == candle_data["timeframe"],
+
+                Candle.interval == candle_data["interval"],
+
                 Candle.timestamp == candle_data["timestamp"]
+
             )
+
             .first()
+
         )
 
 
@@ -42,28 +49,64 @@ class CandleRepository:
 
             symbol=candle_data["symbol"],
 
-            exchange=candle_data["exchange"],
 
-            timeframe=candle_data["timeframe"],
+            interval=candle_data["interval"],
+
 
             timestamp=candle_data["timestamp"],
 
-            open=candle_data["open"],
 
-            high=candle_data["high"],
-
-            low=candle_data["low"],
-
-            close=candle_data["close"],
-
-            volume=candle_data.get(
-                "volume",
-                0
+            market_symbol=candle_data.get(
+                "market_symbol",
+                candle_data["symbol"]
             ),
+
+
+            open=float(
+                candle_data["open"]
+            ),
+
+
+            high=float(
+                candle_data["high"]
+            ),
+
+
+            low=float(
+                candle_data["low"]
+            ),
+
+
+            close=float(
+                candle_data["close"]
+            ),
+
+
+            volume=int(
+                candle_data.get(
+                    "volume",
+                    0
+                )
+            ),
+
 
             source=candle_data.get(
                 "source",
                 "dhan"
+            ),
+
+
+            exchange_timezone="Asia/Kolkata",
+
+
+            stored_at=datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+
+            payload_json=json.dumps(
+                candle_data,
+                default=str
             )
 
         )
@@ -80,17 +123,13 @@ class CandleRepository:
 
 
 
-
-
     def save_dataframe(
         self,
         db: Session,
         df: pd.DataFrame,
         symbol: str,
-        exchange: str,
-        timeframe: str
+        interval: str
     ):
-
 
         saved = 0
 
@@ -102,26 +141,33 @@ class CandleRepository:
 
                 "symbol": symbol,
 
-                "exchange": exchange,
+                "interval": interval,
 
-                "timeframe": timeframe,
-
-                "timestamp": row["timestamp"],
-
-                "open": float(row["open"]),
-
-                "high": float(row["high"]),
-
-                "low": float(row["low"]),
-
-                "close": float(row["close"]),
-
-                "volume": float(
-                    row.get(
-                        "volume",
-                        0
-                    )
+                "timestamp": str(
+                    row["timestamp"]
                 ),
+
+
+                "market_symbol": symbol,
+
+
+                "open": row["open"],
+
+
+                "high": row["high"],
+
+
+                "low": row["low"],
+
+
+                "close": row["close"],
+
+
+                "volume": row.get(
+                    "volume",
+                    0
+                ),
+
 
                 "source": "dhan"
 
@@ -142,13 +188,11 @@ class CandleRepository:
 
 
 
-
-
     def get_latest(
         self,
         db: Session,
         symbol: str,
-        timeframe: str
+        interval: str
     ):
 
 
@@ -157,13 +201,17 @@ class CandleRepository:
             db.query(Candle)
 
             .filter(
+
                 Candle.symbol == symbol,
 
-                Candle.timeframe == timeframe
+                Candle.interval == interval
+
             )
 
             .order_by(
+
                 Candle.timestamp.desc()
+
             )
 
             .first()
@@ -172,13 +220,11 @@ class CandleRepository:
 
 
 
-
-
     def get_history(
         self,
         db: Session,
         symbol: str,
-        timeframe: str,
+        interval: str,
         limit: int = 500
     ):
 
@@ -191,7 +237,7 @@ class CandleRepository:
 
                 Candle.symbol == symbol,
 
-                Candle.timeframe == timeframe
+                Candle.interval == interval
 
             )
 
