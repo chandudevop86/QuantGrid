@@ -55,7 +55,8 @@ class DhanProvider:
     self,
     security_id: str,
     exchange_segment: str,
-    interval: str = "1"
+    interval: str = "1",
+    latest_timestamp : str | None = None
     ):
 
         if not self.client:
@@ -68,15 +69,17 @@ class DhanProvider:
         try:
 
             today = date.today()
+            if latest_timestamp:
+                from_date = latest_timestamp[:10]
+            else:
+                from_date = (
+                    today - timedelta(days=5)
+                ).strftime("%Y-%m-%d")
 
-            from_date = (
-                today - timedelta(days=5)
-            ).strftime("%Y-%m-%d")
 
-
-            to_date = today.strftime(
-                "%Y-%m-%d"
-            )
+                to_date = today.strftime(
+                    "%Y-%m-%d"
+                )
 
 
             response = self.client.intraday_minute_data(

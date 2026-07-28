@@ -228,6 +228,7 @@ class CandleRepository:
 
 
         return saved
+
     def get_latest(
         self,
         db: Session,
@@ -292,7 +293,36 @@ class CandleRepository:
             .all()
 
         )
+    def get_latest_timestamp(
+    self,
+    db: Session,
+    symbol: str,
+    interval: str
+    ):
 
+        candle = (
+
+            db.query(Candle)
+
+            .filter(
+                Candle.symbol == symbol,
+                Candle.interval == interval
+            )
+
+            .order_by(
+                Candle.timestamp.desc()
+            )
+
+            .first()
+
+        )
+
+
+        if not candle:
+            return None
+
+
+        return candle.timestamp
 
 
 candle_repository = CandleRepository()

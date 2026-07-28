@@ -6,6 +6,10 @@ from app.providers.dhan_provider import DhanProvider
 from app.repository.candle_repository import candle_repository
 from app.cache.redis_client import set_latest_candle
 from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
+
+
+
 class MarketDataDownloader:
 
 
@@ -31,15 +35,21 @@ class MarketDataDownloader:
                 "Dhan provider not connected"
             )
 
-
+        latest_timestamp = candle_repository.get_latest_timestamp(
+            db,
+            symbol,
+            interval
+        )
+        
         candles = self.provider.get_intraday_candles(
 
             security_id=security_id,
 
             exchange_segment=exchange_segment,
 
-            interval=interval
-
+            interval=interval,
+            
+            latest_timestamp=latest_timestamp
         )
 
 
