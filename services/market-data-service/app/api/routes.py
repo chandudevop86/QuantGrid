@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.repository.candle_repository import candle_repository
-
+from app.cache.redis_client import get_latest_candle
 
 router = APIRouter(
     prefix="/market",
@@ -130,3 +130,19 @@ def symbols():
         ]
 
     }
+    
+@router.get("/market/latest")
+def latest_market_data(symbol: str):
+
+    data = get_latest_candle(symbol)
+
+
+    if not data:
+
+        return {
+            "symbol": symbol,
+            "status": "no_data"
+        }
+
+
+    return data    
