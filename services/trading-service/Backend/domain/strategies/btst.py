@@ -57,36 +57,137 @@ class BTSTStrategy(BaseStrategy):
         self.validator = BTSTSignalValidator(min_atr_pct=self.config.min_atr_pct, min_score=self.config.min_score)
         self.signal_builder = SignalBuilder()
 
-    def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
+    def generate_signals(
+    self,
+    candles: pd.DataFrame,
+    context: StrategyContext,
+    ) -> list[StrategySignal]:
+        
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         structure_frame = self._prepare_structure_frame(candles, context)
+
         signals: list[StrategySignal] = []
         traded_days: set[str] = set()
 
+        logger.info(
+            "BTST started: candles=%d symbol=%s",
+            len(candles),
+            context.symbol,
+        )
+
         for index in range(30, len(candles)):
             row = candles.iloc[index]
+
             session = str(row["session_day"])
+
             if session in traded_days:
+                logger.debug(
+                    "[%s] Skip: already traded today",
+                    row["timestamp"],
+                )
                 continue
 
-            structure_index = self._matching_index(structure_frame, row)
-            structure = self.structure.detect(structure_frame, structure_index)
+            structure_index = self._matching_index(
+                structure_frame,
+                row,
+            )
+
+            structure = self.structure.detect(
+                structure_frame,
+                structure_index,
+            )
+
             side = structure.side
+
             if side is None:
+                logger.debug(
+                    "[%s] Reject: side=None",
+                    row["timestamp"],
+                )
                 continue
-            valid_market, _ = self.validator.valid_market(row, structure, side)
+
+            valid_market, market_reason = self.validator.valid_market(
+                row,
+                structure,
+                side,
+            )
+
             if not valid_market:
+                logger.debug(
+                    "[%s] Reject: market validation (%s)",
+                    row["timestamp"],
+                    market_reason,
+                )
                 continue
 
-            eod = self.eod.confirm(candles, index, side)
+            eod = self.eod.confirm(
+                candles,
+                index,
+                side,
+            )
+
             if eod is None:
-                continue
-            if not self.scoring.momentum_confirmed(row, side) or not self.scoring.vwap_aligned(row, side):
+                logger.debug(
+                    "[%s] Reject: EOD confirmation failed",
+                    row["timestamp"],
+                )
                 continue
 
-            gap = self.gap.assess(row, side=side, structure=structure, eod=eod)
-            score = self.scoring.score(row=row, side=side, structure=structure, eod=eod)
-            valid_signal, _ = self.validator.valid_signal(score=score.total, gap=gap)
+            momentum_ok = self.scoring.momentum_confirmed(
+                row,
+                side,
+            )
+
+            if not momentum_ok:
+                logger.debug(
+                    "[%s] Reject: momentum filter",
+                    row["timestamp"],
+                )
+                continue
+
+            vwap_ok = self.scoring.vwap_aligned(
+                row,
+                side,
+            )
+
+            if not vwap_ok:
+                logger.debug(
+                    "[%s] Reject: VWAP filter",
+                    row["timestamp"],
+                )
+                continue
+
+            gap = self.gap.assess(
+                row,
+                side=side,
+                structure=structure,
+                eod=eod,
+            )
+
+            score = self.scoring.score(
+                row=row,
+                side=side,
+                structure=structure,
+                eod=eod,
+            )
+
+            valid_signal, signal_reason = self.validator.valid_signal(
+                score=score.total,
+                gap=gap,
+            )
+
             if not valid_signal:
+                logger.debug(
+                    "[%s] Reject: signal validation "
+                    "(score=%s gap=%s reason=%s)",
+                    row["timestamp"],
+                    score.total,
+                    gap.probability_score,
+                    signal_reason,
+                )
                 continue
 
             stop_loss, target = self.risk.levels(
@@ -96,8 +197,12 @@ class BTSTStrategy(BaseStrategy):
                 entry=float(row["close"]),
                 eod=eod,
                 structure=structure,
-                min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
+                min_rr=max(
+                    float(context.rr_ratio),
+                    float(self.config.min_rr),
+                ),
             )
+
             signal = self.signal_builder.build(
                 row,
                 strategy_name=self.name,
@@ -108,15 +213,44 @@ class BTSTStrategy(BaseStrategy):
                 stop_loss=stop_loss,
                 target_price=target,
                 score=score.total,
-                metadata=self._metadata(structure, eod, gap, score.to_dict()),
+                metadata=self._metadata(
+                    structure,
+                    eod,
+                    gap,
+                    score.to_dict(),
+                ),
             )
+
             if signal is None:
+                logger.debug(
+                    "[%s] Reject: SignalBuilder returned None",
+                    row["timestamp"],
+                )
                 continue
+
+            logger.info(
+                "[%s] BTST SIGNAL GENERATED "
+                "side=%s score=%d entry=%.2f sl=%.2f target=%.2f",
+                row["timestamp"],
+                side,
+                score.total,
+                float(row["close"]),
+                stop_loss,
+                target,
+            )
+
             signals.append(signal)
             traded_days.add(session)
 
-        return signals
+        logger.info(
+            "BTST finished: generated %d signal(s)",
+            len(signals),
+        )
 
+        return signals
+        
+
+        
     def _prepare_structure_frame(self, candles: pd.DataFrame, context: StrategyContext) -> pd.DataFrame:
         for key in ("daily_candles", "eod_candles", "htf_candles", "higher_timeframe"):
             data = context.params.get(key)
