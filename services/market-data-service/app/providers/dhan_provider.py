@@ -122,6 +122,8 @@ class DhanProvider:
 
 
             df = pd.DataFrame(data)
+            print("Before conversion:")
+            print(df)
 
 
             if df.empty:
@@ -142,6 +144,8 @@ class DhanProvider:
                 utc=True
 
             )
+            print("After UTC conversion:")
+            print(df["timestamp"])
 
 
             df["timestamp"] = (
@@ -153,6 +157,9 @@ class DhanProvider:
                 .dt.tz_localize(None)
 
             )
+            
+            print("After IST conversion:")
+            print(df["timestamp"])
         # NSE cash market session filter
             market_start = "09:15:00"
             market_end = "15:30:00"
@@ -164,6 +171,8 @@ class DhanProvider:
                     market_end
                 )
             ]
+            print("After market filter:")
+            print(df)
 
             return df[
                 [
