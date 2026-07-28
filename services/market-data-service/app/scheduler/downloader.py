@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.providers.dhan_provider import DhanProvider
 from app.repository.candle_repository import candle_repository
-
+from app.cache.redis_client import set_latest_candle
 
 class MarketDataDownloader:
 
@@ -57,14 +57,54 @@ class MarketDataDownloader:
 
 
         saved = candle_repository.save_dataframe(
-
             db,
-
             candles,
+            symbol,
+            interval
+        )
+
+
+        # Store latest candle in Redis
+
+        latest = candles.iloc[-1]
+
+
+        set_latest_candle(
 
             symbol,
 
-            interval
+            {
+                "symbol": symbol,
+
+                "interval": interval,
+
+                "timestamp": str(
+                    latest["timestamp"]
+                ),
+
+                "open": float(
+                    latest["open"]
+                ),
+
+                "high": float(
+                    latest["high"]
+                ),
+
+                "low": float(
+                    latest["low"]
+                ),
+
+                "close": float(
+                    latest["close"]
+                ),
+
+                "volume": int(
+                    latest["volume"]
+                ),
+
+                "source": "dhan"
+
+            }
 
         )
 
