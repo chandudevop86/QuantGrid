@@ -1,18 +1,41 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
+
 from app.database.connection import SessionLocal
-
 from app.scheduler.downloader import market_downloader
-
 from app.config import settings
 
 
+scheduler = BackgroundScheduler(
+    timezone="Asia/Kolkata"
+)
 
-scheduler = BackgroundScheduler()
+
+def market_open():
+
+    now = datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).time()
+
+    return (
+        time(9, 15)
+        <= now
+        <= time(15, 30)
+    )
 
 
 
 def download_market_data():
+
+    if not market_open():
+
+        print(
+            "Market closed - skipping download"
+        )
+
+        return
 
 
     db = SessionLocal()
@@ -42,16 +65,16 @@ def download_market_data():
 
         for symbol, security_id in symbols:
 
-
             result = market_downloader.download_symbol(
 
-                db,
+                db=db,
 
                 symbol=symbol,
 
                 security_id=security_id,
 
-                exchange_segment=settings.DHAN_EXCHANGE_SEGMENT_INDEX,
+                exchange_segment=
+                    settings.DHAN_EXCHANGE_SEGMENT_INDEX,
 
                 interval="1"
 
@@ -80,12 +103,15 @@ def download_market_data():
 
 def start_scheduler():
 
+    if scheduler.running:
+        return
+
 
     scheduler.add_job(
 
         download_market_data,
 
-        "interval",
+        trigger="interval",
 
         minutes=1,
 
@@ -97,3 +123,8 @@ def start_scheduler():
 
 
     scheduler.start()
+
+
+    print(
+        "Market data scheduler started"
+    )
