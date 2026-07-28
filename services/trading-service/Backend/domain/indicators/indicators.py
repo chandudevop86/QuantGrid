@@ -45,8 +45,6 @@ def prepare_ohlcv(data: Any) -> pd.DataFrame:
     )
 
 
-import numpy as np
-import pandas as pd
 
 
 def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -163,6 +161,16 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ------------------------------------------------------------------
     out["large_body"] = out["candle_body_ratio"] >= 0.60
     
+
+# ------------------------------------------------------------------
+# EMAs
+# ------------------------------------------------------------------
+    out["ema_9"] = ema(out["close"], 9)
+    out["ema_12"] = ema(out["close"], 12)
+    out["ema_21"] = ema(out["close"], 21)
+    out["ema_26"] = ema(out["close"], 26)
+    out["ema_50"] = ema(out["close"], 50)
+    out["ema_200"] = ema(out["close"], 200)
 
 # ------------------------------------------------------------------
 # Standard MACD (12,26,9)
