@@ -117,7 +117,6 @@ class DhanProvider:
         df = pd.DataFrame(data)
 
 
-
         if df.empty:
 
             return df
@@ -131,7 +130,6 @@ class DhanProvider:
             unit="s"
 
         )
-
 
 
         return df[
@@ -148,7 +146,6 @@ class DhanProvider:
 
 
     except Exception as e:
-
 
         raise Exception(
             f"Dhan intraday failed: {e}"
