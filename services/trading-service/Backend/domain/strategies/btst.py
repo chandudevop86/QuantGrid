@@ -84,7 +84,7 @@ class BTSTStrategy(BaseStrategy):
             session = str(row["session_day"])
 
             if session in traded_days:
-                logger.debug(
+                logger.info(
                     "[%s] Skip: already traded today",
                     row["timestamp"],
                 )
@@ -103,7 +103,7 @@ class BTSTStrategy(BaseStrategy):
             side = structure.side
 
             if side is None:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: side=None",
                     row["timestamp"],
                 )
@@ -116,7 +116,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if not valid_market:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: market validation (%s)",
                     row["timestamp"],
                     market_reason,
@@ -130,7 +130,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if eod is None:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: EOD confirmation failed",
                     row["timestamp"],
                 )
@@ -142,7 +142,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if not momentum_ok:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: momentum filter",
                     row["timestamp"],
                 )
@@ -154,7 +154,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if not vwap_ok:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: VWAP filter",
                     row["timestamp"],
                 )
@@ -180,7 +180,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if not valid_signal:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: signal validation "
                     "(score=%s gap=%s reason=%s)",
                     row["timestamp"],
@@ -222,7 +222,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if signal is None:
-                logger.debug(
+                logger.info(
                     "[%s] Reject: SignalBuilder returned None",
                     row["timestamp"],
                 )
