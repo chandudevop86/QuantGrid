@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.candle import Candle
 
-
+from app.cache.redis_client import set_latest_candle
 
 class CandleRepository:
 
@@ -124,18 +124,25 @@ class CandleRepository:
 
 
     def save_dataframe(
-        self,
-        db: Session,
-        df: pd.DataFrame,
-        symbol: str,
-        interval: str
+    self,
+    db: Session,
+    df: pd.DataFrame,
+    symbol: str,
+    interval: str
     ):
 
         saved = 0
 
 
-        for _, row in df.iterrows():
+        # Ensure latest candle comes last
+        df = df.sort_values(
+            by="timestamp"
+        ).reset_index(
+            drop=True
+        )
 
+
+        for _, row in df.iterrows():
 
             candle = {
 
@@ -147,27 +154,19 @@ class CandleRepository:
                     row["timestamp"]
                 ),
 
-
                 "market_symbol": symbol,
 
+                "open": float(row["open"]),
 
-                "open": row["open"],
+                "high": float(row["high"]),
 
+                "low": float(row["low"]),
 
-                "high": row["high"],
+                "close": float(row["close"]),
 
-
-                "low": row["low"],
-
-
-                "close": row["close"],
-
-
-                "volume": row.get(
-                    "volume",
-                    0
+                "volume": int(
+                    row.get("volume", 0)
                 ),
-
 
                 "source": "dhan"
 
@@ -179,15 +178,56 @@ class CandleRepository:
                 candle
             )
 
-
             saved += 1
 
 
 
+        # Update Redis with latest candle
+        latest = df.iloc[-1]
+
+
+        latest_candle = {
+
+            "symbol": symbol,
+
+            "interval": interval,
+
+            "timestamp": str(
+                latest["timestamp"]
+            ),
+
+            "open": float(
+                latest["open"]
+            ),
+
+            "high": float(
+                latest["high"]
+            ),
+
+            "low": float(
+                latest["low"]
+            ),
+
+            "close": float(
+                latest["close"]
+            ),
+
+            "volume": int(
+                latest.get("volume", 0)
+            ),
+
+            "source": "dhan"
+
+        }
+
+
+        set_latest_candle(
+            symbol,
+            latest_candle
+        )
+
+
         return saved
-
-
-
     def get_latest(
         self,
         db: Session,
