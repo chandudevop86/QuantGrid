@@ -69,17 +69,17 @@ class DhanProvider:
         try:
 
             today = date.today()
+            to_date = today.strftime("%Y-%m-%d")
+
             if latest_timestamp:
-                from_date = latest_timestamp[:10]
+                if hasattr(latest_timestamp, "strftime"):
+                    from_date = latest_timestamp.strftime("%Y-%m-%d")
+                else:
+                    from_date = str(latest_timestamp)[:10]
             else:
                 from_date = (
                     today - timedelta(days=5)
                 ).strftime("%Y-%m-%d")
-
-
-                to_date = today.strftime(
-                    "%Y-%m-%d"
-                )
 
 
             response = self.client.intraday_minute_data(
