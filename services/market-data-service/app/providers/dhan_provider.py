@@ -147,8 +147,11 @@ class DhanProvider:
             )
             print("After UTC conversion:")
             print(df["timestamp"])
-
-
+            
+            print(
+                "Newest epoch:",
+                data["timestamp"][-1]
+            )
             df["timestamp"] = (
 
                 df["timestamp"]
