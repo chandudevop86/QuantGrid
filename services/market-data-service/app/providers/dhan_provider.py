@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
-
 import pandas as pd
 from dhanhq import dhanhq
 
@@ -16,14 +13,10 @@ class DhanProvider:
 
         self.client = None
 
-        if (
-            settings.DHAN_CLIENT_ID
-            and settings.DHAN_ACCESS_TOKEN
-        ):
+        if settings.DHAN_ACCESS_TOKEN:
 
             self.client = dhanhq(
-                settings.DHAN_CLIENT_ID,
-                settings.DHAN_ACCESS_TOKEN
+                access_token=settings.DHAN_ACCESS_TOKEN
             )
 
 
@@ -47,18 +40,23 @@ class DhanProvider:
         if not self.client:
 
             raise Exception(
-                "Dhan credentials missing"
+                "Dhan access token missing"
             )
 
 
         try:
 
-            response = self.client.historical_daily_data(
+            # Dhan intraday candles
+            response = self.client.intraday_minute_data(
+
                 security_id=security_id,
+
                 exchange_segment=exchange_segment,
-                instrument_type="EQUITY",
-                from_date=start_date,
-                to_date=end_date
+
+                instrument_type="INDEX",
+
+                interval=timeframe
+
             )
 
 
@@ -67,14 +65,13 @@ class DhanProvider:
                 return pd.DataFrame()
 
 
-
-            candles = response.get(
+            data = response.get(
                 "data",
                 {}
             )
 
 
-            df = pd.DataFrame(candles)
+            df = pd.DataFrame(data)
 
 
             if df.empty:
@@ -82,24 +79,27 @@ class DhanProvider:
                 return df
 
 
-
             df.rename(
                 columns={
+
+                    "timestamp": "timestamp",
                     "open": "open",
                     "high": "high",
                     "low": "low",
                     "close": "close",
-                    "volume": "volume",
-                    "timestamp": "timestamp"
+                    "volume": "volume"
+
                 },
                 inplace=True
             )
 
 
-            df["timestamp"] = pd.to_datetime(
-                df["timestamp"],
-                unit="s"
-            )
+            if "timestamp" in df.columns:
+
+                df["timestamp"] = pd.to_datetime(
+                    df["timestamp"],
+                    unit="s"
+                )
 
 
             return df[
@@ -112,7 +112,6 @@ class DhanProvider:
                     "volume"
                 ]
             ]
-
 
 
         except Exception as e:
@@ -129,7 +128,6 @@ class DhanProvider:
 
             "provider": "dhan",
 
-            "connected":
-            self.connected()
+            "connected": self.connected()
 
         }
