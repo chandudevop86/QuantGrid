@@ -17,6 +17,9 @@ from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.strategies.base import BaseStrategy, StrategyConfig, normalize_mode
 from Backend.domain.strategies.signal_builder import SignalBuilder
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -63,10 +66,7 @@ class BTSTStrategy(BaseStrategy):
     context: StrategyContext,
     ) -> list[StrategySignal]:
         
-        import logging
-
-        logger = logging.getLogger(__name__)
-
+        
         structure_frame = self._prepare_structure_frame(candles, context)
 
         signals: list[StrategySignal] = []
