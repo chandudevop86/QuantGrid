@@ -70,21 +70,19 @@ class DhanProvider:
         try:
 
             today = date.today()
-            to_date = today.strftime("%Y-%m-%d")
 
-            if latest_timestamp:
-                if hasattr(latest_timestamp, "strftime"):
-                    from_date = latest_timestamp.strftime("%Y-%m-%d")
-                else:
-                    from_date = str(latest_timestamp)[:10]
-            else:
-                from_date = (
-                    today - timedelta(days=5)
-                ).strftime("%Y-%m-%d")
+# Always request the last 5 days
+            from_date = (
+                today - timedelta(days=5)
+            ).strftime("%Y-%m-%d")
+
+            to_date = today.strftime("%Y-%m-%d")
 
             print("latest_timestamp:", latest_timestamp)
             print("from_date:", from_date)
             print("to_date:", to_date)
+
+            
             response = self.client.intraday_minute_data(
 
                 security_id=security_id,
@@ -174,6 +172,18 @@ class DhanProvider:
                     market_end
                 )
             ]
+            # Keep only candles newer than the latest one in the database
+            if latest_timestamp:
+
+                latest_ts = pd.to_datetime(latest_timestamp)
+
+                df = df[
+                    df["timestamp"] > latest_ts
+                ]
+
+            print("After latest timestamp filter:")
+            print(df.tail())
+            
             print("After market filter:")
             print(df)
 
