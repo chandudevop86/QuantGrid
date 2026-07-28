@@ -24,12 +24,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class BTSTConfig(StrategyConfig):
-    close_window_minutes: int = 30
+    close_window_minutes: int = 60
     min_score: int = 6
     min_atr_pct: float = 0.001
     min_rr: float = 2.0
     max_trades_per_day: int = 1
-    close_strength_threshold: float = 0.75
+    close_strength_threshold: float = 0.70
 
     @classmethod
     def for_mode(cls, mode: str) -> "BTSTConfig":
@@ -128,7 +128,13 @@ class BTSTStrategy(BaseStrategy):
                 index,
                 side,
             )
-
+            if eod is None:
+                logger.debug(
+                    "BTST EOD failed index=%d time=%s side=%s",
+                    index,
+                    row["timestamp"],
+                    side,
+                )
             if eod is None:
                 logger.info(
                     "[%s] Reject: EOD confirmation failed",
