@@ -146,7 +146,17 @@ class DhanProvider:
                 .dt.tz_localize(None)
 
             )
+        # NSE cash market session filter
+            market_start = "09:15:00"
+            market_end = "15:30:00"
 
+
+            df = df[
+                df["timestamp"].dt.strftime("%H:%M:%S").between(
+                    market_start,
+                    market_end
+                )
+            ]
 
             return df[
                 [
