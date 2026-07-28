@@ -1,4 +1,5 @@
 from __future__ import annotations
+from urllib import response
 
 import pandas as pd
 
@@ -99,6 +100,10 @@ class DhanProvider:
                 to_date=to_date
 
             )
+            from pprint import pprint
+
+            print("FULL RESPONSE")
+            pprint(response)
             print("status:", response.get("status"))
             print("remarks:", response.get("remarks"))
             print("data length:", len(response.get("data", [])))
@@ -107,12 +112,10 @@ class DhanProvider:
 
                 return pd.DataFrame()
 
+            data = response.get("data", {})
 
-
-            data = response.get(
-                "data",
-                {}
-            )
+            print(type(response.get("data")))
+            pprint(response.get("data"))
 
 
             if not data:
