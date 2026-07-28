@@ -123,11 +123,27 @@ class DhanProvider:
 
 
 
+            # Dhan timestamp is UTC epoch seconds
+            # Convert to IST
+
             df["timestamp"] = pd.to_datetime(
 
                 df["timestamp"],
 
-                unit="s"
+                unit="s",
+
+                utc=True
+
+            )
+
+
+            df["timestamp"] = (
+
+                df["timestamp"]
+
+                .dt.tz_convert("Asia/Kolkata")
+
+                .dt.tz_localize(None)
 
             )
 
