@@ -89,7 +89,7 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ATR / ADX
     # ------------------------------------------------------------------
     out["atr_14"] = atr(out, 14)
-    out["adx"] = adx(out, 14)
+    out = out.join(adx(out, 14))
 
     out["strong_trend"] = out["adx"] >= 25
 
