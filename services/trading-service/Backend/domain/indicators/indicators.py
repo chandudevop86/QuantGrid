@@ -58,6 +58,15 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ------------------------------------------------------------------
     out["bar_range"] = (out["high"] - out["low"]).clip(lower=0.0)
     out["body_size"] = (out["close"] - out["open"]).abs()
+    out["upper_wick"] = (
+    out["high"]
+        -out[["open", "close"]].max(axis=1)
+    ).clip(lower=0)
+
+    out["lower_wick"] = (
+        out[["open", "close"]].min(axis=1)
+        - out["low"]
+    ).clip(lower=0)
 
     out["candle_body_ratio"] = (
         out["body_size"]
@@ -175,9 +184,7 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # ------------------------------------------------------------------
 # Standard MACD (12,26,9)
 # ------------------------------------------------------------------
-    out["ema_12"] = ema(out["close"], 12)
-    out["ema_26"] = ema(out["close"], 26)
-
+    
     out["macd"] = out["ema_12"] - out["ema_26"]
     out["macd_signal"] = ema(out["macd"], 9)
     out["macd_hist"] = out["macd"] - out["macd_signal"]
@@ -330,16 +337,6 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     
     # ------------------------------------------------------------------
-    # ATR %
-    # ------------------------------------------------------------------
-    out["atr_pct"] = (
-        out["atr_14"]
-        /
-        out["close"].replace(0, np.nan)
-        * 100
-    ).fillna(0)
-
-    # ------------------------------------------------------------------
     # Volatility Regime
     # ------------------------------------------------------------------
     out["high_volatility"] = out["atr_pct"] > 1.0
@@ -365,8 +362,75 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     out["indicator_ready"] = (
         np.arange(len(out)) >= warmup
-)
+    )
+    out["impulse_bull"] = (
+        (out["bullish"])
+        &
+        (out["large_body"])
+        &
+        (out["volume_spike"])
+    )
 
+    out["impulse_bear"] = (
+        (out["bearish"])
+        &
+        (out["large_body"])
+        &
+        (out["volume_spike"])
+    )
+    out["trend_strength"] = np.select(
+    [
+        out["adx"] >= 35,
+        out["adx"] >= 25,
+        out["adx"] >= 18,
+    ],
+    [
+        "strong",
+        "medium",
+        "weak",
+    ],
+    default="range",
+    )
+    rolling_high = out["high"].rolling(50).max()
+    rolling_low = out["low"].rolling(50).min()
+
+    mid = (rolling_high + rolling_low) / 2
+
+    out["premium"] = out["close"] > mid
+    out["discount"] = out["close"] < mid
+    out["bos_up"] = (
+    out["close"]
+    >
+        out["recent_high"]
+    )
+
+    out["bos_down"] = (
+        out["close"]
+        <
+        out["recent_low"]
+    )
+    out["equal_high"] = (
+    out["high"].diff().abs()
+    <= out["atr_14"] * 0.20
+    )
+
+    out["equal_low"] = (
+        out["low"].diff().abs()
+        <= out["atr_14"] * 0.20
+    )
+    
+    out["displacement"] = (
+    out["bar_range"]
+    >
+    out["atr_14"] * 1.5
+)
+    
+    
+    
+    
+    
+    
+    
     return out
 
 
