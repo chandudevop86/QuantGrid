@@ -60,7 +60,6 @@ class MarketDataDownloader:
                 "symbol": symbol,
 
                 "saved": 0,
-                "latest": str(latest["timestamp"]),
                 "source": "dhan",
                 "message": "No candles received"
 
@@ -71,10 +70,13 @@ class MarketDataDownloader:
         ]
 
         if candles.empty:
+            print(f"{symbol}: Already up to date")
             return {
                 "symbol": symbol,
                 "saved": 0,
-                "message": "Already up to date"
+                "message": "Already up to date",
+                "latest": str(latest_timestamp),
+                "source": "dhan"
             }
 
 
@@ -144,13 +146,11 @@ class MarketDataDownloader:
 
 
         return {
-
             "symbol": symbol,
-
-            "saved": saved
-
-        }
-
+            "saved": saved,
+            "latest": str(latest["timestamp"]),
+            "source": "dhan"
+}
 
 
 market_downloader = MarketDataDownloader()
