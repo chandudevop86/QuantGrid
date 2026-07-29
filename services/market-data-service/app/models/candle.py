@@ -6,6 +6,7 @@ from sqlalchemy import (
     Float,
     Integer,
     Text,
+    DateTime,
     PrimaryKeyConstraint,
 )
 
@@ -16,91 +17,83 @@ class Candle(Base):
 
     __tablename__ = "market_candles"
 
-
     symbol = Column(
         String(32),
-        nullable=False
+        nullable=False,
+        index=True,
     )
-
 
     interval = Column(
         String(20),
-        nullable=False
+        nullable=False,
+        index=True,
     )
 
-
+    # Market candle timestamp (IST)
     timestamp = Column(
-        String(40),
-        nullable=False
+        DateTime(timezone=False),
+        nullable=False,
+        index=True,
     )
-
 
     market_symbol = Column(
         String(64),
-        nullable=False
+        nullable=False,
     )
-
 
     open = Column(
         Float,
-        nullable=False
+        nullable=False,
     )
-
 
     high = Column(
         Float,
-        nullable=False
+        nullable=False,
     )
-
 
     low = Column(
         Float,
-        nullable=False
+        nullable=False,
     )
-
 
     close = Column(
         Float,
-        nullable=False
+        nullable=False,
     )
-
 
     volume = Column(
         Integer,
-        nullable=True
+        nullable=False,
+        default=0,
     )
-
 
     source = Column(
         String(80),
-        nullable=False
+        nullable=False,
+        default="dhan",
     )
-
 
     exchange_timezone = Column(
         String(80),
-        nullable=True
+        nullable=False,
+        default="Asia/Kolkata",
     )
 
-
+    # Record insertion time
     stored_at = Column(
-        String(40),
-        nullable=False
+        DateTime(timezone=True),
+        nullable=False,
     )
-
 
     payload_json = Column(
         Text,
-        nullable=False
+        nullable=False,
     )
 
-
     __table_args__ = (
-
         PrimaryKeyConstraint(
             "symbol",
             "interval",
-            "timestamp"
+            "timestamp",
         ),
-
     )
