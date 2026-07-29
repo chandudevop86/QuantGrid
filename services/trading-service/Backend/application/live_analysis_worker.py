@@ -134,7 +134,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         capital=payload.capital,
         risk_pct=payload.risk_pct,
         rr_ratio=payload.rr_ratio,
-        params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles, "h1_candles": hourly_candles},
+        params={"live_mode": True,"mtf_candles": confirmation_candles, "htf_candles": trend_candles, "h1_candles": hourly_candles},
     )
     gate_active_signals, rejected_signals, stale_signals = split_signals(
     raw_signals,
