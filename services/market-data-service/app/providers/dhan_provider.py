@@ -84,14 +84,12 @@ class DhanProvider:
                 return df
 
             df["timestamp"] = (
-                pd.to_datetime(
-                    df["timestamp"],
-                    unit="s",
-                    utc=True,
+                    pd.to_datetime(
+                        df["timestamp"],
+                        unit="s",
+                        utc=True,
+                    )
                 )
-                .dt.tz_convert("Asia/Kolkata")
-                .dt.tz_localize(None)
-            )
 
             df = df[
                 df["timestamp"]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
-
+import pandas as pd
 from app.providers.dhan_provider import DhanProvider
 from app.repository.candle_repository import candle_repository
 from app.cache.redis_client import set_latest_candle
@@ -84,9 +84,20 @@ class MarketDataDownloader:
 
             }
         if latest_timestamp is not None:
+
+            latest_timestamp = pd.to_datetime(
+                latest_timestamp,
+                utc=True
+            )
+
+            candles["timestamp"] = pd.to_datetime(
+                candles["timestamp"],
+                utc=True
+            )
+
             candles = candles[
-        candles["timestamp"] > latest_timestamp
-        ]
+                candles["timestamp"] > latest_timestamp
+            ]
 
         if candles.empty:
             print(f"{symbol}: Already up to date")
