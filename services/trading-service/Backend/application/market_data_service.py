@@ -280,7 +280,7 @@ class MarketDataService:
 
 
 def select_market_data_provider(name: str) -> MarketDataProvider:
-    provider = (name or "yahoo").strip().lower()
+    provider = (name or "dhan").strip().lower()
     if provider == "yahoo":
         return YahooProvider()
     if provider == "kite":

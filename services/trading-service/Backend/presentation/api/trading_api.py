@@ -52,7 +52,7 @@ def generate_signals(
     db: Session = Depends(get_db),
 ):
     service = TradingService()
-    candle_source = payload.candle_source or "yahoo-finance"
+    candle_source = payload.candle_source or "dhan"
     candles = _candle_dicts(payload.candles) or []
     _validated_candles, data_quality = validate_candles(candles, source=candle_source)
     params = {
