@@ -60,18 +60,39 @@ class BreakoutStrategy(BaseStrategy):
         out["breakout_low"] = out["low"].shift(1).rolling(lookback, min_periods=lookback).min()
         return out
 
-    def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
+    def generate_signals(
+    self,
+    candles: pd.DataFrame,
+    context: StrategyContext,
+) -> list[StrategySignal]:
         signals: list[StrategySignal] = []
         traded_direction_by_session: set[tuple[str, Side]] = set()
         last_trade_time: pd.Timestamp | None = None
 
-        for index in range(int(self.config.lookback), len(candles)):
+        # Live mode -> evaluate only the latest completed candle.
+        # Backtest mode -> evaluate the entire history.
+        live_mode = False
+        if hasattr(context, "params") and isinstance(context.params, dict):
+            live_mode = context.params.get("live_mode", False)
+
+        if live_mode:
+            indexes = [len(candles) - 1]
+        else:
+            indexes = range(int(self.config.lookback), len(candles))
+
+        for index in indexes:
             row = candles.iloc[index]
             timestamp = pd.Timestamp(row["timestamp"])
             session = str(row["session_day"])
+
             if not self.validator.session_open_allowed(candles, index):
                 continue
-            if last_trade_time is not None and timestamp - last_trade_time < timedelta(minutes=int(self.config.cooldown_minutes)):
+
+            if (
+                last_trade_time is not None
+                and timestamp - last_trade_time
+                < timedelta(minutes=int(self.config.cooldown_minutes))
+            ):
                 continue
 
             side = self.trend.allowed_side(row)
@@ -80,26 +101,41 @@ class BreakoutStrategy(BaseStrategy):
 
             setup = self.detector.detect(candles, index, side)
             trend_aligned = self.trend.aligned(row, side)
+
             if setup is None:
                 continue
-            score = self.scoring.score(row, setup, trend_aligned=trend_aligned)
-            valid, _ = self.validator.valid_signal(score=score.total, setup=setup, trend_aligned=trend_aligned)
+
+            score = self.scoring.score(
+                row,
+                setup,
+                trend_aligned=trend_aligned,
+            )
+
+            valid, _ = self.validator.valid_signal(
+                score=score.total,
+                setup=setup,
+                trend_aligned=trend_aligned,
+            )
+
             if not valid:
                 continue
 
             stop_loss, target_price = self.risk.levels(
                 row,
                 setup,
-                min_rr=max(float(context.rr_ratio), float(self.config.min_rr)),
+                min_rr=max(
+                    float(context.rr_ratio),
+                    float(self.config.min_rr),
+                ),
             )
-            
+
             print("=" * 60)
             print("SIGNAL INDEX :", index)
             print("SIGNAL TIME  :", row["timestamp"])
             print("LATEST TIME  :", candles.iloc[-1]["timestamp"])
             print("IS LATEST    :", index == len(candles) - 1)
             print("=" * 60)
-            
+
             signal = self.signal_builder.build(
                 row,
                 strategy_name=self.name,
@@ -110,16 +146,20 @@ class BreakoutStrategy(BaseStrategy):
                 stop_loss=stop_loss,
                 target_price=target_price,
                 score=score.total,
-                metadata=self._metadata(setup, score.to_dict()),
+                metadata=self._metadata(
+                    setup,
+                    score.to_dict(),
+                ),
             )
+
             if signal is None:
                 continue
+
             signals.append(signal)
             traded_direction_by_session.add((session, side))
             last_trade_time = timestamp
 
         return signals
-
     def calculate_levels(self, candles: pd.DataFrame, index: int, side: str, context: StrategyContext) -> tuple[float, float]:
         typed_side: Side = "BUY" if side.upper() == "BUY" else "SELL"
         setup = self.detector.detect(candles, index, typed_side)
