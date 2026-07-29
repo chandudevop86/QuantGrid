@@ -137,9 +137,13 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles, "h1_candles": hourly_candles},
     )
     gate_active_signals, rejected_signals, stale_signals = split_signals(
-        raw_signals,
-        candles_1m=candles,
-        candles_15m=trend_candles,
+    raw_signals,
+    candles_1m=candles,
+    candles_by_timeframe={
+        "5m": confirmation_candles,
+        "15m": trend_candles,
+        "1h": hourly_candles,
+    },
     )
     signals, data_source = validate_signals(
         gate_active_signals,
