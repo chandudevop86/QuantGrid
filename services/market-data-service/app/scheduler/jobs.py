@@ -25,7 +25,10 @@ def market_open():
         <= time(15, 30)
     )
 
+cycle_start = datetime.now(ZoneInfo("Asia/Kolkata"))
 
+print("=" * 60)
+print(f"Download cycle started: {cycle_start}")
 
 def download_market_data():
 
@@ -41,29 +44,23 @@ def download_market_data():
     db = SessionLocal()
 
 
-    symbols = [
+    symbols = {
+            "NIFTY": settings.DHAN_SECURITY_ID_NIFTY,
+            "BANKNIFTY": settings.DHAN_SECURITY_ID_BANKNIFTY,
+            "FINNIFTY": settings.DHAN_SECURITY_ID_FINNIFTY,
+            "MIDCPNIFTY": settings.DHAN_SECURITY_ID_MIDCPNIFTY,
+        }
 
-        (
-            "NIFTY",
-            settings.DHAN_SECURITY_ID_NIFTY
-        ),
-
-        (
-            "BANKNIFTY",
-            settings.DHAN_SECURITY_ID_BANKNIFTY
-        ),
-
-        (
-            "FINNIFTY",
-            settings.DHAN_SECURITY_ID_FINNIFTY
-        )
-
-    ]
+    symbols = {
+        symbol: security_id
+        for symbol, security_id in symbols.items()
+        if security_id
+    }
 
 
     try:
 
-        for symbol, security_id in symbols:
+        for symbol, security_id in symbols.items():
 
             result = market_downloader.download_symbol(
 
@@ -80,25 +77,24 @@ def download_market_data():
 
             )
 
-
             print(
-                "Market download:",
-                result
-            )
-
+            f"{symbol}: "
+            f"saved={result.get('saved')} "
+            f"message={result.get('message', '')}"
+        )
 
     except Exception as e:
 
-        print(
-            "Market download failed:",
-            e
-        )
-
+        print("Market download failed:",e)
 
     finally:
 
         db.close()
+cycle_end = datetime.now(ZoneInfo("Asia/Kolkata"))
 
+print(f"Download cycle finished: {cycle_end}")
+print(f"Duration: {cycle_end - cycle_start}")
+print("=" * 60)
 
 
 def start_scheduler():
