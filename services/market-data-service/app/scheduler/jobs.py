@@ -48,7 +48,7 @@ def download_market_data():
             "NIFTY": settings.DHAN_SECURITY_ID_NIFTY,
             "BANKNIFTY": settings.DHAN_SECURITY_ID_BANKNIFTY,
             "FINNIFTY": settings.DHAN_SECURITY_ID_FINNIFTY,
-            "MIDCPNIFTY": settings.DHAN_SECURITY_ID_MIDCPNIFTY,
+            #"MIDCPNIFTY": settings.DHAN_SECURITY_ID_MIDCPNIFTY,
         }
 
     symbols = {
