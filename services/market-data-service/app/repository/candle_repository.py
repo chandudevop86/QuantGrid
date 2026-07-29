@@ -123,7 +123,10 @@ class CandleRepository:
 
         for _, row in df.iterrows():
 
-            ts = row["timestamp"]
+            ts = pd.to_datetime(
+            row["timestamp"],
+            utc=True
+            ).to_pydatetime()
 
 
             if ts in existing:
