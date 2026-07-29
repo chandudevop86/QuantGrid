@@ -71,10 +71,13 @@ class BreakoutStrategy(BaseStrategy):
 
         # Live mode -> evaluate only the latest completed candle.
         # Backtest mode -> evaluate the entire history.
-        live_mode = False
-        if hasattr(context, "params") and isinstance(context.params, dict):
-            live_mode = context.params.get("live_mode", False)
+        
+        if candles.empty:
+            return []
 
+        live_mode = bool(
+            getattr(context, "params", {}).get("live_mode", False)
+        )
         if live_mode:
             indexes = [len(candles) - 1]
         else:
