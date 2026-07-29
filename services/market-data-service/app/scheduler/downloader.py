@@ -40,7 +40,26 @@ class MarketDataDownloader:
             symbol,
             interval
         )
-        
+        if latest_timestamp is None:
+
+            print(f"{symbol}: Initial backfill")
+
+            from app.services.backfill_service import BackfillService
+
+            BackfillService().backfill(
+                db=db,
+                symbol=symbol,
+                security_id=security_id,
+                exchange_segment=exchange_segment,
+                interval=interval,
+                days=365,
+            )
+
+            latest_timestamp = candle_repository.get_latest_timestamp(
+                db,
+                symbol,
+                interval
+            )
         candles = self.provider.get_intraday_candles(
 
             security_id=security_id,

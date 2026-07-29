@@ -208,3 +208,11 @@ class DhanProvider:
             raise Exception(
                 f"Dhan intraday failed: {e}"
             )
+def get_intraday_history(
+    self,
+    security_id,
+    exchange_segment,
+    interval,
+    from_date,
+    to_date,
+):            
