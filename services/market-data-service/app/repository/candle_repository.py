@@ -113,8 +113,24 @@ class CandleRepository:
 
 
         db.add(candle)
+        try:
+            db.flush()
+        except Exception:
+            db.rollback()
+            existing = (
+                db.query(Candle)
+                .filter(
+                    Candle.symbol == candle_data["symbol"],
+                    Candle.interval == candle_data["interval"],
+                    Candle.timestamp == candle_data["timestamp"],
+                )
+                .first()
+            )
+            return existing
 
-        db.commit()
+        return candle
+
+        
 
         db.refresh(candle)
 
@@ -171,7 +187,7 @@ class CandleRepository:
                 "source": "dhan"
 
             }
-
+            
 
             self.save_candle(
                 db,
@@ -179,8 +195,12 @@ class CandleRepository:
             )
 
             saved += 1
-
-
+            db.commit()
+            try:
+                    db.commit()
+            except Exception:
+                    db.rollback()
+            raise
 
         # Update Redis with latest candle
         latest = df.iloc[-1]
