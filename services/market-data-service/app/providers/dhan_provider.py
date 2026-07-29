@@ -71,10 +71,13 @@ class DhanProvider:
 
 
         # Dhan epoch -> UTC timezone aware datetime
-        df["timestamp"] = pd.to_datetime(
-            df["timestamp"],
-            unit="s",
-            utc=True,
+        df["timestamp"] = (
+            pd.to_datetime(
+                df["timestamp"],
+                unit="s",
+                utc=True,
+            )
+            .astype("datetime64[ns, UTC]")
         )
 
 
