@@ -90,11 +90,11 @@ def download_market_data():
     finally:
 
         db.close()
-cycle_end = datetime.now(ZoneInfo("Asia/Kolkata"))
+    cycle_end = datetime.now(ZoneInfo("Asia/Kolkata"))
 
-print(f"Download cycle finished: {cycle_end}")
-print(f"Duration: {cycle_end - cycle_start}")
-print("=" * 60)
+    print(f"Download cycle finished: {cycle_end}")
+    print(f"Duration: {cycle_end - cycle_start}")
+    print("=" * 60)
 
 
 def start_scheduler():
