@@ -93,13 +93,10 @@ class DhanProvider:
                 .dt.tz_localize(None)
             )
 
-            market_start = "09:15:00"
-            market_end = "15:30:00"
-
             df = df[
                 df["timestamp"]
                 .dt.strftime("%H:%M:%S")
-                .between(market_start, market_end)
+                .between("09:15:00", "15:30:00")
             ]
 
             print("Fetched:", len(df), "candles")
@@ -127,7 +124,8 @@ class DhanProvider:
         to_date: date,
     ):
         """
-        Download historical intraday candles for backfill.
+        Download historical intraday candles from Dhan.
+        Used for initial database backfill.
         """
 
         if not self.client:
@@ -171,6 +169,44 @@ class DhanProvider:
                 .dt.strftime("%H:%M:%S")
                 .between("09:15:00", "15:30:00")
             ]
+
+            df = (
+                df.sort_values("timestamp")
+                .drop_duplicates(subset=["timestamp"])
+                .reset_index(drop=True)
+            )
+
+            numeric_cols = [
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+            ]
+
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(
+                        df[col],
+                        errors="coerce",
+                    )
+
+            df = df.dropna(
+                subset=[
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                ]
+            )
+
+            if "volume" in df.columns:
+                df["volume"] = (
+                    df["volume"]
+                    .fillna(0)
+                    .astype(int)
+                )
 
             print(
                 f"Backfill {from_date} -> {to_date}: {len(df)} candles"
