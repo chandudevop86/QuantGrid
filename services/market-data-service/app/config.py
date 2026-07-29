@@ -1,6 +1,22 @@
 from pydantic_settings import BaseSettings
 
 
+
+class Settings(BaseSettings):
+    ...
+
+    MARKET_SYMBOLS: str = "NIFTY"
+
+    DHAN_SECURITY_ID_NIFTY: str = ""
+    DHAN_SECURITY_ID_BANKNIFTY: str = ""
+    DHAN_SECURITY_ID_FINNIFTY: str = ""
+    DHAN_SECURITY_ID_MIDCPNIFTY: str = ""
+
+    DHAN_EXCHANGE_SEGMENT_INDEX: str = "IDX_I"
+
+
+settings = Settings()
+
 class Settings(BaseSettings):
 
     SERVICE_NAME: str = "market-data-service"

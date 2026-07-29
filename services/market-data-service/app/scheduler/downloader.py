@@ -6,7 +6,7 @@ from app.providers.dhan_provider import DhanProvider
 from app.repository.candle_repository import candle_repository
 from app.cache.redis_client import set_latest_candle
 from zoneinfo import ZoneInfo
-from datetime import datetime, timedelta
+
 
 
 
@@ -54,13 +54,14 @@ class MarketDataDownloader:
 
 
         if candles.empty:
-
+            print(f"{symbol}: already up to date")
             return {
 
                 "symbol": symbol,
 
                 "saved": 0,
-
+                "latest": str(latest["timestamp"]),
+                "source": "dhan",
                 "message": "No candles received"
 
             }
