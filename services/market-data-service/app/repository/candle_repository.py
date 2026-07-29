@@ -32,7 +32,7 @@ class CandleRepository:
         candle = Candle(
             symbol=candle_data["symbol"],
             interval=candle_data["interval"],
-            timestamp=candle_data["timestamp"],
+            timestamp=pd.to_datetime(candle_data["timestamp"],utc=True),
             market_symbol=candle_data.get(
                 "market_symbol",
                 candle_data["symbol"],
@@ -44,7 +44,7 @@ class CandleRepository:
             volume=int(candle_data.get("volume", 0)),
             source=candle_data.get("source", "dhan"),
             exchange_timezone="Asia/Kolkata",
-            stored_at=datetime.now(timezone.utc).isoformat(),
+            stored_at=datetime.now(timezone.utc),
             payload_json=json.dumps(candle_data, default=str),
         )
 
@@ -103,7 +103,7 @@ class CandleRepository:
         rows = []
 
         for _, row in df.iterrows():
-            ts = str(row["timestamp"])
+            ts = row["timestamp"],
 
             if ts in existing:
                 continue
