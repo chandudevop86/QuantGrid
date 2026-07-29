@@ -88,6 +88,10 @@ class MarketDataDownloader:
             latest_timestamp = pd.to_datetime(
                 latest_timestamp,
                 utc=True
+            ).tz_convert(
+                "Asia/Kolkata"
+            ).tz_localize(
+                None
             )
 
             candles["timestamp"] = pd.to_datetime(
