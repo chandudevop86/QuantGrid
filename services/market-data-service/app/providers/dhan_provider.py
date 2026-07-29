@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
+
 from dhanhq import DhanContext, dhanhq
 
 from app.config import settings
@@ -43,13 +44,9 @@ class DhanProvider:
         }
 
 
-    def _clean_dataframe(
-        self,
-        response
-    ):
+    def _clean_dataframe(self, response):
 
         if not response:
-
             return pd.DataFrame()
 
 
@@ -63,7 +60,6 @@ class DhanProvider:
             not data
             or not data.get("timestamp")
         ):
-
             return pd.DataFrame()
 
 
@@ -71,12 +67,10 @@ class DhanProvider:
 
 
         if df.empty:
-
             return df
 
 
-        # Always keep UTC timezone
-
+        # Dhan epoch -> UTC timezone aware datetime
         df["timestamp"] = pd.to_datetime(
             df["timestamp"],
             unit="s",
@@ -84,13 +78,10 @@ class DhanProvider:
         )
 
 
-        # NSE market hours
-
+        # NSE market hours validation
         df = df[
             df["timestamp"]
-            .dt.tz_convert(
-                "Asia/Kolkata"
-            )
+            .dt.tz_convert("Asia/Kolkata")
             .dt.strftime("%H:%M:%S")
             .between(
                 "09:15:00",
@@ -99,8 +90,7 @@ class DhanProvider:
         ]
 
 
-        # Remove duplicates
-
+        # Sort + remove duplicates
         df = (
             df
             .sort_values(
@@ -155,6 +145,10 @@ class DhanProvider:
                 .astype(int)
             )
 
+        else:
+
+            df["volume"] = 0
+
 
         return df[
             [
@@ -188,8 +182,9 @@ class DhanProvider:
 
             today = date.today()
 
-
-            from_date = today.strftime(
+            from_date = (
+                today - timedelta(days=5)
+            ).strftime(
                 "%Y-%m-%d"
             )
 
@@ -201,15 +196,6 @@ class DhanProvider:
             print(
                 f"latest_timestamp: {latest_timestamp}"
             )
-
-            print(
-                f"from_date: {from_date}"
-            )
-
-            print(
-                f"to_date: {to_date}"
-            )
-
 
             response = self.client.intraday_minute_data(
 
@@ -259,6 +245,7 @@ class DhanProvider:
         from_date: date,
         to_date: date,
     ):
+
 
         if not self.client:
 
