@@ -74,18 +74,35 @@ class CandleRepository:
         return candle
 
     def save_dataframe(
-        self,
-        db: Session,
-        df: pd.DataFrame,
-        symbol: str,
-        interval: str,
+    self,
+    db: Session,
+    df: pd.DataFrame,
+    symbol: str,
+    interval: str,
     ) -> int:
+
         if df.empty:
             return 0
 
-        df = df.sort_values("timestamp").reset_index(drop=True)
 
-        timestamps = [str(ts) for ts in df["timestamp"]]
+        df = df.copy()
+
+
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            utc=True,
+        )
+
+
+        df = (
+            df
+            .sort_values("timestamp")
+            .reset_index(drop=True)
+        )
+
+
+        timestamps = df["timestamp"].tolist()
+
 
         existing = {
             row[0]
@@ -100,63 +117,122 @@ class CandleRepository:
             )
         }
 
+
         rows = []
 
+
         for _, row in df.iterrows():
-            ts = row["timestamp"],
+
+            ts = row["timestamp"]
+
 
             if ts in existing:
                 continue
 
+
             rows.append(
                 {
                     "symbol": symbol,
+
                     "interval": interval,
+
                     "timestamp": ts,
+
                     "market_symbol": symbol,
+
                     "open": float(row["open"]),
+
                     "high": float(row["high"]),
+
                     "low": float(row["low"]),
+
                     "close": float(row["close"]),
-                    "volume": int(row.get("volume", 0)),
+
+                    "volume": int(
+                        row.get(
+                            "volume",
+                            0
+                        )
+                    ),
+
                     "source": "dhan",
+
                     "exchange_timezone": "Asia/Kolkata",
-                    "stored_at": datetime.now(timezone.utc).isoformat(),
+
+                    "stored_at": datetime.now(
+                        timezone.utc
+                    ),
+
                     "payload_json": json.dumps(
                         {
                             "symbol": symbol,
                             "interval": interval,
-                            "timestamp": ts,
+                            "timestamp": str(ts),
                         }
                     ),
                 }
             )
 
+
         try:
+
             if rows:
-                db.bulk_insert_mappings(Candle, rows)
+                db.bulk_insert_mappings(
+                    Candle,
+                    rows
+                )
 
             db.commit()
+
+
         except Exception:
+
             db.rollback()
+
             raise
 
+
         latest = df.iloc[-1]
+
 
         set_latest_candle(
             symbol,
             {
                 "symbol": symbol,
+
                 "interval": interval,
-                "timestamp": str(latest["timestamp"]),
-                "open": float(latest["open"]),
-                "high": float(latest["high"]),
-                "low": float(latest["low"]),
-                "close": float(latest["close"]),
-                "volume": int(latest.get("volume", 0)),
+
+                "timestamp": str(
+                    latest["timestamp"]
+                ),
+
+                "open": float(
+                    latest["open"]
+                ),
+
+                "high": float(
+                    latest["high"]
+                ),
+
+                "low": float(
+                    latest["low"]
+                ),
+
+                "close": float(
+                    latest["close"]
+                ),
+
+                "volume": int(
+                    latest.get(
+                        "volume",
+                        0
+                    )
+                ),
+
                 "source": "dhan",
             },
         )
+
 
         return len(rows)
 
