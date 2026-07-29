@@ -64,6 +64,17 @@ class MarketDataDownloader:
                 "message": "No candles received"
 
             }
+        if latest_timestamp is not None:
+            candles = candles[
+        candles["timestamp"] > latest_timestamp
+        ]
+
+        if candles.empty:
+            return {
+                "symbol": symbol,
+                "saved": 0,
+                "message": "Already up to date"
+            }
 
 
         saved = candle_repository.save_dataframe(
