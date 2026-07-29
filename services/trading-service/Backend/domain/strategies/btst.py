@@ -116,7 +116,7 @@ class BTSTStrategy(BaseStrategy):
             )
 
             if not valid_market:
-                logger.info(
+                logger.debug(
                     "[%s] Reject: market validation (%s)",
                     row["timestamp"],
                     market_reason,
