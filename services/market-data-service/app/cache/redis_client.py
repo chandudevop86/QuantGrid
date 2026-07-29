@@ -21,10 +21,12 @@ def set_latest_candle(
 
     redis_client.set(
         key,
-        json.dumps(candle),
+        json.dumps(
+            candle,
+            default=str
+        ),
         ex=3600
     )
-
 
 
 def get_latest_candle(
