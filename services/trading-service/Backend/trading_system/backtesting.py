@@ -297,14 +297,17 @@ class BacktestEngine:
                 score = self._score(signal)
 
                 print(
-                    f"SCORE DEBUG | "
-                    f"score={score} "
-                    f"min_score={min_score}"
-                )
+                        f"SCORE DEBUG | "
+                        f"score={score} "
+                        f"min_score={min_score}"
+                    )
 
                 if score < min_score:
-                    _increment_reason(rejection_reasons, "below_min_score")
-                    return None
+                        _increment_reason(
+                            rejection_reasons,
+                            "below_min_score"
+                        )
+                        continue
                 valid, reason = self.risk_manager.validate_signal(signal, now=pd.Timestamp(row["timestamp"]).to_pydatetime())
                 if not valid:
                     rejected_signal_count += 1
