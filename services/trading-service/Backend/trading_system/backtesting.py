@@ -178,7 +178,7 @@ class BacktestEngine:
         self.risk_manager = risk_manager or GlobalRiskManager()
         self.brokerage_per_order = _float_env("BACKTEST_BROKERAGE_PER_ORDER", brokerage_per_order, 20.0)
         self.brokerage_bps = _float_env("BACKTEST_BROKERAGE_BPS", brokerage_bps, 0.0)
-        self.taxes_bps = _float_env("BACKTEST_TAXES_BPS", taxes_bps, 2.5)
+        self.taxes_bps = _float_env("BACKTEST_TAXES_BPS", taxes_bps, 0.30)
         self.latency_ms = int(_float_env("BACKTEST_LATENCY_MS", latency_ms, 0.0))
         self.logger = get_logger(__name__)
 
@@ -285,7 +285,21 @@ class BacktestEngine:
                 raw_entry = float(row["open"])
                 entry_price = self.slippage_model.apply(raw_entry, signal.side, "entry", frame, index)
                 signal.metadata["backtest_raw_entry_price"] = raw_entry
-                quantity = max(1, int(signal.metadata.get("quantity", 1)))
+                risk_amount = context.capital * (context.risk_pct / 100)
+                risk_per_unit = abs(entry_price - float(signal.stop_loss))
+                risk_per_unit = max(
+                    abs(entry_price - float(signal.stop_loss)),
+                    1e-9,
+                )
+
+                quantity = max(
+                    1,
+                    int(risk_amount / risk_per_unit),
+                )
+                # Prevent oversized positions
+                max_position_value = context.capital * 0.20
+                max_quantity = max(1,int(max_position_value / entry_price),)
+                quantity = min(quantity, max_quantity)
                 self.risk_manager.record_trade_opened(signal.signal_time)
                 self.logger.info("backtest_trade_opened", {"symbol": symbol, "side": signal.side, "entry": entry_price, "event": "backtest_trade_opened"})
                 break
@@ -314,6 +328,25 @@ class BacktestEngine:
             rejected_signal_count=rejected_signal_count,
             rejection_reasons=rejection_reasons,
         )
+    def _intrabar_exit(
+        self,
+        row,
+        side,
+        stop,
+        target,
+    ):
+        o = float(row["open"])
+
+        if side == "BUY":
+            if abs(o - stop) < abs(target - o):
+                return stop, "stop_loss"
+            return target, "target"
+
+        if abs(stop - o) < abs(o - target):
+            return stop, "stop_loss"
+
+        return target, "target"
+
 
     def _try_exit(
         self,
@@ -324,10 +357,14 @@ class BacktestEngine:
         entry_price: float,
         quantity: int,
     ) -> BacktestTrade | None:
+
         row = frame.iloc[index]
+
         side = signal.side.upper()
+
         low = float(row["low"])
         high = float(row["high"])
+
         stop = float(signal.stop_loss)
         target = float(signal.target_price)
 
@@ -342,16 +379,44 @@ class BacktestEngine:
             return None
 
         if stop_hit and target_hit:
-            exit_reason = "stop_loss"
-            raw_exit = stop
-        elif stop_hit:
-            exit_reason = "stop_loss"
-            raw_exit = stop
-        else:
-            exit_reason = "target"
-            raw_exit = target
 
-        exit_price = self.slippage_model.apply(raw_exit, side, "exit", frame, index)
+            raw_exit, exit_reason = self._intrabar_exit(
+                row,
+                side,
+                stop,
+                target,
+            )
+
+        elif stop_hit:
+
+            exit_reason = "stop_loss"
+
+            if side == "BUY":
+                # gap below stop
+                raw_exit = min(stop, float(row["open"]))
+            else:
+                # gap above stop
+                raw_exit = max(stop, float(row["open"]))
+
+        else:
+
+            exit_reason = "target"
+
+            if side == "BUY":
+                # favorable gap above target
+                raw_exit = max(target, float(row["open"]))
+            else:
+                # favorable gap below target
+                raw_exit = min(target, float(row["open"]))
+
+        exit_price = self.slippage_model.apply(
+            raw_exit,
+            side,
+            "exit",
+            frame,
+            index,
+        )
+    
         return self._build_trade(
             signal,
             entry_price,
@@ -363,7 +428,6 @@ class BacktestEngine:
             frame,
             raw_exit_price=raw_exit,
         )
-
     def _build_trade(
         self,
         signal: StrategySignal,
@@ -389,7 +453,11 @@ class BacktestEngine:
         total_costs = brokerage + taxes
         pnl = gross_pnl - total_costs
         risk = max(abs(float(entry_price) - float(signal.stop_loss)), 1e-9)
-        reward = (float(exit_price) - float(entry_price)) * direction
+        #risk = abs(float(entry_price)- float(signal.stop_loss))
+        realized_reward = abs(float(exit_price)- float(entry_price))
+        planned_reward = abs(float(signal.target_price)- float(entry_price))
+        realized_rr = realized_reward / max(risk, 1e-9)
+        planned_rr = planned_reward / max(risk, 1e-9)
         return BacktestTrade(
             symbol=signal.symbol,
             strategy_name=signal.strategy_name,
@@ -402,7 +470,7 @@ class BacktestEngine:
             stop_loss=float(signal.stop_loss),
             target_price=float(signal.target_price),
             pnl=round(float(pnl), 2),
-            rr=float(reward / risk),
+            rr=round(realized_rr, 2),
             exit_reason=exit_reason,
             gross_pnl=round(float(gross_pnl), 2),
             total_costs=round(float(total_costs), 2),
@@ -410,7 +478,7 @@ class BacktestEngine:
             brokerage=round(float(brokerage), 2),
             taxes=round(float(taxes), 2),
             latency_ms=self.latency_ms,
-            metadata={**signal.metadata,"signal_score": self._score(signal),"exit_reason": exit_reason,}
+            metadata={**signal.metadata,"signal_score": self._score(signal),"planned_rr": round(planned_rr, 2),"realized_rr": round(realized_rr, 2),"exit_reason": exit_reason,}
         )
 
     def _metrics(
@@ -594,14 +662,15 @@ class BacktestEngine:
                 2
             ),
 
-            cost_drag_pct=round(
-                (total_costs / gross_pnl * 100)
-                if gross_pnl
-                else 0.0,
-                2
-            ),
-
-            planned_rr_distribution=planned_rr,
+            cost_drag_pct = ((
+                total_costs /
+                max(abs(gross_pnl), 1.0)
+            ) * 100,
+            2,),
+            planned_rr_distribution=[
+                trade.metadata.get("planned_rr", 0)
+                for trade in trades
+            ],
         )
 
     def _signals_for_bar(
@@ -639,6 +708,10 @@ class BacktestEngine:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
         frame["volume"] = pd.to_numeric(frame.get("volume", 0), errors="coerce").fillna(0.0)
         frame = frame.dropna(subset=["open", "high", "low", "close"]).reset_index(drop=True)
+        frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+        frame = frame.sort_values("timestamp")
+        frame = frame.drop_duplicates(subset=["timestamp"])
+        frame = frame.reset_index(drop=True)
         return frame
 
     @staticmethod
