@@ -73,14 +73,41 @@ class CRTTBSStrategy(BaseStrategy):
                 continue
 
             sweeps = self.liquidity_detector.detect(candles, index)
+
+            print(
+                "DEBUG",
+                index,
+                "high",
+                row["high"],
+                "low",
+                row["low"],
+                "sweeps",
+                sweeps
+            )
+
             if not sweeps:
                 continue
             crt = self.crt_detector.find_recent(candles, index)
+            print(
+            "CRT RESULT",
+            index,
+            crt
+            )
             if crt is None:
                 continue
 
             for sweep in sweeps:
                 side = self.crt_detector.setup_direction(crt, row, sweep)
+                print(
+                "SETUP",
+                sweep.type,
+                "SIDE",
+                side,
+                "close",
+                row["close"],
+                "crt",
+                crt
+            )
                 if side is None or (session, side) in traded_sessions:
                     continue
 
