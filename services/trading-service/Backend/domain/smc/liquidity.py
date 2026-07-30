@@ -232,14 +232,14 @@ class LiquiditySweepDetector:
             )
 
             return LiquiditySweep(
-                side="SELL",
-                swept_level=liquidity_range.high,
-                sweep_index=index,
-                sweep_price=high,
-                close_price=close,
-                quality=quality,
-                direction="SELL",
-            )
+            side="SELL",
+            swept_level=liquidity_range.high,
+            sweep_index=index,
+            wick_extreme=high,
+            close_price=close,
+            quality=quality,
+            direction_after_sweep="SELL",
+        )
 
         # ---------------- BUY ----------------
 
@@ -281,11 +281,11 @@ class LiquiditySweepDetector:
         )
 
         return LiquiditySweep(
-            side="BUY",
-            swept_level=liquidity_range.low,
-            sweep_index=index,
-            sweep_price=low,
-            close_price=close,
-            quality=quality,
-            direction="BUY",
-        )
+        side="BUY",
+        swept_level=liquidity_range.low,
+        sweep_index=index,
+        wick_extreme=low,
+        close_price=close,
+        quality=quality,
+        direction_after_sweep="BUY",
+    )
