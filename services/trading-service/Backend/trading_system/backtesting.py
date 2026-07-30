@@ -194,7 +194,7 @@ class BacktestEngine:
         capital: float = 100_000.0,
         risk_pct: float = 2.0,
         rr_ratio: float = 2.0,
-        min_score: float = 10.0,
+        min_score: float = 6.0,
     ) -> BacktestMetrics:
         
         frame = self._normalize_candles(candles)
