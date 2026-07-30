@@ -5,61 +5,139 @@ from typing import Literal
 
 import pandas as pd
 
-
 SlippageMode = Literal["fixed", "volatility", "combined"]
 
 
 @dataclass(slots=True)
 class SlippageConfig:
+    # fixed = only fixed bps
+    # volatility = only ATR based
+    # combined = fixed + ATR
     mode: SlippageMode = "combined"
-    fixed_bps: float = 5.0
-    atr_factor: float = 0.05
+
+    # 0.5 basis points (~0.12 points at NIFTY 24,000)
+    fixed_bps: float = 0.5
+
+    # 0.5% of ATR
+    atr_factor: float = 0.005
+
     atr_period: int = 14
-    max_slippage_bps: float = 50.0
+
+    # Absolute cap in points
+    max_slippage_points: float = 2.0
 
 
 class SlippageModel:
     def __init__(self, config: SlippageConfig | None = None) -> None:
         self.config = config or SlippageConfig()
 
-    def amount(self, price: float, candles: pd.DataFrame | None = None, index: int | None = None) -> float:
+    def amount(
+        self,
+        price: float,
+        candles: pd.DataFrame | None = None,
+        index: int | None = None,
+    ) -> float:
+
         price = float(price)
-        fixed = price * float(self.config.fixed_bps) / 10_000.0
+
+        # Fixed component
+        fixed = price * self.config.fixed_bps / 10000.0
+
+        # ATR component
         volatility = 0.0
-        if candles is not None and index is not None and len(candles) > 0:
-            volatility = self._atr(candles, index, int(self.config.atr_period)) * float(self.config.atr_factor)
+
+        if (
+            candles is not None
+            and index is not None
+            and len(candles) > 0
+        ):
+            atr = self._atr(
+                candles,
+                index,
+                self.config.atr_period,
+            )
+
+            volatility = atr * self.config.atr_factor
 
         if self.config.mode == "fixed":
-            raw = fixed
+            slip = fixed
+
         elif self.config.mode == "volatility":
-            raw = volatility
+            slip = volatility
+
         else:
-            raw = fixed + volatility
+            slip = fixed + volatility
 
-        cap = price * float(self.config.max_slippage_bps) / 10_000.0
-        return max(0.0, min(raw, cap))
+        # Hard cap in points
+        slip = min(
+            slip,
+            self.config.max_slippage_points,
+        )
 
-    def apply(self, price: float, side: str, event: Literal["entry", "exit"], candles: pd.DataFrame | None = None, index: int | None = None) -> float:
-        slip = self.amount(price, candles, index)
+        return max(0.0, slip)
+
+    def apply(
+        self,
+        price: float,
+        side: str,
+        event: Literal["entry", "exit"],
+        candles: pd.DataFrame | None = None,
+        index: int | None = None,
+    ) -> float:
+
+        slip = self.amount(
+            price,
+            candles,
+            index,
+        )
+
         side = side.upper()
+
         if event == "entry":
-            return float(price) + slip if side == "BUY" else float(price) - slip
-        return float(price) - slip if side == "BUY" else float(price) + slip
+
+            if side == "BUY":
+                return float(price) + slip
+
+            return float(price) - slip
+
+        # Exit
+
+        if side == "BUY":
+            return float(price) - slip
+
+        return float(price) + slip
 
     @staticmethod
-    def _atr(candles: pd.DataFrame, index: int, period: int) -> float:
-        start = max(0, int(index) - max(1, period) + 1)
-        window = candles.iloc[start : int(index) + 1]
+    def _atr(
+        candles: pd.DataFrame,
+        index: int,
+        period: int,
+    ) -> float:
+
+        start = max(
+            0,
+            index - period + 1,
+        )
+
+        window = candles.iloc[start:index + 1]
+
         if window.empty:
             return 0.0
 
-        previous_close = window["close"].shift(1)
-        true_range = pd.concat(
+        prev_close = window["close"].shift(1)
+
+        tr = pd.concat(
             [
                 window["high"] - window["low"],
-                (window["high"] - previous_close).abs(),
-                (window["low"] - previous_close).abs(),
+                (window["high"] - prev_close).abs(),
+                (window["low"] - prev_close).abs(),
             ],
             axis=1,
         ).max(axis=1)
-        return float(true_range.mean(skipna=True) or 0.0)
+
+        atr = tr.mean(skipna=True)
+
+        if pd.isna(atr):
+            return 0.0
+
+        return float(atr)
