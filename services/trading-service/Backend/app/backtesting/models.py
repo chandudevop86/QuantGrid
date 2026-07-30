@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any
+from Backend.app.backtesting.audit import TradeAudit
 
+audit: TradeAudit | None = None
 
 @dataclass(frozen=True, slots=True)
 class BacktestTrade:
