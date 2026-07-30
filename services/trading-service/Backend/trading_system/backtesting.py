@@ -4,6 +4,7 @@ import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from math import sqrt
+from signal import signal
 from typing import Any
 
 import pandas as pd
@@ -316,8 +317,26 @@ class BacktestEngine:
                     continue
                 open_signal = signal
                 entry_index = index
-                raw_entry = float(row["open"])
-                entry_price = self.slippage_model.apply(raw_entry, signal.side, "entry", frame, index)
+
+                # Strategy specific entry model
+                entry_zone = signal.metadata.get("entry_zone")
+
+                if entry_zone and isinstance(entry_zone, list) and len(entry_zone) == 2:
+                    raw_entry = (
+                        float(entry_zone[0]) +
+                        float(entry_zone[1])
+                    ) / 2
+                else:
+                    raw_entry = float(row["open"])
+
+                entry_price = self.slippage_model.apply(
+                    raw_entry,
+                    signal.side,
+                    "entry",
+                    frame,
+                    index
+                )
+
                 signal.metadata["backtest_raw_entry_price"] = raw_entry
                 risk_amount = context.capital * (context.risk_pct / 100)
                 risk_per_unit = abs(entry_price - float(signal.stop_loss))
