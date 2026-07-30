@@ -15,6 +15,8 @@ from Backend.trading_system.logging import get_logger
 from Backend.trading_system.risk import GlobalRiskConfig, GlobalRiskManager
 from Backend.trading_system.slippage import SlippageModel
 
+
+
 @dataclass(slots=True)
 class BacktestTrade:
     symbol: str
@@ -194,7 +196,26 @@ class BacktestEngine:
         rr_ratio: float = 2.0,
         min_score: float = 10.0,
     ) -> BacktestMetrics:
+        
         frame = self._normalize_candles(candles)
+        signal_pointer = 0
+
+        if signals is None:
+            signals = self.strategy_engine.run(
+                strategy_name,
+                frame,
+                context=StrategyContext(
+                    symbol=symbol,
+                    capital=capital,
+                    risk_pct=risk_pct,
+                    rr_ratio=rr_ratio,
+                ),
+            )
+
+            signals = sorted(
+                signals,
+                key=lambda s: s.signal_time,
+            )
         if frame.empty:
             return BacktestMetrics(
             total_trades=0,
@@ -240,29 +261,32 @@ class BacktestEngine:
 
         for index in range(1, len(frame)):
             row = frame.iloc[index]
-            if open_signal is not None and entry_index is not None:
-                maybe_trade = self._try_exit(frame, index, open_signal, entry_index, entry_price, quantity)
-                if maybe_trade is not None:
-                    trades.append(maybe_trade)
-                    equity_curve.append(equity_curve[-1] + maybe_trade.pnl)
-                    self.risk_manager.record_realized_pnl(maybe_trade.pnl, maybe_trade.exit_time)
-                    open_signal = None
-                    entry_index = None
-                    quantity = 0
-                    entry_price = 0.0
-                    if self.risk_manager.kill_switch_active:
-                        break
+
+            ...
 
             if open_signal is not None:
                 continue
 
-            candidate_signals = self._signals_for_bar(
-                frame=frame,
-                index=index,
-                context=context,
-                strategy_name=strategy_name,
-                provided_signals=signals,
+            current_time = (
+                pd.Timestamp(row["timestamp"])
+                .to_pydatetime()
+                .replace(tzinfo=None)
             )
+
+            candidate_signals = []
+
+            while signal_pointer < len(signals):
+
+                signal = signals[signal_pointer]
+
+                signal_time = signal.signal_time.replace(tzinfo=None)
+
+                if signal_time > current_time:
+                    break
+
+                candidate_signals.append(signal)
+                signal_pointer += 1
+            
             for signal in candidate_signals:
                 key = (signal.symbol, signal.signal_time, signal.side)
                 if key in seen_signal_keys:
@@ -662,41 +686,17 @@ class BacktestEngine:
                 2
             ),
 
-            cost_drag_pct = ((
-                total_costs /
-                max(abs(gross_pnl), 1.0)
-            ) * 100,
-            2,),
+            cost_drag_pct=round(
+                (total_costs / max(abs(gross_pnl), 1.0)) * 100,
+                2,
+            ),
             planned_rr_distribution=[
                 trade.metadata.get("planned_rr", 0)
                 for trade in trades
             ],
         )
 
-    def _signals_for_bar(
-        self,
-        *,
-        frame: pd.DataFrame,
-        index: int,
-        context: StrategyContext,
-        strategy_name: str,
-        provided_signals: list[StrategySignal] | None,
-    ) -> list[StrategySignal]:
-        if provided_signals is None:
-            return self.strategy_engine.run(strategy_name, frame.iloc[:index], context)
-
-        bar_time = pd.Timestamp(frame.iloc[index - 1]["timestamp"]).to_pydatetime().replace(tzinfo=None)
-        previous_time = (
-            pd.Timestamp(frame.iloc[index - 2]["timestamp"]).to_pydatetime().replace(tzinfo=None)
-            if index >= 2
-            else datetime.min
-        )
-        return [
-            signal
-            for signal in provided_signals
-            if previous_time < signal.signal_time.replace(tzinfo=None) <= bar_time
-        ]
-
+    
     @staticmethod
     def _normalize_candles(candles: list[dict[str, Any]] | pd.DataFrame) -> pd.DataFrame:
         frame = candles.copy() if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
