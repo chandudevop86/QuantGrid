@@ -24,7 +24,12 @@ class CRTCandle:
 
 
 class CRTDetector:
-    def __init__(self, lookback: int = 12, displacement_multiplier: float = 1.35, min_body_pct: float = 0.55) -> None:
+    def __init__(
+    self,
+        lookback: int = 20,
+        displacement_multiplier: float = 1.15,
+        min_body_pct: float = 0.40,
+    ) -> None:
         self.lookback = int(lookback)
         self.displacement_multiplier = float(displacement_multiplier)
         self.min_body_pct = float(min_body_pct)
@@ -86,19 +91,18 @@ class CRTDetector:
     sweep: LiquiditySweep,
     ) -> str | None:
 
-        o = float(row["open"])
-        c = float(row["close"])
+        close = float(row["close"])
 
-        if c < crt.low or c > crt.high:
+        # Price must be inside CRT range
+        if not (crt.low <= close <= crt.high):
             return None
 
-        bullish = c > o
-        bearish = c < o
-
-        if sweep.type == "SSL" and bullish:
+        # SSL sweep → Buy
+        if sweep.type == "SSL" and close >= crt.midpoint:
             return "BUY"
 
-        if sweep.type == "BSL" and bearish:
+        # BSL sweep → Sell
+        if sweep.type == "BSL" and close <= crt.midpoint:
             return "SELL"
 
         return None
