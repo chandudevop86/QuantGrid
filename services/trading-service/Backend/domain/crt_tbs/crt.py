@@ -32,14 +32,45 @@ class CRTDetector:
     def is_crt_candle(self, candles: pd.DataFrame, index: int) -> bool:
         if index < 5 or index >= len(candles):
             return False
+
         row = candles.iloc[index]
-        ranges = candles["bar_range"].iloc[max(0, index - self.lookback) : index]
+
+        ranges = candles["bar_range"].iloc[
+            max(0, index - self.lookback): index
+        ]
+
         average_range = float(ranges.mean() or 0.0)
         bar_range = float(row["bar_range"])
         body = float(row["body_size"])
+
         if average_range <= 0 or bar_range <= 0:
             return False
-        return bar_range >= average_range * self.displacement_multiplier and body / bar_range >= self.min_body_pct
+
+        displacement_ok = (
+            bar_range >= average_range * self.displacement_multiplier
+        )
+
+        body_pct = body / bar_range
+        body_ok = body_pct >= self.min_body_pct
+
+        if displacement_ok and body_ok:
+            print(
+                f"CRT FOUND @ {index} | "
+                f"Range={bar_range:.2f} "
+                f"Avg={average_range:.2f} "
+                f"Body={body_pct:.2%}"
+            )
+            return True
+
+        print(
+            f"CRT REJECT @ {index} | "
+            f"Range={bar_range:.2f} "
+            f"Need={average_range*self.displacement_multiplier:.2f} | "
+            f"Body={body_pct:.2%} "
+            f"Need={self.min_body_pct:.2%}"
+        )
+
+        return False
 
     def find_recent(self, candles: pd.DataFrame, index: int) -> CRTCandle | None:
         left = max(0, index - self.lookback)
