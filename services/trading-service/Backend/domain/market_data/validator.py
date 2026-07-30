@@ -20,9 +20,6 @@ class MarketDataValidator:
         candles: pd.DataFrame,
         min_candles: int | None = None,
     ) -> ValidationResult:
-        """
-        Validate market data before strategy execution.
-        """
         required_candles = min_candles or cls.MIN_CANDLES
         errors: list[str] = []
 
@@ -43,10 +40,9 @@ class MarketDataValidator:
 
         missing = required_columns - set(candles.columns)
         if missing:
-            errors.append(f"Missing columns: {sorted(missing)}")
             return ValidationResult(
                 valid=False,
-                errors=errors,
+                errors=[f"Missing columns: {sorted(missing)}"],
             )
 
         if len(candles) < required_candles:
@@ -63,15 +59,35 @@ class MarketDataValidator:
         if (candles["high"] < candles["low"]).any():
             errors.append("High < Low")
 
-        ohlcv = candles[
-            ["open", "high", "low", "close", "volume"]
-        ]
+        price_cols = ["open", "high", "low", "close"]
 
-        if ohlcv.isna().any().any():
+        # Check invalid prices
+        if (candles[price_cols] <= 0).any().any():
+            errors.append("OHLC contains invalid price values")
+
+        # Allow zero volume; only reject negative volume
+        if (candles["volume"] < 0).any():
+            errors.append("Volume contains negative values")
+
+        # Check NaN
+        if candles[price_cols + ["volume"]].isna().any().any():
             errors.append("OHLCV contains NaN values")
 
-        if (ohlcv <= 0).any().any():
-            errors.append("OHLCV contains invalid values")
+        # ---------- DEBUG ----------
+        bad = candles[
+            (candles["open"] <= 0)
+            | (candles["high"] <= 0)
+            | (candles["low"] <= 0)
+            | (candles["close"] <= 0)
+            | (candles["volume"] < 0)
+        ]
+
+        if not bad.empty:
+            print("\n========== INVALID CANDLES ==========")
+            print(bad.head(20))
+            print(f"Total bad rows: {len(bad)}")
+            print("=====================================\n")
+        # ---------------------------
 
         return ValidationResult(
             valid=len(errors) == 0,
