@@ -93,20 +93,17 @@ class CRTDetector:
 
         close = float(row["close"])
 
-        # Price must be inside CRT range
-        if not (crt.low <= close <= crt.high):
-            return None
+        if sweep.type == "SSL":
+            # liquidity taken below low, bullish recovery
+            if close > crt.low:
+                return "BUY"
 
-        # SSL sweep → Buy
-        if sweep.type == "SSL" and close >= crt.midpoint:
-            return "BUY"
-
-        # BSL sweep → Sell
-        if sweep.type == "BSL" and close <= crt.midpoint:
-            return "SELL"
+        if sweep.type == "BSL":
+            # liquidity taken above high, bearish recovery
+            if close < crt.high:
+                return "SELL"
 
         return None
-
     def setup_type(self, crt: CRTCandle, row: pd.Series, side: str) -> str:
         close = float(row["close"])
         previous_close = float(row.get("previous_close", close))
