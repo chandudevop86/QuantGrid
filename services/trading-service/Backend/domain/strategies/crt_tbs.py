@@ -75,24 +75,26 @@ class CRTTBSStrategy(BaseStrategy):
             sweeps = self.liquidity_detector.detect(candles, index)
 
             print(
-                "DEBUG",
+                "INDEX",
                 index,
-                "high",
-                row["high"],
-                "low",
-                row["low"],
-                "sweeps",
+                "SWEEPS",
+                len(sweeps),
                 sweeps
             )
 
             if not sweeps:
                 continue
+
+
             crt = self.crt_detector.find_recent(candles, index)
+
             print(
-            "CRT RESULT",
-            index,
-            crt
+                "INDEX",
+                index,
+                "CRT",
+                crt
             )
+
             if crt is None:
                 continue
 
