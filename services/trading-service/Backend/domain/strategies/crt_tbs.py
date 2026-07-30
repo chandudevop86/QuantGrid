@@ -83,6 +83,7 @@ class CRTTBSStrategy(BaseStrategy):
             )
 
             if not sweeps:
+                print("REJECT: No liquidity sweep", index)
                 continue
 
 
@@ -96,6 +97,7 @@ class CRTTBSStrategy(BaseStrategy):
             )
 
             if crt is None:
+                print("REJECT: No CRT candle", index)
                 continue
 
             for sweep in sweeps:
@@ -110,9 +112,12 @@ class CRTTBSStrategy(BaseStrategy):
                 "crt",
                 crt
             )
-                if side is None or (session, side) in traded_sessions:
+                if side is None: 
+                    print("REJECT: CRT direction failed", sweep.type)
                     continue
-
+                if (session, side) in traded_sessions:
+                    print("REJECT: Already traded session")
+                    continue
                 tbs = self.tbs_detector.detect(candles, index, sweep)
                 mtf = self.mtf_analyzer.analyze(context.params, side, candles.iloc[: index + 1])
                 volume_confirmed = self._volume_confirmed(row)
@@ -124,15 +129,19 @@ class CRTTBSStrategy(BaseStrategy):
                     volume_confirmed=volume_confirmed,
                 )
                 if score < self.config.min_score:
+                    print("REJECT: Score low", score, reasons)
                     continue
                 if self.config.require_htf_alignment and not mtf.aligned:
+                    print("REJECT: HTF not aligned")
                     continue
 
                 stop_loss, target1, target2 = self._risk_levels(row, side, sweep, crt, tbs, context)
                 rr = self._risk_reward(float(row["close"]), stop_loss, target1)
                 if rr < max(float(context.rr_ratio), float(self.config.min_rr)):
+                    print("REJECT: RR low", rr)
                     continue
                 if score < self.config.min_trade_score:
+                    print("REJECT: Trade score low", score)
                     continue
 
                 setup_type = self.crt_detector.setup_type(crt, row, side)
