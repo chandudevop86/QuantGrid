@@ -52,38 +52,115 @@ class BacktestMetrics:
     pnl: float
     max_drawdown: float
     sharpe_ratio: float
+
     gross_pnl: float = 0.0
     total_costs: float = 0.0
     net_pnl: float = 0.0
     expectancy: float = 0.0
+
     rejected_signal_count: int = 0
     rejection_reasons: dict[str, int] = field(default_factory=dict)
+
     average_latency_ms: float = 0.0
+
     rr_distribution: list[float] = field(default_factory=list)
-    trades: list[dict[str, Any]] = field(default_factory=list)
+
+    trades: list[dict[str, Any]] = field(
+        default_factory=list
+    )
+
+    # Advanced analytics
+    profit_factor: float = 0.0
+    average_win: float = 0.0
+    average_loss: float = 0.0
+    cost_drag_pct: float = 0.0
+
+    planned_rr_distribution: list[float] = field(
+        default_factory=list
+    )
+
 
     def summary(self) -> dict[str, Any]:
+
         return {
-            "total_trades": self.total_trades,
-            "win_rate": self.win_rate,
-            "pnl": self.pnl,
-            "max_drawdown": self.max_drawdown,
-            "sharpe_ratio": self.sharpe_ratio,
-            "gross_pnl": self.gross_pnl,
-            "total_costs": self.total_costs,
-            "net_pnl": self.net_pnl,
-            "expectancy": self.expectancy,
-            "rejected_signal_count": self.rejected_signal_count,
-            "rejection_reasons": dict(self.rejection_reasons),
-            "average_latency_ms": self.average_latency_ms,
+
+            "total_trades":
+                self.total_trades,
+
+            "win_rate":
+                self.win_rate,
+
+            "pnl":
+                self.pnl,
+
+            "max_drawdown":
+                self.max_drawdown,
+
+            "sharpe_ratio":
+                self.sharpe_ratio,
+
+
+            "gross_pnl":
+                self.gross_pnl,
+
+            "total_costs":
+                self.total_costs,
+
+            "net_pnl":
+                self.net_pnl,
+
+
+            "expectancy":
+                self.expectancy,
+
+
+            "profit_factor":
+                self.profit_factor,
+
+
+            "average_win":
+                self.average_win,
+
+
+            "average_loss":
+                self.average_loss,
+
+
+            "cost_drag_pct":
+                self.cost_drag_pct,
+
+
+            "rejected_signal_count":
+                self.rejected_signal_count,
+
+
+            "rejection_reasons":
+                dict(self.rejection_reasons),
+
+
+            "average_latency_ms":
+                self.average_latency_ms,
         }
 
-    def to_dict(self) -> dict[str, Any]:
-        payload = self.summary()
-        payload["rr_distribution"] = self.rr_distribution
-        payload["trades"] = self.trades
-        return payload
 
+
+    def to_dict(self) -> dict[str, Any]:
+
+        payload = self.summary()
+
+        payload["rr_distribution"] = (
+            self.rr_distribution
+        )
+
+        payload["planned_rr_distribution"] = (
+            self.planned_rr_distribution
+        )
+
+        payload["trades"] = (
+            self.trades
+        )
+
+        return payload
 
 class BacktestEngine:
     def __init__(
@@ -119,8 +196,23 @@ class BacktestEngine:
     ) -> BacktestMetrics:
         frame = self._normalize_candles(candles)
         if frame.empty:
-            return BacktestMetrics(0, 0.0, 0.0, 0.0, 0.0)
-
+            return BacktestMetrics(
+            total_trades=0,
+            win_rate=0.0,
+            pnl=0.0,
+            max_drawdown=0.0,
+            sharpe_ratio=0.0,
+            gross_pnl=0.0,
+            total_costs=0.0,
+            net_pnl=0.0,
+            expectancy=0.0,
+            rejected_signal_count=0,
+            rejection_reasons={},
+            average_latency_ms=0.0,
+            rr_distribution=[],
+            planned_rr_distribution=[],
+            trades=[],
+        )
         self.risk_manager.config = GlobalRiskConfig(
             starting_equity=capital,
             max_daily_loss_pct=self.risk_manager.config.max_daily_loss_pct,
@@ -322,36 +414,193 @@ class BacktestEngine:
         )
 
     def _metrics(
-        self,
-        trades: list[BacktestTrade],
-        equity_curve: list[float],
-        *,
-        rejected_signal_count: int = 0,
-        rejection_reasons: dict[str, int] | None = None,
-    ) -> BacktestMetrics:
+    self,
+    trades: list[BacktestTrade],
+    equity_curve: list[float],
+    *,
+    rejected_signal_count: int = 0,
+    rejection_reasons: dict[str, int] | None = None,
+) -> BacktestMetrics:
+
         total = len(trades)
-        wins = sum(1 for trade in trades if trade.pnl > 0)
+
+        wins = [
+            trade.pnl
+            for trade in trades
+            if trade.pnl > 0
+        ]
+
+        losses = [
+            trade.pnl
+            for trade in trades
+            if trade.pnl < 0
+        ]
+
         pnl = sum(trade.pnl for trade in trades)
-        returns = [trade.pnl / max(abs(trade.entry_price * trade.quantity), 1.0) for trade in trades]
+
+        gross_profit = sum(wins)
+
+        gross_loss = abs(sum(losses))
+
+        profit_factor = (
+            gross_profit / gross_loss
+            if gross_loss > 0
+            else 0.0
+        )
+
+        win_rate = (
+            len(wins) / total
+            if total
+            else 0.0
+        )
+
+        avg_win = (
+            gross_profit / len(wins)
+            if wins
+            else 0.0
+        )
+
+        avg_loss = (
+            sum(losses) / len(losses)
+            if losses
+            else 0.0
+        )
+
+        returns = [
+            trade.pnl /
+            max(
+                abs(trade.entry_price * trade.quantity),
+                1.0
+            )
+            for trade in trades
+        ]
+
         sharpe = self._sharpe(returns)
-        total_costs = sum(trade.total_costs for trade in trades)
-        gross_pnl = sum(trade.gross_pnl for trade in trades)
-        avg_latency = sum(trade.latency_ms for trade in trades) / total if total else 0.0
+
+        total_costs = sum(
+            trade.total_costs
+            for trade in trades
+        )
+
+        gross_pnl = sum(
+            trade.gross_pnl
+            for trade in trades
+        )
+
+        avg_latency = (
+            sum(trade.latency_ms for trade in trades) / total
+            if total
+            else 0.0
+        )
+
+
+        planned_rr = []
+
+        for trade in trades:
+            risk = abs(
+                trade.entry_price -
+                trade.stop_loss
+            )
+
+            reward = abs(
+                trade.target_price -
+                trade.entry_price
+            )
+
+            if risk > 0:
+                planned_rr.append(
+                    reward / risk
+                )
+
+
         return BacktestMetrics(
             total_trades=total,
-            win_rate=wins / total if total else 0.0,
-            pnl=round(float(pnl), 2),
-            max_drawdown=self._max_drawdown(equity_curve),
-            sharpe_ratio=sharpe,
-            gross_pnl=round(float(gross_pnl), 2),
-            total_costs=round(float(total_costs), 2),
-            net_pnl=round(float(pnl), 2),
-            expectancy=round(float(pnl) / total, 2) if total else 0.0,
+
+            win_rate=round(
+                win_rate,
+                4
+            ),
+
+            pnl=round(
+                float(pnl),
+                2
+            ),
+
+            max_drawdown=self._max_drawdown(
+                equity_curve
+            ),
+
+            sharpe_ratio=round(
+                float(sharpe),
+                3
+            ),
+
+            gross_pnl=round(
+                float(gross_pnl),
+                2
+            ),
+
+            total_costs=round(
+                float(total_costs),
+                2
+            ),
+
+            net_pnl=round(
+                float(pnl),
+                2
+            ),
+
+            expectancy=round(
+                float(pnl) / total,
+                2
+            ) if total else 0.0,
+
+
             rejected_signal_count=rejected_signal_count,
-            rejection_reasons=dict(rejection_reasons or {}),
-            average_latency_ms=round(float(avg_latency), 2),
-            rr_distribution=[trade.rr for trade in trades],
-            trades=[trade.to_dict() for trade in trades],
+
+            rejection_reasons=dict(
+                rejection_reasons or {}
+            ),
+
+            average_latency_ms=round(
+                float(avg_latency),
+                2
+            ),
+
+            rr_distribution=[
+                trade.rr
+                for trade in trades
+            ],
+
+            trades=[
+                trade.to_dict()
+                for trade in trades
+            ],
+
+            # New analytics
+            profit_factor=round(
+                profit_factor,
+                2
+            ),
+
+            average_win=round(
+                avg_win,
+                2
+            ),
+
+            average_loss=round(
+                avg_loss,
+                2
+            ),
+
+            cost_drag_pct=round(
+                (total_costs / gross_pnl * 100)
+                if gross_pnl
+                else 0.0,
+                2
+            ),
+
+            planned_rr_distribution=planned_rr,
         )
 
     def _signals_for_bar(
