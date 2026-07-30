@@ -262,7 +262,11 @@ class CRTTBSStrategy(BaseStrategy):
         if score >= 5:
             return "WATCHLIST"
         return "REJECTED"
-
+    def _score(signal: StrategySignal) -> float:
+        for key in ("total_score", "score"):
+            if key in signal.metadata:
+                return float(signal.metadata[key])
+        return 0.0
     def _metadata(
         self,
         *,
@@ -297,7 +301,13 @@ class CRTTBSStrategy(BaseStrategy):
             "rr_ratio": round(float(rr), 2),
             "quality_tier": quality,
             "signal_quality": quality,
-            "score_breakdown": {"total": score, "max": 11, "reasons": reasons},
+            "score": score,
+            "total_score": score,
+            "score_breakdown": {
+                "total": score,
+                "max": 11,
+                "reasons": reasons
+            },
             "htf_bias": mtf.get("bias"),
             "mtf": mtf,
             "volume_confirmation": volume_confirmed,
