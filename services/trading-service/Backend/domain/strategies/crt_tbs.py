@@ -262,11 +262,7 @@ class CRTTBSStrategy(BaseStrategy):
         if score >= 5:
             return "WATCHLIST"
         return "REJECTED"
-    def _score(signal: StrategySignal) -> float:
-        for key in ("total_score", "score"):
-            if key in signal.metadata:
-                return float(signal.metadata[key])
-        return 0.0
+    
     def _metadata(
         self,
         *,
