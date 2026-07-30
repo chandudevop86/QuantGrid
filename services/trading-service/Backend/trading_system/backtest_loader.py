@@ -1,11 +1,11 @@
 from sqlalchemy import text
-from Backend.database.connection import get_db
+
+from Backend.core.database import get_db
 
 
 def load_nifty_candles(
     start_date: str,
     end_date: str,
-    limit: int | None = None,
 ):
 
     db = next(get_db())
@@ -27,23 +27,17 @@ def load_nifty_candles(
     ORDER BY timestamp ASC
     """
 
-    if limit:
-        query += f" LIMIT {limit}"
-
-
     result = db.execute(
         text(query),
         {
             "start": start_date,
             "end": end_date,
-        }
+        },
     )
-
 
     candles = []
 
     for row in result:
-
         candles.append(
             {
                 "timestamp": row.timestamp,
@@ -55,5 +49,6 @@ def load_nifty_candles(
             }
         )
 
+    db.close()
 
     return candles
