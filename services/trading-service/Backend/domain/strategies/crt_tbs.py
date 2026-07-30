@@ -20,12 +20,12 @@ from Backend.domain.strategies.signal_builder import SignalBuilder
 class CRTTBSConfig(StrategyConfig):
     liquidity_lookback: int = 20
     crt_lookback: int = 14
-    min_score: int = 5
-    min_trade_score: int = 7
-    min_rr: float = 2.0
+    min_score: int = 2
+    min_trade_score: int = 2
+    min_rr: float = 1.0
     target2_rr: float = 3.0
     max_signal_age_minutes: int = 45
-    require_htf_alignment: bool = True
+    require_htf_alignment: bool = False
 
     @classmethod
     def for_mode(cls, mode: str) -> "CRTTBSConfig":
