@@ -295,6 +295,11 @@ class BacktestEngine:
                     continue
                 seen_signal_keys.add(key)
                 if self._score(signal) < min_score:
+                    print(
+                            f"SCORE DEBUG | "
+                            f"score={score} "
+                            f"min_score={min_score}"
+                        )
                     rejected_signal_count += 1
                     _increment_reason(rejection_reasons, "below_min_score")
                     continue
