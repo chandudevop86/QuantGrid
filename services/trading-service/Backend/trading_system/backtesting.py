@@ -318,7 +318,7 @@ class BacktestEngine:
             brokerage=round(float(brokerage), 2),
             taxes=round(float(taxes), 2),
             latency_ms=self.latency_ms,
-            metadata={"signal_score": self._score(signal)},
+            metadata={**signal.metadata,"signal_score": self._score(signal),"exit_reason": exit_reason,}
         )
 
     def _metrics(
