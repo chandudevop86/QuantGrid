@@ -48,15 +48,28 @@ class CRTDetector:
                 return self._build(candles, candidate_index)
         return None
 
-    def setup_direction(self, crt: CRTCandle, row: pd.Series, sweep: LiquiditySweep) -> str | None:
-        close = float(row["close"])
-        inside_range = float(crt.low) < close < float(crt.high)
-        if not inside_range:
+    def setup_direction(
+    self,
+    crt: CRTCandle,
+    row: pd.Series,
+    sweep: LiquiditySweep,
+    ) -> str | None:
+
+        o = float(row["open"])
+        c = float(row["close"])
+
+        if c < crt.low or c > crt.high:
             return None
-        if sweep.type == "SSL" and close > float(crt.midpoint):
+
+        bullish = c > o
+        bearish = c < o
+
+        if sweep.type == "SSL" and bullish:
             return "BUY"
-        if sweep.type == "BSL" and close < float(crt.midpoint):
+
+        if sweep.type == "BSL" and bearish:
             return "SELL"
+
         return None
 
     def setup_type(self, crt: CRTCandle, row: pd.Series, side: str) -> str:
