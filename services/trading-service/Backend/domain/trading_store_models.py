@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from Backend.core.database import Base
-from sqlalchemy import Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from datetime import datetime
 
 class JobRecord(Base):
     __tablename__ = "jobs"
@@ -47,7 +48,10 @@ class MarketCandleRecord(Base):
 
     symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
     interval: Mapped[str] = mapped_column(String(20), primary_key=True)
-    timestamp: Mapped[str] = mapped_column(String(40), primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
     market_symbol: Mapped[str] = mapped_column(String(64), nullable=False)
     open: Mapped[float] = mapped_column(Float, nullable=False)
     high: Mapped[float] = mapped_column(Float, nullable=False)
