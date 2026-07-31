@@ -213,11 +213,23 @@ class DhanProvider(EnvConfiguredProvider):
         self.mark_fetch()
 
         candles = _normalize_candles(symbol, raw)
-        limit = max(1, min(int(limit or 500), 500))
 
         candles.sort(key=lambda c: c["timestamp"])
 
+        if limit:
+            return candles[-int(limit):]
+        self.mark_fetch()
+
+        candles = _normalize_candles(symbol, raw)
+
+        candles.sort(key=lambda c: c["timestamp"])
+
+        MAX_LIMIT = 100000
+
+        limit = min(int(limit or MAX_LIMIT), MAX_LIMIT)
+
         return candles[-limit:]
+        
     
 
     def subscribe_ticks(self, symbols: Iterable[str]) -> None:
@@ -272,11 +284,23 @@ def _exchange_segment(symbol: str | None = None) -> str:
     
 def _period_days(period: str) -> int:
     value = str(period or "1d").lower()
-    if value.endswith("d"):
-        try:
+
+    try:
+        if value.endswith("d"):
             return int(value[:-1])
-        except ValueError:
-            return 1
+
+        if value.endswith("w"):
+            return int(value[:-1]) * 7
+
+        if value.endswith("mo"):
+            return int(value[:-2]) * 30
+
+        if value.endswith("y"):
+            return int(value[:-1]) * 365
+
+    except ValueError:
+        pass
+
     return 1
 
 
