@@ -301,3 +301,56 @@ class PaperTradeRecord(Base):
         nullable=False,
         index=True,
     )
+class InvestmentResearchRecord(Base):
+    __tablename__ = "investment_research_scores"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    asset_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True,
+    )
+
+    identifier: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(160),
+        nullable=False,
+    )
+
+    score: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    recommendation: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True,
+    )
+
+    risk_level: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+
+    scored_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )    
