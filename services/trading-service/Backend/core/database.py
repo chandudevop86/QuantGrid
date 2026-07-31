@@ -54,6 +54,7 @@ def _rebuild_engine(database_url: str) -> None:
 def init_database() -> None:
     import Backend.domain.security.models  # noqa: F401
     import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.order_models
 
     from Backend.core.schema_migrations import apply_versioned_migrations
 
