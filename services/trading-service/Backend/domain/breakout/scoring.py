@@ -56,7 +56,8 @@ class BreakoutScoringEngine:
 
         # 6. Volume Confirmation (0-2)
 
-        volume_score = 0
+        score.volume_confirmation = 0
+
 
         volume_ratio = float(
             row.get("volume_ratio", 0)
@@ -68,7 +69,7 @@ class BreakoutScoringEngine:
 
         # 7. ADX Trend Strength (0-2)
 
-        adx_score = 0
+        score.adx_strength = 0
 
         adx_value = float(
             row.get("adx", 0)
@@ -80,7 +81,7 @@ class BreakoutScoringEngine:
 
         # 8. Candle Quality (0-1)
 
-        candle_score = 0
+        score.candle_quality = 0
 
         candle_ratio = float(
             row.get(
@@ -94,23 +95,7 @@ class BreakoutScoringEngine:
 
 
 
-        total_score = (
-            score.trend_alignment
-            +
-            score.breakout_strength
-            +
-            score.momentum_confirmation
-            +
-            score.distance_from_vwap
-            +
-            score.volatility_expansion
-            +
-            volume_score
-            +
-            adx_score
-            +
-            candle_score
-        )
+        
 
 
         # store extra metadata if model supports
@@ -137,26 +122,26 @@ class BreakoutScoringEngine:
 
             (
                 "volume breakout confirmed"
-                if volume_score == 2
+                if score.volume_confirmation == 2
                 else
                 "weak volume"
             ),
 
             (
                 "ADX trend strong"
-                if adx_score == 2
+                if score.adx_strength == 2
                 else
                 "weak trend strength"
             ),
 
             (
                 "strong candle body"
-                if candle_score == 1
+                if score.candle_quality == 1
                 else
                 "weak candle"
             ),
 
-            f"FINAL SCORE {total_score}/15"
+            f"FINAL SCORE {score.total}/15"
         ]
 
 
