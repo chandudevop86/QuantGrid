@@ -130,3 +130,53 @@ class OrderEventPublisher:
 
             channel=NotificationChannel.TELEGRAM,
         )
+        def order_cancelled(
+    self,
+    order_id: str,
+    symbol: str,
+    reason: str
+):
+
+    self.notification_service.create_notification(
+
+        event_type=NotificationEventType.ORDER_CANCELLED,
+
+        subject="Order Cancelled",
+
+        message=f"{symbol} order cancelled: {reason}",
+
+        channel=NotificationChannel.TELEGRAM,
+
+        order_id=order_id,
+
+        symbol=symbol,
+
+        payload={
+            "reason": reason
+        }
+    )
+
+
+
+def position_closed(
+    self,
+    symbol: str,
+    pnl: float
+):
+
+    self.notification_service.create_notification(
+
+        event_type=NotificationEventType.POSITION_CLOSED,
+
+        subject="Position Closed",
+
+        message=f"{symbol} position closed P&L {pnl}",
+
+        channel=NotificationChannel.TELEGRAM,
+
+        symbol=symbol,
+
+        payload={
+            "pnl": pnl
+        }
+    )
