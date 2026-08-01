@@ -34,6 +34,8 @@ class NotificationEvent:
 
     error: str | None = None
 
+    payload: dict | None = None
+
     created_at: datetime = field(
         default_factory=datetime.utcnow
     )
