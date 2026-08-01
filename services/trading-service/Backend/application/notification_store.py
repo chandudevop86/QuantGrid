@@ -6,10 +6,22 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    String,
+    Text,
+)
 
-from Backend.infrastructure.database.models.notification_entity import (
+from Backend.application.notification_entity import (
     NotificationEntity,
 )
+from Backend.application.notification_entity import (
+    NotificationEntity,
+)
+
 
 DEFAULT_RETRY_INTERVAL = int(
     os.getenv(
