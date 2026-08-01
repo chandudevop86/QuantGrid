@@ -31,35 +31,7 @@ from Backend.presentation.api.metrics import prometheus_metrics_response
 from Backend.presentation.api.websocket_manager import manager
 from Backend.presentation.api.roles import require_roles
 from Backend.presentation.api.institutional_api import router as institutional_router
-from fastapi import FastAPI
 
-from Backend.infrastructure.container import Container
-
-
-app = FastAPI(
-    title="QuantGrid Trading Service"
-)
-
-
-# Database dependency
-db = None   # replace with your existing DB session/connection
-
-
-# Create application container
-container = Container(
-    db=db
-)
-
-
-# Shared services
-notification_service = (
-    container.get_notification_service()
-)
-
-
-order_event_publisher = (
-    container.get_order_event_publisher()
-)
 
 
 def _websocket_dashboard_payload(user_id: int | None = None) -> dict:
