@@ -56,51 +56,30 @@ class BreakoutScoringEngine:
 
         # 6. Volume Confirmation (0-2)
 
+        # Volume Confirmation
         score.volume_confirmation = 0
-
-
-        volume_ratio = float(
-            row.get("volume_ratio", 0)
-        )
+        volume_ratio = float(row.get("volume_ratio", 0))
 
         if volume_ratio >= 1.5:
-            volume_score = 2
+            score.volume_confirmation = 2
 
 
-        # 7. ADX Trend Strength (0-2)
-
+        # ADX Trend Strength
         score.adx_strength = 0
-
-        adx_value = float(
-            row.get("adx", 0)
-        )
+        adx_value = float(row.get("adx", 0))
 
         if adx_value >= 20:
-            adx_score = 2
+            score.adx_strength = 2
 
 
-        # 8. Candle Quality (0-1)
-
+        # Candle Quality
         score.candle_quality = 0
-
-        candle_ratio = float(
-            row.get(
-                "candle_body_ratio",
-                0
-            )
-        )
+        candle_ratio = float(row.get("candle_body_ratio", 0))
 
         if candle_ratio >= 0.60:
-            candle_score = 1
-
-
-
-        
-
-
+            score.candle_quality = 1
         # store extra metadata if model supports
         
-
 
         score.reasons = [
 

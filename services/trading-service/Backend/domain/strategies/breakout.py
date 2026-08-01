@@ -21,7 +21,7 @@ from Backend.domain.strategies.signal_builder import SignalBuilder
 @dataclass(slots=True)
 class BreakoutConfig(StrategyConfig):
     lookback: int = 20
-    min_score: int = 7
+    min_score: int = 9
     cooldown_minutes: int = 20
     avoid_open_minutes: int = 5
     min_rr: float = 2.0
@@ -31,10 +31,13 @@ class BreakoutConfig(StrategyConfig):
         normalized = normalize_mode(mode)
         base = cls(mode=normalized)
         if normalized == "Conservative":
-            return replace(base, min_score=7, cooldown_minutes=25)
+            return replace(base, min_score=11, cooldown_minutes=25)
         if normalized == "Aggressive":
-            return replace(base, min_score=6, cooldown_minutes=15)
-        return base
+            return replace(base, min_score=8, cooldown_minutes=15)
+        return replace(
+    base,
+    min_score=9,
+)
 
 
 class BreakoutStrategy(BaseStrategy):
