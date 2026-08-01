@@ -353,4 +353,48 @@ class InvestmentResearchRecord(Base):
     payload_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-    )    
+    )  
+class RiskStateRecord(Base):
+    __tablename__ = "risk_state"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+    )
+
+    active: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    activated_by: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    deactivated_by: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    deactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )      
