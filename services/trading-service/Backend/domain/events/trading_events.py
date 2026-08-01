@@ -1,0 +1,20 @@
+from enum import Enum
+
+
+class NotificationEventType(str, Enum):
+
+    ORDER_CREATED = "ORDER_CREATED"
+
+    ORDER_SUBMITTED = "ORDER_SUBMITTED"
+
+    ORDER_FILLED = "ORDER_FILLED"
+
+    ORDER_REJECTED = "ORDER_REJECTED"
+
+    ORDER_CANCELLED = "ORDER_CANCELLED"
+
+    POSITION_CLOSED = "POSITION_CLOSED"
+
+    RISK_BREACH = "RISK_BREACH"
+    
+    

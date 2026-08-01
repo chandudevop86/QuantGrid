@@ -11,14 +11,59 @@ from typing import Any
 from urllib import request
 
 from Backend.infrastructure.http_safety import require_https_url
+from urllib.error import HTTPError
+from urllib.error import URLError
+import time
 
+
+def _post_with_retry(
+    url,
+    payload,
+    retries=3
+):
+
+    for attempt in range(retries):
+
+        try:
+            return _post_with_retry(
+            url,
+            payload
+        )
+
+        except Exception:
+
+            if attempt == retries-1:
+                raise
+
+
+            time.sleep(
+                2 ** attempt
+            )
+            
 logger = logging.getLogger(__name__)
 
 
 def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes"}
 
+def _send_telegram(
+    settings: NotificationSettings,
+    message: str
+) -> None:
 
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{settings.telegram_bot_token}"
+        "/sendMessage"
+    )
+
+    _post_with_retry(
+        url,
+        {
+            "chat_id": settings.telegram_chat_id,
+            "text": message,
+        },
+    )
 @dataclass(frozen=True)
 class NotificationSettings:
     enabled: bool
@@ -67,24 +112,58 @@ def get_notification_settings() -> NotificationSettings:
     )
 
 
-def _post_json(url: str, payload: dict) -> None:
-    url = require_https_url(url, allowed_hosts={"api.telegram.org", "hooks.slack.com"})
+def _post_json(url: str, payload: dict) -> dict:
+    url = require_https_url(
+        url,
+        allowed_hosts={
+            "api.telegram.org",
+            "hooks.slack.com",
+        },
+    )
+
     data = json.dumps(payload).encode("utf-8")
+
     http_request = request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
-    with request.urlopen(http_request, timeout=10) as response:  # nosec B310
-        response.read()
 
+    try:
+        with request.urlopen(
+            http_request,
+            timeout=10,
+        ) as response:
 
-def _send_telegram(settings: NotificationSettings, message: str) -> None:
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
-    _post_json(url, {"chat_id": settings.telegram_chat_id, "text": message})
+            body = response.read().decode("utf-8")
 
+            result = json.loads(body)
 
+            if response.status >= 400:
+                raise RuntimeError(
+                    f"HTTP {response.status}: {body}"
+                )
+
+            if result.get("ok") is False:
+                raise RuntimeError(
+                    result.get("description")
+                )
+
+            return result
+
+    except HTTPError as exc:
+        raise RuntimeError(
+            f"HTTP error {exc.code}"
+        ) from exc
+
+    except URLError as exc:
+        raise RuntimeError(
+            f"Network error: {exc.reason}"
+        ) from exc
+        
 def _send_slack(settings: NotificationSettings, message: str) -> None:
     _post_json(settings.slack_webhook_url or "", {"text": message})
 
@@ -101,29 +180,84 @@ def _send_email(settings: NotificationSettings, subject: str, message: str) -> N
             server.starttls(context=ssl.create_default_context())
         if settings.smtp_username and settings.smtp_password:
             server.login(settings.smtp_username, settings.smtp_password)
-        server.send_message(email)
+        try:
+
+            server.send_message(email)
+
+        except smtplib.SMTPException:
+            logger.exception("SMTP error")
+            raise
+
+        except OSError:
+            logger.exception("SMTP connection error")
+            raise
 
 
 def send_alert(subject: str, message: str) -> None:
+
     settings = get_notification_settings()
+
     if not settings.enabled:
         return
 
-    if not (settings.telegram_enabled or settings.slack_enabled or settings.email_enabled):
+    channels = [
+        (
+            "telegram",
+            settings.telegram_enabled,
+            lambda: _send_telegram(settings, message),
+        ),
+        (
+            "slack",
+            settings.slack_enabled,
+            lambda: _send_slack(settings, message),
+        ),
+        (
+            "email",
+            settings.email_enabled,
+            lambda: _send_email(settings, subject, message),
+        ),
+    ]
+
+    enabled_channels = [
+        c for c in channels if c[1]
+    ]
+
+    if not enabled_channels:
+        logger.warning(
+            "Notifications enabled but no delivery channels configured."
+        )
         return
 
-    for channel, enabled, sender in (
-        ("telegram", settings.telegram_enabled, lambda: _send_telegram(settings, message)),
-        ("slack", settings.slack_enabled, lambda: _send_slack(settings, message)),
-        ("email", settings.email_enabled, lambda: _send_email(settings, subject, message)),
-    ):
-        if not enabled:
-            continue
-        try:
-            sender()
-        except Exception:
-            logger.exception("Failed to send QuantGrid alert through %s", channel)
+    failures = []
 
+    for channel, _, sender in enabled_channels:
+
+        try:
+
+            sender()
+
+            logger.info(
+                "Notification delivered via %s",
+                channel,
+            )
+
+        except Exception as exc:
+
+            logger.exception(
+                "Failed sending notification via %s",
+                channel,
+            )
+
+            failures.append(
+                f"{channel}: {exc}"
+            )
+
+    if failures:
+
+        raise RuntimeError(
+            "Notification delivery failed: "
+            + "; ".join(failures)
+        )
 
 def alert_job_created(job: dict) -> None:
     send_alert(

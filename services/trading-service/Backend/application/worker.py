@@ -19,12 +19,8 @@ from Backend.application.fno_narrative_service import (
 )
 
 from Backend.application.investment_research_service import (
-    IST,
-    is_after_market_close_ist,
-    is_weekend_ist,
     latest_investment_dashboard,
     run_mutual_fund_research_loop,
-    run_portfolio_watchlist_loop,
     run_stock_research_loop,
 )
 
@@ -84,6 +80,8 @@ from Backend.application.market_data_store import (
     store_candles
 )
 
+from Backend.application.notification_retry import NotificationRetryWorker
+
 
 
 AUTO_SCAN_STRATEGIES = [
@@ -113,6 +111,7 @@ _LAST_FUND_RESEARCH_WEEK: str | None = None
 # =====================================================
 # ENV HELPERS
 # =====================================================
+
 
 
 def _truthy(value: str | None) -> bool:
@@ -552,6 +551,46 @@ def _run_notification_job(
         "subject": subject,
     }
 
+async def _run_notification_retry_job_async(
+    payload: dict[str, Any]
+) -> dict[str, Any]:
+
+    with SessionLocal() as db:
+        worker = NotificationRetryWorker(db)
+        return await worker.run()
+
+
+def _run_notification_retry_job(
+    payload: dict[str, Any]
+) -> dict[str, Any]:
+
+    return asyncio.run(
+        _run_notification_retry_job_async(payload)
+    )
+    
+
+def _notification_retry_enabled() -> bool:
+    return _not_falsey(
+        os.getenv(
+            "QUANTGRID_NOTIFICATION_RETRY_ENABLED"
+        ),
+        default=True,
+    )
+
+
+def _notification_retry_interval() -> float:
+    return max(
+        30.0,
+        _float_env(
+            "QUANTGRID_NOTIFICATION_RETRY_INTERVAL_SECONDS",
+            60.0,
+        ),
+    )
+
+
+def _run_periodic_notification_retry():
+    return _run_notification_retry_job({})
+
 
 
 # =====================================================
@@ -701,45 +740,21 @@ def _run_security_scan_job(
 # JOB HANDLER MAP
 # =====================================================
 
+HANDLERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "live-analysis": _run_live_analysis_job,
+    "auto-paper": _run_auto_paper_job,
+    "order-reconciliation": _run_reconciliation_job,
+    "exit-monitor": _run_exit_monitor_job,
+    "notification": _run_notification_job,
 
-HANDLERS: dict[
-    str,
-    Callable[[dict[str, Any]], Any]
-] = {
+    # NEW
+    "notification-retry": _run_notification_retry_job,
 
+    "fno-narrative": _run_fno_narrative_job,
+    "investment-research": _run_investment_research_job,
+    "security-scan": _run_security_scan_job,
+}    
 
-    "live-analysis":
-        _run_live_analysis_job,
-
-
-    "auto-paper":
-        _run_auto_paper_job,
-
-
-    "order-reconciliation":
-        _run_reconciliation_job,
-
-
-    "exit-monitor":
-        _run_exit_monitor_job,
-
-
-    "notification":
-        _run_notification_job,
-
-
-    "fno-narrative":
-        _run_fno_narrative_job,
-
-
-    "investment-research":
-        _run_investment_research_job,
-
-
-    "security-scan":
-        _run_security_scan_job,
-
-}
 # =====================================================
 # JOB PROCESSING
 # =====================================================
@@ -961,8 +976,8 @@ def run_worker_loop(
     next_exit_check = time.monotonic()
 
     next_narrative_check = time.monotonic()
-
-
+    
+    next_notification_retry = time.monotonic()
 
     while True:
 
@@ -1034,7 +1049,21 @@ def run_worker_loop(
         # -------------------------
 
         process_next_job()
+        
+        if (
+            _notification_retry_enabled()
+            and
+            time.monotonic() >= next_notification_retry
+        ):
+            try:
+                _run_periodic_notification_retry()
+            except Exception:
+                logger.exception("Notification retry failed")
 
+            next_notification_retry = (
+                time.monotonic()
+                + _notification_retry_interval()
+            )
 
 
         # -------------------------
@@ -1150,7 +1179,6 @@ def main():
         poll_interval=
         args.poll_interval
     )
-
 
 
 if __name__ == "__main__":
