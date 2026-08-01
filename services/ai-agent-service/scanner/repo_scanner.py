@@ -26,8 +26,6 @@ EXCLUDED_DIRS = {
     "logs",
     "tmp",
     "temp"
-    "scanner_backup_before_context",
-    "agents_backup_before_context",
     "*backup*",
     "*bak*",
     "*old*",
