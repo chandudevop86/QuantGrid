@@ -37,6 +37,9 @@ from Backend.domain.execution_constraints import (
     requested_quantity,
     validate_execution_constraints,
 )
+from Backend.infrastructure.repositories.order_repository import OrderRepository
+
+
 from Backend.domain.models.signal import StrategySignal
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
@@ -51,11 +54,11 @@ from Backend.presentation.api.market_api import get_price
 from Backend.config import Provider
 from pydantic import BaseModel, Field, field_validator, model_validator
 from Backend.application.execution.execution_response import _paper_response,_risk_response_fields
-from Backend.application.execution.lifecycle_manager import _create_lifecycle_order
+from Backend.application.execution.lifecycle_manager import _create_lifecycle_order, _transition_lifecycle_order
 from Backend.application.execution.execution_validator import market_aligned
 from Backend.application.execution.execution_utils import (
     _tqe_response_fields,
-    _risk_response_fields,
+    _risk_response_fields,_trade_shape_reason
 )
 
 from Backend.application.execution.execution_service import (
@@ -249,17 +252,32 @@ async def _submit_paper_signal(
             actor=actor,
             reason="Submitted to broker adapter.",
         )
-        oms_result = await OrderManagementService(broker_client).submit_order(
+        oms = OrderManagementService(
+            broker_client,
+            order_repository=OrderRepository(),
+        )
+        oms_result = await oms.submit_order(
             order,
             signal,
             {
-                "local_order_id": lifecycle_order["local_order_id"] if lifecycle_order else None,
+                "local_order_id": (
+                    lifecycle_order["local_order_id"]
+                    if lifecycle_order
+                    else None
+                ),
+                "db_session": db,
                 "prevalidated_risk": {
                     "allowed": risk_decision.allowed,
                     "reasons": [risk_decision.reason],
-                    "risk_score": risk_decision.details.get("risk_engine", {}).get("risk_score", 100),
-                    "blocked_by": risk_decision.details.get("risk_engine", {}).get("blocked_by", []),
-                    "warnings": risk_decision.details.get("risk_engine", {}).get("warnings", []),
+                    "risk_score": risk_decision.details.get(
+                        "risk_engine", {}
+                    ).get("risk_score", 100),
+                    "blocked_by": risk_decision.details.get(
+                        "risk_engine", {}
+                    ).get("blocked_by", []),
+                    "warnings": risk_decision.details.get(
+                        "risk_engine", {}
+                    ).get("warnings", []),
                 },
             },
         )
