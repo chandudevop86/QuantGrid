@@ -10,6 +10,9 @@ from Backend.application.strategy_selection_engine import (
     StrategySelector,
     StrategySelectionInput
 )
+from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+from Backend.infrastructure.repositories.order_repository import OrderRepository
+
 
 class TradingOrchestrator:
 
@@ -20,7 +23,10 @@ class TradingOrchestrator:
         self.selector = StrategySelector()
         self.risk = RiskEngine()
         self.trading_service = TradingService()
-        self.oms = OrderManagementService( broker="dhan")
+        self.oms = OrderManagementService(
+            broker=broker_client_for_mode("paper"),
+            order_repository=OrderRepository(),
+        )
         self.analytics = TradeAnalyticsService()
         self.feedback = FeedbackEngine(trade_repository=self.trade_repository)
 
