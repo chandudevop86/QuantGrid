@@ -4,9 +4,7 @@ from Backend.domain.notifications.models import (
     NotificationStatus,
 )
 
-from Backend.domain.notifications.events import (
-    NotificationEventType,
-)
+from Backend.domain.events.trading_events import NotificationEventType
 
 
 class NotificationService:

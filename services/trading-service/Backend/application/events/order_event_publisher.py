@@ -1,6 +1,5 @@
-from Backend.domain.notifications.events import NotificationEventType
 from Backend.domain.notifications.models import NotificationChannel
-
+from Backend.domain.events.trading_events import NotificationEventType
 
 class OrderEventPublisher:
 
@@ -131,30 +130,30 @@ class OrderEventPublisher:
             channel=NotificationChannel.TELEGRAM,
         )
         def order_cancelled(
-    self,
-    order_id: str,
-    symbol: str,
-    reason: str
-):
+            self,
+            order_id: str,
+            symbol: str,
+            reason: str
+            ):
 
-    self.notification_service.create_notification(
+            self.notification_service.create_notification(
 
-        event_type=NotificationEventType.ORDER_CANCELLED,
+                event_type=NotificationEventType.ORDER_CANCELLED,
 
-        subject="Order Cancelled",
+                subject="Order Cancelled",
 
-        message=f"{symbol} order cancelled: {reason}",
+                message=f"{symbol} order cancelled: {reason}",
 
-        channel=NotificationChannel.TELEGRAM,
+                channel=NotificationChannel.TELEGRAM,
 
-        order_id=order_id,
+                order_id=order_id,
 
-        symbol=symbol,
+                symbol=symbol,
 
-        payload={
-            "reason": reason
-        }
-    )
+                payload={
+                    "reason": reason
+                }
+            )
 
 
 
