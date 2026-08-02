@@ -154,16 +154,16 @@ class TradingOrchestrator:
 
 
         # 6. Create trade
-        trade = self.trading_service.generate_trade(
-            strategy=strategy,
-            signal=signal,
-        )
+        
+        import asyncio
 
-
-
-        # 7. Execute order
-        order = self.oms.execute(
-            trade
+        order = asyncio.run(
+            self.oms.submit_signal(
+                signal=signal,
+                context={
+                    "strategy": strategy,
+                },
+            )
         )
 
 
