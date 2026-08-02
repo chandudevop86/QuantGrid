@@ -121,7 +121,7 @@ class MarketDataService:
         }
     def get_candles(self, symbol: str, interval: str, period: str = "1d", limit: int = 100, *, mode: str = "paper") -> dict[str, Any]:
         self._assert_provider_allowed(mode)
-        limit = max(1, min(int(limit), 500))
+        limit = max(1, min(int(limit), 5000))
         key = self._cache_key("candles", symbol.upper(), interval, period, str(limit))
         cached = self._cache_get(key)
         if cached:
