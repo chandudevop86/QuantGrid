@@ -3,10 +3,9 @@ import os
 import threading
 from pathlib import Path
 from typing import Any
+import sqlite3
 
 from Backend.core.timezone import utc_now
-from Backend.core.database import connect
-import sqlite3
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("MARKET_DATA_DB_FILE", DATA_DIR / "market_data.sqlite3"))
