@@ -431,7 +431,7 @@ class BacktestEngine:
             )
             trades.append(trade)
             equity_curve.append(equity_curve[-1] + trade.pnl)
-            print(
+        print(
                 "BACKTEST SUMMARY",
                 {
                     "candles":len(frame),
