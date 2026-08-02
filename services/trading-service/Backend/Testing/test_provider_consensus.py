@@ -1,8 +1,6 @@
 from datetime import datetime
 
-from Backend.application.provider_consensus_engine import (
-    ProviderConsensusEngine
-)
+from Backend.application.provider_consensus_engine import ProviderConsensusEngine
 
 
 class FakeProvider:
