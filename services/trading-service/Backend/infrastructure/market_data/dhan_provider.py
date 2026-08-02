@@ -141,7 +141,8 @@ class DhanProvider(EnvConfiguredProvider):
                     ]
                 }
             )
-
+            print("DHAN INDEX RAW:")
+            print(raw)
             quote = _extract_quote(
                 raw,
                 security_id
