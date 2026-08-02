@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from Backend.core.timezone import utc_now
-from Backend.core.database import use_sqlite, connect
-
+from Backend.core.database import connect
+import sqlite3
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("MARKET_DATA_DB_FILE", DATA_DIR / "market_data.sqlite3"))
@@ -14,7 +14,19 @@ _init_lock = threading.Lock()
 _initialized_store_key: tuple[str, object] | None = None
 
 
+def _use_sqlite() -> bool:
+    from Backend.application.store_backend import use_legacy_sqlite_store
+    return use_legacy_sqlite_store()
 
+
+def _connect():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    return sqlite3._connect()
+
+
+def _init_db_store() -> None:
+    from Backend.core import database
+    database.init_database()
 
 
 
@@ -35,7 +47,7 @@ def init_market_data_store() -> None:
 
 
 def _market_data_store_key() -> tuple[str, object]:
-    if use_sqlite():
+    if _use_sqlite():
         return ("sqlite", str(DB_FILE.resolve()))
     from Backend.core.database import engine
 
@@ -43,10 +55,10 @@ def _market_data_store_key() -> tuple[str, object]:
 
 
 def _initialize_market_data_store() -> None:
-    if not use_sqlite():
+    if not _use_sqlite():
         _init_db_store()
         return
-    with connect(DB_FILE) as connection:
+    with _connect() as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS market_price_ticks (
@@ -99,7 +111,7 @@ def _initialize_market_data_store() -> None:
 
 def store_price_tick(payload: dict[str, Any]) -> None:
     init_market_data_store()
-    if not use_sqlite():
+    if not _use_sqlite():
         _db_store_price_tick(payload)
         return
     symbol = str(payload.get("symbol") or "").upper()
@@ -131,7 +143,7 @@ def store_price_tick(payload: dict[str, Any]) -> None:
 
 def latest_price_tick(symbol: str) -> dict[str, Any] | None:
     init_market_data_store()
-    if not use_sqlite():
+    if not _use_sqlite():
         return _db_latest_price_tick(symbol)
     with _connect() as connection:
         row = connection.execute(
@@ -163,7 +175,7 @@ def store_candles(
     candles: list[dict[str, Any]],
 ) -> None:
     init_market_data_store()
-    if not use_sqlite():
+    if not _use_sqlite():
         _db_store_candles(symbol=symbol, market_symbol=market_symbol, interval=interval, source=source, candles=candles)
         return
     if not candles:
@@ -215,7 +227,7 @@ def store_candles(
 
 def latest_candles(symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
     init_market_data_store()
-    if not use_sqlite():
+    if not _use_sqlite():
         return _db_latest_candles(symbol, interval, limit)
     with _connect() as connection:
         rows = connection.execute(
@@ -236,9 +248,9 @@ def latest_candles(symbol: str, interval: str, limit: int) -> list[dict[str, Any
 
 def market_data_summary(symbol: str, interval: str) -> dict[str, Any]:
     init_market_data_store()
-    if not use_sqlite():
+    if not _use_sqlite():
         return _db_market_data_summary(symbol, interval)
-    with connect(DB_FILE) as connection:
+    with _connect() as connection:
         price_count = connection.execute(
             "SELECT COUNT(*) FROM market_price_ticks WHERE symbol = ?",
             (symbol.upper(),),
