@@ -118,9 +118,54 @@ class DhanProvider(EnvConfiguredProvider):
 
         # Dhan marketfeed REST doesn't return spot index quotes; fall back to Yahoo
         if normalized in INDEX_SPOT_SYMBOLS:
-            from Backend.infrastructure.market_data.yahoo_provider import YahooProvider
-            return YahooProvider().get_ltp(normalized)
 
+            dhan = dhan_sdk_client()
+
+            security_map = {
+                "NIFTY": "13",
+                "BANKNIFTY": "25",
+                "FINNIFTY": "27",
+            }
+
+            security_id = security_map.get(normalized)
+
+            if security_id is None:
+                raise MarketDataProviderError(
+                    f"Unsupported index {normalized}"
+                )
+
+            raw = dhan.ohlc_data(
+                securities={
+                    "IDX_I": [
+                        int(security_id)
+                    ]
+                }
+            )
+
+            quote = _extract_quote(
+                raw,
+                security_id
+            )
+
+            ltp = (
+                quote.get("last_price")
+                or quote.get("ltp")
+            )
+
+            if not ltp:
+                raise MarketDataProviderError(
+                    "Dhan index LTP missing"
+                )
+
+            return {
+                "provider": self.provider_name,
+                "symbol": normalized,
+                "ltp": float(ltp),
+                "price": float(ltp),
+                "timestamp": self.mark_fetch(),
+                "source": "live",
+                "exchange": "NSE",
+            }
         dhan = dhan_sdk_client()
         instrument = self.resolve_instrument(symbol)
         security_id = instrument["security_id"]
