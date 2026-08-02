@@ -266,8 +266,65 @@ class BacktestEngine:
             ...
 
             if open_signal is not None:
-                continue
 
+                high = float(row["high"])
+                low = float(row["low"])
+
+                stop = float(open_signal.stop_loss)
+                target = float(open_signal.target)
+
+                exit_reason = None
+                exit_price = None
+
+
+                if open_signal.side == "BUY":
+
+                    if low <= stop:
+                        exit_price = stop
+                        exit_reason = "stop_loss"
+
+                    elif high >= target:
+                        exit_price = target
+                        exit_reason = "target"
+
+
+                elif open_signal.side == "SELL":
+
+                    if high >= stop:
+                        exit_price = stop
+                        exit_reason = "stop_loss"
+
+                    elif low <= target:
+                        exit_price = target
+                        exit_reason = "target"
+
+
+
+                if exit_price:
+
+                    trade = self._build_trade(
+                        open_signal,
+                        entry_price,
+                        exit_price,
+                        entry_index,
+                        index,
+                        quantity,
+                        exit_reason,
+                        frame,
+                    )
+
+                    trades.append(trade)
+
+                    equity_curve.append(
+                        equity_curve[-1] + trade.pnl
+                    )
+
+                    open_signal = None
+                    entry_index = None
+                    entry_price = 0
+                    quantity = 0
+
+                continue
             current_time = (
                 pd.Timestamp(row["timestamp"])
                 .to_pydatetime()
