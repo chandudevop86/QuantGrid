@@ -161,27 +161,7 @@ class DhanProvider(EnvConfiguredProvider):
             "exchange_timezone": "Asia/Kolkata",
             "raw_safe": _safe_raw(raw),
         }
-    # def health_check(self) -> dict[str, Any]:
-
-    #     try:
-    #         self._require_configured()
-
-    #         return {
-    #             "healthy": True,
-    #             "configured": True,
-    #             "latency_ms": 0,
-    #             "message": "OK",
-    #         }
-
-    #     except Exception as exc:
-
-    #         return {
-    #             "healthy": False,
-    #             "configured": False,
-    #             "latency_ms": 0,
-    #             "message": str(exc),
-    #         }    
-
+    #
     def get_candles(
         self,
         symbol: str,
