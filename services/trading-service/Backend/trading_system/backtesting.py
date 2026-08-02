@@ -431,7 +431,14 @@ class BacktestEngine:
             )
             trades.append(trade)
             equity_curve.append(equity_curve[-1] + trade.pnl)
-
+            print(
+                "BACKTEST SUMMARY",
+                {
+                    "candles":len(frame),
+                    "signals":len(signals),
+                    "trades":len(trades)
+                }
+            )
         return self._metrics(
             trades,
             equity_curve,
@@ -447,7 +454,7 @@ class BacktestEngine:
     ):
         o = float(row["open"])
 
-        if side == "BUY":
+        if side == "BUY":  
             if abs(o - stop) < abs(target - o):
                 return stop, "stop_loss"
             return target, "target"
