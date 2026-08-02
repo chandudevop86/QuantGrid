@@ -1,5 +1,6 @@
-from Backend.domain.notifications.models import NotificationChannel
 from Backend.domain.events.trading_events import NotificationEventType
+from Backend.domain.notifications.models import NotificationChannel
+
 
 class OrderEventPublisher:
 
