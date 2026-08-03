@@ -141,8 +141,7 @@ class DhanProvider(EnvConfiguredProvider):
                     ]
                 }
             )
-            print("DHAN INDEX RAW:")
-            print(raw)
+            logger.debug("Fetched Dhan index quote for %s", normalized)
             quote = _extract_quote(
                 raw,
                 security_id
