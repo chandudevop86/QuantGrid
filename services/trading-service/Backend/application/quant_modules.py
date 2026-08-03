@@ -18,6 +18,7 @@ from Backend.trading_system.backtesting import BacktestEngine
 from Backend.trading_system.risk import GlobalRiskManager
 from Backend.trading_system.slippage import SlippageConfig, SlippageModel
 from typing import Any, Dict, List, cast
+
 logger = logging.getLogger("quantgrid.option_chain")
 
 
@@ -617,7 +618,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             SlippageConfig(
                 mode="fixed",
                 fixed_bps=effective_slippage_bps,
-                max_slippage_bps=max(effective_slippage_bps, 0.0),
+                max_slippage_points=2.0,
             )
         ),
         brokerage_per_order=cost_model["brokerage_per_order"],
