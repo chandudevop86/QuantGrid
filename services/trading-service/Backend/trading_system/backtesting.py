@@ -15,7 +15,7 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.trading_system.logging import get_logger
 from Backend.trading_system.risk import GlobalRiskConfig, GlobalRiskManager
 from Backend.trading_system.slippage import SlippageModel
-
+from Backend.application.notifications import send_alert
 
 
 @dataclass(slots=True)
@@ -271,8 +271,7 @@ class BacktestEngine:
                 low = float(row["low"])
 
                 stop = float(open_signal.stop_loss)
-                target = float(open_signal.target)
-
+                target = float(open_signal.target_price or 0.0)
                 exit_reason = None
                 exit_price = None
 
@@ -411,7 +410,31 @@ class BacktestEngine:
                 max_quantity = max(1,int(max_position_value / entry_price),)
                 quantity = min(quantity, max_quantity)
                 self.risk_manager.record_trade_opened(signal.signal_time)
-                self.logger.info("backtest_trade_opened", {"symbol": symbol, "side": signal.side, "entry": entry_price, "event": "backtest_trade_opened"})
+                self.logger.info(
+                    "backtest_trade_opened",{
+                        "symbol": symbol,
+                        "side": signal.side,
+                        "entry": entry_price,
+                        "event": "backtest_trade_opened",
+                    },
+                )
+
+                try:
+                    send_alert(
+                        "Backtest Trade Opened",
+                        f"""
+                📈 Symbol : {signal.symbol}
+                🟢 Side   : {signal.side}
+
+                💰 Entry  : {entry_price:.2f}
+                🛑 SL     : {signal.stop_loss}
+                🎯 Target : {signal.target_price}
+                📦 Qty    : {quantity}
+                """
+                    )
+                except Exception as e:
+                    self.logger.exception("Failed to send backtest alert: %s", e)
+
                 break
 
         if open_signal is not None and entry_index is not None:
