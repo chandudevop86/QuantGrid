@@ -11,35 +11,30 @@ from typing import Any
 from urllib import request
 
 from Backend.infrastructure.http_safety import require_https_url
-from urllib.error import HTTPError
+from urllib.error import HTTPError,request
 from urllib.error import URLError
 import time
 
 
-def _post_with_retry(
-    url,
-    payload,
-    retries=3
-):
+def _post_with_retry(url, payload, retries=3):
+    data = json.dumps(payload).encode("utf-8")
+
+    req = request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
 
     for attempt in range(retries):
-
         try:
-            return _post_with__json(
-            url,
-            payload
-        )
+            with request.urlopen(req, timeout=10) as response:
+                return response.read()
 
-        except Exception:
-
-            if attempt == retries-1:
+        except (HTTPError, URLError) as exc:
+            if attempt == retries - 1:
                 raise
-
-
-            time.sleep(
-                2 ** attempt
-            )
-            
+            time.sleep(2 ** attempt)            
 logger = logging.getLogger(__name__)
 
 
