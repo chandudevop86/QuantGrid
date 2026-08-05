@@ -11,10 +11,10 @@ from typing import Any
 from urllib import request
 
 from Backend.infrastructure.http_safety import require_https_url
-from urllib.error import HTTPError,request
+from urllib.error import HTTPError
 from urllib.error import URLError
 import time
-
+from urllib import request
 
 def _post_with_retry(url, payload, retries=3):
     data = json.dumps(payload).encode("utf-8")
