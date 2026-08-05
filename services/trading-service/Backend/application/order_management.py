@@ -12,6 +12,7 @@ from Backend.domain.models.signal import StrategySignal
 from Backend.domain.shared import IBrokerAdapter
 from Backend.infrastructure.repositories.order_repository import OrderRepository
 from Backend.domain.order_models import OrderEntity
+from Backend.application.notifications import send_alert
 
 TERMINAL_BROKER_STATUSES = {"filled", "cancelled", "canceled", "rejected", "failed", "not_found"}
 PARTIAL_BROKER_STATUSES = {"partially_filled", "partial", "part_filled"}
@@ -315,8 +316,30 @@ class OrderManagementService:
                         "broker_order_id": broker_order_id,
                         "attempt": attempts,
                     },
+                    
+                #...................   Notifications
+                    
                 )
+                try:
+                    send_alert(
+                        "✅ Trade Executed",
+                        f"""
+                🟢 TRADE EXECUTED
 
+                📈 Symbol : {order.symbol}
+                📊 Side   : {order.side}
+                📦 Qty    : {order.quantity}
+
+                🆔 Broker Order : {broker_order_id}
+                📌 Status       : {status}
+
+                💰 Avg Price    : {self._value(broker_result, 'average_price')}
+
+                🕒 Correlation  : {order.metadata.get('correlation_id')}
+                """
+                    )
+                except Exception:
+                    logger.exception("Failed to send trade notification")
                 # ---------------------------------------
                 # Update database
                 # ---------------------------------------
