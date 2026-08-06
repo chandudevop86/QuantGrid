@@ -91,7 +91,7 @@ from Backend.application.execution.execution_utils import (
     _tqe_response_fields,
     _risk_response_fields,
 )
-
+import logging
 router = APIRouter()
 market_service = MarketDataService()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
@@ -115,7 +115,14 @@ async def place_order(
     access: SubscriptionAccess = Depends(subscription_access),
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
-):
+):  
+    logging.getLogger(__name__).info(
+        "POST /order received: symbol=%s strategy=%s mode=%s",
+        signal.symbol,
+        signal.strategy_name,
+        execution_mode,
+    )
+
     required_feature = "live_trade.execute" if execution_mode == "live" else "paper_trade.manual"
     if not access.can(required_feature):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"error": "subscription_required", "feature": required_feature, "current_plan": access.snapshot["plan_code"].upper(), "message": "Your active subscription does not include this execution mode."})
