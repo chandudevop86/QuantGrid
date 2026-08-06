@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -15,6 +16,9 @@ from urllib.error import HTTPError
 from urllib.error import URLError
 import time
 from urllib import request
+from Backend.application.notification_dedup import should_send
+
+
 
 def _post_with_retry(url, payload, retries=3):
     data = json.dumps(payload).encode("utf-8")
@@ -194,6 +198,16 @@ def send_alert(subject: str, message: str) -> None:
 
     if not settings.enabled:
         return
+    
+
+    alert_key = hashlib.sha256(
+    f"{subject}:{message}".encode("utf-8")
+    ).hexdigest()
+
+    if not should_send(alert_key):
+        logger.info("Duplicate notification skipped", extra={"key": alert_key})
+        return
+
 
     channels = [
         (
@@ -246,6 +260,15 @@ def send_alert(subject: str, message: str) -> None:
             failures.append(
                 f"{channel}: {exc}"
             )
+    if not failures:
+        logger.info(
+            "Notification sent",
+            extra={
+                "subject": subject,
+                "channels": [c[0] for c in enabled_channels],
+            },
+        )
+            
 
     if failures:
 
