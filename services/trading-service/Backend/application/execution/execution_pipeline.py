@@ -428,6 +428,14 @@ async def _submit_paper_signal(
             "raw_safe_broker_response": (broker_status.metadata or {}).get("raw_safe")
         }
     )
+    import logging
+
+    logging.getLogger(__name__).info(
+        "Execution Pipeline: order_status=%s broker_status=%s broker_confirmed=%s",
+        order_status,
+        broker_status.status,
+        broker_status.confirmed,
+    )
     if should_create_position(order_status):
         create_open_position(
             {
