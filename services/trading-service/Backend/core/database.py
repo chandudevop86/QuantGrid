@@ -55,7 +55,7 @@ def init_database() -> None:
     import Backend.domain.security.models  # noqa: F401
     import Backend.domain.trading_store_models  # noqa: F401
     import Backend.domain.order_models
-
+    import Backend.application.notification_entity
     from Backend.core.schema_migrations import apply_versioned_migrations
 
     try:
