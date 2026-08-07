@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as UTC
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -64,7 +64,7 @@ def mark_sent(
         return
 
     obj.status = "SENT"
-    obj.sent_at = datetime.utcnow()
+    obj.sent_at = datetime.now(UTC)    
     obj.delivered = True
     obj.error = None
     obj.next_retry_at = None
@@ -117,7 +117,7 @@ def schedule_retry(
     obj.retries += 1
 
     obj.next_retry_at = (
-        datetime.utcnow()
+        datetime.now(UTC)
         + timedelta(
             seconds=DEFAULT_RETRY_INTERVAL
         )

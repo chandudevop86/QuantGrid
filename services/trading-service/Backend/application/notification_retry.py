@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 
-from datetime import datetime
+from datetime import datetime, timezone as UTC
 from sqlalchemy.orm import Session
 
 from Backend.application.notifications import send_alert
@@ -67,7 +67,7 @@ class NotificationRetryWorker:
 
         notifications = get_retry_notifications(
             self.db,
-            datetime.utcnow(),
+            datetime.now(UTC),
         )
 
         logger.info(

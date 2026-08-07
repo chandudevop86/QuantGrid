@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone as UTC
 from typing import Optional, List
 
 from Backend.domain.notifications.models import (
@@ -147,7 +147,7 @@ class PostgresNotificationRepository(NotificationRepository):
         self.db.execute(
             query,
             (
-                datetime.utcnow(),
+                datetime.now(UTC),
                 event_id
             )
         )

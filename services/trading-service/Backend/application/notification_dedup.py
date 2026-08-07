@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as UTC
 from threading import Lock
 
 _LOCK = Lock()
@@ -15,7 +15,7 @@ def _cleanup(now: datetime) -> None:
 
 
 def should_send(key: str) -> bool:
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     with _LOCK:
         _cleanup(now)

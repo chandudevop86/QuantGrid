@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Dict
-from datetime import datetime
+from datetime import datetime,timezone as UTC 
 from threading import RLock
 from uuid import uuid4
 
@@ -91,7 +91,7 @@ class Position:
                     self.average_price - self.last_price
                 ) * self.quantity
 
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(UTC)
 
 # ==========================================================
 # Portfolio

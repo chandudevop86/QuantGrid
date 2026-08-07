@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime,timezone as UTC
 from typing import Any, Dict, Optional
 import uuid
 import logging
@@ -141,7 +141,7 @@ class TradeAnalyticsService:
             ),
 
 
-            execution_time=datetime.utcnow(),
+            execution_time=datetime.now(UTC),
 
 
             broker=data.broker,
