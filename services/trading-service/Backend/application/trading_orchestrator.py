@@ -137,36 +137,77 @@ class TradingOrchestrator:
         )
 
 
-        # 5. Risk validation
-        approval = self.risk.validate(
-            strategy,
-            score
-        )
+                # 5. Risk validation
 
+        context = {
+            "strategy": strategy,
+
+            "capital": market.capital,
+            "capital_per_trade": getattr(signal, "entry_price", 0),
+
+            "daily_pnl": getattr(market, "daily_pnl", 0),
+            "trades_today": getattr(market, "trades_today", 0),
+            "open_positions": getattr(market, "open_positions", 0),
+            "consecutive_losses": getattr(market, "consecutive_losses", 0),
+
+            "broker_connected": True,
+            "broker_circuit_active": False,
+
+            "expiry_day": getattr(market, "expiry_day", False),
+            "market_data_age_seconds": getattr(
+                market,
+                "market_data_age_seconds",
+                0,
+            ),
+            "vix": getattr(market, "vix", 0),
+            "gap_pct": getattr(market, "gap_pct", 0),
+            "gamma": getattr(market, "gamma", 0),
+
+            "bid_price": getattr(market, "bid_price", 0),
+            "ask_price": getattr(market, "ask_price", 0),
+            "slippage_bps": getattr(market, "slippage_bps", 0),
+
+            "portfolio_exposure_pct": getattr(
+                market,
+                "portfolio_exposure_pct",
+                0,
+            ),
+            "symbol_exposure_pct": getattr(
+                market,
+                "symbol_exposure_pct",
+                0,
+            ),
+            "correlated_positions": getattr(
+                market,
+                "correlated_positions",
+                0,
+            ),
+
+            "news": getattr(market, "news", False),
+
+            "active_trade_keys": [],
+        }
+
+        approval = self.risk.validate(
+            signal,
+            context,
+        )
 
         if not approval.allowed:
-
+            print("Risk rejected:", approval)
             return approval
-        print(
-            "Risk rejected:",
-            approval
-        )
-
+        context["prevalidated_risk"] = approval
 
         # 6. Create trade
-        
+
         import asyncio
 
         order = asyncio.run(
             self.oms.submit_signal(
                 signal=signal,
-                context={
-                    "strategy": strategy,
-                },
+                context=context,
             )
         )
-
-
 
         # 8. Analytics
         self.analytics.record(
