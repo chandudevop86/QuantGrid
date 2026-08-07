@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -37,7 +37,7 @@ class NotificationEvent:
     payload: dict | None = None
 
     created_at: datetime = field(
-        default_factory=datetime.utcnow
+        default_factory=lambda: datetime.now(timezone.utc)
     )
 
     sent_at: datetime | None = None
