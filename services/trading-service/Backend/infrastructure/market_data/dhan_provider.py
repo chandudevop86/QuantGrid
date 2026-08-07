@@ -143,19 +143,12 @@ class DhanProvider(EnvConfiguredProvider):
                     }
                 )
 
-                print("\n========== DHAN RAW ==========")
-                print(raw)
-                print("==============================")
-
             except Exception as e:
                 print("DHAN API ERROR:", repr(e))
                 raise
 
             quote = _extract_quote(raw, security_id)
 
-            print("\n========== EXTRACTED QUOTE ==========")
-            print(quote)
-            print("====================================")
             logger.debug("Fetched Dhan index quote for %s", normalized)
             quote = _extract_quote(
                 raw,
