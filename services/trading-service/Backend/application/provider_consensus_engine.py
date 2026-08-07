@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from pytz import timezone
+
 from Backend.application.provider_consensus import (
     ProviderConsensus,
     ProviderSnapshot,
 )
 from datetime import datetime,timezone as UTC
+import logging
 
+logger = logging.getLogger(__name__)
 
 class ProviderConsensusEngine:
     
@@ -60,8 +64,12 @@ class ProviderConsensusEngine:
                 snapshots.append(snapshot)
 
             except Exception as exc:
+                    logger.exception(
+                        "Provider failed: %s",
+                        provider.provider_name
+                    )
 
-                snapshots.append(
+            snapshots.append(
                     ProviderSnapshot(
                         provider=provider.provider_name,
                         symbol=symbol,
@@ -345,6 +353,10 @@ class ProviderConsensusEngine:
                 timestamp = datetime.fromisoformat(
                     timestamp.replace("Z", "+00:00")
                 )
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(
+                    tzinfo=timezone.utc
+                )    
 
             timestamps[snapshot.provider] = timestamp
 
@@ -541,19 +553,19 @@ class ProviderConsensusEngine:
 
 
             # Latency penalty
-            if snapshot.latency_ms > 500:
-                score -= 10
-
-            elif snapshot.latency_ms > 1000:
+            if snapshot.latency_ms > 1000:
                 score -= 20
+
+            elif snapshot.latency_ms > 500:
+                score -= 10
 
 
             # Feed delay penalty
-            if snapshot.feed_delay_seconds > 5:
-                score -= 15
-
-            elif snapshot.feed_delay_seconds > 10:
+            if snapshot.feed_delay_seconds > 10:
                 score -= 25
+
+            elif snapshot.feed_delay_seconds > 5:
+                score -= 15
 
 
             # Warning penalty
@@ -891,11 +903,19 @@ class ProviderConsensusEngine:
             else None
         )
 
+        if selected is None:
+            raise RuntimeError(
+                "No provider selected"
+            )
 
+        if selected.ltp <= 0:
+            raise RuntimeError(
+                f"Invalid consensus price from {selected.provider}"
+            )
         return ProviderConsensus(
 
-            accepted=confidence >= 50,
-
+            accepted=confidence >= 70,
+            
             consensus_price=selected.ltp,
 
             selected_provider=selected.provider,
