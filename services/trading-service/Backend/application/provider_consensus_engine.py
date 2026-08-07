@@ -6,7 +6,7 @@ from Backend.application.provider_consensus import (
     ProviderConsensus,
     ProviderSnapshot,
 )
-from datetime import datetime,timezone as UTC
+from datetime import datetime,timezone 
 import logging
 
 logger = logging.getLogger(__name__)
