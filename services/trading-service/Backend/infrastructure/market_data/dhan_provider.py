@@ -134,13 +134,26 @@ class DhanProvider(EnvConfiguredProvider):
                     f"Unsupported index {normalized}"
                 )
 
-            raw = dhan.ohlc_data(
-                securities={
-                    "IDX_I": [
-                        int(security_id)
-                    ]
-                }
-            )
+            try:
+                raw = dhan.ohlc_data(
+                    securities={
+                        "IDX_I": [int(security_id)]
+                    }
+                )
+
+                print("\n========== DHAN RAW ==========")
+                print(raw)
+                print("==============================")
+
+            except Exception as e:
+                print("DHAN API ERROR:", repr(e))
+                raise
+
+            quote = _extract_quote(raw, security_id)
+
+            print("\n========== EXTRACTED QUOTE ==========")
+            print(quote)
+            print("====================================")
             logger.debug("Fetched Dhan index quote for %s", normalized)
             quote = _extract_quote(
                 raw,
