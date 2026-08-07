@@ -4,7 +4,7 @@ from Backend.application.provider_consensus import (
     ProviderConsensus,
     ProviderSnapshot,
 )
-from datetime import datetime,time
+from datetime import datetime,timezone as UTC
 
 
 class ProviderConsensusEngine:
