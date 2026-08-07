@@ -10,6 +10,8 @@ from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
 from Backend.config import Provider
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 SECURITY_MASTER = None
 
@@ -361,34 +363,35 @@ def _period_days(period: str) -> int:
 
     return 1
 
-
 def _extract_quote(raw: Any, security_id: str) -> dict[str, Any]:
-    data = raw.get("data", raw) if isinstance(raw, dict) else raw
 
-    if isinstance(data, dict):
-        for key in (
-            security_id,
-            str(security_id),
-            "NSE",
-            "NSE_FNO",
-        ):
-            item = data.get(key)
-            if isinstance(item, dict):
-                return item
+    if not isinstance(raw, dict):
+        return {}
 
-        for item in data.values():
-            if isinstance(item, dict):
-                nested = _extract_quote(item, security_id)
-                if nested:
-                    return nested
+    data = raw.get("data", raw)
 
-        return data
+    # Dhan sometimes returns nested data
+    if isinstance(data, dict) and "data" in data:
+        data = data["data"]
+
+    if not isinstance(data, dict):
+        return {}
+
+    idx_data = data.get("IDX_I")
+
+    if isinstance(idx_data, dict):
+        quote = idx_data.get(str(security_id))
+        if isinstance(quote, dict):
+            return quote
+
+    # fallback recursive search
+    for value in data.values():
+        if isinstance(value, dict):
+            found = _extract_quote(value, security_id)
+            if found:
+                return found
 
     return {}
-
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
-
 
 def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
     data = raw.get("data", raw) if isinstance(raw, dict) else raw
