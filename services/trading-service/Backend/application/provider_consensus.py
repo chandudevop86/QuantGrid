@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -67,6 +67,7 @@ class ProviderConsensus:
 
     snapshots: list[ProviderSnapshot] = field(default_factory=list)
 
-    generated_at: datetime = field(default_factory=datetime.utcnow)
-
+    generated_at: datetime = field(
+    default_factory=lambda: datetime.now(timezone.utc)
+)
     diagnostics: dict[str, Any] = field(default_factory=dict)
