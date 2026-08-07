@@ -58,6 +58,6 @@ class MarketRegime:
 
     warnings: list[str] = field(default_factory=list)
 
-    generated_at: datetime = field(default_factory=datetime.utcnow)
-
+    generated_at: datetime = field(
+    default_factory=lambda: datetime.now(UTC))
     diagnostics: dict[str, Any] = field(default_factory=dict)
