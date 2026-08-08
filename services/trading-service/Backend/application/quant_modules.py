@@ -10,6 +10,8 @@ from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
+from sqlalchemy.util import symbol
+
 from Backend.application.kill_switch import kill_switch_status
 from Backend.application.market_data_store import latest_candles, latest_price_tick
 from Backend.application.monitoring import observe_option_chain_failure
@@ -596,15 +598,22 @@ def historical_option_chain(symbol: str = "NIFTY", *, periods: int = 12, step: i
         }
 
 
-def _stored_provider_candles(symbol: str) -> list[dict[str, Any]]:
-        return latest_candles(symbol, "5m", 160)
-
+def _stored_provider_candles(
+    symbol: str,
+    limit: int = 5000,
+) -> list[dict[str, Any]]:
+    return latest_candles(symbol, "5m", limit)
 
 def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = payload or {}
     symbol = str(payload.get("symbol") or "NIFTY").upper()
     capital = float(payload.get("capital") or 100000)
-    candles = payload.get("candles") or _stored_provider_candles(symbol)
+    requested_max_candles = int(payload.get("max_candles") or 5000)
+
+    candles = payload.get("candles") or _stored_provider_candles(
+    symbol,
+    requested_max_candles,
+    )
     if not candles:
         raise ValueError(f"Backtest requires provider-backed candles for {symbol}; synthetic candle generation is disabled.")
     max_candles = int(payload.get("max_candles") or 0)

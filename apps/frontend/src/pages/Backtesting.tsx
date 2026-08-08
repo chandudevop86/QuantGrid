@@ -134,7 +134,7 @@ export default function Backtesting() {
     setLoading(true);
     setError(null);
     const strategies = mode === "full" ? defaultStrategies : quickStrategies;
-    api.startBacktest({ symbol: "NIFTY", strategies, min_score: 0, max_candles: mode === "full" ? 120 : 80 })
+    api.startBacktest({ symbol: "NIFTY", strategies, min_score: 0, max_candles: mode === "full" ? 5000 : 1000 })
       .then((data: BacktestJob) => {
         setJob(data);
         setPayload(jobPayload(data));
