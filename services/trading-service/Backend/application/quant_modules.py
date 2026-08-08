@@ -642,7 +642,7 @@ def backtesting_module(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         capital=capital,
         risk_pct=float(payload.get("risk_pct") or 1.0),
         rr_ratio=float(payload.get("rr_ratio") or 2.0),
-        min_score=float(payload.get("min_score") or 0.0),
+        min_score=float(payload.get("min_score") or 7.0),
     ).to_dict()
     trades = result.get("trades", [])
     equity = capital
