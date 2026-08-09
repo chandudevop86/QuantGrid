@@ -82,155 +82,92 @@ class AMDStrategy(BaseStrategy):
             return candles
         return candles
     def generate_signals(
-        self,
-        candles: pd.DataFrame,
-        context: StrategyContext,
-    ) -> list[StrategySignal]:
+            self,
+            candles: pd.DataFrame,
+            context: StrategyContext,
+        ) -> list[StrategySignal]:
 
-        htf_candles = self._prepare_htf(context)
-        signals: list[StrategySignal] = []
-        traded_sessions: set[str] = set()
+            htf_candles = self._prepare_htf(context)
+            signals: list[StrategySignal] = []
+            traded_sessions: set[str] = set()
 
-        start_index = max(
-            self.config.range_lookback + 3,
-            20,
-        )
+            start_index = max(
+                self.config.range_lookback + 3,
+                20,
+            )
 
-        stats = {
-            "checked": 0,
-            "low_volatility": 0,
-            "amd_none": 0,
-            "mid_range": 0,
-            "vwap_ema": 0,
-            "fvg_none": 0,
-            "zone_none": 0,
-            "zone_no_confluence": 0,
-            "entry_confirmation_none": 0,
-            "htf_rejected": 0,
-            "score_below_min": 0,
-            "confirmed": 0,
-        }
+            self.diagnostics = {
+                "candles_checked": 0,
+                "low_volatility": 0,
+                "buy_checked": 0,
+                "sell_checked": 0,
+                "amd_none": 0,
+                "amd_found": 0,
+                "raw_candidates": 0,
+                "confirmed": 0,
+            }
 
-        for index in range(start_index, len(candles)):
+            for index in range(start_index, len(candles)):
 
-            row = candles.iloc[index]
-            session = str(row["session_day"])
+                self.diagnostics["candles_checked"] += 1
 
-            if session in traded_sessions:
-                continue
+                row = candles.iloc[index]
+                session = str(row["session_day"])
 
-            stats["checked"] += 1
-
-            if self._low_volatility(row):
-                stats["low_volatility"] += 1
-                continue
-
-            for side in ("BUY", "SELL"):
-
-                amd = self.amd_detector.detect(
-                    candles,
-                    index,
-                    side=side,
-                    range_lookback=self.config.range_lookback,
-                    distribution_lookback=self.config.distribution_lookback,
-                )
-
-                if amd is None:
-                    stats["amd_none"] += 1
+                if session in traded_sessions:
                     continue
 
-                if self.config.require_extreme_entry and self._is_mid_range_entry(
-                    float(row["close"]),
-                    amd,
-                    side,
-                ):
-                    stats["mid_range"] += 1
+                if self._low_volatility(row):
+                    self.diagnostics["low_volatility"] += 1
                     continue
 
-                if not self._passes_vwap_ema(row, side):
-                    stats["vwap_ema"] += 1
-                    continue
+                for side in ("BUY", "SELL"):
 
-                fvg = self.fvg_detector.find_active_return(
-                    candles,
-                    index,
-                    side,
-                    after_index=amd.sweep.sweep_index,
-                )
+                    if side == "BUY":
+                        self.diagnostics["buy_checked"] += 1
+                    else:
+                        self.diagnostics["sell_checked"] += 1
 
-                if fvg is None:
-                    stats["fvg_none"] += 1
-                    continue
+                    signal = self._evaluate_setup(
+                        candles,
+                        index,
+                        side=side,
+                        context=context,
+                        htf_candles=htf_candles,
+                    )
 
-                zone = self.zone_engine.find_zone(
-                    candles,
-                    index,
-                    side,
-                    fvg=fvg,
-                    after_index=amd.sweep.sweep_index,
-                )
+                    if signal is None:
+                        self.diagnostics["amd_none"] += 1
+                        continue
 
-                if zone is None:
-                    stats["zone_none"] += 1
-                    continue
+                    self.diagnostics["amd_found"] += 1
 
-                if not self.zone_engine.has_confluence(zone, fvg):
-                    stats["zone_no_confluence"] += 1
-                    continue
+                    if signal.metadata.get("validation_passed") is True:
+                        self.diagnostics["confirmed"] += 1
 
-                entry_confirmation = self._entry_confirmation(
-                    candles,
-                    index,
-                    side,
-                )
+                        signals.append(signal)
+                        traded_sessions.add(session)
+                        break
 
-                if entry_confirmation is None:
-                    stats["entry_confirmation_none"] += 1
-                    continue
+                    self.diagnostics["raw_candidates"] += 1
 
-                htf_aligned = self._htf_aligned(
-                    htf_candles,
-                    row,
-                    side,
-                )
+                    reason = signal.metadata.get(
+                        "validation_reason",
+                        "unknown",
+                    )
 
-                if self.config.require_htf_alignment and not htf_aligned:
-                    stats["htf_rejected"] += 1
-                    continue
+                    self.diagnostics[f"rejected:{reason}"] = (
+                        self.diagnostics.get(f"rejected:{reason}", 0) + 1
+                    )
 
-                score = self.scoring.score(
-                    amd=amd,
-                    sweep=amd.sweep,
-                    fvg=fvg,
-                    zone=zone,
-                    zone_overlaps_fvg=True,
-                    htf_aligned=htf_aligned,
-                    entry_confirmation=entry_confirmation,
-                )
+            print("\n================ AMD PIPELINE DIAGNOSTICS ================")
 
-                if score.total < int(self.config.min_score):
-                    stats["score_below_min"] += 1
-                    continue
+            for key, value in self.diagnostics.items():
+                print(f"{key:45s}: {value}")
 
-                signal = self._evaluate_setup(
-                    candles,
-                    index,
-                    side=side,
-                    context=context,
-                    htf_candles=htf_candles,
-                )
+            print("===========================================================")
 
-                if signal is not None and signal.metadata.get("validation_passed") is True:
-                    signals.append(signal)
-                    traded_sessions.add(session)
-                    stats["confirmed"] += 1
-                    break
-
-        print("\n# ================ AMD PIPELINE DIAGNOSTICS ================")
-        for key, value in stats.items():
-            print(f"{key:30s}: {value}")
-
-    return signals
+            return signals
     def _evaluate_setup(
         self,
         candles: pd.DataFrame,
