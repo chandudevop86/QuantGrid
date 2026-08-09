@@ -308,19 +308,44 @@ class AMDStrategy(BaseStrategy):
         score_breakdown: dict[str, Any],
         entry_confirmation: str,
     ) -> dict[str, Any]:
-        reason = "; ".join(str(item) for item in score_breakdown["reasons"])
+        reason = "; ".join(
+            str(item) for item in score_breakdown["reasons"]
+        )
+
+        total_score = float(score_breakdown.get("total", 0.0))
+
         return {
             "amd_phase": amd.phase,
-            "fvg_zone": [round(fvg.low, 4), round(fvg.high, 4)],
+            "fvg_zone": [
+                round(fvg.low, 4),
+                round(fvg.high, 4),
+            ],
             "zone_type": zone.zone_type,
-            "zone": [round(zone.low, 4), round(zone.high, 4)],
-            "liquidity_range": [round(amd.liquidity_range.low, 4), round(amd.liquidity_range.high, 4)],
+            "zone": [
+                round(zone.low, 4),
+                round(zone.high, 4),
+            ],
+            "liquidity_range": [
+                round(amd.liquidity_range.low, 4),
+                round(amd.liquidity_range.high, 4),
+            ],
             "swept_level": round(amd.sweep.swept_level, 4),
             "entry_confirmation": entry_confirmation,
+
+            # Canonical signal score
+            "score": total_score,
+
+            # Backward compatibility
+            "total_score": total_score,
+            "signal_score": total_score,
+
             "score_breakdown": score_breakdown,
             "reason": reason,
-            "market_signal": f"{amd.sweep.side} sweep + FVG return + {zone.zone_type} rejection",
-    }
+            "market_signal": (
+                f"{amd.sweep.side} sweep + "
+                f"FVG return + {zone.zone_type} rejection"
+            ),
+        }
 
     def _passes_vwap_ema(self, row: pd.Series, side: Side) -> bool:
         close = float(row["close"])
