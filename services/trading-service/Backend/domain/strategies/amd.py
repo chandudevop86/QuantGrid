@@ -99,17 +99,32 @@ class AMDStrategy(BaseStrategy):
                 signal = self._evaluate_setup(candles, index, side=side, context=context, htf_candles=htf_candles)
                 if signal is None:
                     continue
-                if signal.metadata.get("validation_passed") is True:
-                    signals.append(signal)
-                    traded_sessions.add(session)
-                    break
-                if session_candidate is None:
-                    session_candidate = signal
-            if session in traded_sessions:
-                continue
-            if session_candidate is not None:
-                signals.append(session_candidate)
-                traded_sessions.add(session)
+                for index in range(start_index, len(candles)):
+                    row = candles.iloc[index]
+                    session = str(row["session_day"])
+
+                    if session in traded_sessions:
+                        continue
+
+                    if self._low_volatility(row):
+                        continue
+
+                    for side in ("BUY", "SELL"):
+                        signal = self._evaluate_setup(
+                            candles,
+                            index,
+                            side=side,
+                            context=context,
+                            htf_candles=htf_candles,
+                        )
+
+                        if signal is None:
+                            continue
+
+                        if signal.metadata.get("validation_passed") is True:
+                            signals.append(signal)
+                            traded_sessions.add(session)
+                            break
 
         return signals
 
