@@ -320,7 +320,7 @@ class AMDStrategy(BaseStrategy):
             "score_breakdown": score_breakdown,
             "reason": reason,
             "market_signal": f"{amd.sweep.side} sweep + FVG return + {zone.zone_type} rejection",
-        }
+    }
 
     def _passes_vwap_ema(self, row: pd.Series, side: Side) -> bool:
         close = float(row["close"])
