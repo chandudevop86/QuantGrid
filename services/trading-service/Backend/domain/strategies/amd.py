@@ -26,13 +26,13 @@ class ConfluenceConfig(StrategyConfig):
     zone_lookback: int = 48
     max_zone_touches: int = 1
     min_atr_pct: float = 0.0008
-    min_score: int = 10
+    min_score: int = 7
     min_rr: float = 2.0
     ideal_rr: float = 3.0
-    require_htf_alignment: bool = True
-    require_vwap_alignment: bool = True
-    require_ema_alignment: bool = True
-    require_extreme_entry: bool = True
+    require_htf_alignment: bool = False
+    require_vwap_alignment: bool = False
+    require_ema_alignment: bool = False
+    require_extreme_entry: bool = False
 
     @classmethod
     def for_mode(cls, mode: str) -> "ConfluenceConfig":
@@ -62,7 +62,7 @@ class ConfluenceConfig(StrategyConfig):
 
 class AMDStrategy(BaseStrategy):
     name = "AMD + FVG + Supply/Demand"
-
+    
     def __init__(self, config: ConfluenceConfig | None = None) -> None:
         super().__init__(config or ConfluenceConfig())
         self.config: ConfluenceConfig
@@ -73,61 +73,66 @@ class AMDStrategy(BaseStrategy):
         self.zone_engine = ZoneConfluenceEngine(lookback=self.config.zone_lookback, max_touches=self.config.max_zone_touches)
         self.scoring = SMCScoringEngine()
         self.risk = SMCRiskManager()
-
+        self.diagnostics = {}
+    def _count(self, key: str) -> None:
+        self.diagnostics[key] = self.diagnostics.get(key, 0) + 1
     def prepare_data(self, data: Any) -> pd.DataFrame:
         candles = super().prepare_data(data)
         if candles.empty:
             return candles
         return candles
 
-    def generate_signals(self, candles: pd.DataFrame, context: StrategyContext) -> list[StrategySignal]:
+    def generate_signals(
+        self,
+        candles: pd.DataFrame,
+        context: StrategyContext,
+    ) -> list[StrategySignal]:
+
         htf_candles = self._prepare_htf(context)
         signals: list[StrategySignal] = []
         traded_sessions: set[str] = set()
-        start_index = max(self.config.range_lookback + 3, 20)
 
+        start_index = max(
+            self.config.range_lookback + 3,
+            20,
+        )
+        self.diagnostics = {}
         for index in range(start_index, len(candles)):
+
             row = candles.iloc[index]
             session = str(row["session_day"])
+
+            # One trade per session
             if session in traded_sessions:
                 continue
+
+            # Skip extremely low-volatility candles
             if self._low_volatility(row):
                 continue
 
-            session_candidate: StrategySignal | None = None
             for side in ("BUY", "SELL"):
-                signal = self._evaluate_setup(candles, index, side=side, context=context, htf_candles=htf_candles)
+
+                signal = self._evaluate_setup(
+                    candles,
+                    index,
+                    side=side,
+                    context=context,
+                    htf_candles=htf_candles,
+                )
+
                 if signal is None:
                     continue
-                for index in range(start_index, len(candles)):
-                    row = candles.iloc[index]
-                    session = str(row["session_day"])
 
-                    if session in traded_sessions:
-                        continue
-
-                    if self._low_volatility(row):
-                        continue
-
-                    for side in ("BUY", "SELL"):
-                        signal = self._evaluate_setup(
-                            candles,
-                            index,
-                            side=side,
-                            context=context,
-                            htf_candles=htf_candles,
-                        )
-
-                        if signal is None:
-                            continue
-
-                        if signal.metadata.get("validation_passed") is True:
-                            signals.append(signal)
-                            traded_sessions.add(session)
-                            break
-
+                # Only confirmed setups become executable signals
+                if signal.metadata.get("validation_passed") is True:
+                    signals.append(signal)
+                    traded_sessions.add(session)
+                    break
+                print("\n================ AMD PIPELINE DIAGNOSTICS ================")
+                for key, value in self.diagnostics.items():
+                    print(f"{key:30s}: {value}")
+                print("===========================================================")
         return signals
-
     def _evaluate_setup(
         self,
         candles: pd.DataFrame,
