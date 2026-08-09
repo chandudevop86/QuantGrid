@@ -81,7 +81,6 @@ class AMDStrategy(BaseStrategy):
         if candles.empty:
             return candles
         return candles
-
     def generate_signals(
         self,
         candles: pd.DataFrame,
@@ -96,21 +95,122 @@ class AMDStrategy(BaseStrategy):
             self.config.range_lookback + 3,
             20,
         )
-        self.diagnostics = {}
+
+        stats = {
+            "checked": 0,
+            "low_volatility": 0,
+            "amd_none": 0,
+            "mid_range": 0,
+            "vwap_ema": 0,
+            "fvg_none": 0,
+            "zone_none": 0,
+            "zone_no_confluence": 0,
+            "entry_confirmation_none": 0,
+            "htf_rejected": 0,
+            "score_below_min": 0,
+            "confirmed": 0,
+        }
+
         for index in range(start_index, len(candles)):
 
             row = candles.iloc[index]
             session = str(row["session_day"])
 
-            # One trade per session
             if session in traded_sessions:
                 continue
 
-            # Skip extremely low-volatility candles
+            stats["checked"] += 1
+
             if self._low_volatility(row):
+                stats["low_volatility"] += 1
                 continue
 
             for side in ("BUY", "SELL"):
+
+                amd = self.amd_detector.detect(
+                    candles,
+                    index,
+                    side=side,
+                    range_lookback=self.config.range_lookback,
+                    distribution_lookback=self.config.distribution_lookback,
+                )
+
+                if amd is None:
+                    stats["amd_none"] += 1
+                    continue
+
+                if self.config.require_extreme_entry and self._is_mid_range_entry(
+                    float(row["close"]),
+                    amd,
+                    side,
+                ):
+                    stats["mid_range"] += 1
+                    continue
+
+                if not self._passes_vwap_ema(row, side):
+                    stats["vwap_ema"] += 1
+                    continue
+
+                fvg = self.fvg_detector.find_active_return(
+                    candles,
+                    index,
+                    side,
+                    after_index=amd.sweep.sweep_index,
+                )
+
+                if fvg is None:
+                    stats["fvg_none"] += 1
+                    continue
+
+                zone = self.zone_engine.find_zone(
+                    candles,
+                    index,
+                    side,
+                    fvg=fvg,
+                    after_index=amd.sweep.sweep_index,
+                )
+
+                if zone is None:
+                    stats["zone_none"] += 1
+                    continue
+
+                if not self.zone_engine.has_confluence(zone, fvg):
+                    stats["zone_no_confluence"] += 1
+                    continue
+
+                entry_confirmation = self._entry_confirmation(
+                    candles,
+                    index,
+                    side,
+                )
+
+                if entry_confirmation is None:
+                    stats["entry_confirmation_none"] += 1
+                    continue
+
+                htf_aligned = self._htf_aligned(
+                    htf_candles,
+                    row,
+                    side,
+                )
+
+                if self.config.require_htf_alignment and not htf_aligned:
+                    stats["htf_rejected"] += 1
+                    continue
+
+                score = self.scoring.score(
+                    amd=amd,
+                    sweep=amd.sweep,
+                    fvg=fvg,
+                    zone=zone,
+                    zone_overlaps_fvg=True,
+                    htf_aligned=htf_aligned,
+                    entry_confirmation=entry_confirmation,
+                )
+
+                if score.total < int(self.config.min_score):
+                    stats["score_below_min"] += 1
+                    continue
 
                 signal = self._evaluate_setup(
                     candles,
@@ -120,19 +220,17 @@ class AMDStrategy(BaseStrategy):
                     htf_candles=htf_candles,
                 )
 
-                if signal is None:
-                    continue
-
-                # Only confirmed setups become executable signals
-                if signal.metadata.get("validation_passed") is True:
+                if signal is not None and signal.metadata.get("validation_passed") is True:
                     signals.append(signal)
                     traded_sessions.add(session)
+                    stats["confirmed"] += 1
                     break
-                print("\n================ AMD PIPELINE DIAGNOSTICS ================")
-                for key, value in self.diagnostics.items():
-                    print(f"{key:30s}: {value}")
-                print("===========================================================")
-        return signals
+
+        print("\n# ================ AMD PIPELINE DIAGNOSTICS ================")
+        for key, value in stats.items():
+            print(f"{key:30s}: {value}")
+
+    return signals
     def _evaluate_setup(
         self,
         candles: pd.DataFrame,
