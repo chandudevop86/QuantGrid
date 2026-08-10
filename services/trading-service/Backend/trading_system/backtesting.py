@@ -394,10 +394,7 @@ class BacktestEngine:
                     index
                 )
 
-                signal.metadata["backtest_raw_entry_price"] = raw_entry
-                signal.metadata["backtest_lot_size"] = lot_size
-                signal.metadata["backtest_quantity"] = quantity
-                signal.metadata["backtest_lots"] = quantity // lot_size
+                
                 # ------------------------------------------------------------
                 # Validate trade geometry before position sizing
                 # ------------------------------------------------------------
@@ -497,6 +494,12 @@ class BacktestEngine:
                         "insufficient_quantity_for_one_lot",
                     )
                     continue
+                # ------------------------------------------------------------
+                # Store backtest sizing metadata AFTER values exist
+                # ------------------------------------------------------------
+                signal.metadata["backtest_lot_size"] = lot_size
+                signal.metadata["backtest_quantity"] = quantity
+                signal.metadata["backtest_lots"] = quantity // lot_size
                 self.risk_manager.record_trade_opened(signal.signal_time)
                 self.logger.info(
                     "backtest_trade_opened",{
