@@ -14,7 +14,7 @@ class GlobalRiskConfig:
     max_daily_loss_pct: float = 3.0
     max_trades_per_day: int = 3
     max_drawdown_pct: float = 10.0
-    min_signal_score: float = 10.0
+    min_signal_score: float = 7.0
     max_stale_seconds: int = 60
     max_risk_per_trade_pct: float = 2.0
 

@@ -186,9 +186,14 @@ class AMDStrategy(BaseStrategy):
             distribution_lookback=self.config.distribution_lookback,
         )
         if amd is None:
+            self._count("amd_none")
             return None
-        if self.config.require_extreme_entry and self._is_mid_range_entry(float(row["close"]), amd, side):
-            return self._raw_candidate(candles, index, side, context, amd=amd, validation_reason="entry is not in liquidity range extreme")
+
+        self._count("amd_found")
+        if self.config.require_extreme_entry and self._is_mid_range_entry(
+            float(row["close"]), amd, side
+        ):
+            self._count("extreme_entry_rejected")
         if not self._passes_vwap_ema(row, side):
             return self._raw_candidate(candles, index, side, context, amd=amd, validation_reason="vwap or ema alignment rejected setup")
 
