@@ -395,21 +395,108 @@ class BacktestEngine:
                 )
 
                 signal.metadata["backtest_raw_entry_price"] = raw_entry
+                signal.metadata["backtest_lot_size"] = lot_size
+                signal.metadata["backtest_quantity"] = quantity
+                signal.metadata["backtest_lots"] = quantity // lot_size
+                # ------------------------------------------------------------
+                # Validate trade geometry before position sizing
+                # ------------------------------------------------------------
+                stop_price = float(signal.stop_loss)
+                target_price = float(signal.target_price or 0.0)
+
+                if signal.side == "BUY":
+                    if stop_price >= entry_price:
+                        rejected_signal_count += 1
+                        _increment_reason(
+                            rejection_reasons,
+                            "invalid_buy_stop",
+                        )
+                        continue
+
+                    if target_price <= entry_price:
+                        rejected_signal_count += 1
+                        _increment_reason(
+                            rejection_reasons,
+                            "invalid_buy_target",
+                        )
+                        continue
+
+                elif signal.side == "SELL":
+                    if stop_price <= entry_price:
+                        rejected_signal_count += 1
+                        _increment_reason(
+                            rejection_reasons,
+                            "invalid_sell_stop",
+                        )
+                        continue
+
+                    if target_price >= entry_price:
+                        rejected_signal_count += 1
+                        _increment_reason(
+                            rejection_reasons,
+                            "invalid_sell_target",
+                        )
+                        continue
+
+                # ------------------------------------------------------------
+                # Risk-based position sizing
+                # ------------------------------------------------------------
                 risk_amount = context.capital * (context.risk_pct / 100)
-                risk_per_unit = abs(entry_price - float(signal.stop_loss))
-                risk_per_unit = max(
-                    abs(entry_price - float(signal.stop_loss)),
-                    1e-9,
+
+                risk_per_unit = abs(entry_price - stop_price)
+
+                if risk_per_unit <= 0:
+                    rejected_signal_count += 1
+                    _increment_reason(
+                        rejection_reasons,
+                        "invalid_risk_distance",
+                    )
+                    continue
+
+                raw_quantity = int(
+                    risk_amount / risk_per_unit
                 )
 
-                quantity = max(
-                    1,
-                    int(risk_amount / risk_per_unit),
+                # ------------------------------------------------------------
+                # Instrument lot size
+                # ------------------------------------------------------------
+                lot_size = _instrument_lot_size(signal)
+
+                # Round DOWN to complete executable lots
+                risk_quantity = _round_down_to_lot(
+                    raw_quantity,
+                    lot_size,
                 )
-                # Prevent oversized positions
+
+                # ------------------------------------------------------------
+                # Maximum position value
+                # ------------------------------------------------------------
                 max_position_value = context.capital * 0.20
-                max_quantity = max(1,int(max_position_value / entry_price),)
-                quantity = min(quantity, max_quantity)
+
+                max_quantity_by_value = int(
+                    max_position_value / entry_price
+                )
+
+                max_quantity = _round_down_to_lot(
+                    max_quantity_by_value,
+                    lot_size,
+                )
+
+                quantity = min(
+                    risk_quantity,
+                    max_quantity,
+                )
+
+                # ------------------------------------------------------------
+                # Reject if we cannot afford even one complete lot
+                # ------------------------------------------------------------
+                if quantity < lot_size:
+                    rejected_signal_count += 1
+                    _increment_reason(
+                        rejection_reasons,
+                        "insufficient_quantity_for_one_lot",
+                    )
+                    continue
                 self.risk_manager.record_trade_opened(signal.signal_time)
                 self.logger.info(
                     "backtest_trade_opened",{
@@ -858,7 +945,48 @@ class BacktestEngine:
                 return float(signal.metadata[key])
         return 0.0
 
+def _instrument_lot_size(signal: StrategySignal) -> int:
+    """
+    Return the exchange/instrument lot size.
 
+    Priority:
+    1. Signal metadata lot_size
+    2. 65 for NIFTY options
+    3. 1 for non-option instruments
+    """
+    metadata = signal.metadata or {}
+
+    lot_size = metadata.get("lot_size")
+    if lot_size is not None:
+        try:
+            value = int(lot_size)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+
+    instrument_type = str(
+        metadata.get("instrument_type", "")
+    ).upper()
+
+    if instrument_type in {"OPTION", "OPT", "OPTIDX", "OPTSTK"}:
+        symbol = str(signal.symbol).upper()
+
+        if symbol in {"NIFTY", "NIFTY50"}:
+            return 65
+
+    return 1
+
+
+def _round_down_to_lot(quantity: int, lot_size: int) -> int:
+    """Round quantity down to the nearest complete lot."""
+    if quantity <= 0:
+        return 0
+
+    if lot_size <= 1:
+        return quantity
+
+    return (quantity // lot_size) * lot_size
 def _float_env(name: str, value: float | int | None, default: float) -> float:
     if value is not None:
         return float(value)
