@@ -21,4 +21,473 @@ class Trade:
     side: str
     entry_time: datetime
     entry_price: float
-    raw
+    raw_entry_price: float
+    quantity: int
+    stop_loss: float
+    target_price: float
+    exit_time: Optional[datetime] = None
+    exit_price: Optional[float] = None
+    raw_exit_price: Optional[float] = None
+    exit_reason: Optional[str] = None
+    gross_pnl: float = 0.0
+    total_costs: float = 0.0
+    brokerage: float = 0.0
+    taxes: float = 0.0
+    slippage_cost: float = 0.0
+    pnl: float = 0.0
+    pnl_percent: float = 0.0
+    latency_ms: float = 0.0
+    strategy_name: str = "unknown"
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def rr(self) -> float:
+        risk = abs(self.entry_price - self.stop_loss) * max(self.quantity, 1)
+        return self.pnl / risk if risk > 0 else 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["rr"] = self.rr
+        return data
+
+
+@dataclass
+class BacktestMetrics:
+    total_trades: int = 0
+    winning_trades: int = 0
+    losing_trades: int = 0
+    win_rate: float = 0.0
+    gross_pnl: float = 0.0
+    total_costs: float = 0.0
+    net_pnl: float = 0.0
+    pnl: float = 0.0
+    expectancy: float = 0.0
+    max_drawdown: float = 0.0
+    sharpe_ratio: float = 0.0
+    profit_factor: float = 0.0
+    average_latency_ms: float = 0.0
+    rejected_signal_count: int = 0
+    rejection_reasons: dict[str, int] = field(default_factory=dict)
+    equity_curve: list[dict[str, Any]] = field(default_factory=list)
+    trades: list[dict[str, Any]] = field(default_factory=list)
+    strategy_name: str | None = None
+    symbol: str | None = None
+
+    @property
+    def total_pnl(self) -> float:
+        return self.net_pnl
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class BacktestEngine:
+    """Single canonical historical simulator used by API and dashboard paths.
+
+    The engine accepts the current production API contract while retaining the
+    old ``BacktestEngine(strategy=..., risk_manager=...).run(df)`` shape for
+    compatibility. Historical candles are the only market-data source; no
+    synthetic trade fallback is created.
+    """
+
+    def __init__(
+        self,
+        strategy: Any | None = None,
+        risk_manager: GlobalRiskManager | None = None,
+        initial_capital: float = 100_000.0,
+        commission_rate: float = 0.0005,
+        slippage_rate: float = 0.0002,
+        slippage_model: SlippageModel | None = None,
+        brokerage_per_order: float = 0.0,
+        brokerage_bps: float = 0.0,
+        taxes_bps: float = 0.0,
+        latency_ms: float = 0.0,
+        **_: Any,
+    ) -> None:
+        self.strategy = strategy
+        self.risk_manager = risk_manager or GlobalRiskManager()
+        self.initial_capital = float(initial_capital)
+        self.commission_rate = float(commission_rate)
+        self.slippage_rate = float(slippage_rate)
+        self.slippage_model = slippage_model
+        self.brokerage_per_order = float(brokerage_per_order)
+        self.brokerage_bps = float(brokerage_bps)
+        self.taxes_bps = float(taxes_bps)
+        self.latency_ms = float(latency_ms)
+        self.trading_service = TradingService() if strategy is None else None
+
+    def run(
+        self,
+        candles: pd.DataFrame | list[dict[str, Any]],
+        strategy_name: str | None = None,
+        symbol: str | None = None,
+        capital: float | None = None,
+        risk_pct: float = 1.0,
+        rr_ratio: float = 2.0,
+        min_score: float = 7.0,
+        signals: list[StrategySignal] | None = None,
+        **_: Any,
+    ) -> BacktestMetrics:
+        frame = self._normalize_candles(candles)
+        starting_capital = float(capital if capital is not None else self.initial_capital)
+        strategy_name = strategy_name or self._strategy_name()
+        symbol = str(symbol or self._symbol_from_frame(frame) or "NIFTY").upper()
+
+        if frame.empty:
+            return BacktestMetrics(
+                equity_curve=[{"index": 0, "equity": starting_capital}],
+                strategy_name=strategy_name,
+                symbol=symbol,
+            )
+
+        self.risk_manager.equity = starting_capital
+        self.risk_manager.peak_equity = starting_capital
+        self.risk_manager.kill_switch_active = False
+        self.risk_manager.daily_pnl.clear()
+        self.risk_manager.daily_trades.clear()
+        self.risk_manager.rejections.clear()
+        if hasattr(self.risk_manager, "config"):
+            self.risk_manager.config.max_stale_seconds = max(
+                int(getattr(self.risk_manager.config, "max_stale_seconds", 60)),
+                10**9,
+            )
+            self.risk_manager.config.max_risk_per_trade_pct = min(
+                float(self.risk_manager.config.max_risk_per_trade_pct),
+                float(risk_pct) if risk_pct > 0 else float(self.risk_manager.config.max_risk_per_trade_pct),
+            )
+
+        signal_map = self._prepare_signal_map(signals)
+        capital_now = starting_capital
+        open_trade: Trade | None = None
+        closed: list[Trade] = []
+        rejected = 0
+        rejection_reasons: dict[str, int] = {}
+        curve: list[dict[str, Any]] = [{"index": 0, "equity": round(capital_now, 8)}]
+
+        for i, row in frame.iterrows():
+            timestamp = self._as_datetime(row["timestamp"])
+            open_p = float(row["open"])
+            high = float(row["high"])
+            low = float(row["low"])
+            close = float(row["close"])
+
+            if open_trade is not None:
+                exit_price, reason = self._try_exit(open_trade, open_p, high, low, close, row)
+                if exit_price is not None:
+                    self._close_trade(open_trade, timestamp, exit_price, reason, frame, i)
+                    capital_now += open_trade.pnl
+                    self.risk_manager.record_realized_pnl(open_trade.pnl, timestamp)
+                    closed.append(open_trade)
+                    open_trade = None
+
+            if open_trade is None:
+                signal = self._signal_for_bar(
+                    frame=frame,
+                    index=i,
+                    strategy_name=strategy_name,
+                    symbol=symbol,
+                    capital=capital_now,
+                    risk_pct=risk_pct,
+                    rr_ratio=rr_ratio,
+                    min_score=min_score,
+                    signal_map=signal_map,
+                )
+                if signal is not None:
+                    signal.metadata = dict(signal.metadata or {})
+                    signal.metadata.setdefault("risk_pct", risk_pct)
+                    signal.metadata.setdefault("risk_per_trade_pct", risk_pct)
+                    signal.metadata.setdefault("rr_ratio", rr_ratio)
+                    signal.metadata.setdefault("lot_size", signal.metadata.get("lot_size", 1))
+                    signal.metadata["backtest_raw_entry_price"] = close
+
+                    decision = self.risk_manager.validate_order(
+                        signal,
+                        now=timestamp,
+                        capital=capital_now,
+                    )
+                    if float(signal.metadata.get("total_score", signal.metadata.get("score", min_score))) < min_score:
+                        decision.accepted = False
+                        decision.reason = "signal_score_below_threshold"
+                    if not decision.accepted:
+                        rejected += 1
+                        rejection_reasons[decision.reason] = rejection_reasons.get(decision.reason, 0) + 1
+                    else:
+                        raw_entry = open_p if signal.metadata.get("next_open") else close
+                        entry = self._apply_slippage(raw_entry, signal.side, "entry", frame, i)
+                        quantity = int(decision.quantity)
+                        if quantity > 0:
+                            open_trade = self._build_trade(
+                                signal=signal,
+                                timestamp=timestamp,
+                                raw_entry=raw_entry,
+                                entry_price=entry,
+                                quantity=quantity,
+                                strategy_name=strategy_name,
+                            )
+                            self.risk_manager.record_trade_opened(timestamp)
+
+            unrealized = 0.0
+            if open_trade is not None:
+                unrealized = self._unrealized(open_trade, close)
+            curve.append({
+                "index": len(curve),
+                "equity": round(capital_now + unrealized, 8),
+                "time": timestamp.isoformat(),
+            })
+
+        if open_trade is not None:
+            last_i = len(frame) - 1
+            last = frame.iloc[last_i]
+            timestamp = self._as_datetime(last["timestamp"])
+            self._close_trade(open_trade, timestamp, float(last["close"]), "end_of_data", frame, last_i)
+            capital_now += open_trade.pnl
+            self.risk_manager.record_realized_pnl(open_trade.pnl, timestamp)
+            closed.append(open_trade)
+            curve[-1] = {"index": len(curve) - 1, "equity": round(capital_now, 8), "time": timestamp.isoformat()}
+
+        return self._calculate_metrics(
+            trades=closed,
+            equity_curve=curve,
+            rejected_signal_count=rejected,
+            rejection_reasons=rejection_reasons,
+            strategy_name=strategy_name,
+            symbol=symbol,
+        )
+
+    def _signal_for_bar(
+        self,
+        *,
+        frame: pd.DataFrame,
+        index: int,
+        strategy_name: str,
+        symbol: str,
+        capital: float,
+        risk_pct: float,
+        rr_ratio: float,
+        min_score: float,
+        signal_map: dict[pd.Timestamp, list[StrategySignal]],
+    ) -> StrategySignal | None:
+        timestamp = self._as_datetime(frame.iloc[index]["timestamp"])
+        mapped = signal_map.get(pd.Timestamp(timestamp))
+        if mapped:
+            return mapped.pop(0)
+        if self.strategy is not None:
+            try:
+                result = self.strategy.generate_signal(frame.iloc[: index + 1])
+                return result
+            except Exception:
+                return None
+        if self.trading_service is None:
+            self.trading_service = TradingService()
+        try:
+            signals = self.trading_service.run_strategy(
+                strategy_name=strategy_name,
+                data=frame.iloc[: index + 1].to_dict("records"),
+                symbol=symbol,
+                capital=capital,
+                risk_pct=risk_pct,
+                rr_ratio=rr_ratio,
+                params={},
+            )
+            eligible = []
+            for signal in signals:
+                score = float(signal.metadata.get("total_score", signal.metadata.get("score", 0.0)))
+                if score >= min_score:
+                    eligible.append(signal)
+            return eligible[0] if eligible else (signals[0] if signals else None)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _prepare_signal_map(signals: list[StrategySignal] | None) -> dict[pd.Timestamp, list[StrategySignal]]:
+        result: dict[pd.Timestamp, list[StrategySignal]] = {}
+        for signal in signals or []:
+            key = pd.Timestamp(signal.signal_time)
+            result.setdefault(key, []).append(signal)
+        return result
+
+    def _build_trade(
+        self,
+        *,
+        signal: StrategySignal,
+        timestamp: datetime,
+        raw_entry: float,
+        entry_price: float,
+        quantity: int,
+        strategy_name: str,
+    ) -> Trade:
+        return Trade(
+            id=f"bt_{timestamp.strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}",
+            symbol=str(signal.symbol).upper(),
+            side=str(signal.side).upper(),
+            entry_time=timestamp,
+            entry_price=float(entry_price),
+            raw_entry_price=float(raw_entry),
+            quantity=quantity,
+            stop_loss=float(signal.stop_loss),
+            target_price=float(signal.target_price),
+            strategy_name=strategy_name,
+            metadata=dict(signal.metadata or {}),
+            latency_ms=self.latency_ms,
+        )
+
+    def _try_exit(
+        self,
+        trade: Trade,
+        open_p: float,
+        high: float,
+        low: float,
+        close: float,
+        row: pd.Series,
+    ) -> tuple[Optional[float], Optional[str]]:
+        if trade.side == "BUY":
+            stop_hit = low <= trade.stop_loss
+            target_hit = high >= trade.target_price
+        else:
+            stop_hit = high >= trade.stop_loss
+            target_hit = low <= trade.target_price
+        if stop_hit and target_hit:
+            return trade.stop_loss, "stop_loss"
+        if stop_hit:
+            return trade.stop_loss, "stop_loss"
+        if target_hit:
+            return trade.target_price, "target"
+        return None, None
+
+    def _close_trade(
+        self,
+        trade: Trade,
+        timestamp: datetime,
+        raw_exit: float,
+        reason: str,
+        frame: pd.DataFrame,
+        index: int,
+    ) -> None:
+        exit_price = self._apply_slippage(raw_exit, trade.side, "exit", frame, index)
+        trade.exit_time = timestamp
+        trade.raw_exit_price = float(raw_exit)
+        trade.exit_price = float(exit_price)
+        trade.exit_reason = reason
+
+        entry_value = trade.entry_price * trade.quantity
+        exit_value = trade.exit_price * trade.quantity
+        trade.brokerage = (
+            self.brokerage_per_order * 2.0
+            + (entry_value + exit_value) * self.brokerage_bps / 10000.0
+        )
+        trade.taxes = (entry_value + exit_value) * self.taxes_bps / 10000.0
+        trade.total_costs = trade.brokerage + trade.taxes
+        if self.brokerage_per_order == 0.0 and self.brokerage_bps == 0.0 and self.taxes_bps == 0.0:
+            trade.total_costs += (entry_value + exit_value) * self.commission_rate
+
+        if trade.side == "BUY":
+            trade.gross_pnl = (trade.exit_price - trade.entry_price) * trade.quantity
+        else:
+            trade.gross_pnl = (trade.entry_price - trade.exit_price) * trade.quantity
+        trade.pnl = trade.gross_pnl - trade.total_costs
+        trade.pnl_percent = trade.pnl / entry_value if entry_value else 0.0
+        trade.slippage_cost = abs(trade.entry_price - trade.raw_entry_price) * trade.quantity + abs(trade.exit_price - trade.raw_exit_price) * trade.quantity
+
+    def _apply_slippage(
+        self,
+        price: float,
+        side: str,
+        event: str,
+        frame: pd.DataFrame,
+        index: int,
+    ) -> float:
+        if self.slippage_model is not None:
+            return float(self.slippage_model.apply(price, side, event, frame, index))
+        slip = float(price) * self.slippage_rate
+        if event == "entry":
+            return float(price + slip if side.upper() == "BUY" else price - slip)
+        return float(price - slip if side.upper() == "BUY" else price + slip)
+
+    @staticmethod
+    def _unrealized(trade: Trade, close: float) -> float:
+        if trade.side == "BUY":
+            return (close - trade.entry_price) * trade.quantity
+        return (trade.entry_price - close) * trade.quantity
+
+    def _calculate_metrics(
+        self,
+        *,
+        trades: list[Trade],
+        equity_curve: list[dict[str, Any]],
+        rejected_signal_count: int,
+        rejection_reasons: dict[str, int],
+        strategy_name: str,
+        symbol: str,
+    ) -> BacktestMetrics:
+        total = len(trades)
+        wins = [t for t in trades if t.pnl > 0]
+        losses = [t for t in trades if t.pnl < 0]
+        gross_profit = sum(t.pnl for t in wins)
+        gross_loss = abs(sum(t.pnl for t in losses))
+        net = sum(t.pnl for t in trades)
+        costs = sum(t.total_costs for t in trades)
+        gross = sum(t.gross_pnl for t in trades)
+        equities = np.asarray([float(x["equity"]) for x in equity_curve], dtype=float)
+        returns = np.diff(equities) / np.where(equities[:-1] == 0, 1.0, equities[:-1]) if len(equities) > 1 else np.array([])
+        sharpe = float(np.sqrt(252) * np.mean(returns) / np.std(returns)) if len(returns) > 1 and np.std(returns) > 0 else 0.0
+        if len(equities):
+            peaks = np.maximum.accumulate(equities)
+            dd = (equities - peaks) / np.where(peaks == 0, 1.0, peaks)
+            max_dd = float(np.min(dd))
+        else:
+            max_dd = 0.0
+        return BacktestMetrics(
+            total_trades=total,
+            winning_trades=len(wins),
+            losing_trades=len(losses),
+            win_rate=len(wins) / total if total else 0.0,
+            gross_pnl=gross,
+            total_costs=costs,
+            net_pnl=net,
+            pnl=net,
+            expectancy=net / total if total else 0.0,
+            max_drawdown=max_dd,
+            sharpe_ratio=sharpe,
+            profit_factor=gross_profit / gross_loss if gross_loss > 0 else (float("inf") if gross_profit > 0 else 0.0),
+            average_latency_ms=sum(t.latency_ms for t in trades) / total if total else 0.0,
+            rejected_signal_count=rejected_signal_count,
+            rejection_reasons=rejection_reasons,
+            equity_curve=equity_curve,
+            trades=[t.to_dict() for t in trades],
+            strategy_name=strategy_name,
+            symbol=symbol,
+        )
+
+    @staticmethod
+    def _normalize_candles(candles: pd.DataFrame | list[dict[str, Any]]) -> pd.DataFrame:
+        df = candles.copy() if isinstance(candles, pd.DataFrame) else pd.DataFrame(candles)
+        if df.empty:
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df.columns = [str(c).strip().lower() for c in df.columns]
+        aliases = {"datetime": "timestamp", "date": "timestamp", "time": "timestamp"}
+        df = df.rename(columns={k: v for k, v in aliases.items() if k in df.columns and v not in df.columns})
+        required = {"timestamp", "open", "high", "low", "close"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"Missing required candle columns: {sorted(missing)}")
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+        for col in ("open", "high", "low", "close"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=["timestamp", "open", "high", "low", "close"])
+        return df.sort_values("timestamp").drop_duplicates("timestamp").reset_index(drop=True)
+
+    def _strategy_name(self) -> str:
+        return str(getattr(self.strategy, "name", None) or getattr(self.strategy, "strategy_name", None) or "unknown")
+
+    @staticmethod
+    def _symbol_from_frame(frame: pd.DataFrame) -> str | None:
+        if "symbol" in frame.columns and not frame["symbol"].dropna().empty:
+            return str(frame["symbol"].dropna().iloc[0])
+        return None
+
+    @staticmethod
+    def _as_datetime(value: Any) -> datetime:
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is None:
+            return ts.to_pydatetime().replace(tzinfo=timezone.utc)
+        return ts.to_pydatetime()
