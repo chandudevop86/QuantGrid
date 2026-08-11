@@ -24,6 +24,7 @@ def create_strategy_version(
     dependency_lock_hash: str,
     execution_environment_hash: str,
     created_by: str,
+    reproducibility_status: str | None = None,
     display_name: str | None = None,
 ) -> StrategyVersion:
     """Register a new immutable research artifact; never updates an existing version."""
@@ -60,6 +61,7 @@ def create_strategy_version(
         git_commit_sha=git_commit_sha,
         git_tree_hash=git_tree_hash,
         git_is_clean=bool(git_is_clean),
+        reproducibility_status=reproducibility_status or ("REPRODUCIBLE" if git_is_clean else "NON_REPRODUCIBLE"),
         code_snapshot_hash=code_snapshot_hash,
         dependency_lock_hash=dependency_lock_hash,
         execution_environment_hash=execution_environment_hash,
@@ -71,3 +73,37 @@ def create_strategy_version(
     db.commit()
     db.refresh(version)
     return version
+
+
+def create_verified_strategy_version(
+    db,
+    *,
+    strategy_name: str,
+    version_string: str,
+    parameters: Any,
+    created_by: str,
+    requested_commit_sha: str | None = None,
+    repository_root: str | None = None,
+    display_name: str | None = None,
+) -> StrategyVersion:
+    """Create a version only from locally verified Git/environment provenance."""
+    from Backend.application.git_verification_service import GitVerificationService
+
+    provenance = GitVerificationService(repository_root).capture(
+        requested_commit_sha=requested_commit_sha
+    )
+    return create_strategy_version(
+        db,
+        strategy_name=strategy_name,
+        version_string=version_string,
+        parameters=parameters,
+        git_commit_sha=provenance.head_commit_sha,
+        git_tree_hash=provenance.git_tree_hash,
+        git_is_clean=provenance.git_is_clean,
+        reproducibility_status=provenance.reproducibility_status,
+        code_snapshot_hash=provenance.code_snapshot_hash,
+        dependency_lock_hash=provenance.dependency_lock_hash,
+        execution_environment_hash=provenance.execution_environment_hash,
+        created_by=created_by,
+        display_name=display_name,
+    )

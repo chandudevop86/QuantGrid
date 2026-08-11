@@ -90,7 +90,7 @@ class StrategyEngine:
     def audit_trail(self) -> list[dict[str, Any]]:
         if self._persist_governance_enabled:
             try:
-                from Backend.application.strategy_governance_store import list_strategy_governance_audit
+                from Backend.application.strategy_registry_store import list_strategy_governance_audit
 
                 rows = list_strategy_governance_audit()
                 if rows:
@@ -174,7 +174,7 @@ class StrategyEngine:
         self._audit_trail.append(row)
         if self._persist_governance_enabled:
             try:
-                from Backend.application.strategy_governance_store import record_strategy_governance_audit
+                from Backend.application.strategy_registry_store import record_strategy_governance_audit
 
                 record_strategy_governance_audit(event, strategy, details)
             except Exception:
@@ -184,7 +184,7 @@ class StrategyEngine:
         if not self._persist_governance_enabled:
             return
         try:
-            from Backend.application.strategy_governance_store import upsert_strategy_governance
+            from Backend.application.strategy_registry_store import upsert_strategy_governance
 
             upsert_strategy_governance(governance.to_dict(), overwrite=overwrite)
         except Exception:
@@ -194,7 +194,7 @@ class StrategyEngine:
         if not self._persist_governance_enabled:
             return
         try:
-            from Backend.application.strategy_governance_store import list_strategy_governance
+            from Backend.application.strategy_registry_store import list_strategy_governance
 
             rows = list_strategy_governance()
         except Exception:

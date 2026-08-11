@@ -50,7 +50,25 @@ class Strategy(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    registry_version: Mapped[str] = mapped_column(String(80), nullable=False, default="1.0.0")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    rollout_pct: Mapped[int] = mapped_column(nullable=False, default=100)
+    supported_regimes_json: Mapped[str] = mapped_column(Text, nullable=False, default='["Any"]')
+    owner: Mapped[str] = mapped_column(String(120), nullable=False, default="quantgrid")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     versions: Mapped[list["StrategyVersion"]] = relationship(back_populates="strategy")
+    governance_audits: Mapped[list["StrategyGovernanceAudit"]] = relationship(back_populates="strategy")
+
+
+class StrategyGovernanceAudit(Base):
+    __tablename__ = "strategy_governance_audit"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    strategy_id: Mapped[str] = mapped_column(ForeignKey("strategies.id", ondelete="RESTRICT"), nullable=False, index=True)
+    event: Mapped[str] = mapped_column(String(80), nullable=False)
+    details_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+    strategy: Mapped[Strategy] = relationship(back_populates="governance_audits")
 
 
 class ParameterSnapshot(Base):
@@ -72,6 +90,7 @@ class StrategyVersion(Base):
     git_commit_sha: Mapped[str] = mapped_column(String(40), nullable=False)
     git_tree_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     git_is_clean: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reproducibility_status: Mapped[str] = mapped_column(String(32), nullable=False, default="NON_REPRODUCIBLE")
     code_snapshot_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     dependency_lock_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     execution_environment_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -86,7 +105,7 @@ class StrategyVersion(Base):
 
 _IMMUTABLE_VERSION_FIELDS = {
     "strategy_id", "version_string", "git_commit_sha", "git_tree_hash", "git_is_clean",
-    "code_snapshot_hash", "dependency_lock_hash", "execution_environment_hash",
+    "reproducibility_status", "code_snapshot_hash", "dependency_lock_hash", "execution_environment_hash",
     "parameter_schema_hash", "parameter_snapshot_id", "created_at", "created_by",
 }
 
