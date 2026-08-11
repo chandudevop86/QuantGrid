@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from services.tests.conftest import admin_headers
+
+
 
 
 def test_quant_modules_dashboard_exposes_four_modules(app_client):
-    headers = admin_headers(app_client)
+    headers = admin_headers
 
     response = app_client.get("/modules/dashboard", headers=headers)
 
@@ -21,7 +23,7 @@ def test_quant_modules_dashboard_exposes_four_modules(app_client):
 
 
 def test_backtesting_module_accepts_payload(app_client):
-    headers = admin_headers(app_client)
+    headers = admin_headers
     candles = [
         {"timestamp": "2026-05-22T09:15:00+05:30", "open": 100, "high": 104, "low": 99, "close": 102, "volume": 1000},
         {"timestamp": "2026-05-22T09:20:00+05:30", "open": 102, "high": 106, "low": 101, "close": 105, "volume": 1000},
@@ -43,7 +45,7 @@ def test_backtesting_module_accepts_payload(app_client):
 
 
 def test_backtesting_comparison_ranks_strategy_runs(app_client):
-    headers = admin_headers(app_client)
+    headers = admin_headers
     candles = [
         {"timestamp": "2026-05-22T09:15:00+05:30", "open": 100, "high": 104, "low": 99, "close": 102, "volume": 1000},
         {"timestamp": "2026-05-22T09:20:00+05:30", "open": 102, "high": 108, "low": 101, "close": 107, "volume": 1100},
@@ -68,7 +70,7 @@ def test_backtesting_comparison_ranks_strategy_runs(app_client):
 
 
 def test_historical_option_chain_module_reports_unavailable_without_synthetic_snapshots(app_client):
-    headers = admin_headers(app_client)
+    headers = admin_headers
 
     response = app_client.get("/modules/option-chain/NIFTY/historical", headers=headers)
 
@@ -99,7 +101,7 @@ def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatc
             "rows": [{"strike": 22500, "ce": {"oi": 1000}, "pe": {"oi": 1120}}],
         },
     )
-    headers = admin_headers(app_client)
+    headers = admin_headers
 
     response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
 
@@ -119,7 +121,7 @@ def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, mo
         "live_nse_option_chain",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("NSE blocked request")),
     )
-    headers = admin_headers(app_client)
+    headers = admin_headers
 
     response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
 

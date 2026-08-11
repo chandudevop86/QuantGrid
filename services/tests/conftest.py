@@ -66,8 +66,17 @@ def app_client(tmp_path, monkeypatch):
     reset_backend_modules()
 
 
-def admin_headers(client: TestClient) -> dict[str, str]:
-    response = client.post("/auth/login", json={"username": "admin", "password": TEST_ADMIN_PASSWORD})
+@pytest.fixture()
+def admin_headers(app_client: TestClient) -> dict[str, str]:
+    response = app_client.post(
+        "/auth/login",
+        json={
+            "username": "admin",
+            "password": TEST_ADMIN_PASSWORD,
+        },
+    )
     assert response.status_code == 200, response.text
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+    return {
+        "Authorization": f"Bearer {response.json()['access_token']}"
+    }
 
