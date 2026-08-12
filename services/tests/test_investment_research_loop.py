@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
@@ -14,6 +17,12 @@ from app.investing.investment_research_loop import (
     predict_multibagger_stock,
     score_mutual_fund,
     score_stock,
+)
+from Backend.application.investment_research_service import (
+    ResearchDataUnavailable,
+    demo_mutual_fund_universe,
+    demo_stock_universe,
+    run_stock_research_loop,
 )
 from conftest import admin_headers
 
@@ -160,7 +169,26 @@ def test_poor_risk_adjusted_fund_is_avoided():
     assert any("Risk-adjusted return is weak" in risk for risk in score.risks)
 
 
-def test_investing_dashboard_endpoint_returns_cards(app_client):
+def test_research_loop_has_no_silent_demo_fallback(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "production")
+
+    with pytest.raises(ResearchDataUnavailable):
+        run_stock_research_loop(persist=False)
+
+
+def test_demo_data_requires_explicit_non_production_environment(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "production")
+    with pytest.raises(ResearchDataUnavailable):
+        run_stock_research_loop(persist=False, demo=True)
+
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "test")
+    assert len(demo_stock_universe()) == 5
+    assert len(demo_mutual_fund_universe()) == 2
+    assert len(run_stock_research_loop(persist=False, demo=True)) == 5
+
+
+def test_investing_dashboard_endpoint_returns_cards(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "test")
     headers = admin_headers(app_client)
 
     response = app_client.get("/investing/dashboard", headers=headers)
@@ -174,7 +202,8 @@ def test_investing_dashboard_endpoint_returns_cards(app_client):
     assert payload["summary"]
 
 
-def test_multibagger_predictor_endpoint_returns_ranked_items(app_client):
+def test_multibagger_predictor_endpoint_returns_ranked_items(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "test")
     headers = admin_headers(app_client)
 
     response = app_client.get("/investing/stocks/multibagger-predictor", headers=headers)
@@ -184,3 +213,14 @@ def test_multibagger_predictor_endpoint_returns_ranked_items(app_client):
     assert payload["items"]
     assert "potential_score" in payload["items"][0]
     assert "Educational research" in payload["disclaimer"]
+
+
+def test_investing_endpoint_reports_unavailable_without_real_data(app_client, monkeypatch):
+    monkeypatch.setenv("QUANTGRID_ENVIRONMENT", "production")
+    headers = admin_headers(app_client)
+
+    response = app_client.get("/investing/stocks/research", headers=headers)
+
+    assert response.status_code == 503, response.text
+    payload = response.json()
+    assert payload["detail"]["code"] == "RESEARCH_DATA_UNAVAILABLE"
