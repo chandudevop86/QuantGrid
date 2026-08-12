@@ -26,6 +26,11 @@ from app.investing.investment_research_loop import (
 IST = ZoneInfo("Asia/Kolkata")
 
 
+class ResearchDataUnavailable(RuntimeError):
+    """Raised when production investment research has no real data to analyze."""
+
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -35,7 +40,22 @@ def _parse_symbols(env_name: str, default: str) -> list[str]:
     return [item.strip().upper() for item in configured.split(",") if item.strip()]
 
 
-def sample_stock_universe() -> list[StockResearchInput]:
+def _demo_mode_allowed() -> bool:
+    """Demo data is allowed only in explicit non-production environments."""
+    environment = os.getenv("QUANTGRID_ENVIRONMENT", "production").strip().lower()
+    return environment in {"dev", "development", "test", "testing", "local"}
+
+
+def _require_demo_mode() -> None:
+    if not _demo_mode_allowed():
+        raise ResearchDataUnavailable(
+            "Demo investment research data is disabled outside development/test environments."
+        )
+
+
+def demo_stock_universe() -> list[StockResearchInput]:
+    """Synthetic research universe for tests/development only."""
+    _require_demo_mode()
     names = {
         "TCS": ("Tata Consultancy Services", "IT"),
         "INFY": ("Infosys", "IT"),
@@ -78,7 +98,9 @@ def sample_stock_universe() -> list[StockResearchInput]:
     return universe
 
 
-def sample_mutual_fund_universe() -> list[MutualFundInput]:
+def demo_mutual_fund_universe() -> list[MutualFundInput]:
+    """Synthetic mutual-fund universe for tests/development only."""
+    _require_demo_mode()
     return [
         MutualFundInput(
             scheme_code="QG-LARGE-MID",
@@ -188,19 +210,19 @@ def _latest_records(asset_type: str, limit: int = 50, db: Session | None = None)
             session.close()
 
 
-def latest_stock_research(limit: int = 50, db: Session | None = None) -> list[dict[str, Any]]:
+def latest_stock_research(limit: int = 50, db: Session | None = None, *, demo: bool = False) -> list[dict[str, Any]]:
     records = _latest_records("stock", limit=limit, db=db)
     if records:
         return records
-    scores = run_stock_research_loop(persist=True)
+    scores = run_stock_research_loop(persist=True, db=db, demo=demo)
     return [score.model_dump() for score in scores[:limit]]
 
 
-def latest_mutual_fund_research(limit: int = 50, db: Session | None = None) -> list[dict[str, Any]]:
+def latest_mutual_fund_research(limit: int = 50, db: Session | None = None, *, demo: bool = False) -> list[dict[str, Any]]:
     records = _latest_records("mutual_fund", limit=limit, db=db)
     if records:
         return records
-    scores = run_mutual_fund_research_loop(persist=True)
+    scores = run_mutual_fund_research_loop(persist=True, db=db, demo=demo)
     return [score.model_dump() for score in scores[:limit]]
 
 
@@ -209,8 +231,15 @@ def run_stock_research_loop(
     *,
     persist: bool = True,
     db: Session | None = None,
+    demo: bool = False,
 ) -> list[StockScore]:
-    scores = [score_stock(item) for item in (inputs or sample_stock_universe())]
+    if inputs is None:
+        if not demo:
+            raise ResearchDataUnavailable(
+                "No stock research data was supplied. Configure a real research data provider or pass demo=True in development/test only."
+            )
+        inputs = demo_stock_universe()
+    scores = [score_stock(item) for item in inputs]
     scores.sort(key=lambda item: item.total_score, reverse=True)
     if persist:
         store_research_scores(scores, db=db)
@@ -219,8 +248,16 @@ def run_stock_research_loop(
 
 def run_multibagger_predictor(
     inputs: list[StockResearchInput] | None = None,
+    *,
+    demo: bool = False,
 ) -> list[MultibaggerPrediction]:
-    predictions = [predict_multibagger_stock(item) for item in (inputs or sample_stock_universe())]
+    if inputs is None:
+        if not demo:
+            raise ResearchDataUnavailable(
+                "No stock research data was supplied for multibagger prediction. Configure a real research data provider or pass demo=True in development/test only."
+            )
+        inputs = demo_stock_universe()
+    predictions = [predict_multibagger_stock(item) for item in inputs]
     return sorted(predictions, key=lambda item: item.potential_score, reverse=True)
 
 
@@ -229,8 +266,15 @@ def run_mutual_fund_research_loop(
     *,
     persist: bool = True,
     db: Session | None = None,
+    demo: bool = False,
 ) -> list[MutualFundScore]:
-    scores = [score_mutual_fund(item) for item in (inputs or sample_mutual_fund_universe())]
+    if inputs is None:
+        if not demo:
+            raise ResearchDataUnavailable(
+                "No mutual-fund research data was supplied. Configure a real research data provider or pass demo=True in development/test only."
+            )
+        inputs = demo_mutual_fund_universe()
+    scores = [score_mutual_fund(item) for item in inputs]
     scores.sort(key=lambda item: item.total_score, reverse=True)
     if persist:
         store_research_scores(scores, db=db)
@@ -242,18 +286,22 @@ def run_portfolio_watchlist_loop(
     funds: list[MutualFundInput] | None = None,
     *,
     persist: bool = True,
+    demo: bool = False,
 ) -> dict[str, Any]:
-    stock_scores = run_stock_research_loop(stocks, persist=persist)
-    fund_scores = run_mutual_fund_research_loop(funds, persist=persist)
-    return investment_dashboard_from_scores(stock_scores, fund_scores)
+    stock_scores = run_stock_research_loop(stocks, persist=persist, demo=demo)
+    fund_scores = run_mutual_fund_research_loop(funds, persist=persist, demo=demo)
+    return investment_dashboard_from_scores(stock_scores, fund_scores, demo=demo)
 
 
 def investment_dashboard_from_scores(
     stock_scores: list[StockScore],
     fund_scores: list[MutualFundScore],
     multibagger_predictions: list[MultibaggerPrediction] | None = None,
+    *,
+    demo: bool = False,
 ) -> dict[str, Any]:
-    multibagger_predictions = multibagger_predictions or run_multibagger_predictor(sample_stock_universe())
+    if multibagger_predictions is None:
+        multibagger_predictions = run_multibagger_predictor(demo=demo)
     dashboard = build_investment_dashboard(stock_scores, fund_scores, multibagger_predictions)
     return {
         "generated_at": _utc_now(),
@@ -266,10 +314,10 @@ def investment_dashboard_from_scores(
     }
 
 
-def latest_investment_dashboard(db: Session | None = None) -> dict[str, Any]:
-    stock_scores = [StockScore(**item) for item in latest_stock_research(db=db)]
-    fund_scores = [MutualFundScore(**item) for item in latest_mutual_fund_research(db=db)]
-    return investment_dashboard_from_scores(stock_scores, fund_scores)
+def latest_investment_dashboard(db: Session | None = None, *, demo: bool = False) -> dict[str, Any]:
+    stock_scores = [StockScore(**item) for item in latest_stock_research(db=db, demo=demo)]
+    fund_scores = [MutualFundScore(**item) for item in latest_mutual_fund_research(db=db, demo=demo)]
+    return investment_dashboard_from_scores(stock_scores, fund_scores, demo=demo)
 
 
 def is_after_market_close_ist(now: datetime | None = None) -> bool:
