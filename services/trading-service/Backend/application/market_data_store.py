@@ -20,7 +20,7 @@ def _use_sqlite() -> bool:
 
 def _connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    return sqlite3._connect()
+    return sqlite3.connect(...)
 
 
 def _init_db_store() -> None:

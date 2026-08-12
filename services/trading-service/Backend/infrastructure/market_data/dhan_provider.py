@@ -215,6 +215,7 @@ class DhanProvider(EnvConfiguredProvider):
             "raw_safe": _safe_raw(raw),
         }
     #
+    
     def get_candles(
         self,
         symbol: str,
@@ -227,62 +228,125 @@ class DhanProvider(EnvConfiguredProvider):
         dhan = dhan_sdk_client()
 
         instrument = self.resolve_instrument(symbol)
+
         security_id = instrument["security_id"]
-        security = int(security_id) if str(security_id).isdigit() else security_id
+        security = (
+            int(security_id)
+            if str(security_id).isdigit()
+            else security_id
+        )
+
         exchange_segment = instrument["exchange_segment"]
 
-        to_date = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-        from_date = to_date - timedelta(days=max(1, _period_days(period)))
+        # --------------------------------------------------
+        # Dhan supported intervals
+        # --------------------------------------------------
 
-        print(
-            "DHAN REQUEST:",
-            {
-                "security_id": str(security),
-                "exchange_segment": exchange_segment,
-                "instrument_type": os.getenv(
-                    "DHAN_INSTRUMENT_TYPE",
-                    "INDEX",
-                ),
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
-            },
+        interval_map = {
+            "1m": 1,
+            "5m": 5,
+            "15m": 15,
+            "25m": 25,
+            "60m": 60,
+            "1h": 60,
+        }
+
+        normalized_interval = str(interval).strip().lower()
+
+        if normalized_interval not in interval_map:
+            raise MarketDataProviderError(
+                f"Unsupported Dhan candle interval: {interval}. "
+                f"Supported intervals: {sorted(interval_map)}"
+            )
+
+        dhan_interval = interval_map[normalized_interval]
+
+        # --------------------------------------------------
+        # Date range
+        # --------------------------------------------------
+
+        to_date = datetime.now(
+            ZoneInfo("Asia/Kolkata")
+        ).date()
+
+        from_date = (
+            to_date
+            - timedelta(
+                days=max(1, _period_days(period))
+            )
         )
+
+        instrument_type = os.getenv(
+            "DHAN_INSTRUMENT_TYPE",
+            "INDEX",
+        )
+
+        logger.info(
+            "Dhan candle request "
+            "symbol=%s interval=%s dhan_interval=%s "
+            "security_id=%s exchange_segment=%s "
+            "from=%s to=%s",
+            symbol,
+            normalized_interval,
+            dhan_interval,
+            security,
+            exchange_segment,
+            from_date,
+            to_date,
+        )
+
+        # --------------------------------------------------
+        # Dhan API
+        # --------------------------------------------------
 
         raw = dhan.intraday_minute_data(
             security_id=str(security),
             exchange_segment=exchange_segment,
-            instrument_type=os.getenv(
-                "DHAN_INSTRUMENT_TYPE",
-                "INDEX",
-            ),
+            instrument_type=instrument_type,
             from_date=from_date.isoformat(),
             to_date=to_date.isoformat(),
+            interval=dhan_interval,
+            oi=False,
         )
 
-        print("========== DHAN RAW ==========")
-        print(raw)
-        print("========== END RAW ==========")
-
         self.mark_fetch()
 
         candles = _normalize_candles(symbol, raw)
 
-        candles.sort(key=lambda c: c["timestamp"])
+        candles.sort(
+            key=lambda c: c["timestamp"]
+        )
 
-        if limit:
-            return candles[-int(limit):]
-        self.mark_fetch()
+        # --------------------------------------------------
+        # Safety validation
+        # --------------------------------------------------
 
-        candles = _normalize_candles(symbol, raw)
+        if candles:
+            logger.info(
+                "Dhan candles received "
+                "symbol=%s requested_interval=%s "
+                "dhan_interval=%s candles=%s "
+                "first=%s last=%s",
+                symbol,
+                normalized_interval,
+                dhan_interval,
+                len(candles),
+                candles[0]["timestamp"],
+                candles[-1]["timestamp"],
+            )
 
-        candles.sort(key=lambda c: c["timestamp"])
+        # --------------------------------------------------
+        # Limit
+        # --------------------------------------------------
 
         MAX_LIMIT = 100000
 
-        limit = min(int(limit or MAX_LIMIT), MAX_LIMIT)
+        requested_limit = min(
+            int(limit or MAX_LIMIT),
+            MAX_LIMIT,
+        )
 
-        return candles[-limit:]
-        
+        return candles[-requested_limit:]     
     
 
     def subscribe_ticks(self, symbols: Iterable[str]) -> None:
