@@ -27,8 +27,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 class ResearchDataUnavailable(RuntimeError):
-    """Raised when production investment research has no real data to analyze."""
-
+    """Raised when investment research has no real, usable data."""
 
 
 def _utc_now() -> str:
@@ -41,7 +40,6 @@ def _parse_symbols(env_name: str, default: str) -> list[str]:
 
 
 def _demo_mode_allowed() -> bool:
-    """Demo data is allowed only in explicit non-production environments."""
     environment = os.getenv("QUANTGRID_ENVIRONMENT", "production").strip().lower()
     return environment in {"dev", "development", "test", "testing", "local"}
 
@@ -54,7 +52,7 @@ def _require_demo_mode() -> None:
 
 
 def demo_stock_universe() -> list[StockResearchInput]:
-    """Synthetic research universe for tests/development only."""
+    """Synthetic stock universe for tests/development only."""
     _require_demo_mode()
     names = {
         "TCS": ("Tata Consultancy Services", "IT"),
@@ -155,7 +153,11 @@ def init_investment_research_store() -> None:
     init_database()
 
 
-def _score_to_record(score: StockScore | MutualFundScore) -> InvestmentResearchRecord:
+def _score_to_record(
+    score: StockScore | MutualFundScore,
+    *,
+    source: str,
+) -> InvestmentResearchRecord:
     if isinstance(score, StockScore):
         identifier = score.symbol
         asset_type = "stock"
@@ -169,32 +171,45 @@ def _score_to_record(score: StockScore | MutualFundScore) -> InvestmentResearchR
         score=score.total_score,
         recommendation=score.recommendation.value,
         risk_level=score.risk_level,
+        source=source,
         scored_at=score.scored_at or _utc_now(),
         payload_json=json.dumps(score.model_dump(), default=str),
     )
 
 
-def store_research_scores(scores: list[StockScore | MutualFundScore], db: Session | None = None) -> None:
+def store_research_scores(
+    scores: list[StockScore | MutualFundScore],
+    db: Session | None = None,
+    *,
+    source: str = "provider",
+) -> None:
     init_investment_research_store()
     owns_session = db is None
     session = db or SessionLocal()
     try:
         for score in scores:
-            session.add(_score_to_record(score))
+            session.add(_score_to_record(score, source=source))
         session.commit()
     finally:
         if owns_session:
             session.close()
 
 
-def _latest_records(asset_type: str, limit: int = 50, db: Session | None = None) -> list[dict[str, Any]]:
+def _latest_records(
+    asset_type: str,
+    limit: int = 50,
+    db: Session | None = None,
+) -> list[dict[str, Any]]:
     init_investment_research_store()
     owns_session = db is None
     session = db or SessionLocal()
     try:
         rows = (
             session.query(InvestmentResearchRecord)
-            .filter(InvestmentResearchRecord.asset_type == asset_type)
+            .filter(
+                InvestmentResearchRecord.asset_type == asset_type,
+                InvestmentResearchRecord.source == "provider",
+            )
             .order_by(InvestmentResearchRecord.scored_at.desc(), InvestmentResearchRecord.score.desc())
             .limit(limit * 4)
             .all()
@@ -210,19 +225,29 @@ def _latest_records(asset_type: str, limit: int = 50, db: Session | None = None)
             session.close()
 
 
-def latest_stock_research(limit: int = 50, db: Session | None = None, *, demo: bool = False) -> list[dict[str, Any]]:
+def latest_stock_research(
+    limit: int = 50,
+    db: Session | None = None,
+    *,
+    demo: bool = False,
+) -> list[dict[str, Any]]:
     records = _latest_records("stock", limit=limit, db=db)
     if records:
         return records
-    scores = run_stock_research_loop(persist=True, db=db, demo=demo)
+    scores = run_stock_research_loop(persist=True, db=db, demo=demo, source="demo" if demo else "provider")
     return [score.model_dump() for score in scores[:limit]]
 
 
-def latest_mutual_fund_research(limit: int = 50, db: Session | None = None, *, demo: bool = False) -> list[dict[str, Any]]:
+def latest_mutual_fund_research(
+    limit: int = 50,
+    db: Session | None = None,
+    *,
+    demo: bool = False,
+) -> list[dict[str, Any]]:
     records = _latest_records("mutual_fund", limit=limit, db=db)
     if records:
         return records
-    scores = run_mutual_fund_research_loop(persist=True, db=db, demo=demo)
+    scores = run_mutual_fund_research_loop(persist=True, db=db, demo=demo, source="demo" if demo else "provider")
     return [score.model_dump() for score in scores[:limit]]
 
 
@@ -232,6 +257,7 @@ def run_stock_research_loop(
     persist: bool = True,
     db: Session | None = None,
     demo: bool = False,
+    source: str = "provider",
 ) -> list[StockScore]:
     if inputs is None:
         if not demo:
@@ -242,7 +268,7 @@ def run_stock_research_loop(
     scores = [score_stock(item) for item in inputs]
     scores.sort(key=lambda item: item.total_score, reverse=True)
     if persist:
-        store_research_scores(scores, db=db)
+        store_research_scores(scores, db=db, source="demo" if demo else source)
     return scores
 
 
@@ -267,6 +293,7 @@ def run_mutual_fund_research_loop(
     persist: bool = True,
     db: Session | None = None,
     demo: bool = False,
+    source: str = "provider",
 ) -> list[MutualFundScore]:
     if inputs is None:
         if not demo:
@@ -277,7 +304,7 @@ def run_mutual_fund_research_loop(
     scores = [score_mutual_fund(item) for item in inputs]
     scores.sort(key=lambda item: item.total_score, reverse=True)
     if persist:
-        store_research_scores(scores, db=db)
+        store_research_scores(scores, db=db, source="demo" if demo else source)
     return scores
 
 
@@ -288,8 +315,8 @@ def run_portfolio_watchlist_loop(
     persist: bool = True,
     demo: bool = False,
 ) -> dict[str, Any]:
-    stock_scores = run_stock_research_loop(stocks, persist=persist, demo=demo)
-    fund_scores = run_mutual_fund_research_loop(funds, persist=persist, demo=demo)
+    stock_scores = run_stock_research_loop(stocks, persist=persist, demo=demo, source="demo" if demo else "provider")
+    fund_scores = run_mutual_fund_research_loop(funds, persist=persist, demo=demo, source="demo" if demo else "provider")
     return investment_dashboard_from_scores(stock_scores, fund_scores, demo=demo)
 
 
@@ -314,7 +341,11 @@ def investment_dashboard_from_scores(
     }
 
 
-def latest_investment_dashboard(db: Session | None = None, *, demo: bool = False) -> dict[str, Any]:
+def latest_investment_dashboard(
+    db: Session | None = None,
+    *,
+    demo: bool = False,
+) -> dict[str, Any]:
     stock_scores = [StockScore(**item) for item in latest_stock_research(db=db, demo=demo)]
     fund_scores = [MutualFundScore(**item) for item in latest_mutual_fund_research(db=db, demo=demo)]
     return investment_dashboard_from_scores(stock_scores, fund_scores, demo=demo)
