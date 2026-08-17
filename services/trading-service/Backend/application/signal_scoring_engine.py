@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-from Backend.infrastructure.broker.broker_client import broker_client_for_mode
-from Backend.infrastructure.repositories.order_repository import OrderRepository
+
 
 # ============================================================
 # MODELS
 # ============================================================
+
 
 @dataclass
 class StrategySignal:
@@ -67,7 +66,21 @@ class RiskGateResult:
 # SCORING ENGINE
 # ============================================================
 
+
 class SignalScoringEngine:
+    """
+    Calculates the strategy signal quality score.
+
+    This class is intentionally responsible only for scoring.
+
+    It does NOT:
+      - submit broker orders
+      - create database orders
+      - update order persistence
+      - manage retries
+      - send trade notifications
+      - act as an OMS
+    """
 
     WEIGHTS = {
         "confidence": 20,
@@ -82,30 +95,88 @@ class SignalScoringEngine:
         "news": 5,
     }
 
-    def score(self, data: SignalScoringInput) -> SignalScore:
+    def score(
+        self,
+        data: SignalScoringInput,
+    ) -> SignalScore:
 
-        scores = {}
+        scores: dict[str, int] = {}
 
-        scores["confidence"] = min(data.signal.confidence, 100) * self.WEIGHTS["confidence"] // 100
+        # --------------------------------------------------------
+        # Confidence
+        # --------------------------------------------------------
+
+        confidence = max(
+            0,
+            min(
+                int(data.signal.confidence),
+                100,
+            ),
+        )
+
+        scores["confidence"] = (
+            confidence
+            * self.WEIGHTS["confidence"]
+            // 100
+        )
+
+        # --------------------------------------------------------
+        # Trend
+        # --------------------------------------------------------
+
+        trend = str(
+            data.market.trend or ""
+        ).strip().lower()
 
         scores["trend"] = (
             self.WEIGHTS["trend"]
-            if data.market.trend.lower() == "strong trend"
+            if trend == "strong trend"
             else self.WEIGHTS["trend"] // 2
         )
 
+        # --------------------------------------------------------
+        # Volume
+        # --------------------------------------------------------
+
+        volume = str(
+            data.market.volume or ""
+        ).strip().lower()
+
         scores["volume"] = (
             self.WEIGHTS["volume"]
-            if data.market.volume.lower() == "high"
+            if volume == "high"
             else self.WEIGHTS["volume"] // 2
         )
 
-        rr = data.signal.risk_reward
-        scores["risk_reward"] = (
-            self.WEIGHTS["risk_reward"]
-            if rr >= 2
-            else int(rr / 2 * self.WEIGHTS["risk_reward"])
+        # --------------------------------------------------------
+        # Risk / Reward
+        # --------------------------------------------------------
+
+        rr = max(
+            0.0,
+            float(data.signal.risk_reward),
         )
+
+        if rr >= 2:
+            scores["risk_reward"] = (
+                self.WEIGHTS["risk_reward"]
+            )
+        else:
+            scores["risk_reward"] = min(
+                self.WEIGHTS["risk_reward"],
+                max(
+                    0,
+                    int(
+                        rr
+                        / 2
+                        * self.WEIGHTS["risk_reward"]
+                    ),
+                ),
+            )
+
+        # --------------------------------------------------------
+        # Institutional
+        # --------------------------------------------------------
 
         scores["institutional"] = (
             self.WEIGHTS["institutional"]
@@ -113,29 +184,58 @@ class SignalScoringEngine:
             else 0
         )
 
+        # --------------------------------------------------------
+        # OI / PCR
+        # --------------------------------------------------------
+
+        pcr = float(data.market.pcr)
+
         scores["oi_pcr"] = (
             self.WEIGHTS["oi_pcr"]
-            if 0.8 <= data.market.pcr <= 1.2
+            if 0.8 <= pcr <= 1.2
             else self.WEIGHTS["oi_pcr"] // 2
         )
 
+        # --------------------------------------------------------
+        # VWAP
+        # --------------------------------------------------------
+
+        vwap_relation = str(
+            data.market.vwap_relation or ""
+        ).strip().lower()
+
         scores["vwap"] = (
             self.WEIGHTS["vwap"]
-            if data.market.vwap_relation.lower() == "above"
+            if vwap_relation == "above"
             else 0
         )
+
+        # --------------------------------------------------------
+        # ATR
+        # --------------------------------------------------------
 
         scores["atr"] = (
             self.WEIGHTS["atr"]
-            if data.market.atr > 0
+            if float(data.market.atr) > 0
             else 0
         )
 
+        # --------------------------------------------------------
+        # Spread
+        # --------------------------------------------------------
+
         scores["spread"] = (
             self.WEIGHTS["spread"]
-            if data.market.spread < 1
+            if float(data.market.spread) < 1
             else 0
         )
+
+        # --------------------------------------------------------
+        # News
+        #
+        # Existing project behavior:
+        # no active news risk = full points.
+        # --------------------------------------------------------
 
         scores["news"] = (
             0
@@ -143,7 +243,15 @@ class SignalScoringEngine:
             else self.WEIGHTS["news"]
         )
 
+        # --------------------------------------------------------
+        # Total
+        # --------------------------------------------------------
+
         total = sum(scores.values())
+
+        # --------------------------------------------------------
+        # Grade
+        # --------------------------------------------------------
 
         if total >= 90:
             grade = "A+"
@@ -156,17 +264,25 @@ class SignalScoringEngine:
         else:
             grade = "D"
 
+        # --------------------------------------------------------
+        # Execution gate
+        # --------------------------------------------------------
+
         execute = total >= 80
 
+        # --------------------------------------------------------
+        # Explainability
+        # --------------------------------------------------------
+
         reasons = [
-            f"{k}: {v}"
-            for k, v in scores.items()
-            if v > 0
+            f"{key}: {value}"
+            for key, value in scores.items()
+            if value > 0
         ]
 
         return SignalScore(
             total_score=total,
-            confidence=data.signal.confidence,
+            confidence=confidence,
             grade=grade,
             execute=execute,
             reasons=reasons,
@@ -178,49 +294,59 @@ class SignalScoringEngine:
 # RISK MANAGER
 # ============================================================
 
+
 class RiskManager:
+    """
+    Lightweight scoring-level risk gate.
 
-    def evaluate(self, score: SignalScore) -> RiskGateResult:
+    This is NOT the canonical trading RiskEngine.
 
-        if score.total_score < 80:
-            return RiskGateResult(False, "Low score")
+    The canonical RiskEngine remains responsible for actual
+    order-level risk validation before broker submission.
+    """
 
-        return RiskGateResult(True, "Approved")
+    MIN_EXECUTION_SCORE = 80
 
+    def evaluate(
+        self,
+        score: SignalScore,
+    ) -> RiskGateResult:
 
-# ============================================================
-# OMS
-# ============================================================
+        if score.total_score < self.MIN_EXECUTION_SCORE:
+            return RiskGateResult(
+                allowed=False,
+                reason="Low score",
+            )
 
-class OrderManagementService:
-
-    def submit_order(self, signal: StrategySignal) -> dict[str, Any]:
-
-        print(
-            f"Submitting {signal.action} order for {signal.symbol}"
+        return RiskGateResult(
+            allowed=True,
+            reason="Approved",
         )
-
-        return {
-            "status": "SUCCESS",
-            "symbol": signal.symbol,
-            "action": signal.action,
-        }
 
 
 # ============================================================
 # ANALYTICS
 # ============================================================
 
+
 class TradeAnalytics:
+    """
+    Lightweight analytics hook.
+
+    Persistence should be handled by the canonical execution
+    lifecycle, not by this class.
+    """
 
     def record(
         self,
-        order: dict[str, Any],
+        order: dict,
         score: SignalScore,
     ) -> None:
 
         print(
-            f"Analytics -> {order['symbol']} Score={score.total_score}"
+            f"Analytics -> "
+            f"{order['symbol']} "
+            f"Score={score.total_score}"
         )
 
 
@@ -228,11 +354,17 @@ class TradeAnalytics:
 # FEEDBACK
 # ============================================================
 
+
 class FeedbackEngine:
+    """
+    Lightweight feedback hook.
+
+    This does not place or modify orders.
+    """
 
     def learn(
         self,
-        order: dict[str, Any],
+        order: dict,
         score: SignalScore,
     ) -> None:
 
@@ -245,7 +377,14 @@ class FeedbackEngine:
 # STRATEGY SERVICE
 # ============================================================
 
+
 class TradingService:
+    """
+    Legacy/simple strategy signal producer.
+
+    Real execution should ultimately flow through the canonical
+    execution pipeline.
+    """
 
     def run_strategy(
         self,
@@ -264,12 +403,13 @@ class TradingService:
 
 
 # ============================================================
-# PIPELINE
+# DECISION PIPELINE
 # ============================================================
+
 
 class DecisionPipelineService:
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self.decision = TradingDecision(
             confidence=90,
@@ -278,21 +418,30 @@ class DecisionPipelineService:
 
 
 # ============================================================
-# ORCHESTRATOR
+# LEGACY ANALYSIS ORCHESTRATOR
 # ============================================================
 
-class TradingOrchestrator:
 
-    def __init__(self):
+class TradingOrchestrator:
+    """
+    Scoring/analysis orchestrator.
+
+    IMPORTANT:
+    This class intentionally does NOT instantiate an OMS.
+
+    The canonical OMS is:
+
+        Backend.application.order_management.OrderManagementService
+
+    Broker execution belongs to the execution lifecycle/pipeline.
+    """
+
+    def __init__(self) -> None:
 
         self.pipeline = DecisionPipelineService()
         self.trading_service = TradingService()
         self.scoring = SignalScoringEngine()
         self.risk = RiskManager()
-        self.oms = OrderManagementService(
-            broker=broker_client_for_mode("paper"),
-            order_repository=OrderRepository(),
-        )
         self.analytics = TradeAnalytics()
         self.feedback = FeedbackEngine()
 
@@ -300,12 +449,14 @@ class TradingOrchestrator:
         self,
         market: MarketDataInputs,
         strategy: str,
-    ):
+    ) -> list[dict]:
 
         signals = self.trading_service.run_strategy(
             strategy,
             market,
         )
+
+        results: list[dict] = []
 
         for signal in signals:
 
@@ -318,24 +469,89 @@ class TradingOrchestrator:
                 )
             )
 
+            # ----------------------------------------------------
+            # Score rejected
+            # ----------------------------------------------------
+
             if not score.execute:
+
+                results.append(
+                    {
+                        "status": "REJECTED",
+                        "reason": "Score below execution threshold",
+                        "symbol": signal.symbol,
+                        "action": signal.action,
+                        "score": score,
+                    }
+                )
+
                 continue
+
+            # ----------------------------------------------------
+            # Risk gate
+            # ----------------------------------------------------
 
             gate = self.risk.evaluate(score)
 
             if not gate.allowed:
+
+                results.append(
+                    {
+                        "status": "REJECTED",
+                        "reason": gate.reason,
+                        "symbol": signal.symbol,
+                        "action": signal.action,
+                        "score": score,
+                    }
+                )
+
                 continue
 
-            order = self.oms.submit_order(signal)
+            # ----------------------------------------------------
+            # IMPORTANT
+            #
+            # Do NOT call a local/duplicate OMS here.
+            #
+            # The canonical execution path must handle order
+            # conversion, risk validation, persistence, broker
+            # submission, retry/reconciliation and lifecycle.
+            # ----------------------------------------------------
 
-            self.analytics.record(order, score)
+            result = {
+                "status": "APPROVED",
+                "symbol": signal.symbol,
+                "action": signal.action,
+                "score": score,
+                "risk": gate,
+            }
 
-            self.feedback.learn(order, score)
+            self.analytics.record(
+                {
+                    "symbol": signal.symbol,
+                    "action": signal.action,
+                    "status": "APPROVED",
+                },
+                score,
+            )
+
+            self.feedback.learn(
+                {
+                    "symbol": signal.symbol,
+                    "action": signal.action,
+                    "status": "APPROVED",
+                },
+                score,
+            )
+
+            results.append(result)
+
+        return results
 
 
 # ============================================================
 # EXAMPLE
 # ============================================================
+
 
 if __name__ == "__main__":
 
@@ -355,5 +571,11 @@ if __name__ == "__main__":
     )
 
     orchestrator = TradingOrchestrator()
-    orchestrator.execute(market, "breakout")
-    
+
+    results = orchestrator.execute(
+        market,
+        "breakout",
+    )
+
+    for result in results:
+        print(result)
