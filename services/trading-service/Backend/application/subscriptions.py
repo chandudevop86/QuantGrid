@@ -161,6 +161,11 @@ ENTITLEMENTS: dict[str, dict[str, str]] = {
         "name": "API access",
         "category": "platform",
     },
+
+    # --------------------------------------------------------
+    # ADMIN-ONLY FEATURES
+    # --------------------------------------------------------
+
     "admin.users": {
         "name": "User management",
         "category": "admin",
@@ -181,6 +186,17 @@ ENTITLEMENTS: dict[str, dict[str, str]] = {
         "name": "Broker configuration",
         "category": "admin",
     },
+}
+
+
+# ============================================================
+# ADMIN ENTITLEMENTS
+# ============================================================
+
+ADMIN_ENTITLEMENTS = {
+    feature
+    for feature in ENTITLEMENTS
+    if feature.startswith("admin.")
 }
 
 
@@ -238,7 +254,31 @@ PREMIUM = PRO | {
 }
 
 
+# Admin receives everything.
 ADMIN = set(ENTITLEMENTS)
+
+
+# ============================================================
+# DEVELOPER ENTITLEMENTS
+# ============================================================
+#
+# Developer is NOT admin.
+#
+# Developer gets all normal product features for development
+# and testing, regardless of subscription status.
+#
+# Developer does NOT get:
+#
+#   admin.users
+#   admin.subscriptions
+#   admin.audit
+#   admin.system
+#   admin.broker
+#
+# This is the key separation.
+# ============================================================
+
+DEVELOPER = set(ENTITLEMENTS) - ADMIN_ENTITLEMENTS
 
 
 # ============================================================
@@ -309,6 +349,10 @@ PLANS: dict[str, dict[str, Any]] = {
         },
     },
 
+    # --------------------------------------------------------
+    # ADMIN PLAN
+    # --------------------------------------------------------
+
     "admin": {
         "name": "Admin",
         "description": (
@@ -341,15 +385,8 @@ ACTIVE_STATUSES = {
     "trialing",
 }
 
-# Developer bypass is intentionally separate from Admin.
-#
-# developer:
-#   - bypasses subscription entitlement checks
-#   - intended for development/testing
-#   - does NOT become an admin
-#   - does NOT automatically receive admin permissions
-#
 DEVELOPER_ROLE = "developer"
+ADMIN_ROLE = "admin"
 
 
 # ============================================================
@@ -367,7 +404,11 @@ def normalize_plan_code(code: str | None) -> str:
     return "free"
 
 
-def list_plans(*, include_private: bool = False) -> list[dict[str, Any]]:
+def list_plans(
+    *,
+    include_private: bool = False,
+) -> list[dict[str, Any]]:
+
     return [
         {
             "code": code,
@@ -384,7 +425,10 @@ def list_plans(*, include_private: bool = False) -> list[dict[str, Any]]:
     ]
 
 
-def _aware(value: datetime | None) -> datetime | None:
+def _aware(
+    value: datetime | None,
+) -> datetime | None:
+
     if value is None:
         return None
 
@@ -402,9 +446,12 @@ def subscription_for_user(
     db: Session,
     user: User,
 ) -> dict[str, Any]:
+
     subscription = (
         db.query(UserSubscription)
-        .filter(UserSubscription.user_id == user.id)
+        .filter(
+            UserSubscription.user_id == user.id
+        )
         .one_or_none()
     )
 
@@ -424,32 +471,63 @@ def has_entitlement(
     feature: str,
 ) -> bool:
     """
-    Determine whether the user can access a feature.
+    Access rules:
 
-    Developer role:
-        Developer users bypass subscription entitlement checks.
-        This is intended for development/testing only.
+    ADMIN
+        Full platform access, including admin features.
 
-    Admin role:
-        Admin access is determined separately through the admin plan
-        and existing authorization controls.
+    DEVELOPER
+        Full non-admin product access regardless of subscription.
+        Developer cannot access admin.* features.
 
-    Normal users:
-        Must have the requested entitlement AND an active subscription.
+    NORMAL USER
+        Feature must exist in subscription entitlements and
+        subscription must be active/trialing.
     """
 
-    # --------------------------------------------------------
-    # DEVELOPER SUBSCRIPTION BYPASS
-    # --------------------------------------------------------
-    if snapshot.get("role") == DEVELOPER_ROLE:
-        return True
+    role = str(
+        snapshot.get("role") or ""
+    ).strip().lower()
+
+    feature = str(feature).strip()
 
     # --------------------------------------------------------
-    # NORMAL SUBSCRIPTION CHECK
+    # ADMIN
     # --------------------------------------------------------
+    #
+    # Admin is explicitly allowed to access everything.
+    #
+    if role == ADMIN_ROLE:
+        return feature in ADMIN
+
+    # --------------------------------------------------------
+    # DEVELOPER
+    # --------------------------------------------------------
+    #
+    # Developer bypasses subscription checks but NOT admin
+    # authorization.
+    #
+    if role == DEVELOPER_ROLE:
+
+        # Never allow developer into admin features.
+        if feature in ADMIN_ENTITLEMENTS:
+            return False
+
+        # Developer gets all normal product features.
+        return feature in DEVELOPER
+
+    # --------------------------------------------------------
+    # NORMAL USER
+    # --------------------------------------------------------
+
     return (
-        feature in snapshot.get("entitlements", [])
-        and snapshot.get("effective_status") in ACTIVE_STATUSES
+        feature in snapshot.get(
+            "entitlements",
+            [],
+        )
+        and snapshot.get(
+            "effective_status"
+        ) in ACTIVE_STATUSES
     )
 
 
@@ -465,19 +543,23 @@ def _snapshot(
 
     now = datetime.now(timezone.utc)
 
+    role = str(
+        user.role or ""
+    ).strip().lower()
+
     # --------------------------------------------------------
     # PLAN
     # --------------------------------------------------------
 
-    plan_code = (
-        "admin"
-        if user.role == "admin"
-        else normalize_plan_code(
+    if role == ADMIN_ROLE:
+        plan_code = "admin"
+
+    else:
+        plan_code = normalize_plan_code(
             subscription.plan_code
             if subscription
             else "free"
         )
-    )
 
     plan = PLANS[plan_code]
 
@@ -492,7 +574,9 @@ def _snapshot(
     )
 
     period_end = (
-        _aware(subscription.current_period_end)
+        _aware(
+            subscription.current_period_end
+        )
         if subscription
         else None
     )
@@ -522,51 +606,117 @@ def _snapshot(
         effective_status = source_status
 
     # --------------------------------------------------------
-    # ENTITLEMENTS
+    # BASE ENTITLEMENTS
     # --------------------------------------------------------
 
-    if effective_status in ACTIVE_STATUSES:
-        entitlements = set(plan["entitlements"])
-        limits = dict(plan["limits"])
+    if role == ADMIN_ROLE:
+
+        # Admin always gets full admin entitlement set.
+        entitlements = set(ADMIN)
+        limits = dict(
+            PLANS["admin"]["limits"]
+        )
+
+    elif role == DEVELOPER:
+
+        # Developer gets all non-admin product features.
+        #
+        # This bypasses subscription expiry.
+        #
+        # But admin.* remains excluded.
+        entitlements = set(DEVELOPER)
+        limits = {
+            "signals_history_limit": None,
+            "watchlist_limit": None,
+            "backtest_runs_per_day": None,
+            "exports_per_month": None,
+        }
+
+    elif effective_status in ACTIVE_STATUSES:
+
+        # Normal active subscription.
+        entitlements = set(
+            plan["entitlements"]
+        )
+        limits = dict(
+            plan["limits"]
+        )
+
     else:
-        # Expired/suspended users fall back to FREE access.
+
+        # Expired/suspended normal users fall back to FREE.
         entitlements = set(FREE)
-        limits = dict(PLANS["free"]["limits"])
+        limits = dict(
+            PLANS["free"]["limits"]
+        )
 
     # --------------------------------------------------------
     # USER ENTITLEMENT OVERRIDES
     # --------------------------------------------------------
 
     overrides = (
-        db.query(UserEntitlementOverride)
+        db.query(
+            UserEntitlementOverride
+        )
         .filter(
-            UserEntitlementOverride.user_id == user.id
+            UserEntitlementOverride.user_id
+            == user.id
         )
         .all()
     )
 
     for override in overrides:
 
-        expires_at = _aware(override.expires_at)
+        expires_at = _aware(
+            override.expires_at
+        )
 
-        # Ignore expired overrides.
-        if expires_at and expires_at <= now:
+        # Ignore expired override.
+        if (
+            expires_at
+            and expires_at <= now
+        ):
             continue
 
-        # Enable/disable entitlement.
+        entitlement_key = (
+            override.entitlement_key
+        )
+
+        # ----------------------------------------------------
+        # NEVER ALLOW DEVELOPER TO GAIN ADMIN THROUGH OVERRIDE
+        # ----------------------------------------------------
+
+        if (
+            role == DEVELOPER_ROLE
+            and entitlement_key
+            in ADMIN_ENTITLEMENTS
+        ):
+            continue
+
+        # ----------------------------------------------------
+        # ENABLE / DISABLE
+        # ----------------------------------------------------
+
         if override.enabled:
+
             entitlements.add(
-                override.entitlement_key
-            )
-        else:
-            entitlements.discard(
-                override.entitlement_key
+                entitlement_key
             )
 
-        # Optional custom limit.
+        else:
+
+            entitlements.discard(
+                entitlement_key
+            )
+
+        # ----------------------------------------------------
+        # LIMIT OVERRIDE
+        # ----------------------------------------------------
+
         if override.limit_value is not None:
+
             limits[
-                override.entitlement_key
+                entitlement_key
             ] = override.limit_value
 
     # --------------------------------------------------------
@@ -578,8 +728,8 @@ def _snapshot(
         "username": user.username,
 
         # IMPORTANT:
-        # Required by has_entitlement() for developer bypass.
-        "role": user.role,
+        # Used by has_entitlement().
+        "role": role,
 
         "plan_code": plan_code,
         "plan_name": plan["name"],
@@ -588,12 +738,19 @@ def _snapshot(
         "effective_status": effective_status,
         "subscription_status": effective_status,
 
-        "entitlements": sorted(entitlements),
-        "features": sorted(entitlements),
+        "entitlements": sorted(
+            entitlements
+        ),
+
+        "features": sorted(
+            entitlements
+        ),
 
         "limits": limits,
 
-        "price_monthly_inr": plan["price_monthly_inr"],
+        "price_monthly_inr": (
+            plan["price_monthly_inr"]
+        ),
 
         "started_at": (
             subscription.started_at
@@ -614,7 +771,9 @@ def _snapshot(
         ),
 
         "cancel_at_period_end": (
-            bool(subscription.cancel_at_period_end)
+            bool(
+                subscription.cancel_at_period_end
+            )
             if subscription
             else False
         ),
@@ -633,20 +792,30 @@ def _snapshot(
 
 @dataclass(frozen=True)
 class SubscriptionAccess:
+
     user: User | None
     snapshot: dict[str, Any]
 
-    def can(self, feature: str) -> bool:
+    def can(
+        self,
+        feature: str,
+    ) -> bool:
+
         return has_entitlement(
             self.snapshot,
             feature,
         )
 
-    def limit(self, key: str) -> int | None:
-        value = self.snapshot.get(
-            "limits",
-            {},
-        ).get(key)
+    def limit(
+        self,
+        key: str,
+    ) -> int | None:
+
+        value = (
+            self.snapshot
+            .get("limits", {})
+            .get(key)
+        )
 
         return (
             int(value)
@@ -690,7 +859,9 @@ def _denied(
             ),
 
             "current_plan": (
-                access.snapshot["plan_code"].upper()
+                access.snapshot[
+                    "plan_code"
+                ].upper()
             ),
 
             "required_plans": required_plans,
@@ -728,6 +899,7 @@ def subscription_access(
 def require_entitlement(
     feature: str,
 ):
+
     def dependency(
         access: SubscriptionAccess = Depends(
             subscription_access
@@ -735,6 +907,7 @@ def require_entitlement(
     ) -> SubscriptionAccess:
 
         if not access.can(feature):
+
             raise _denied(
                 access,
                 [feature],
@@ -752,6 +925,7 @@ def require_entitlement(
 def require_any_entitlement(
     features: Iterable[str],
 ):
+
     required = tuple(features)
 
     def dependency(
@@ -764,6 +938,7 @@ def require_any_entitlement(
             access.can(feature)
             for feature in required
         ):
+
             raise _denied(
                 access,
                 required,
@@ -781,6 +956,7 @@ def require_any_entitlement(
 def require_all_entitlements(
     features: Iterable[str],
 ):
+
     required = tuple(features)
 
     def dependency(
@@ -793,11 +969,10 @@ def require_all_entitlements(
             access.can(feature)
             for feature in required
         ):
+
             raise _denied(
                 access,
                 required,
             )
 
         return access
-
-    return dependency
