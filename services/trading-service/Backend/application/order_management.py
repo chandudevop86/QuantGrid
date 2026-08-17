@@ -251,7 +251,6 @@ class OrderManagementService:
                 risk=risk,
                 audit=audit,
             )
-
         finally:
             final_status = (
                 audit[-1]["status"]
@@ -259,14 +258,21 @@ class OrderManagementService:
                 else "unknown"
             )
 
-            if (
-                final_status in TERMINAL_BROKER_STATUSES
-                or final_status == "rejected"
-            ):
-                self._active_order_keys.discard(
-                    order_key
-                )
-
+            # Filled / partially-filled orders keep their duplicate key.
+            # The lifecycle/position layer must release the key when the
+            # resulting position is closed.
+            #
+            # Rejected/failed/cancelled orders did not establish an active
+            # position, so they may be retried.
+            if final_status in {
+                "rejected",
+                "failed",
+                "not_found",
+                "cancelled",
+                "canceled",
+            }:
+                self._active_order_keys.discard(order_key)
+                
     async def _place_with_retry(
         self,
         local_order_id: str,
