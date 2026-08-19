@@ -69,7 +69,6 @@ class OrderManagementService:
         self,
         broker: IBrokerAdapter,
         *,
-        order_repository=None,
         risk_engine: RiskEngine | None = None,
         max_retries: int = 1,
     ) -> None:
@@ -79,7 +78,7 @@ class OrderManagementService:
         # compatibility with existing callers/tests.
         #
         # OMS no longer uses the repository for persistence.
-        self.order_repository = order_repository
+        
 
         self.risk_engine = risk_engine or RiskEngine()
         self.max_retries = max(0, int(max_retries))
