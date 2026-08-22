@@ -405,6 +405,7 @@ class PositionRecord(Base):
         Float,
         nullable=True,
     )
+    
 
     pending_exit_correlation_id: Mapped[str | None] = mapped_column(
         String(120),
