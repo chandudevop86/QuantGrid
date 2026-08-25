@@ -37,7 +37,7 @@ from Backend.domain.execution_constraints import (
     requested_quantity,
     validate_execution_constraints,
 )
-from Backend.infrastructure.repositories.order_repository import OrderRepository
+
 
 
 from Backend.domain.models.signal import StrategySignal
@@ -254,7 +254,7 @@ async def _submit_paper_signal(
         )
         oms = OrderManagementService(
             broker_client,
-            order_repository=OrderRepository(),
+            
         )
         oms_result = await oms.submit_order(
             order,
