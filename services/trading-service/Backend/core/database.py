@@ -56,7 +56,6 @@ def init_database() -> None:
     import Backend.domain.trading_store_models  # noqa: F401
     import Backend.domain.governance_models  # noqa: F401
     import Backend.application.notification_entity
-    from Backend.core.schema_migrations import apply_versioned_migrations
 
     try:
         apply_versioned_migrations(engine, Base.metadata)
