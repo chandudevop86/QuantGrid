@@ -252,10 +252,6 @@ function CustomerPage() {
   const [message, setMessage] = useState('')
   const [orderPopup, setOrderPopup] = useState('')
 
-  useEffect(() => {
-    loadMenu()
-  }, [])
-
   async function loadMenu() {
     try {
       const response = await fetch(`${API}/menu`)
@@ -286,10 +282,14 @@ function CustomerPage() {
           }),
         )
       }
-    } catch (error) {
+    } catch {
       console.log('Menu API unavailable; using local menu.')
     }
   }
+
+  useEffect(() => {
+    loadMenu()
+  }, [])
 
   const availableMenu = menu.filter(
     (item) => item.available,
@@ -434,7 +434,7 @@ function CustomerPage() {
         }
 
         const razorpay = new window.Razorpay({
-          key: createData.key_id,
+          key: createData.razorpay_key_id,
           amount: createData.amount,
           currency: createData.currency,
           name: 'KS Foods',

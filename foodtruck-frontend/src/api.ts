@@ -81,7 +81,7 @@ export type RazorpayCreateOrderResponse = {
   order_id: number;
   order_number: string;
   razorpay_order_id: string;
-  key_id: string;
+  razorpay_key_id: string;
   amount: number;
   currency: string;
   total: number;
