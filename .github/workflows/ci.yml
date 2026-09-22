@@ -65,7 +65,12 @@ jobs:
       - name: Validate app docker compose config
         env:
           QUANTGRID_AUTH_SECRET: ci-only-compose-validation-secret-not-for-production
-        run: docker compose -f docker-compose.app.yml config --quiet
+        run: |
+          # Compose requires this local file even though the required auth secret
+          # is supplied separately through the CI environment.
+          touch services/trading-service/.env
+          docker compose -f docker-compose.app.yml config --quiet
+          rm services/trading-service/.env
 
   terraform:
     name: Terraform validation
