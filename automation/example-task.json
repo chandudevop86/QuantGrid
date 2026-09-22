@@ -1,0 +1,5 @@
+{
+  "project": "quantgrid",
+  "task": "Review simulation-only test coverage and propose a pull request",
+  "checks": ["Existing Python CI", "Frontend build", "Security workflow"]
+}
