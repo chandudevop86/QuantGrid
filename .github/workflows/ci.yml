@@ -18,9 +18,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Ruff lint
-        run: ruff check services/trading-service tests
+        run: ruff check services/trading-service services/tests
       - name: Python syntax check
-        run: python -m compileall services/trading-service tests
+        run: python -m compileall services/trading-service services/tests
       - name: Security scan
         run: bandit -q -r services/trading-service -x "*/tests/*"
       - name: Dependency audit
@@ -63,6 +63,8 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres-password
         run: docker compose -f docker-compose.yml config --quiet
       - name: Validate app docker compose config
+        env:
+          QUANTGRID_AUTH_SECRET: ci-only-compose-validation-secret-not-for-production
         run: docker compose -f docker-compose.app.yml config --quiet
 
   terraform:
