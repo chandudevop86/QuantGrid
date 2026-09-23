@@ -36,6 +36,8 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     # so PYTHONPATH ordering remains authoritative.
     if len(command) >= 3 and command[0] == sys.executable and command[1:3] == ["-m", "pytest"]:
         command = ["pytest", *command[3:]]
+
+    test_cwd = ROOT / "services" / "tests" if command and command[0] == "pytest" else ROOT
     try:
         result = subprocess.run(
             command,
