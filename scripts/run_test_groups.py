@@ -27,6 +27,8 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
     python_paths = [str(ROOT / "services" / "trading-service"), str(ROOT / "services" / "tests")]
+    # Avoid the repository-root `app` package shadowing trading-service/app.
+    env["PYTHONSAFEPATH"] = "1"
     existing_pythonpath = env.get("PYTHONPATH")
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
