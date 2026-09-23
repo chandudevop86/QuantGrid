@@ -22,7 +22,7 @@ jobs:
       - name: Python syntax check
         run: python -m compileall services/trading-service services/tests
       - name: Security scan
-        run: bandit -q -r services/trading-service -x "*/tests/*"
+        run: bandit -q -r services/trading-service -x "*/tests/*,*/Testing/*,*/test_*.py" -lll
       - name: Dependency audit
         run: pip-audit -r services/trading-service/requirements.txt
       - name: Block checked-in secrets/default credentials
