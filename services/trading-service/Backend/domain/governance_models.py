@@ -44,6 +44,30 @@ def parameter_schema_hash(parameters: Any) -> str:
     return sha256_text(canonical_json(schema))
 
 
+class DatasetSnapshot(Base):
+    __tablename__ = "dataset_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "exchange", "security_identifier", "instrument", "timeframe",
+            "dataset_hash", "source_metadata_hash", name="uq_dataset_snapshot_content",
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    exchange: Mapped[str] = mapped_column(String(40), nullable=False)
+    security_identifier: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    instrument: Mapped[str] = mapped_column(String(80), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(40), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(80), nullable=False)
+    start_time: Mapped[str] = mapped_column(String(64), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(nullable=False)
+    dataset_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_metadata_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+
 class Strategy(Base):
     __tablename__ = "strategies"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
