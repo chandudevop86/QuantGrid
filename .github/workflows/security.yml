@@ -50,7 +50,7 @@ jobs:
         env:
           QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
           QUANTGRID_ENV: local
-        run: python -m pytest services/tests
+        run: python scripts/run_test_groups.py --groups 4 --group-timeout 180
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
