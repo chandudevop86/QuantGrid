@@ -27,12 +27,15 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
     python_paths = [str(ROOT / "services" / "trading-service"), str(ROOT / "services" / "tests")]
-    # Avoid the repository-root `app` package shadowing trading-service/app.
-    env["PYTHONSAFEPATH"] = "1"
     existing_pythonpath = env.get("PYTHONPATH")
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    # `python -m pytest` prepends the repository root, whose top-level `app`
+    # package shadows trading-service/app. Execute pytest as a console script
+    # so PYTHONPATH ordering remains authoritative.
+    if len(command) >= 3 and command[0] == sys.executable and command[1:3] == ["-m", "pytest"]:
+        command = ["pytest", *command[3:]]
     try:
         result = subprocess.run(
             command,
