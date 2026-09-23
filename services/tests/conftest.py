@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
-sys.path.insert(0, str(SERVICE_ROOT))
+if str(SERVICE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICE_ROOT))
 
 TEST_SECRET = "test-secret-value-that-is-long-enough-12345"
 TEST_ADMIN_PASSWORD = "AdminPass1!"

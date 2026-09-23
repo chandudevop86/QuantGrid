@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _test_files(pattern: str) -> list[Path]:
-    return sorted((ROOT / "tests").glob(pattern))
+    return sorted((ROOT / "services" / "tests").glob(pattern))
 
 
 def _groups(files: list[Path], count: int) -> list[list[Path]]:
@@ -26,6 +26,16 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
+    python_paths = [str(ROOT / "services" / "trading-service"), str(ROOT / "services" / "tests")]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_paths.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    # `python -m pytest` prepends the repository root, whose top-level `app`
+    # package shadows trading-service/app. Execute pytest as a console script
+    # so PYTHONPATH ordering remains authoritative.
+    if len(command) >= 3 and command[0] == sys.executable and command[1:3] == ["-m", "pytest"]:
+        command = ["pytest", *command[3:]]
     try:
         result = subprocess.run(
             command,
@@ -56,7 +66,7 @@ def main() -> None:
     parser.add_argument("--groups", type=int, default=4, help="Number of pytest groups to run.")
     parser.add_argument("--group-timeout", type=int, default=180, help="Timeout per group in seconds.")
     parser.add_argument("--test-timeout", type=int, default=60, help="Timeout per pytest test in seconds.")
-    parser.add_argument("--pattern", default="test_*.py", help="Test file glob under tests/.")
+    parser.add_argument("--pattern", default="test_*.py", help="Test file glob under services/tests/.")
     parser.add_argument("--coverage", action="store_true", help="Collect combined coverage across groups.")
     parser.add_argument("--cov-fail-under", type=int, default=45, help="Coverage threshold for --coverage.")
     parser.add_argument("--verbose", action="store_true", help="Print stdout for passing pytest groups.")

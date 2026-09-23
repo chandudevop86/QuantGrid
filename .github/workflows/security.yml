@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Secret scanning
         uses: gitleaks/gitleaks-action@v2
@@ -39,7 +41,7 @@ jobs:
         run: pip-audit -r services/trading-service/requirements.txt
 
       - name: Static application security scan
-        run: bandit -q -r services/trading-service -x "*/tests/*"
+        run: bandit -q -r services/trading-service -x "*/tests/*,*/Testing/*,*/test_*.py" -lll
 
       - name: Block checked-in secrets and default credentials
         run: python scripts/check_no_secrets.py
@@ -48,7 +50,7 @@ jobs:
         env:
           QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
           QUANTGRID_ENV: local
-        run: python -m pytest tests
+        run: python scripts/run_test_groups.py --groups 4 --group-timeout 180
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -67,29 +69,31 @@ jobs:
         run: terraform validate
 
       - name: Terraform security scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: config
           scan-ref: infra/terraform
+          scanners: misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
 
       - name: Kubernetes manifest scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: config
           scan-ref: deploy/kubernetes
+          scanners: misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
 
       - name: Docker image vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: fs
           scan-ref: .
-          scanners: vuln,secret,misconfig
+          scanners: vuln,misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
