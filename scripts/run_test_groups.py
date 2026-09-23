@@ -39,7 +39,7 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     try:
         result = subprocess.run(
             command,
-            cwd=ROOT / "services" / "tests" if len(command) >= 3 and command[0] == sys.executable and command[1:3] == ["-m", "pytest"] else ROOT,
+            cwd=test_cwd,
             check=False,
             timeout=timeout,
             env=env,
