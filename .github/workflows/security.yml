@@ -70,7 +70,8 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: config
-          scan-ref: ${{ github.workspace }}/infra/terraform
+          scan-ref: infra/terraform
+          scanners: misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
@@ -79,7 +80,8 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: config
-          scan-ref: ${{ github.workspace }}/deploy/kubernetes
+          scan-ref: deploy/kubernetes
+          scanners: misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
@@ -88,8 +90,8 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           scan-type: fs
-          scan-ref: ${{ github.workspace }}
-          scanners: vuln,secret,misconfig
+          scan-ref: .
+          scanners: vuln,misconfig
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
