@@ -26,6 +26,11 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
+    python_paths = [str(ROOT / "services" / "trading-service"), str(ROOT / "services" / "tests")]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_paths.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
     try:
         result = subprocess.run(
             command,
