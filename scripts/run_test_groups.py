@@ -37,6 +37,12 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     if len(command) >= 3 and command[0] == sys.executable and command[1:3] == ["-m", "pytest"]:
         command = ["pytest", *command[3:]]
 
+    if command and command[0] == "pytest":
+        command = [
+            Path(arg).name if arg.startswith("services/tests/") else arg
+            for arg in command
+        ]
+
     test_cwd = ROOT / "services" / "tests" if command and command[0] == "pytest" else ROOT
     try:
         result = subprocess.run(
