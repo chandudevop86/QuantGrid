@@ -42,6 +42,7 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
             Path(arg).name if arg.startswith("services/tests/") else arg
             for arg in command
         ]
+        command.extend(["-o", "pythonpath="])
 
     test_cwd = ROOT / "services" / "tests" if command and command[0] == "pytest" else ROOT
     try:
