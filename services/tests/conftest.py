@@ -56,6 +56,13 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
     reset_backend_modules()
 
+    from Backend.core.database import Base, engine
+    import Backend.domain.security.models  # noqa: F401
+    import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.governance_models  # noqa: F401
+    import Backend.application.notification_entity  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
     from Backend.application.kill_switch import deactivate_kill_switch
     from Backend.presentation.api.main import app
 
