@@ -230,3 +230,50 @@ def _reject_live_guardrail(
 
 
         return result
+
+def _audit_order_transition(
+    db: Session | None,
+    request: Request | None,
+    actor: User | None,
+    order: dict[str, Any],
+    previous_status: str,
+    broker_response: dict[str, Any] | None = None,
+) -> None:
+    """
+    Audit an order lifecycle status transition.
+    """
+
+    if db is None or request is None or actor is None:
+        return
+
+    metadata: dict[str, Any] = {
+        "from_status": previous_status,
+        "to_status": order.get("status"),
+        "status_reason": order.get("status_reason"),
+        "broker_order_id": order.get("broker_order_id"),
+        "symbol": order.get("symbol"),
+        "side": order.get("side"),
+        "quantity": order.get("quantity"),
+        "entry_price": order.get("entry_price"),
+        "stop_loss": order.get("stop_loss"),
+        "target": order.get("target"),
+        "trailing_stop_loss": order.get("trailing_stop_loss"),
+        "trailing_stop_pct": order.get("trailing_stop_pct"),
+        "broker_response": broker_response,
+    }
+
+    metadata = {
+        key: value
+        for key, value in metadata.items()
+        if value is not None
+    }
+
+    write_audit_log(
+        db=db,
+        action="order_status_transition",
+        actor=actor,
+        target_type="order",
+        target_id=order.get("local_order_id"),
+        request=request,
+        metadata=metadata,
+    )
