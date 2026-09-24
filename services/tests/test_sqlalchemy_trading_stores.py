@@ -31,6 +31,13 @@ def configure_sqlalchemy_store(monkeypatch) -> None:
     from Backend.core.database import init_database
 
     init_database()
+    from Backend.core.database import Base, engine
+    import Backend.domain.security.models  # noqa: F401
+    import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.governance_models  # noqa: F401
+    import Backend.application.notification_entity  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
 
 
 def test_test_environment_uses_file_backed_local_stores(monkeypatch):

@@ -85,7 +85,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
     from Backend.application.trading_service import TradingService
 
     monkeypatch.setattr(
-        execution_api,
+        execution_api.market_service,
         "get_candles",
         lambda symbol, interval="1m", period="1d", limit=150: {
             "symbol": symbol,
@@ -164,7 +164,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
     from Backend.application.trading_service import TradingService
 
     monkeypatch.setattr(
-        execution_api,
+        execution_api.market_service,
         "get_candles",
         lambda symbol, interval="1m", period="1d", limit=150: {
             "symbol": symbol,
