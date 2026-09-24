@@ -18,9 +18,12 @@ def _use_sqlite() -> bool:
     return use_legacy_sqlite_store()
 
 
-def _connect():
+def _connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(...)
+    connection = sqlite3.connect(DB_FILE, timeout=30)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
+    return connection
 
 
 def _init_db_store() -> None:
