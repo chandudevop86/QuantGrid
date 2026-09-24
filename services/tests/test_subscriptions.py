@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_subscription_plans_and_default_free_account(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     plans = app_client.get("/subscriptions/plans")
     mine = app_client.get("/subscriptions/me", headers=headers)
@@ -19,7 +19,7 @@ def test_subscription_plans_and_default_free_account(app_client):
 
 
 def test_admin_can_assign_subscription_and_assignment_is_audited(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     created = app_client.post(
         "/admin/users/create",
         json={"username": "subscriber", "password": "Subscriber1!", "role": "trader"},
@@ -45,7 +45,7 @@ def test_admin_can_assign_subscription_and_assignment_is_audited(app_client):
 
 
 def test_non_admin_cannot_assign_subscription(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     created = app_client.post(
         "/admin/users/create",
         json={"username": "basic-user", "password": "BasicUser1!", "role": "trader"},
@@ -77,7 +77,7 @@ def test_public_signup_creates_only_a_free_viewer_account(app_client):
 
 
 def _create_user_headers(app_client, username: str) -> tuple[int, dict[str, str]]:
-    admin = admin_headers(app_client)
+    admin = make_admin_headers(app_client)
     created = app_client.post("/admin/users/create", json={"username": username, "password": "Subscriber1!", "role": "trader"}, headers=admin)
     login = app_client.post("/auth/login", json={"username": username, "password": "Subscriber1!"})
     return created.json()["id"], {"Authorization": f"Bearer {login.json()['access_token']}"}
@@ -88,14 +88,14 @@ def test_free_user_direct_api_call_is_rejected_and_pro_is_allowed(app_client):
     denied = app_client.get("/modules/risk-engine", headers=user_headers)
     assert denied.status_code == 403
     assert denied.json()["detail"]["error"] == "subscription_required"
-    app_client.put(f"/subscriptions/admin/users/{user_id}", json={"plan_code": "pro", "status": "active", "period_days": 30}, headers=admin_headers(app_client))
+    app_client.put(f"/subscriptions/admin/users/{user_id}", json={"plan_code": "pro", "status": "active", "period_days": 30}, headers=make_admin_headers(app_client))
     allowed = app_client.get("/modules/risk-engine", headers=user_headers)
     assert allowed.status_code == 200
 
 
 def test_expired_subscription_falls_back_and_temporary_override_works(app_client):
     user_id, user_headers = _create_user_headers(app_client, "expired-user")
-    admin = admin_headers(app_client)
+    admin = make_admin_headers(app_client)
     app_client.put(f"/subscriptions/admin/users/{user_id}", json={"plan_code": "pro", "status": "expired", "period_days": 30}, headers=admin)
     assert app_client.get("/modules/risk-engine", headers=user_headers).status_code == 403
     app_client.put(f"/subscriptions/admin/users/{user_id}", json={"plan_code": "free", "status": "active", "period_days": 30}, headers=admin)

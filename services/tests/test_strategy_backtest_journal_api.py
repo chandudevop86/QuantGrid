@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_strategy_registry_exposes_required_strategies(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/trading/strategies", headers=headers)
 
@@ -22,7 +22,7 @@ def test_strategy_registry_exposes_required_strategies(app_client):
 
 
 def test_strategy_backtest_api_returns_card_metrics(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/api/strategies/breakout/backtest", headers=headers)
 
@@ -36,7 +36,7 @@ def test_strategy_backtest_api_returns_card_metrics(app_client):
 
 
 def test_trade_journal_api_creates_and_lists_entries(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/api/trade-journal",
@@ -70,7 +70,7 @@ def test_trade_journal_api_creates_and_lists_entries(app_client):
 
 
 def test_trade_journal_crud_and_filters(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/api/trades/journal",
@@ -108,7 +108,7 @@ def test_trade_journal_crud_and_filters(app_client):
 
 
 def test_trade_journal_unprefixed_aliases_match_proxy_rewrite_contract(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/trades/journal",
@@ -147,7 +147,7 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
         "live_nse_option_chain",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
     )
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
 
@@ -160,7 +160,7 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
 
 
 def test_option_chain_response_contract_never_generates_synthetic_rows(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY", headers=headers)
 
@@ -174,7 +174,7 @@ def test_option_chain_response_contract_never_generates_synthetic_rows(app_clien
 
 
 def test_signals_alias_reuses_latest_handler(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/api/signals", headers=headers)
 

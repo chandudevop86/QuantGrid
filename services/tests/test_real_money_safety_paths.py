@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import TEST_ADMIN_PASSWORD, TEST_SECRET, admin_headers, reset_backend_modules
+from conftest import TEST_ADMIN_PASSWORD, TEST_SECRET, make_admin_headers, reset_backend_modules
 from test_sqlalchemy_trading_stores import configure_sqlalchemy_store
 
 
@@ -627,7 +627,7 @@ def test_kill_switch_activate_blocks_and_deactivate_allows(monkeypatch):
 
 def test_kill_switch_unauthorized_role_cannot_activate_deactivate(monkeypatch):
     with _app_client(monkeypatch) as app_client:
-        admin = admin_headers(app_client)
+        admin = make_admin_headers(app_client)
         viewer = _role_headers(app_client, admin, "viewer-safety", "viewer")
         developer = _role_headers(app_client, admin, "developer-ks-denied", "developer")
         trader = _role_headers(app_client, admin, "trader-safety", "trader")
@@ -641,7 +641,7 @@ def test_kill_switch_unauthorized_role_cannot_activate_deactivate(monkeypatch):
 
 def test_api_health_positions_risk_and_audit_access(monkeypatch):
     with _app_client(monkeypatch) as app_client:
-        admin = admin_headers(app_client)
+        admin = make_admin_headers(app_client)
         ops = _role_headers(app_client, admin, "ops-safety", "ops")
         viewer = _role_headers(app_client, admin, "viewer-api-safety", "viewer")
         developer = _role_headers(app_client, admin, "developer-api-safety", "developer")
@@ -657,7 +657,7 @@ def test_api_health_positions_risk_and_audit_access(monkeypatch):
 
 def test_admin_trader_ops_can_activate_kill_switch(monkeypatch):
     with _app_client(monkeypatch) as app_client:
-        admin = admin_headers(app_client)
+        admin = make_admin_headers(app_client)
         trader = _role_headers(app_client, admin, "trader-ks-safety", "trader")
         ops = _role_headers(app_client, admin, "ops-ks-safety", "ops")
 

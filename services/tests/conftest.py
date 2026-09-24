@@ -74,8 +74,7 @@ def app_client(tmp_path, monkeypatch):
     reset_backend_modules()
 
 
-@pytest.fixture()
-def admin_headers(app_client: TestClient) -> dict[str, str]:
+def make_admin_headers(app_client: TestClient) -> dict[str, str]:
     response = app_client.post(
         "/auth/login",
         json={
@@ -88,3 +87,8 @@ def admin_headers(app_client: TestClient) -> dict[str, str]:
         "Authorization": f"Bearer {response.json()['access_token']}"
     }
 
+
+
+@pytest.fixture()
+def admin_headers(app_client: TestClient) -> dict[str, str]:
+    return make_admin_headers(app_client)

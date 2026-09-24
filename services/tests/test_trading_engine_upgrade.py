@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def _basket_payload(**overrides):
@@ -19,7 +19,7 @@ def _basket_payload(**overrides):
 
 
 def test_trading_engine_dashboard_exposes_phase5_capabilities(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/execution/trading-engine/dashboard", headers=headers)
 
@@ -39,7 +39,7 @@ def test_trading_engine_dashboard_exposes_phase5_capabilities(app_client):
 
 
 def test_paper_basket_creates_trade_and_open_position(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.post("/execution/trading-engine/basket", json=_basket_payload(), headers=headers)
 
@@ -60,7 +60,7 @@ def test_paper_basket_creates_trade_and_open_position(app_client):
 
 
 def test_basket_rejects_live_mode(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.post(
         "/execution/trading-engine/basket",
@@ -73,7 +73,7 @@ def test_basket_rejects_live_mode(app_client):
 
 
 def test_scale_out_updates_position_and_writes_paper_log(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     created = app_client.post("/execution/trading-engine/basket", json=_basket_payload(), headers=headers).json()
     position_id = created["legs"][0]["position"]["id"]
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_admin_can_create_and_list_users(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     created = app_client.post(
         "/admin/users/create",
         json={"username": "trader1", "password": "TraderPass1!", "role": "trader"},
@@ -19,7 +19,7 @@ def test_admin_can_create_and_list_users(app_client):
 
 
 def test_non_admin_cannot_create_users(app_client):
-    admin = admin_headers(app_client)
+    admin = make_admin_headers(app_client)
     app_client.post(
         "/admin/users/create",
         json={"username": "viewer1", "password": "ViewerPass1!", "role": "viewer"},

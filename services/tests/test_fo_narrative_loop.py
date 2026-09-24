@@ -137,12 +137,12 @@ def test_high_vix_false_breakout_reduces_confidence_and_no_trade():
 
 def test_trading_narrative_endpoint_returns_json(app_client, monkeypatch):
     from Backend.presentation.api import trading_api
-    from conftest import admin_headers
+    from conftest import make_admin_headers
 
     expected = generate_narrative_signal(_input())
     monkeypatch.setattr(trading_api, "run_fno_narrative", lambda symbol: expected)
 
-    response = app_client.get("/trading/narrative/fno?symbol=NIFTY", headers=admin_headers(app_client))
+    response = app_client.get("/trading/narrative/fno?symbol=NIFTY", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200
     assert response.json()["signal"] == "NO_TRADE"

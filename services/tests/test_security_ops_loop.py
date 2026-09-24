@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 from app.security.security_ops_loop import SecurityCheckInput, SecurityStatus, run_security_scan
 
@@ -149,7 +149,7 @@ def test_secure_config_should_pass():
 
 
 def test_security_dashboard_endpoint_returns_cards(app_client):
-    response = app_client.get("/security/dashboard", headers=admin_headers(app_client))
+    response = app_client.get("/security/dashboard", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200
     payload = response.json()

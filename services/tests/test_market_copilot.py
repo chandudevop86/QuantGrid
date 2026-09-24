@@ -4,7 +4,7 @@ from app.narratives.fo_narrative_loop import generate_narrative_signal
 from tests.test_fo_narrative_loop import _input
 
 import Backend.application.market_copilot as market_copilot
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_market_copilot_explains_signal_without_blind_call(monkeypatch):
@@ -62,7 +62,7 @@ def test_market_copilot_api_contract(app_client, monkeypatch):
         "guardrails": ["No blind buy/sell calls."],
     })
 
-    response = app_client.get("/trading/copilot/market?symbol=NIFTY", headers=admin_headers(app_client))
+    response = app_client.get("/trading/copilot/market?symbol=NIFTY", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200, response.text
     assert response.json()["module"] == "market_copilot"

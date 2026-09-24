@@ -1,4 +1,4 @@
-from conftest import TEST_ADMIN_PASSWORD, admin_headers, reset_backend_modules
+from conftest import TEST_ADMIN_PASSWORD, make_admin_headers, reset_backend_modules
 from starlette.websockets import WebSocketDisconnect
 import pytest
 
@@ -26,7 +26,7 @@ def test_live_analysis_job_completes_without_external_worker(app_client, monkeyp
     from Backend.application import worker
 
     monkeypatch.setattr(worker, "run_live_analysis", lambda payload: {"symbol": payload.symbol, "signals": []})
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.post(
         "/dashboard/live-analysis/jobs",
@@ -132,7 +132,7 @@ def test_invalid_login_fails_with_error_message(app_client):
 
 
 def test_viewer_cannot_submit_execution_order(app_client):
-    admin = admin_headers(app_client)
+    admin = make_admin_headers(app_client)
     created = app_client.post(
         "/admin/users/create",
         json={"username": "viewer1", "password": "ViewerPass1!", "role": "viewer"},

@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from conftest import admin_headers, reset_backend_modules
+from conftest import make_admin_headers, reset_backend_modules
 
 from Backend.application.candle_validation import CandleValidationSettings, validate_live_candle
 from Backend.domain.models.signal import StrategySignal
@@ -152,7 +152,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd"]},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200
@@ -178,7 +178,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd"]},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200
@@ -186,7 +186,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
 
 
 def test_live_order_is_blocked_when_live_trading_is_disabled(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     headers["X-QuantGrid-Mode"] = "live"
 
     response = app_client.post(
@@ -239,7 +239,7 @@ def test_metrics_requires_admin_or_ops(app_client):
     response = app_client.get("/metrics")
     assert response.status_code == 401
 
-    response = app_client.get("/metrics", headers=admin_headers(app_client))
+    response = app_client.get("/metrics", headers=make_admin_headers(app_client))
     assert response.status_code == 200
 
 
@@ -247,6 +247,6 @@ def test_trading_strategies_requires_auth(app_client):
     response = app_client.get("/trading/strategies")
     assert response.status_code == 401
 
-    response = app_client.get("/trading/strategies", headers=admin_headers(app_client))
+    response = app_client.get("/trading/strategies", headers=make_admin_headers(app_client))
     assert response.status_code == 200
 

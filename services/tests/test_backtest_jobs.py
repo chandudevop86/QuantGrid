@@ -159,14 +159,14 @@ def test_backtest_job_cancel_is_reported(monkeypatch):
 
 
 def test_backtest_api_start_returns_job_id(app_client):
-    from conftest import admin_headers
+    from conftest import make_admin_headers
     from Backend.application import backtest_jobs
 
     backtest_jobs.reset_backtest_jobs_for_tests()
     response = app_client.post(
         "/backtest/start",
         json={"symbol": "NIFTY", "strategies": ["amd"], "expected_seconds": 5},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200

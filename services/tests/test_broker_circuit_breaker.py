@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_broker_circuit_breaker_activates_after_threshold(tmp_path, monkeypatch):
@@ -102,7 +102,7 @@ def test_broker_circuit_breaker_apis_and_admin_reset(app_client, tmp_path, monke
     monkeypatch.setattr(breaker, "send_alert", lambda *_args, **_kwargs: None)
     breaker.record_broker_failure(reason="broker down")
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     status_response = app_client.get("/broker/circuit-breaker/status", headers=headers)
     assert status_response.status_code == 200
     assert status_response.json()["active"] is True

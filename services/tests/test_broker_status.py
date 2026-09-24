@@ -197,7 +197,7 @@ def test_dhan_option_chain_status_reports_expiry_success(monkeypatch):
 
 def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
     from Backend.presentation.api import broker_api
-    from conftest import admin_headers
+    from conftest import make_admin_headers
 
     monkeypatch.setattr(broker_api, "check_dhan_profile", lambda: {"provider": "dhan", "connected": True, "error": None})
     monkeypatch.setenv("QUANTGRID_BROKER_PROVIDER", "existing-provider")
@@ -207,7 +207,7 @@ def test_trader_cannot_persist_global_dhan_credentials(app_client, monkeypatch):
     create = app_client.post(
         "/admin/users/create",
         json={"username": "trader-persist", "password": "TraderPass1!", "role": "trader"},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
     assert create.status_code == 200
     login = app_client.post("/auth/login", json={"username": "trader-persist", "password": "TraderPass1!"})

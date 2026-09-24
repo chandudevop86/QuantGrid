@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 from Backend.domain.models.signal import StrategySignal
 
@@ -36,7 +36,7 @@ def test_auto_paper_returns_per_strategy_diagnostics(app_client, monkeypatch):
     monkeypatch.setattr(execution_api, "get_candles", lambda symbol, interval="1m", period="1d", limit=150: _market_response(interval))
     monkeypatch.setattr(TradingService, "run_strategy", lambda self, **kwargs: [])
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd", "breakout"]},
@@ -130,7 +130,7 @@ def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
         ),
     )
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd", "breakout"]},
@@ -169,7 +169,7 @@ def test_auto_paper_rejects_valid_signal_after_market_close(app_client, monkeypa
     monkeypatch.setattr(execution_api, "validate_signals", lambda raw, **kwargs: (raw, "live"))
     monkeypatch.setattr(execution_api, "diagnose_signal_run", lambda raw, **kwargs: ["validated"])
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd"]},
@@ -191,7 +191,7 @@ def test_manual_paper_rejects_invalid_signal_side(app_client, monkeypatch):
         lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True, model_dump=lambda: {}),
     )
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execution/order",
         json={
@@ -222,7 +222,7 @@ def test_manual_paper_rejects_buy_signal_with_stop_above_entry(app_client, monke
         lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True, model_dump=lambda: {}),
     )
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execution/order",
         json={
