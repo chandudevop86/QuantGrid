@@ -15,7 +15,6 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from Backend.application.audit_manager import _audit_order_transition
 from Backend.application.broker_circuit_breaker import (
     broker_circuit_status,
     record_broker_failure,
