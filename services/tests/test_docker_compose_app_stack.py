@@ -43,7 +43,7 @@ def test_frontend_container_uses_compiled_nginx_build():
 
 
 def test_app_stack_documents_safe_env_defaults():
-    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    env_example = (ROOT / "services" / "trading-service" / ".env.example").read_text(encoding="utf-8")
 
     assert "QUANTGRID_ENV=local" in env_example
     assert "QUANTGRID_AUTH_SECRET=local-dev-auth-secret-at-least-32-characters" in env_example

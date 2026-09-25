@@ -30,6 +30,14 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _as_datetime(value: datetime | str | None) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str) and value:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.now(timezone.utc)
+
+
 def _parse_symbols(env_name: str, default: str) -> list[str]:
     configured = os.getenv(env_name, default)
     return [item.strip().upper() for item in configured.split(",") if item.strip()]
@@ -147,7 +155,7 @@ def _score_to_record(score: StockScore | MutualFundScore) -> InvestmentResearchR
         score=score.total_score,
         recommendation=score.recommendation.value,
         risk_level=score.risk_level,
-        scored_at=score.scored_at or _utc_now(),
+        scored_at=_as_datetime(score.scored_at),
         payload_json=json.dumps(score.model_dump(), default=str),
     )
 

@@ -54,7 +54,11 @@ class DhanBrokerClient:
             "transactionType": order.side.upper(),
             "exchangeSegment": str(order.metadata.get("exchange_segment") or os.getenv("DHAN_EXCHANGE_SEGMENT", "NSE_FNO")),
             "productType": str(order.metadata.get("product_type") or os.getenv("DHAN_PRODUCT_TYPE", "INTRADAY")),
-            "orderType": str(order.metadata.get("order_type") or order.order_type or os.getenv("DHAN_ORDER_TYPE", "MARKET")),
+            "orderType": str(
+                order.metadata.get("order_type")
+                or getattr(order.order_type, "value", order.order_type)
+                or os.getenv("DHAN_ORDER_TYPE", "MARKET")
+            ),
             "validity": str(order.metadata.get("validity") or os.getenv("DHAN_VALIDITY", "DAY")),
             "securityId": security_id,
             "quantity": int(order.quantity),
