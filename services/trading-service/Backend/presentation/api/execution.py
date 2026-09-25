@@ -13,12 +13,14 @@ from Backend.application.execution.execution_service import (
     _execution_qualification,
 )
 from Backend.application.execution.execution_response import _paper_response
-from Backend.application.execution.execution_pipeline import _submit_paper_signal
+from Backend.application.execution import execution_pipeline as _execution_pipeline
+from Backend.application.execution import execution_guardrails as _execution_guardrails
 from Backend.application.execution.execution_guardrails import (
-    _live_guardrail_failure,
     _request_is_https,
     _allow_insecure_live,
 )
+from Backend.application.execution.broker_execution import _broker_session_valid
+from Backend.application.execution.execution_validator import market_aligned
 from Backend.application.execution.lifecycle_manager import (
     _create_lifecycle_order,
     _transition_lifecycle_order,
@@ -92,6 +94,59 @@ from Backend.application.execution.execution_utils import (
     _risk_response_fields,
 )
 import logging
+
+def _market_aligned(signal):
+    aligned, _reason = market_aligned(signal, get_price)
+    return aligned
+
+
+async def _submit_paper_signal(*args, **kwargs):
+    """Compatibility boundary for execution API tests and callers."""
+    original_validate_live_candle = _execution_pipeline.validate_live_candle
+    original_evaluate_risk_gate = _execution_pipeline.evaluate_risk_gate
+    original_apply_order_constraints = _execution_pipeline.apply_order_constraints
+    original_requested_quantity = _execution_pipeline.requested_quantity
+    original_market_aligned = _execution_pipeline.market_aligned
+
+    try:
+        _execution_pipeline.validate_live_candle = validate_live_candle
+        _execution_pipeline.evaluate_risk_gate = evaluate_risk_gate
+        _execution_pipeline.apply_order_constraints = apply_order_constraints
+        _execution_pipeline.requested_quantity = requested_quantity
+        _execution_pipeline.market_aligned = _market_aligned
+        return await _execution_pipeline._submit_paper_signal(*args, **kwargs)
+    finally:
+        _execution_pipeline.validate_live_candle = original_validate_live_candle
+        _execution_pipeline.evaluate_risk_gate = original_evaluate_risk_gate
+        _execution_pipeline.apply_order_constraints = original_apply_order_constraints
+        _execution_pipeline.requested_quantity = original_requested_quantity
+        _execution_pipeline.market_aligned = original_market_aligned
+
+
+def _live_guardrail_failure(*, request, actor, settings, candles_1m, risk_decision, signal=None):
+    """Compatibility boundary for execution API tests and callers."""
+    original_kill_switch_status = _execution_guardrails.kill_switch_status
+    original_validate_live_candle = _execution_guardrails.validate_live_candle
+    original_broker_session_valid = _execution_guardrails._broker_session_valid
+
+    try:
+        _execution_guardrails.kill_switch_status = kill_switch_status
+        _execution_guardrails.validate_live_candle = validate_live_candle
+        _execution_guardrails._broker_session_valid = _broker_session_valid
+        return _execution_guardrails._live_guardrail_failure(
+            request=request,
+            actor=actor,
+            settings=settings,
+            candles_1m=candles_1m,
+            risk_decision=risk_decision,
+            signal=signal,
+        )
+    finally:
+        _execution_guardrails.kill_switch_status = original_kill_switch_status
+        _execution_guardrails.validate_live_candle = original_validate_live_candle
+        _execution_guardrails._broker_session_valid = original_broker_session_valid
+
+
 router = APIRouter()
 market_service = MarketDataService()
 AUTO_SCAN_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
