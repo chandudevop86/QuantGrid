@@ -16,6 +16,15 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _as_datetime(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def init_backtest_job_store() -> None:
     if not _use_sqlite():
         _init_db_store()
@@ -204,8 +213,8 @@ def _db_create_backtest_job(job: dict[str, Any], payload: dict[str, Any]) -> dic
             BacktestJobRecord(
                 job_id=job["job_id"],
                 status=job["status"],
-                created_at=job["created_at"],
-                updated_at=job["updated_at"],
+                created_at=_as_datetime(job["created_at"]),
+                updated_at=_as_datetime(job["updated_at"]),
                 payload_json=json.dumps(payload),
                 job_json=json.dumps(job),
             )
@@ -235,7 +244,7 @@ def _db_update_backtest_job_record(job_id: str, updates: dict[str, Any]) -> dict
         job.update(updates)
         job["updated_at"] = utc_now()
         row.status = str(job.get("status") or "UNKNOWN")
-        row.updated_at = job["updated_at"]
+        row.updated_at = _as_datetime(job["updated_at"])
         row.job_json = json.dumps(job)
         db.commit()
     return job
@@ -273,7 +282,7 @@ def _db_claim_recoverable_backtest_jobs(owner: str, *, limit: int, lease_seconds
             job["recovery_owner"] = owner
             job["recovery_lease_until"] = lease_until
             job["updated_at"] = utc_now()
-            row.updated_at = job["updated_at"]
+            row.updated_at = _as_datetime(job["updated_at"])
             row.job_json = json.dumps(job)
             claimed.append(job)
         db.commit()

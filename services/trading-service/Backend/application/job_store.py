@@ -20,6 +20,15 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _as_datetime(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _connect() -> sqlite3.Connection:
     DB_FILE.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_FILE, timeout=30)
@@ -296,7 +305,7 @@ def _db_create_job(job: dict[str, Any], payload: dict[str, Any]) -> dict[str, An
     now = utc_now()
     job = {**job, "updated_at": now}
     with SessionLocal() as db:
-        db.add(JobRecord(job_id=job["job_id"], status=job["status"], created_at=job["created_at"], updated_at=now, payload_json=json.dumps(payload), job_json=json.dumps(job)))
+        db.add(JobRecord(job_id=job["job_id"], status=job["status"], created_at=_as_datetime(job["created_at"]), updated_at=_as_datetime(now), payload_json=json.dumps(payload), job_json=json.dumps(job)))
         db.commit()
     return job
 
@@ -331,7 +340,7 @@ def _db_update_job(job_id: str, updates: dict[str, Any]) -> dict[str, Any] | Non
         job.update(updates)
         job["updated_at"] = utc_now()
         row.status = str(job.get("status") or "unknown")
-        row.updated_at = job["updated_at"]
+        row.updated_at = _as_datetime(job["updated_at"])
         row.job_json = json.dumps(job)
         db.commit()
     return job
@@ -374,7 +383,7 @@ def _db_claim_next_queued_job() -> tuple[dict[str, Any], dict[str, Any]] | None:
         job = json.loads(row.job_json)
         job.update({"status": "running", "worker_started_at": utc_now(), "updated_at": utc_now()})
         row.status = "running"
-        row.updated_at = job["updated_at"]
+        row.updated_at = _as_datetime(job["updated_at"])
         row.job_json = json.dumps(job)
         payload = json.loads(row.payload_json)
         db.commit()
@@ -392,7 +401,7 @@ def _db_claim_job(job_id: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
         job = json.loads(row.job_json)
         job.update({"status": "running", "worker_started_at": utc_now(), "updated_at": utc_now()})
         row.status = "running"
-        row.updated_at = job["updated_at"]
+        row.updated_at = _as_datetime(job["updated_at"])
         row.job_json = json.dumps(job)
         payload = json.loads(row.payload_json)
         db.commit()
