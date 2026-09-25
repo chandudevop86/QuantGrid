@@ -938,6 +938,23 @@ def _narrative_loop_interval():
 
 
 
+def _narrative_symbols():
+
+    configured = os.getenv(
+        "QUANTGRID_FNO_NARRATIVE_SYMBOLS",
+        "NIFTY,BANKNIFTY",
+    )
+
+    symbols = [
+        symbol.strip().upper()
+        for symbol in configured.split(",")
+        if symbol.strip()
+    ]
+
+    return symbols or ["NIFTY", "BANKNIFTY"]
+
+
+
 def _run_periodic_fno_narratives():
 
     if not is_market_hours_ist():
@@ -948,10 +965,7 @@ def _run_periodic_fno_narratives():
         }
 
 
-    for symbol in [
-        "NIFTY",
-        "BANKNIFTY"
-    ]:
+    for symbol in _narrative_symbols():
 
         run_fno_narrative(
             symbol
