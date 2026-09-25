@@ -211,7 +211,7 @@ def test_manual_paper_rejects_invalid_signal_side(app_client, monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "rejected"
-    assert payload["reason"] == "Signal side must be BUY or SELL."
+    assert payload["reason"] == "INVALID_SIDE"
 
 
 def test_manual_paper_rejects_buy_signal_with_stop_above_entry(app_client, monkeypatch):
