@@ -102,25 +102,7 @@ def _market_aligned(signal):
 
 async def _submit_paper_signal(*args, **kwargs):
     """Compatibility boundary for execution API tests and callers."""
-    original_validate_live_candle = _execution_pipeline.validate_live_candle
-    original_evaluate_risk_gate = _execution_pipeline.evaluate_risk_gate
-    original_apply_order_constraints = _execution_pipeline.apply_order_constraints
-    original_requested_quantity = _execution_pipeline.requested_quantity
-    original_market_aligned = _execution_pipeline.market_aligned
-
-    try:
-        _execution_pipeline.validate_live_candle = validate_live_candle
-        _execution_pipeline.evaluate_risk_gate = evaluate_risk_gate
-        _execution_pipeline.apply_order_constraints = apply_order_constraints
-        _execution_pipeline.requested_quantity = requested_quantity
-        _execution_pipeline.market_aligned = _market_aligned
-        return await _execution_pipeline._submit_paper_signal(*args, **kwargs)
-    finally:
-        _execution_pipeline.validate_live_candle = original_validate_live_candle
-        _execution_pipeline.evaluate_risk_gate = original_evaluate_risk_gate
-        _execution_pipeline.apply_order_constraints = original_apply_order_constraints
-        _execution_pipeline.requested_quantity = original_requested_quantity
-        _execution_pipeline.market_aligned = original_market_aligned
+    return await _execution_pipeline._submit_paper_signal(*args, **kwargs)
 
 
 def _live_guardrail_failure(*, request, actor, settings, candles_1m, risk_decision, signal=None):
