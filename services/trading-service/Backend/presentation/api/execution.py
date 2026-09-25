@@ -102,7 +102,28 @@ def _market_aligned(signal):
 
 async def _submit_paper_signal(*args, **kwargs):
     """Compatibility boundary for execution API tests and callers."""
-    return await _execution_pipeline._submit_paper_signal(*args, **kwargs)
+    overrides = {
+        "validate_order_risk": validate_order_risk,
+        "validate_live_candle": validate_live_candle,
+        "decide_signal": decide_signal,
+        "evaluate_risk_gate": evaluate_risk_gate,
+        "market_aligned": _market_aligned,
+        "validate_execution_constraints": validate_execution_constraints,
+        "apply_order_constraints": apply_order_constraints,
+        "requested_quantity": requested_quantity,
+    }
+    originals = {
+        name: getattr(_execution_pipeline, name)
+        for name in overrides
+    }
+
+    try:
+        for name, value in overrides.items():
+            setattr(_execution_pipeline, name, value)
+        return await _execution_pipeline._submit_paper_signal(*args, **kwargs)
+    finally:
+        for name, value in originals.items():
+            setattr(_execution_pipeline, name, value)
 
 
 def _live_guardrail_failure(*, request, actor, settings, candles_1m, risk_decision, signal=None):
