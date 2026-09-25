@@ -955,6 +955,28 @@ def _narrative_symbols():
 
 
 
+
+def _investment_loop_enabled():
+
+    return _not_falsey(
+        os.getenv(
+            "QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED"
+        ),
+        default=True,
+    )
+
+
+def _investment_loop_interval():
+
+    return max(
+        300.0,
+        _float_env(
+            "QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS",
+            300,
+        )
+    )
+
+
 def _run_periodic_fno_narratives():
 
     if not is_market_hours_ist():
