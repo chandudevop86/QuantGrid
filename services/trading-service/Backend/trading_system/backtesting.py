@@ -285,7 +285,12 @@ class BacktestEngine:
     def _prepare_signal_map(signals: list[StrategySignal] | None) -> dict[pd.Timestamp, list[StrategySignal]]:
         result: dict[pd.Timestamp, list[StrategySignal]] = {}
         for signal in signals or []:
-            result.setdefault(pd.Timestamp(signal.signal_time), []).append(signal)
+            timestamp = pd.Timestamp(signal.signal_time)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.tz_localize("UTC")
+            else:
+                timestamp = timestamp.tz_convert("UTC")
+            result.setdefault(timestamp, []).append(signal)
         return result
 
     def _build_trade(self, signal: StrategySignal, timestamp: datetime, raw_entry: float, entry_price: float, quantity: int, strategy_name: str) -> Trade:
