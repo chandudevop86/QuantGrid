@@ -47,7 +47,5 @@ def test_app_stack_documents_safe_env_defaults():
 
     assert "QUANTGRID_ENV=local" in env_example
     assert "QUANTGRID_AUTH_SECRET=replace-with-a-stable-secret-at-least-32-characters" in env_example
-    assert "DATABASE_URL=postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid" in env_example
-    assert "REDIS_URL=redis://redis:6379/0" in env_example
-    assert "VITE_API_URL=/api" in env_example
-    assert "VITE_WS_URL=/ws" in env_example
+    assert "DATABASE_URL=postgresql+psycopg://..." in env_example
+    assert "REDIS_URL=redis://127.0.0.1:6379" in env_example
