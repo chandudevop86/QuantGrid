@@ -115,8 +115,9 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
             },
         ),
     )
+    monkeypatch.setattr(execution_pipeline, "validate_live_candle", execution_api.validate_live_candle)
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "decide_signal",
         lambda item, **kwargs: SimpleNamespace(
             score=9,
@@ -124,7 +125,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
             to_dict=lambda: {"allowed": True, "status": "ACTIVE", "reason": "OK", "score": 9},
         ),
     )
-    monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
+    monkeypatch.setattr(execution_pipeline, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
     risk_payload = {
         "allowed": True,
         "reason": "OK",
@@ -133,12 +134,12 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
         "details": {"risk_engine": {"risk_score": 100, "blocked_by": [], "warnings": []}},
     }
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_order_risk",
         lambda *args, **kwargs: SimpleNamespace(**risk_payload, to_dict=lambda: risk_payload),
     )
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_execution_constraints",
         lambda item: SimpleNamespace(
             accepted=True,
