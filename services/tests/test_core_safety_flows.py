@@ -66,7 +66,7 @@ def test_stale_candle_is_rejected_with_stale_reason():
     assert result.valid is False
     assert result.valid_for_execution is False
     assert result.market_status == "DELAYED FEED"
-    assert any("stale during live market" in item for item in result.diagnostics)
+    assert any("Latest candle is stale" in item for item in result.diagnostics)
 
 
 def test_market_closed_allows_analysis_but_blocks_execution():

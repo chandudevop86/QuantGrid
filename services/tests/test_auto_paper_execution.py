@@ -241,6 +241,6 @@ def test_manual_paper_rejects_buy_signal_with_stop_above_entry(app_client, monke
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "rejected"
-    assert payload["reason"] == "BUY signal requires stop < entry < target."
+    assert payload["reason"] == "BUY_STOP_MUST_BE_BELOW_ENTRY"
 
 
