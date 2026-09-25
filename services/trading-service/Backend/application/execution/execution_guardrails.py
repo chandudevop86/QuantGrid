@@ -97,12 +97,8 @@ def _live_stop_protection_failure(signal: StrategySignal | None) -> str | None:
     # ------------------------------------------------------------------
     if not _exit_monitor_live_ready():
         return (
-            "App-managed stop protection is enabled but the Exit Monitor "
-            "is not ready. "
-            "Required configuration:\n"
-            "- QUANTGRID_EXIT_MONITOR_ENABLED=true\n"
-            "- QUANTGRID_EXIT_MONITOR_MODE=live\n"
-            "- QUANTGRID_EXIT_MONITOR_INTERVAL_SECONDS <= 10"
+            "Live app-managed stops require QUANTGRID_EXIT_MONITOR_ENABLED=true, "
+            "QUANTGRID_EXIT_MONITOR_MODE=live, and interval <= 10 seconds."
         )
 
     # ------------------------------------------------------------------
@@ -191,7 +187,7 @@ def _live_guardrail_failure(
     # Role validation
     # ------------------------------------------------------------------
     if actor.role not in {"admin", "trader"}:
-        return "Live trading requires Trader or Admin role."
+        return "Live trading requires trader or admin role."
 
     # ------------------------------------------------------------------
     # Broker configuration
