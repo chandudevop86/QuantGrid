@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_jenkins_pytest_stage_fails_pipeline_on_test_failure():
-    jenkinsfile = Path(__file__).resolve().parents[1] / "Jenkinsfile"
+    jenkinsfile = Path(__file__).resolve().parents[2] / "Jenkinsfile"
     text = jenkinsfile.read_text(encoding="utf-8")
 
     assert "python scripts/run_test_groups.py --groups 4 --group-timeout 180 --coverage --cov-fail-under 45" in text
@@ -12,7 +12,7 @@ def test_jenkins_pytest_stage_fails_pipeline_on_test_failure():
 
 
 def test_jenkins_requires_manual_approval_after_staging_before_production():
-    jenkinsfile = Path(__file__).resolve().parents[1] / "Jenkinsfile"
+    jenkinsfile = Path(__file__).resolve().parents[2] / "Jenkinsfile"
     text = jenkinsfile.read_text(encoding="utf-8")
 
     staging_stage = text.index("stage('Deploy to staging')")
@@ -28,7 +28,7 @@ def test_jenkins_requires_manual_approval_after_staging_before_production():
 
 
 def test_jenkins_uses_required_real_deployment_urls():
-    jenkinsfile = Path(__file__).resolve().parents[1] / "Jenkinsfile"
+    jenkinsfile = Path(__file__).resolve().parents[2] / "Jenkinsfile"
     text = jenkinsfile.read_text(encoding="utf-8")
 
     assert "http://staging.example.invalid/api" not in text
@@ -40,7 +40,7 @@ def test_jenkins_uses_required_real_deployment_urls():
 
 
 def test_smoke_test_checks_health_and_fails_on_unhealthy_backend():
-    smoke_script = Path(__file__).resolve().parents[1] / "scripts" / "jenkins" / "smoke_test.sh"
+    smoke_script = Path(__file__).resolve().parents[2] / "scripts" / "jenkins" / "smoke_test.sh"
     text = smoke_script.read_text(encoding="utf-8")
 
     assert "set -euo pipefail" in text
@@ -49,7 +49,7 @@ def test_smoke_test_checks_health_and_fails_on_unhealthy_backend():
 
 
 def test_jenkins_rolls_back_when_production_smoke_fails():
-    jenkinsfile = Path(__file__).resolve().parents[1] / "Jenkinsfile"
+    jenkinsfile = Path(__file__).resolve().parents[2] / "Jenkinsfile"
     text = jenkinsfile.read_text(encoding="utf-8")
 
     production_stage = text.index("stage('Deploy production')")

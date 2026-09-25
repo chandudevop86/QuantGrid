@@ -3,7 +3,7 @@ from pathlib import Path
 from Backend.domain.execution_constraints import lot_size_for_symbol
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_trade_ticket_and_backend_share_the_nifty_65_unit_lot():
