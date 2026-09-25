@@ -55,6 +55,7 @@ def test_auto_paper_returns_per_strategy_diagnostics(app_client, monkeypatch):
 
 def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
     import Backend.presentation.api.execution as execution_api
+    import Backend.application.execution.execution_pipeline as execution_pipeline
     from Backend.application.trading_service import TradingService
 
     signal = StrategySignal(
@@ -72,7 +73,7 @@ def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
     monkeypatch.setattr(TradingService, "run_strategy", lambda self, **kwargs: [signal] if kwargs["strategy_name"] == "amd" else [])
     monkeypatch.setattr(execution_api, "validate_signals", lambda raw, **kwargs: (raw, "live"))
     monkeypatch.setattr(execution_api, "diagnose_signal_run", lambda raw, **kwargs: ["validated"])
-    monkeypatch.setattr(execution_api, "_market_aligned", lambda item: True)
+    monkeypatch.setattr(execution_pipeline, "market_aligned", lambda item: True)
     monkeypatch.setattr(
         execution_api,
         "validate_live_candle",
