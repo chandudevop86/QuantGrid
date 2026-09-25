@@ -71,6 +71,8 @@ def init_database() -> None:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
+    Base.metadata.create_all(bind=engine)
+
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
