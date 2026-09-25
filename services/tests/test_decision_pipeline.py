@@ -483,7 +483,7 @@ def test_higher_timeframe_filter_blocks_missing_required_series():
     assert result["allowed_direction"] == "NONE"
     assert result["timeframes"]["TimeFrame.M15"] == "UNAVAILABLE"
     assert result["timeframes"]["TimeFrame.H1"] == "UNAVAILABLE"
-    assert result["missing_required_timeframes"] == ["15m", "1h"]
+    assert result["missing_required_timeframes"] == ["TimeFrame.M15", "TimeFrame.H1"]
     assert "unavailable" in result["reason"].lower()
 
 
