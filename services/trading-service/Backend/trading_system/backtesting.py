@@ -160,6 +160,8 @@ class BacktestEngine:
                 candidates = signal_map.get(pd.Timestamp(timestamp), [])
                 if candidates:
                     signal = candidates.pop(0)
+                elif signals is not None:
+                    signal = None
                 else:
                     signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
 
