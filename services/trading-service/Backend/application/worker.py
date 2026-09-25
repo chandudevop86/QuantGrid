@@ -887,10 +887,26 @@ def _exit_monitor_interval():
 
 
 
+def _exit_monitor_mode():
+
+    mode = str(
+        os.getenv(
+            "QUANTGRID_EXIT_MONITOR_MODE",
+            "paper",
+        )
+    ).strip().lower()
+
+    if mode not in {"paper", "live"}:
+        return "paper"
+
+    return mode
+
+
+
 def _run_periodic_exit_monitor():
 
     payload = {
-        "execution_mode": "paper"
+        "execution_mode": _exit_monitor_mode()
     }
 
     return _run_exit_monitor_job(
