@@ -236,6 +236,16 @@ resource "aws_lb" "app" {
   security_groups            = [aws_security_group.alb.id]
   subnets                    = aws_subnet.public[*].id
   drop_invalid_header_fields = true
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.environment != "production" ||
+        trimspace(var.alb_certificate_arn) != ""
+      )
+      error_message = "alb_certificate_arn must be set when environment is production."
+    }
+  }
 }
 
 resource "aws_lb_target_group" "app" {

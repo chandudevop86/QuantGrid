@@ -48,14 +48,6 @@ variable "alb_certificate_arn" {
   description = "ACM certificate ARN for the public ALB. Required when environment is production."
   type        = string
   default     = ""
-
-  validation {
-    condition = (
-      var.environment != "production" ||
-      trimspace(var.alb_certificate_arn) != ""
-    )
-    error_message = "alb_certificate_arn must be set when environment is production."
-  }
 }
 
 variable "enable_nat_gateway" {
