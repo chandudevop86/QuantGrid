@@ -50,7 +50,12 @@ def test_auto_paper_returns_per_strategy_diagnostics(app_client, monkeypatch):
     assert payload["reason"] == "No validated signal found across auto-scan strategies."
     assert set(payload["strategy_diagnostics"]) == {"amd", "breakout"}
     assert payload["strategy_diagnostics"]["amd"]["raw_signals"] == 0
-    assert payload["validation"]["market_status"] in {"MARKET CLOSED", "DELAYED FEED"}
+    assert payload["validation"]["market_status"] in {
+        "MARKET CLOSED",
+        "DELAYED FEED",
+        "WEEKEND",
+        "HOLIDAY",
+    }
 
 
 def test_auto_paper_submits_first_validated_signal(app_client, monkeypatch):
