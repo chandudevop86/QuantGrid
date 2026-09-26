@@ -15,7 +15,7 @@ class HealthResult:
     detail: str
 
 
-Opener = Callable[[urllib.request.Request, float], Any]
+Opener = Callable[..., Any]
 
 
 def request_json(
@@ -43,9 +43,13 @@ def request_json(
         with open_request(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
             response.read()
-            ok = 200 <= status < 300 or status in acceptable_statuses\n            return HealthResult(name=name, ok=ok, status=status, detail="ok" if ok else f"http_{status}")
+            ok = 200 <= status < 300 or status in acceptable_statuses
+            detail = "ok" if ok else f"http_{status}"
+            return HealthResult(name=name, ok=ok, status=status, detail=detail)
     except urllib.error.HTTPError as exc:
-        return HealthResult(name=name, ok=False, status=exc.code, detail=f"http_{exc.code}")
+        ok = exc.code in acceptable_statuses
+        detail = "reachable" if ok else f"http_{exc.code}"
+        return HealthResult(name=name, ok=ok, status=exc.code, detail=detail)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return HealthResult(name=name, ok=False, status=None, detail=exc.__class__.__name__)
 
