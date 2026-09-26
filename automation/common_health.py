@@ -39,7 +39,7 @@ def request_json(
     open_request = opener or urllib.request.urlopen
 
     try:
-        with open_request(request, timeout) as response:
+        with open_request(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
             response.read()
             return HealthResult(name=name, ok=200 <= status < 300, status=status, detail="ok")
