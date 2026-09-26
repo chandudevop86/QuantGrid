@@ -78,6 +78,7 @@ jobs:
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
+          trivyignores: infra/terraform/.trivyignore.yaml
 
       - name: Kubernetes manifest scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25

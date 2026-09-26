@@ -184,9 +184,6 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  #trivy:ignore:AWS-0104
-  # QuantGrid requires outbound connectivity for external broker/API integrations.
-  # Instances remain private and use the configured NAT path for internet egress.
   egress {
     from_port   = 0
     to_port     = 0
@@ -233,8 +230,6 @@ resource "aws_security_group" "redis" {
   }
 }
 
-#trivy:ignore:AWS-0053
-# Public exposure is intentional: this ALB is QuantGrid's internet-facing entry point.
 resource "aws_lb" "app" {
   name                       = "${local.name_prefix}-alb"
   load_balancer_type         = "application"
@@ -260,9 +255,6 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-#trivy:ignore:AWS-0054
-# Port 80 redirects to HTTPS when an ACM certificate is configured.
-# Without a certificate, the existing configuration forwards HTTP directly.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn
   port              = 80
