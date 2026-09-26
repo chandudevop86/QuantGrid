@@ -27,6 +27,7 @@ def request_json(
     token: str | None = None,
     timeout: float = 10.0,
     opener: Opener | None = None,
+    acceptable_statuses: tuple[int, ...] = (),
 ) -> HealthResult:
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {"Accept": "application/json"}
@@ -42,7 +43,7 @@ def request_json(
         with open_request(request, timeout=timeout) as response:
             status = int(getattr(response, "status", 200))
             response.read()
-            return HealthResult(name=name, ok=200 <= status < 300, status=status, detail="ok")
+            ok = 200 <= status < 300 or status in acceptable_statuses\n            return HealthResult(name=name, ok=ok, status=status, detail="ok" if ok else f"http_{status}")
     except urllib.error.HTTPError as exc:
         return HealthResult(name=name, ok=False, status=exc.code, detail=f"http_{exc.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
