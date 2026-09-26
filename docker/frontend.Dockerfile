@@ -21,6 +21,8 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine
 COPY docker/frontend-nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/frontend/dist /usr/share/nginx/html
 
+USER 101
+
 EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

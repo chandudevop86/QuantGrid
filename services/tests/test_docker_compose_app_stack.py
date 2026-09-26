@@ -39,6 +39,7 @@ def test_frontend_container_uses_compiled_nginx_build():
     assert "ARG VITE_WS_URL=/ws" in dockerfile
     assert "RUN npm run build" in dockerfile
     assert "FROM nginxinc/nginx-unprivileged:1.27-alpine" in dockerfile
+    assert "USER 101" in dockerfile
     assert "EXPOSE 8080" in dockerfile
     assert 'CMD ["nginx", "-g", "daemon off;"]' in dockerfile
     assert "npm\", \"run\", \"dev" not in dockerfile

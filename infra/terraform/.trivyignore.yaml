@@ -2,14 +2,17 @@ misconfigurations:
   - id: AWS-0053
     paths:
       - "aws/main.tf"
+      - "infra/terraform/aws/main.tf"
     statement: "The public ALB is intentionally QuantGrid's internet-facing entry point."
 
   - id: AWS-0104
     paths:
       - "aws/main.tf"
+      - "infra/terraform/aws/main.tf"
     statement: "The private app tier requires outbound broker and market-data API access through NAT."
 
   - id: AWS-0054
     paths:
       - "aws/main.tf"
+      - "infra/terraform/aws/main.tf"
     statement: "Non-production may use the HTTP fallback; production requires alb_certificate_arn and redirects HTTP to HTTPS."
