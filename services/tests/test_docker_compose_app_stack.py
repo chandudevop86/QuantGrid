@@ -27,7 +27,8 @@ def test_app_compose_includes_full_local_stack_with_healthchecks():
     assert "http://127.0.0.1:8000/health" in compose
     assert '"127.0.0.1:5432:5432"' in compose
     assert '"127.0.0.1:6379:6379"' in compose
-    assert '"127.0.0.1:5173:80"' in compose
+    assert '"127.0.0.1:5173:8080"' in compose
+    assert "http://127.0.0.1:8080/" in compose
 
 
 def test_frontend_container_uses_compiled_nginx_build():
@@ -37,7 +38,8 @@ def test_frontend_container_uses_compiled_nginx_build():
     assert "ARG VITE_API_BASE_URL=/api" in dockerfile
     assert "ARG VITE_WS_URL=/ws" in dockerfile
     assert "RUN npm run build" in dockerfile
-    assert "FROM nginx:" in dockerfile
+    assert "FROM nginxinc/nginx-unprivileged:1.27-alpine" in dockerfile
+    assert "EXPOSE 8080" in dockerfile
     assert 'CMD ["nginx", "-g", "daemon off;"]' in dockerfile
     assert "npm\", \"run\", \"dev" not in dockerfile
 
