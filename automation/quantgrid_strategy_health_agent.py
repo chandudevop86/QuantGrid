@@ -38,33 +38,20 @@ def run_checks(
         ),
     ]
 
-    if token:
-        for strategy in strategies:
-            results.append(
-                request_json(
-                    f"signal_{strategy}",
-                    f"{base}/trading/signals",
-                    method="POST",
-                    token=token,
-                    payload={
-                        "strategy_name": strategy,
-                        "symbol": "NIFTY",
-                        "capital": 100000,
-                        "risk_pct": 1,
-                        "rr_ratio": 2,
-                        "include_diagnostics": True,
-                        "candles": [],
-                        "mtf_candles": [],
-                        "htf_candles": [],
-                        "daily_candles": [],
-                    },
-                    timeout=20.0,
-                )
-            )
+    results.append(
+        request_json(
+            "signal_route",
+            f"{base}/trading/signals",
+            method="POST",
+            token=token,
+            payload={},
+            acceptable_statuses=(401, 403, 422),
+        )
+    )
 
     summary = summarize(results)
     summary["mode"] = "diagnostic-only"
-    summary["signal_checks_skipped"] = token is None
+    summary["signal_probe"] = "route-reachability only; no strategy execution or order placement"
     summary["safety"] = {
         "live_trading": False,
         "places_orders": False,
