@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_live_execution_is_blocked_when_disabled(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     headers["X-QuantGrid-Mode"] = "live"
     response = app_client.post(
         "/execution/order",
@@ -36,7 +36,7 @@ def test_live_execution_requires_broker_credentials(app_client, monkeypatch):
         lambda: SimpleNamespace(live_trading_enabled=True, broker_configured=False),
     )
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     headers["X-QuantGrid-Mode"] = "live"
     response = app_client.post(
         "/execution/order",
@@ -78,7 +78,7 @@ def test_legacy_production_execute_trade_requires_auth(app_client):
 
 
 def test_legacy_production_execute_trade_is_disabled_for_trader(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/execute-trade",
         json={

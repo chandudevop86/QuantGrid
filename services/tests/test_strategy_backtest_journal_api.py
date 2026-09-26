@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_strategy_registry_exposes_required_strategies(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/trading/strategies", headers=headers)
 
@@ -21,22 +21,90 @@ def test_strategy_registry_exposes_required_strategies(app_client):
     }.issubset(set(response.json()))
 
 
-def test_strategy_backtest_api_returns_card_metrics(app_client):
-    headers = admin_headers(app_client)
+def test_strategy_backtest_api_returns_card_metrics(app_client, monkeypatch):
+    import Backend.presentation.api.professional_api as professional_api
 
-    response = app_client.get("/api/strategies/breakout/backtest", headers=headers)
+    candles = [
+        {
+            "timestamp": f"2026-01-01T09:{i:02d}:00+00:00",
+            "open": 100.0 + i,
+            "high": 101.0 + i,
+            "low": 99.0 + i,
+            "close": 100.5 + i,
+            "volume": 1000.0 + i,
+        }
+        for i in range(50)
+    ]
 
-    assert response.status_code == 200
+    monkeypatch.setattr(
+        professional_api.market_service,
+        "get_candles",
+        lambda *args, **kwargs: {
+            "candles": candles,
+            "source": "test",
+        },
+    )
+
+    class FakeBacktestResult:
+        def __init__(self, **kwargs):
+            self._payload = {
+                "strategy": kwargs["strategy"],
+                "symbol": kwargs["symbol"],
+                "initial_capital": kwargs["capital"],
+                "final_capital": kwargs["capital"] + 1000,
+                "metrics": {
+                    "total_trades": 4,
+                    "winning_trades": 3,
+                    "losing_trades": 1,
+                    "win_rate": 75.0,
+                    "pnl": 1000.0,
+                    "total_pnl": 1000.0,
+                    "max_drawdown": 2.5,
+                    "sharpe_ratio": 1.5,
+                    "expectancy": 250.0,
+                },
+                "trades": [],
+            }
+
+        def to_dict(self):
+            return dict(self._payload)
+
+    class FakeBacktestEngine:
+        def run(self, **kwargs):
+            return FakeBacktestResult(**kwargs)
+
+    monkeypatch.setattr(
+        professional_api,
+        "BacktestEngine",
+        FakeBacktestEngine,
+    )
+
+    headers = make_admin_headers(app_client)
+
+    response = app_client.get(
+        "/api/strategies/breakout/backtest",
+        headers=headers,
+        params={"max_candles": 200},
+    )
+
+    assert response.status_code == 200, response.text
     payload = response.json()
+
     assert payload["input"]["strategy"] == "breakout"
     assert payload["input"]["candles"] <= payload["input"]["max_candles"] == 200
     assert payload["metrics"]["total_trades"] > 0
-    assert {"total_trades", "win_rate", "pnl", "max_drawdown", "sharpe_ratio", "expectancy"} <= set(payload["metrics"])
+    assert {
+        "total_trades",
+        "win_rate",
+        "pnl",
+        "max_drawdown",
+        "sharpe_ratio",
+        "expectancy",
+    } <= set(payload["metrics"])
     assert payload["metrics"]["recent_accuracy"] == payload["metrics"]["win_rate"]
 
-
 def test_trade_journal_api_creates_and_lists_entries(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/api/trade-journal",
@@ -70,7 +138,7 @@ def test_trade_journal_api_creates_and_lists_entries(app_client):
 
 
 def test_trade_journal_crud_and_filters(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/api/trades/journal",
@@ -108,7 +176,7 @@ def test_trade_journal_crud_and_filters(app_client):
 
 
 def test_trade_journal_unprefixed_aliases_match_proxy_rewrite_contract(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     created = app_client.post(
         "/trades/journal",
@@ -147,7 +215,7 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
         "live_nse_option_chain",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")),
     )
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
 
@@ -160,7 +228,7 @@ def test_live_nse_option_chain_fallback_exposes_frontend_fields(app_client, monk
 
 
 def test_option_chain_response_contract_never_generates_synthetic_rows(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/modules/option-chain/NIFTY", headers=headers)
 
@@ -174,7 +242,7 @@ def test_option_chain_response_contract_never_generates_synthetic_rows(app_clien
 
 
 def test_signals_alias_reuses_latest_handler(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/api/signals", headers=headers)
 

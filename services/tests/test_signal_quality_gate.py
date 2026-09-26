@@ -52,7 +52,11 @@ def _signal(
 
 
 def test_stale_signal_rejection():
-    decision = decide_signal(_signal(minutes_back=3), candles_1m=_trend_candles(40), candles_15m=_trend_candles(40))
+    decision = decide_signal(
+        _signal(minutes_back=3),
+        candles_1m=_trend_candles(40),
+        candles_by_timeframe={"15m": _trend_candles(40)},
+    )
 
     assert decision.allowed is False
     assert decision.status == "STALE"
@@ -98,7 +102,11 @@ def test_stale_underlying_candles_rejected_even_when_signal_matches_candle_time(
         metadata={"score": 8, "quantity": 75},
     )
 
-    decision = decide_signal(signal, candles_1m=candles, candles_15m=candles)
+    decision = decide_signal(
+        signal,
+        candles_1m=candles,
+        candles_by_timeframe={"15m": candles},
+    )
 
     assert decision.allowed is False
     assert decision.status == "STALE"
@@ -110,7 +118,7 @@ def test_low_score_rejection():
     decision = decide_signal(
         _signal(score=5, latest=latest),
         candles_1m=_trend_candles(40, start=start),
-        candles_15m=_trend_candles(40, start=start),
+        candles_by_timeframe={"15m": _trend_candles(40, start=start)},
     )
 
     assert decision.allowed is False
@@ -123,7 +131,7 @@ def test_mtf_conflict_rejection():
     decision = decide_signal(
         _signal(side="SELL", latest=latest),
         candles_1m=_trend_candles(40, start=start),
-        candles_15m=_trend_candles(40, start=start),
+        candles_by_timeframe={"15m": _trend_candles(40, start=start)},
     )
 
     assert decision.allowed is False

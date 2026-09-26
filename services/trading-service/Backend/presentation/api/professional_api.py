@@ -109,8 +109,6 @@ def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_dat
 
 @router.get("/api/strategies/{strategy}/backtest")
 @router.get("/strategies/{strategy}/backtest", include_in_schema=False)
-@router.get("/api/strategies/{strategy}/backtest")
-@router.get("/strategies/{strategy}/backtest", include_in_schema=False)
 def backtest_strategy(
     strategy: str,
     symbol: str = "NIFTY",
@@ -196,14 +194,47 @@ def backtest_strategy(
     }
 
     return report
+@router.get("/api/trade-journal")
 @router.get("/api/trades/journal")
+@router.get("/trade-journal", include_in_schema=False)
 @router.get("/trades/journal", include_in_schema=False)
 def list_trade_journal_api(
     limit: int = 100,
+    strategy: str | None = None,
+    status: str | None = None,
+    symbol: str | None = None,
+    date: str | None = None,
 ):
-    return list_trade_journal(
-        limit=max(1, min(int(limit), 500))
+    rows = list_trade_journal(
+        limit=max(1, min(int(limit), 500)),
+        strategy=strategy,
+        status=status,
+        symbol=symbol,
+        date=date,
     )
+
+    closed = [
+        row
+        for row in rows
+        if str(row.get("status") or "").lower()
+        in {"closed", "exited", "completed"}
+    ]
+    pnl_values = [float(row.get("pnl") or 0.0) for row in closed]
+    wins = [pnl for pnl in pnl_values if pnl > 0]
+
+    return {
+        "summary": {
+            "total_trades": len(rows),
+            "closed_trades": len(closed),
+            "win_rate": (
+                round(len(wins) / len(closed), 4)
+                if closed
+                else 0.0
+            ),
+            "pnl": round(sum(pnl_values), 2),
+        },
+        "rows": rows,
+    }
 
 @router.get("/api/trades/journal/{entry_id}")
 @router.get("/trades/journal/{entry_id}", include_in_schema=False)
@@ -314,7 +345,10 @@ def latest_signals(
         active_signals, rejected_signals, stale_signals = split_signals(
             raw,
             candles_1m=one_minute,
-            candles_15m=fifteen_minute,
+            candles_by_timeframe={
+                "5m": five_minute,
+                "15m": fifteen_minute,
+            },
         )
         for signal_obj in active_signals:
             serialized_signal = serialize_signal(signal_obj)

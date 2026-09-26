@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from conftest import admin_headers, reset_backend_modules
+from conftest import make_admin_headers, reset_backend_modules
 
 from Backend.application.candle_validation import CandleValidationSettings, validate_live_candle
 from Backend.domain.models.signal import StrategySignal
@@ -66,7 +66,7 @@ def test_stale_candle_is_rejected_with_stale_reason():
     assert result.valid is False
     assert result.valid_for_execution is False
     assert result.market_status == "DELAYED FEED"
-    assert any("stale during live market" in item for item in result.diagnostics)
+    assert any("Latest candle is stale" in item for item in result.diagnostics)
 
 
 def test_market_closed_allows_analysis_but_blocks_execution():
@@ -82,10 +82,11 @@ def test_market_closed_allows_analysis_but_blocks_execution():
 
 def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch):
     import Backend.presentation.api.execution as execution_api
+    import Backend.application.execution.execution_pipeline as execution_pipeline
     from Backend.application.trading_service import TradingService
 
     monkeypatch.setattr(
-        execution_api,
+        execution_api.market_service,
         "get_candles",
         lambda symbol, interval="1m", period="1d", limit=150: {
             "symbol": symbol,
@@ -97,7 +98,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
     monkeypatch.setattr(TradingService, "run_strategy", lambda self, **kwargs: [_execution_signal()])
     monkeypatch.setattr(execution_api, "validate_signals", lambda raw, **kwargs: (raw, "live"))
     monkeypatch.setattr(execution_api, "diagnose_signal_run", lambda raw, **kwargs: ["validated"])
-    monkeypatch.setattr(execution_api, "_market_aligned", lambda item: True)
+    monkeypatch.setattr(execution_pipeline, "market_aligned", lambda item: True)
     monkeypatch.setattr(
         execution_api,
         "validate_live_candle",
@@ -114,8 +115,9 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
             },
         ),
     )
+    monkeypatch.setattr(execution_pipeline, "validate_live_candle", execution_api.validate_live_candle)
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "decide_signal",
         lambda item, **kwargs: SimpleNamespace(
             score=9,
@@ -123,7 +125,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
             to_dict=lambda: {"allowed": True, "status": "ACTIVE", "reason": "OK", "score": 9},
         ),
     )
-    monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
+    monkeypatch.setattr(execution_pipeline, "evaluate_risk_gate", lambda decision: SimpleNamespace(allowed=True, reason="OK"))
     risk_payload = {
         "allowed": True,
         "reason": "OK",
@@ -132,12 +134,12 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
         "details": {"risk_engine": {"risk_score": 100, "blocked_by": [], "warnings": []}},
     }
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_order_risk",
         lambda *args, **kwargs: SimpleNamespace(**risk_payload, to_dict=lambda: risk_payload),
     )
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_execution_constraints",
         lambda item: SimpleNamespace(
             accepted=True,
@@ -152,7 +154,7 @@ def test_auto_paper_creates_order_only_for_valid_signal(app_client, monkeypatch)
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd"]},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200
@@ -164,7 +166,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
     from Backend.application.trading_service import TradingService
 
     monkeypatch.setattr(
-        execution_api,
+        execution_api.market_service,
         "get_candles",
         lambda symbol, interval="1m", period="1d", limit=150: {
             "symbol": symbol,
@@ -178,7 +180,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
     response = app_client.post(
         "/execution/auto-paper",
         json={"symbol": "NIFTY", "strategies": ["amd"]},
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200
@@ -186,7 +188,7 @@ def test_auto_paper_returns_no_trade_without_valid_signals(app_client, monkeypat
 
 
 def test_live_order_is_blocked_when_live_trading_is_disabled(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     headers["X-QuantGrid-Mode"] = "live"
 
     response = app_client.post(
@@ -239,7 +241,7 @@ def test_metrics_requires_admin_or_ops(app_client):
     response = app_client.get("/metrics")
     assert response.status_code == 401
 
-    response = app_client.get("/metrics", headers=admin_headers(app_client))
+    response = app_client.get("/metrics", headers=make_admin_headers(app_client))
     assert response.status_code == 200
 
 
@@ -247,6 +249,6 @@ def test_trading_strategies_requires_auth(app_client):
     response = app_client.get("/trading/strategies")
     assert response.status_code == 401
 
-    response = app_client.get("/trading/strategies", headers=admin_headers(app_client))
+    response = app_client.get("/trading/strategies", headers=make_admin_headers(app_client))
     assert response.status_code == 200
 

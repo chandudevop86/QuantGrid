@@ -56,6 +56,13 @@ def app_client(tmp_path, monkeypatch):
     monkeypatch.delenv("QUANTGRID_ENABLE_LIVE_TRADING", raising=False)
     reset_backend_modules()
 
+    from Backend.core.database import Base, engine
+    import Backend.domain.security.models  # noqa: F401
+    import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.governance_models  # noqa: F401
+    import Backend.application.notification_entity  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
     from Backend.application.kill_switch import deactivate_kill_switch
     from Backend.presentation.api.main import app
 
@@ -67,8 +74,7 @@ def app_client(tmp_path, monkeypatch):
     reset_backend_modules()
 
 
-@pytest.fixture()
-def admin_headers(app_client: TestClient) -> dict[str, str]:
+def make_admin_headers(app_client: TestClient) -> dict[str, str]:
     response = app_client.post(
         "/auth/login",
         json={
@@ -81,3 +87,8 @@ def admin_headers(app_client: TestClient) -> dict[str, str]:
         "Authorization": f"Bearer {response.json()['access_token']}"
     }
 
+
+
+@pytest.fixture()
+def admin_headers(app_client: TestClient) -> dict[str, str]:
+    return make_admin_headers(app_client)

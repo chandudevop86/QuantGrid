@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_audit_logs_login_and_user_creation(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     response = app_client.post(
         "/admin/users/create",
         json={"username": "audited", "password": "AuditPass1!", "role": "analyst"},

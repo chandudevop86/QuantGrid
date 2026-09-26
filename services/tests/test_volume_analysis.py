@@ -4,10 +4,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
 
@@ -66,7 +66,7 @@ def test_volume_analysis_detects_bearish_breakdown_confirmation():
 
 
 def test_volume_analysis_api_accepts_mock_ohlcv(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.post(
         "/market/volume-analysis",

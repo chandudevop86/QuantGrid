@@ -13,7 +13,6 @@ from app.validation.data_quality import (
     validate_fundamental_snapshot,
     validate_option_chain_rows,
 )
-from conftest import admin_headers
 
 
 def test_candle_validation_rejects_invalid_ohlc_shape():
@@ -91,10 +90,9 @@ def test_fundamental_validation_marks_missing_data_unavailable():
     assert any("unavailable" in warning for warning in report.warnings)
 
 
-def test_data_quality_dashboard_endpoint_returns_reports(app_client):
-    headers = admin_headers(app_client)
+def test_data_quality_dashboard_endpoint_returns_reports(app_client, admin_headers):
 
-    response = app_client.get("/data-quality/dashboard", headers=headers)
+    response = app_client.get("/data-quality/dashboard", headers=admin_headers)
 
     assert response.status_code == 200, response.text
     payload = response.json()

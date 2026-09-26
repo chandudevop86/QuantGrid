@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from Backend.application.paper_trade_store import DATA_DIR, utc_now
+from Backend.core.timezone import utc_now as utc_datetime
 
 
 DB_FILE = Path(os.getenv("KILL_SWITCH_DB_FILE", DATA_DIR / "risk_state.sqlite3"))
@@ -172,7 +173,7 @@ def _db_init_kill_switch_store() -> None:
     with SessionLocal() as db:
         row = db.get(RiskStateRecord, 1)
         if row is None:
-            db.add(RiskStateRecord(id=1, active=0, updated_at=utc_now()))
+            db.add(RiskStateRecord(id=1, active=0, updated_at=utc_datetime()))
             db.commit()
 
 
@@ -189,7 +190,7 @@ def _db_activate_kill_switch(*, reason: str | None, actor: str | None) -> dict[s
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import RiskStateRecord
 
-    now = utc_now()
+    now = utc_datetime()
     with SessionLocal() as db:
         row = db.get(RiskStateRecord, 1)
         if row is None:
@@ -212,7 +213,7 @@ def _db_deactivate_kill_switch(*, actor: str | None) -> dict[str, Any]:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import RiskStateRecord
 
-    now = utc_now()
+    now = utc_datetime()
     with SessionLocal() as db:
         row = db.get(RiskStateRecord, 1)
         if row is None:

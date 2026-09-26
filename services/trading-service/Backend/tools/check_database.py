@@ -98,6 +98,7 @@ _mask_database_url = mask_database_url
 def initialize_trading_database():
 
     init_database()
+    database.Base.metadata.create_all(bind=database.engine)
 
     init_job_store()
     init_market_data_store()

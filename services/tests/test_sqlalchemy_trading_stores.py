@@ -8,7 +8,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
 
@@ -31,6 +31,13 @@ def configure_sqlalchemy_store(monkeypatch) -> None:
     from Backend.core.database import init_database
 
     init_database()
+    from Backend.core.database import Base, engine
+    import Backend.domain.security.models  # noqa: F401
+    import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.governance_models  # noqa: F401
+    import Backend.application.notification_entity  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
 
 
 def test_test_environment_uses_file_backed_local_stores(monkeypatch):
@@ -192,6 +199,7 @@ def test_sqlalchemy_position_store_migrates_pending_exit_columns(monkeypatch):
     from Backend.application import position_store
 
     with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS positions"))
         connection.execute(
             text(
                 """
@@ -220,6 +228,10 @@ def test_sqlalchemy_position_store_migrates_pending_exit_columns(monkeypatch):
             )
         )
 
+    # The fixture initialized this store before replacing the current
+    # positions table with a legacy schema. Reset the per-engine cache so
+    # initialization reruns the compatibility migration against that schema.
+    position_store._initialized_store_key = None
     position_store.init_position_store()
     columns = {column["name"] for column in inspect(engine).get_columns("positions")}
 
@@ -281,26 +293,54 @@ def test_production_keeps_container_postgres_url(monkeypatch):
 def test_init_database_retries_postgres_service_name_on_localhost(monkeypatch):
     database_url = "postgresql+psycopg://quant:secret@postgres:5432/quantgrid"
     monkeypatch.setenv("QUANTGRID_ENV", "production")
-    monkeypatch.setenv("QUANTGRID_AUTH_SECRET", "test-secret-value-that-is-long-enough-12345")
+    monkeypatch.setenv(
+        "QUANTGRID_AUTH_SECRET",
+        "test-secret-value-that-is-long-enough-12345",
+    )
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("QUANTGRID_MARKET_DATA_PROVIDER", "dhan")
     reset_backend_modules()
     database = importlib.import_module("Backend.core.database")
 
-    calls = []
     rebuilt_urls = []
 
-    def fake_apply_migrations(bind, metadata):
-        calls.append(bind)
-        if len(calls) == 1:
-            raise OperationalError(None, None, Exception("failed to resolve host 'postgres'"))
+    class FakeConnection:
+        def __enter__(self):
+            return self
 
-    from Backend.core import schema_migrations
+        def __exit__(self, exc_type, exc, tb):
+            return False
 
-    monkeypatch.setattr(schema_migrations, "apply_versioned_migrations", fake_apply_migrations)
-    monkeypatch.setattr(database, "_rebuild_engine", rebuilt_urls.append)
+        def execute(self, statement):
+            return None
+
+    class FailingEngine:
+        def connect(self):
+            raise OperationalError(
+                None,
+                None,
+                Exception("failed to resolve host 'postgres'"),
+            )
+
+    class WorkingEngine:
+        def connect(self):
+            return FakeConnection()
+
+    failing_engine = FailingEngine()
+    working_engine = WorkingEngine()
+
+    database.engine = failing_engine
+
+    def fake_rebuild_engine(url):
+        rebuilt_urls.append(url)
+        database.engine = working_engine
+
+    monkeypatch.setattr(database, "_rebuild_engine", fake_rebuild_engine)
+    monkeypatch.setattr(database.Base.metadata, "create_all", lambda bind: None)
 
     database.init_database()
 
-    assert rebuilt_urls == ["postgresql+psycopg://quant:secret@127.0.0.1:5432/quantgrid"]
-    assert len(calls) == 2
+    assert rebuilt_urls == [
+        "postgresql+psycopg://quant:secret@127.0.0.1:5432/quantgrid"
+    ]
+    assert database.engine is working_engine

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime, timezone
 
 import os
 import sqlite3
@@ -329,6 +330,8 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
         "closed_at": payload.get("closed_at"),
     }
     if not _use_sqlite():
+        row["created_at"] = _datetime_or_none(row.get("created_at")) or datetime.now(timezone.utc)
+        row["closed_at"] = _datetime_or_none(row.get("closed_at"))
         return _db_create_trade_journal_entry(row)
     with _connect() as connection:
         cursor = connection.execute(
@@ -463,6 +466,15 @@ def _init_db_store() -> None:
     database.init_database()
 
 
+def _datetime_or_none(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return parsed
+
+
 def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "strategy": str(payload.get("strategy") or payload.get("strategy_name") or "unknown"),
@@ -481,8 +493,8 @@ def _paper_trade_row(payload: dict[str, Any]) -> dict[str, Any]:
         "raw_safe_broker_response": _json_or_none(payload.get("raw_safe_broker_response")),
         "score": float(payload.get("score") or 0.0),
         "regime": payload.get("regime"),
-        "signal_time": payload.get("signal_time"),
-        "created_at": str(payload.get("created_at") or utc_now()),
+        "signal_time": _datetime_or_none(payload.get("signal_time")),
+        "created_at": _datetime_or_none(payload.get("created_at")) or datetime.now(timezone.utc),
     }
 
 

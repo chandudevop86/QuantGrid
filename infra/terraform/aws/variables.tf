@@ -45,7 +45,7 @@ variable "allowed_http_cidrs" {
 }
 
 variable "alb_certificate_arn" {
-  description = "ACM certificate ARN for the public ALB. When set, HTTP redirects to HTTPS."
+  description = "ACM certificate ARN for the public ALB. Required when environment is production."
   type        = string
   default     = ""
 }

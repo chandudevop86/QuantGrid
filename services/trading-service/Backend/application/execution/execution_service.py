@@ -15,7 +15,6 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
-from Backend.application.audit_manager import _audit_order_transition
 from Backend.application.broker_circuit_breaker import (
     broker_circuit_status,
     record_broker_failure,
@@ -23,8 +22,6 @@ from Backend.application.broker_circuit_breaker import (
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.dto import serialize_signal
 from Backend.application.execution.audit_manager import (
-    _audit_execution_result,
-    _audit_order_transition,
     _audit_risk_decision,
 )
 from Backend.application.execution.risk_audit import (

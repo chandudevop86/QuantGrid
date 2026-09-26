@@ -58,7 +58,7 @@ from Backend.application.execution.lifecycle_manager import _create_lifecycle_or
 from Backend.application.execution.execution_validator import market_aligned
 from Backend.application.execution.execution_utils import (
     _tqe_response_fields,
-    _risk_response_fields,_trade_shape_reason
+    _trade_shape_reason
 )
 
 from Backend.application.execution.execution_service import (

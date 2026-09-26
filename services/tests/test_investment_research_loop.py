@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
 
@@ -15,7 +15,7 @@ from app.investing.investment_research_loop import (
     score_mutual_fund,
     score_stock,
 )
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def _good_stock(**updates):
@@ -161,7 +161,7 @@ def test_poor_risk_adjusted_fund_is_avoided():
 
 
 def test_investing_dashboard_endpoint_returns_cards(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/investing/dashboard", headers=headers)
 
@@ -175,7 +175,7 @@ def test_investing_dashboard_endpoint_returns_cards(app_client):
 
 
 def test_multibagger_predictor_endpoint_returns_ranked_items(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/investing/stocks/multibagger-predictor", headers=headers)
 

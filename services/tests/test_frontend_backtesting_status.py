@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_completed_backtest_status_overrides_current_strategy_placeholder():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     source = (root / "apps" / "frontend" / "src" / "pages" / "Backtesting.tsx").read_text(encoding="utf-8")
 
     completed_check = 'if (job.status === "COMPLETED") return "All strategies completed";'
@@ -14,7 +14,7 @@ def test_completed_backtest_status_overrides_current_strategy_placeholder():
 
 
 def test_partial_backtest_rank_score_prioritizes_traded_runs():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     source = (root / "apps" / "frontend" / "src" / "pages" / "Backtesting.tsx").read_text(encoding="utf-8")
 
     assert "function backtestRankScore" in source

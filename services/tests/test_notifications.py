@@ -3,7 +3,7 @@ from __future__ import annotations
 from email.message import EmailMessage
 
 from Backend.application import notifications
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 class _FakeResponse:
@@ -58,6 +58,7 @@ def test_send_alert_noops_without_config(monkeypatch):
 
 
 def test_send_alert_posts_to_telegram_and_slack(monkeypatch):
+    monkeypatch.setattr(notifications, "should_send", lambda _key: True)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/test/example")
@@ -91,6 +92,7 @@ def test_send_alert_rejects_unapproved_webhook_host(monkeypatch):
 
 
 def test_send_alert_sends_email(monkeypatch):
+    monkeypatch.setattr(notifications, "should_send", lambda _key: True)
     _FakeSMTP.sent_messages = []
     monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
     monkeypatch.setenv("SMTP_PORT", "587")
@@ -111,7 +113,7 @@ def test_send_alert_sends_email(monkeypatch):
 
 
 def test_admin_can_view_notification_status_and_send_test(app_client, monkeypatch):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     sent = []
     monkeypatch.setattr(
         "Backend.presentation.api.notifications_api.send_alert",

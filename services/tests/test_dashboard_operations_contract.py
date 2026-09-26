@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_dashboard_operations_returns_decision_contract(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/dashboard/operations", headers=headers)
 
@@ -157,7 +157,7 @@ def test_dashboard_database_failure_does_not_expose_exception_details(app_client
         raise RuntimeError(secret_detail)
 
     monkeypatch.setattr(dashboard_api, "SessionLocal", failed_session)
-    response = app_client.get("/dashboard/operations", headers=admin_headers(app_client))
+    response = app_client.get("/dashboard/operations", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200
     payload = response.json()

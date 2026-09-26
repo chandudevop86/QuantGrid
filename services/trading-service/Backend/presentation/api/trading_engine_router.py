@@ -23,33 +23,24 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from Backend.core.database import get_db
-from Backend.domain.users.models import User
-from Backend.presentation.dependencies.auth import current_user
+from Backend.domain.security.models import User
+from Backend.presentation.api.auth import current_user
 
-from Backend.application.trading_engine.services import (
+from Backend.application.trading_engine_upgrade import (
     trading_engine_dashboard,
     submit_paper_basket,
     scale_position,
 )
 
-from Backend.application.trading_engine.validators import (
-    validate_basket_request,
-    validate_scale_request,
-)
+from Backend.domain.security.audit import write_audit_log
 
-from Backend.application.audit.audit_service import (
-    write_audit_log,
-)
-
-from Backend.presentation.schemas.trading_engine import (
-    TradingEngineDashboardResponse,
+from Backend.application.execution.execution_models import (
     TradingEngineBasketRequest,
     TradingEngineScaleRequest,
 )
 
 
 router = APIRouter(
-    prefix="/api",
     tags=["Trading Engine"],
 )
 
@@ -122,7 +113,6 @@ def _request_metadata(request: Request):
 
 @router.get(
     "/trading-engine/dashboard",
-    response_model=TradingEngineDashboardResponse,
 )
 async def get_trading_engine_dashboard(
     actor: User = Depends(current_user),
@@ -158,55 +148,49 @@ async def submit_trading_engine_basket(
 
     try:
 
-        validate_basket_request(
-            payload
+
+        result = submit_paper_basket(
+            legs=[
+                _model_to_dict(leg)
+                for leg in payload.legs
+            ],
+            execution_mode=execution_mode,
+            reason=payload.reason,
         )
 
 
-        with db.begin():
+        write_audit_log(
+            db,
 
-            result = submit_paper_basket(
-                legs=[
-                    _model_to_dict(leg)
-                    for leg in payload.legs
-                ],
-                execution_mode=execution_mode,
-                reason=payload.reason,
-                idempotency_key=payload.idempotency_key,
-            )
+            action="paper_basket_submitted",
 
+            actor=actor,
 
-            write_audit_log(
-                db,
+            target_type="basket",
 
-                action="paper_basket_submitted",
+            target_id=result["basket_id"],
 
-                actor=actor,
+            request=request,
 
-                target_type="basket",
+            metadata={
+                **_request_metadata(request),
 
-                target_id=result["basket_id"],
+                "status":
+                    result["status"],
 
-                request=request,
+                "created_count":
+                    result["created_count"],
 
-                metadata={
-                    **_request_metadata(request),
+                "error_count":
+                    result["error_count"],
 
-                    "status":
-                        result["status"],
-
-                    "created_count":
-                        result["created_count"],
-
-                    "error_count":
-                        result["error_count"],
-
-                    "execution_mode":
-                        execution_mode,
-                },
-            )
+                "execution_mode":
+                    execution_mode,
+            },
+        )
 
 
+        db.commit()
         return result
 
 
@@ -293,79 +277,74 @@ async def submit_trading_engine_scale(
     try:
 
 
-        validate_scale_request(
-            payload
+
+
+        result = scale_position(
+
+            position_id,
+
+            action=payload.action,
+
+            quantity=payload.quantity,
+
+            price=payload.price,
+
+            reason=payload.reason,
+
+            execution_mode=execution_mode,
+
         )
 
 
-        with db.begin():
+
+        write_audit_log(
+
+            db,
+
+            action="position_scaled",
+
+            actor=actor,
+
+            target_type="position",
+
+            target_id=position_id,
+
+            request=request,
+
+            metadata={
+
+                **_request_metadata(request),
 
 
-            result = scale_position(
-
-                position_id,
-
-                action=payload.action,
-
-                quantity=payload.quantity,
-
-                price=payload.price,
-
-                reason=payload.reason,
-
-                execution_mode=execution_mode,
-
-            )
+                "action":
+                    result["status"],
 
 
-
-            write_audit_log(
-
-                db,
-
-                action="position_scaled",
-
-                actor=actor,
-
-                target_type="position",
-
-                target_id=position_id,
-
-                request=request,
-
-                metadata={
-
-                    **_request_metadata(request),
+                "old_quantity":
+                    result["old_quantity"],
 
 
-                    "action":
-                        result["status"],
+                "new_quantity":
+                    result["new_quantity"],
 
 
-                    "old_quantity":
-                        result["old_quantity"],
+                "price":
+                    result["price"],
 
 
-                    "new_quantity":
-                        result["new_quantity"],
+                "realized_pnl":
+                    result["realized_pnl"],
 
 
-                    "price":
-                        result["price"],
+                "execution_mode":
+                    execution_mode,
+
+            },
+
+        )
 
 
-                    "realized_pnl":
-                        result["realized_pnl"],
-
-
-                    "execution_mode":
-                        execution_mode,
-
-                },
-
-            )
-
-
+        db.commit()
         return result
 
 

@@ -5,6 +5,16 @@ from fastapi.testclient import TestClient
 from conftest import TEST_SECRET, reset_backend_modules
 
 
+def _create_test_schema() -> None:
+    from Backend.core.database import Base, engine
+    import Backend.domain.security.models  # noqa: F401
+    import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.governance_models  # noqa: F401
+    import Backend.application.notification_entity  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+
+
 def test_default_credentials_are_not_seeded_without_explicit_env(tmp_path, monkeypatch):
     monkeypatch.setenv("QUANTGRID_ENV", "local")
     monkeypatch.setenv("QUANTGRID_ALLOW_DEV_SEED_USERS", "true")
@@ -14,6 +24,7 @@ def test_default_credentials_are_not_seeded_without_explicit_env(tmp_path, monke
     reset_backend_modules()
 
     from Backend.presentation.api.main import app
+    _create_test_schema()
 
     with TestClient(app) as client:
         response = client.post("/auth/login", json={"username": "admin", "password": "admin123"})
@@ -30,6 +41,7 @@ def test_bootstrap_user_updates_existing_local_seed_password(tmp_path, monkeypat
     reset_backend_modules()
 
     from Backend.presentation.api.main import app
+    _create_test_schema()
 
     with TestClient(app) as client:
         old_login = client.post("/auth/login", json={"username": "admin", "password": "OldAdminPass1!"})
@@ -40,6 +52,7 @@ def test_bootstrap_user_updates_existing_local_seed_password(tmp_path, monkeypat
     reset_backend_modules()
 
     from Backend.presentation.api.main import app as updated_app
+    _create_test_schema()
 
     with TestClient(updated_app) as client:
         old_password = client.post("/auth/login", json={"username": "admin", "password": "OldAdminPass1!"})

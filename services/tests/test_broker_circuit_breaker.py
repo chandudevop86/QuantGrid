@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_broker_circuit_breaker_activates_after_threshold(tmp_path, monkeypatch):
@@ -42,10 +42,11 @@ def test_broker_circuit_breaker_reset_clears_failures(tmp_path, monkeypatch):
 
 def test_live_guardrail_rejects_active_broker_circuit(monkeypatch):
     from Backend.presentation.api import execution as execution_api
+    from Backend.application.execution import execution_guardrails
 
     monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
     monkeypatch.setattr(
-        execution_api,
+        execution_guardrails,
         "broker_circuit_status",
         lambda: {"active": True, "reason": "Broker failure threshold reached."},
     )
@@ -102,7 +103,7 @@ def test_broker_circuit_breaker_apis_and_admin_reset(app_client, tmp_path, monke
     monkeypatch.setattr(breaker, "send_alert", lambda *_args, **_kwargs: None)
     breaker.record_broker_failure(reason="broker down")
 
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
     status_response = app_client.get("/broker/circuit-breaker/status", headers=headers)
     assert status_response.status_code == 200
     assert status_response.json()["active"] is True

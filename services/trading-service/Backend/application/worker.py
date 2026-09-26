@@ -887,10 +887,26 @@ def _exit_monitor_interval():
 
 
 
+def _exit_monitor_mode():
+
+    mode = str(
+        os.getenv(
+            "QUANTGRID_EXIT_MONITOR_MODE",
+            "paper",
+        )
+    ).strip().lower()
+
+    if mode not in {"paper", "live"}:
+        return "paper"
+
+    return mode
+
+
+
 def _run_periodic_exit_monitor():
 
     payload = {
-        "execution_mode": "paper"
+        "execution_mode": _exit_monitor_mode()
     }
 
     return _run_exit_monitor_job(
@@ -922,6 +938,45 @@ def _narrative_loop_interval():
 
 
 
+def _narrative_symbols():
+
+    configured = os.getenv(
+        "QUANTGRID_FNO_NARRATIVE_SYMBOLS",
+        "NIFTY,BANKNIFTY",
+    )
+
+    symbols = [
+        symbol.strip().upper()
+        for symbol in configured.split(",")
+        if symbol.strip()
+    ]
+
+    return symbols or ["NIFTY", "BANKNIFTY"]
+
+
+
+
+def _investment_loop_enabled():
+
+    return _not_falsey(
+        os.getenv(
+            "QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED"
+        ),
+        default=True,
+    )
+
+
+def _investment_loop_interval():
+
+    return max(
+        300.0,
+        _float_env(
+            "QUANTGRID_INVESTMENT_RESEARCH_CHECK_SECONDS",
+            300,
+        )
+    )
+
+
 def _run_periodic_fno_narratives():
 
     if not is_market_hours_ist():
@@ -932,10 +987,7 @@ def _run_periodic_fno_narratives():
         }
 
 
-    for symbol in [
-        "NIFTY",
-        "BANKNIFTY"
-    ]:
+    for symbol in _narrative_symbols():
 
         run_fno_narrative(
             symbol

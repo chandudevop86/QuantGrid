@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import date, datetime, time
 from typing import Any
 
 from fastapi import Request
@@ -210,6 +211,8 @@ def _event_action_label(action: str, status_value: str) -> str:
 
 
 def _sanitize_metadata(value: Any) -> Any:
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
     forbidden = {
         "password",
         "new_password",

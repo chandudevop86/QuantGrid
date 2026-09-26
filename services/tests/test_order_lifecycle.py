@@ -227,29 +227,30 @@ def test_execution_does_not_create_position_when_broker_not_confirmed(monkeypatc
     from Backend.core.database import SessionLocal, init_database
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
     from Backend.presentation.api import execution as execution_api
+    from Backend.application.execution import execution_pipeline
     from Backend.domain.engine.execution_engine import ExecutionEngine
 
     init_database()
-    monkeypatch.setattr(execution_api, "_market_aligned", lambda signal: True)
+    monkeypatch.setattr(execution_pipeline, "market_aligned", lambda signal: True)
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_order_risk",
         lambda *args, **kwargs: SimpleNamespace(allowed=True, reason="OK", details={}, to_dict=lambda: {"allowed": True, "reason": "OK", "details": {}}),
     )
-    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True))
+    monkeypatch.setattr(execution_pipeline, "validate_live_candle", lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True))
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "decide_signal",
         lambda *args, **kwargs: SimpleNamespace(score=20, regime="test", to_dict=lambda: {"score": 20}),
     )
-    monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda *_args, **_kwargs: SimpleNamespace(allowed=True, reason="OK"))
+    monkeypatch.setattr(execution_pipeline, "evaluate_risk_gate", lambda *_args, **_kwargs: SimpleNamespace(allowed=True, reason="OK"))
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_execution_constraints",
         lambda *_args, **_kwargs: SimpleNamespace(accepted=True, reason="OK", lot_size=1, quantity=1, required_margin=100),
     )
-    monkeypatch.setattr(execution_api, "apply_order_constraints", lambda order, *_args, **_kwargs: order)
-    monkeypatch.setattr(execution_api, "requested_quantity", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(execution_pipeline, "apply_order_constraints", lambda order, *_args, **_kwargs: order)
+    monkeypatch.setattr(execution_pipeline, "requested_quantity", lambda *_args, **_kwargs: 1)
 
     class UnconfirmedBroker:
         async def place_order(self, order):
@@ -304,28 +305,29 @@ def test_execution_creates_position_after_broker_confirmation_and_audits(monkeyp
     from Backend.domain.security.models import AuditLog
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
     from Backend.presentation.api import execution as execution_api
+    from Backend.application.execution import execution_pipeline
 
     init_database()
-    monkeypatch.setattr(execution_api, "_market_aligned", lambda signal: True)
+    monkeypatch.setattr(execution_pipeline, "market_aligned", lambda signal: True)
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_order_risk",
         lambda *args, **kwargs: SimpleNamespace(allowed=True, reason="OK", details={}, to_dict=lambda: {"allowed": True, "reason": "OK", "details": {}}),
     )
-    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True))
+    monkeypatch.setattr(execution_pipeline, "validate_live_candle", lambda *args, **kwargs: SimpleNamespace(valid_for_execution=True))
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "decide_signal",
         lambda *args, **kwargs: SimpleNamespace(score=20, regime="test", to_dict=lambda: {"score": 20}),
     )
-    monkeypatch.setattr(execution_api, "evaluate_risk_gate", lambda *_args, **_kwargs: SimpleNamespace(allowed=True, reason="OK"))
+    monkeypatch.setattr(execution_pipeline, "evaluate_risk_gate", lambda *_args, **_kwargs: SimpleNamespace(allowed=True, reason="OK"))
     monkeypatch.setattr(
-        execution_api,
+        execution_pipeline,
         "validate_execution_constraints",
         lambda *_args, **_kwargs: SimpleNamespace(accepted=True, reason="OK", lot_size=1, quantity=1, required_margin=100),
     )
-    monkeypatch.setattr(execution_api, "apply_order_constraints", lambda order, *_args, **_kwargs: order)
-    monkeypatch.setattr(execution_api, "requested_quantity", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(execution_pipeline, "apply_order_constraints", lambda order, *_args, **_kwargs: order)
+    monkeypatch.setattr(execution_pipeline, "requested_quantity", lambda *_args, **_kwargs: 1)
 
     class ConfirmingBroker:
         async def place_order(self, order):

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
 
@@ -481,9 +481,9 @@ def test_higher_timeframe_filter_blocks_missing_required_series():
 
     assert result["passed"] is False
     assert result["allowed_direction"] == "NONE"
-    assert result["timeframes"]["15m"] == "UNAVAILABLE"
-    assert result["timeframes"]["1h"] == "UNAVAILABLE"
-    assert result["missing_required_timeframes"] == ["15m", "1h"]
+    assert result["timeframes"]["TimeFrame.M15"] == "UNAVAILABLE"
+    assert result["timeframes"]["TimeFrame.H1"] == "UNAVAILABLE"
+    assert result["missing_required_timeframes"] == ["TimeFrame.M15", "TimeFrame.H1"]
     assert "unavailable" in result["reason"].lower()
 
 

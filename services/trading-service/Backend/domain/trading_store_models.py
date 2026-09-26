@@ -301,6 +301,28 @@ class PaperTradeRecord(Base):
         nullable=False,
         index=True,
     )
+class OrderRecord(Base):
+    __tablename__ = "orders"
+
+    local_order_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    order_key: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    broker_order_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(10), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trailing_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trailing_stop_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    execution_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="paper")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    broker_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    updated_at: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+
+
 class PositionRecord(Base):
     __tablename__ = "positions"
 
@@ -405,7 +427,7 @@ class PositionRecord(Base):
         Float,
         nullable=True,
     )
-    
+
 
     pending_exit_correlation_id: Mapped[str | None] = mapped_column(
         String(120),
@@ -415,7 +437,7 @@ class PositionRecord(Base):
     pending_exit_broker_order_id: Mapped[str | None] = mapped_column(
         String(120),
         nullable=True,
-    )    
+    )
 class InvestmentResearchRecord(Base):
     __tablename__ = "investment_research_scores"
 
@@ -468,7 +490,7 @@ class InvestmentResearchRecord(Base):
     payload_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-    )  
+    )
 class RiskStateRecord(Base):
     __tablename__ = "risk_state"
 
@@ -512,4 +534,4 @@ class RiskStateRecord(Base):
         DateTime(timezone=True),
         nullable=False,
         index=True,
-    )      
+    )

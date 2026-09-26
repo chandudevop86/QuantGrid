@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_default_navigation_uses_unambiguous_product_labels():
@@ -30,7 +30,7 @@ def test_default_navigation_remains_focused_and_advanced_routes_remain_available
     advanced_block = sidebar.split("const advancedItems: NavItem[] = [", 1)[1].split("];", 1)[0]
     admin_block = sidebar.split("const adminItems: NavItem[] = [", 1)[1].split("];", 1)[0]
 
-    assert default_block.count("{ to:") == 8
+    assert default_block.count("{ to:") == 9
     assert 'to: "/candles"' in advanced_block
     assert 'to: "/signals"' in advanced_block
     assert 'to: "/security"' in advanced_block

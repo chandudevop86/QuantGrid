@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from services.tests.conftest import admin_headers
 
 
 
 
-def test_quant_modules_dashboard_exposes_four_modules(app_client):
-    headers = admin_headers
+def test_quant_modules_dashboard_exposes_four_modules(app_client, admin_headers):
 
-    response = app_client.get("/modules/dashboard", headers=headers)
+    response = app_client.get("/modules/dashboard", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()
@@ -22,8 +20,7 @@ def test_quant_modules_dashboard_exposes_four_modules(app_client):
     assert "win_rate" in payload["trade_journal"]
 
 
-def test_backtesting_module_accepts_payload(app_client):
-    headers = admin_headers
+def test_backtesting_module_accepts_payload(app_client, admin_headers):
     candles = [
         {"timestamp": "2026-05-22T09:15:00+05:30", "open": 100, "high": 104, "low": 99, "close": 102, "volume": 1000},
         {"timestamp": "2026-05-22T09:20:00+05:30", "open": 102, "high": 106, "low": 101, "close": 105, "volume": 1000},
@@ -33,7 +30,7 @@ def test_backtesting_module_accepts_payload(app_client):
     response = app_client.post(
         "/modules/backtesting",
         json={"symbol": "NIFTY", "strategy_name": "amd", "candles": candles, "min_score": 0},
-        headers=headers,
+        headers=admin_headers,
     )
 
     assert response.status_code == 200
@@ -44,8 +41,7 @@ def test_backtesting_module_accepts_payload(app_client):
     assert {"cagr", "profit_factor", "average_profit", "average_loss", "win_rate_pct"} <= set(payload["metrics"])
 
 
-def test_backtesting_comparison_ranks_strategy_runs(app_client):
-    headers = admin_headers
+def test_backtesting_comparison_ranks_strategy_runs(app_client, admin_headers):
     candles = [
         {"timestamp": "2026-05-22T09:15:00+05:30", "open": 100, "high": 104, "low": 99, "close": 102, "volume": 1000},
         {"timestamp": "2026-05-22T09:20:00+05:30", "open": 102, "high": 108, "low": 101, "close": 107, "volume": 1100},
@@ -57,7 +53,7 @@ def test_backtesting_comparison_ranks_strategy_runs(app_client):
     response = app_client.post(
         "/modules/backtesting/comparison",
         json={"symbol": "NIFTY", "strategies": ["amd", "breakout"], "candles": candles, "min_score": 0},
-        headers=headers,
+        headers=admin_headers,
     )
 
     assert response.status_code == 200
@@ -69,10 +65,9 @@ def test_backtesting_comparison_ranks_strategy_runs(app_client):
     assert "equity_curve" in payload["runs"][0]
 
 
-def test_historical_option_chain_module_reports_unavailable_without_synthetic_snapshots(app_client):
-    headers = admin_headers
+def test_historical_option_chain_module_reports_unavailable_without_synthetic_snapshots(app_client, admin_headers):
 
-    response = app_client.get("/modules/option-chain/NIFTY/historical", headers=headers)
+    response = app_client.get("/modules/option-chain/NIFTY/historical", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()
@@ -82,7 +77,7 @@ def test_historical_option_chain_module_reports_unavailable_without_synthetic_sn
     assert payload["snapshots"] == []
 
 
-def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatch):
+def test_live_nse_option_chain_returns_real_chain_payload(app_client, admin_headers, monkeypatch):
     import Backend.presentation.api.modules_api as modules_api
 
     monkeypatch.setattr(
@@ -101,9 +96,8 @@ def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatc
             "rows": [{"strike": 22500, "ce": {"oi": 1000}, "pe": {"oi": 1120}}],
         },
     )
-    headers = admin_headers
 
-    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
+    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()
@@ -113,7 +107,7 @@ def test_live_nse_option_chain_returns_real_chain_payload(app_client, monkeypatc
     assert payload["rows"][0]["ce"]["oi"] == 1000
 
 
-def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, monkeypatch):
+def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, admin_headers, monkeypatch):
     import Backend.presentation.api.modules_api as modules_api
 
     monkeypatch.setattr(
@@ -121,9 +115,8 @@ def test_live_nse_option_chain_falls_back_when_nse_is_unavailable(app_client, mo
         "live_nse_option_chain",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("NSE blocked request")),
     )
-    headers = admin_headers
 
-    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=headers)
+    response = app_client.get("/modules/option-chain/NIFTY/live-nse", headers=admin_headers)
 
     assert response.status_code == 200
     payload = response.json()

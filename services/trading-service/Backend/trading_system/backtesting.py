@@ -140,6 +140,7 @@ class BacktestEngine:
         closed: list[Trade] = []
         rejected = 0
         rejection_reasons: dict[str, int] = {}
+        seen_signal_keys: set[tuple[Any, ...]] = set()
         curve: list[dict[str, Any]] = [{"index": 0, "equity": round(capital_now, 8)}]
 
         for i, row in frame.iterrows():
@@ -159,6 +160,8 @@ class BacktestEngine:
                 candidates = signal_map.get(pd.Timestamp(timestamp), [])
                 if candidates:
                     signal = candidates.pop(0)
+                elif signals is not None:
+                    signal = None
                 else:
                     signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
 
@@ -168,6 +171,25 @@ class BacktestEngine:
                     signal.metadata.setdefault("risk_per_trade_pct", risk_pct)
                     signal.metadata.setdefault("rr_ratio", rr_ratio)
                     score = float(signal.metadata.get("total_score", signal.metadata.get("score", 0.0)))
+
+                    signal_key = (
+                        str(signal.symbol).upper(),
+                        str(signal.side).upper(),
+                        pd.Timestamp(signal.signal_time),
+                        float(signal.entry_price),
+                        float(signal.stop_loss),
+                        float(signal.target_price),
+                    )
+
+                    if signal_key in seen_signal_keys:
+                        rejected += 1
+                        rejection_reasons["duplicate_signal"] = rejection_reasons.get("duplicate_signal", 0) + 1
+                        if not candidates:
+                            break
+                        signal = candidates.pop(0)
+                        continue
+
+                    seen_signal_keys.add(signal_key)
 
                     if score < min_score:
                         rejected += 1
@@ -263,7 +285,12 @@ class BacktestEngine:
     def _prepare_signal_map(signals: list[StrategySignal] | None) -> dict[pd.Timestamp, list[StrategySignal]]:
         result: dict[pd.Timestamp, list[StrategySignal]] = {}
         for signal in signals or []:
-            result.setdefault(pd.Timestamp(signal.signal_time), []).append(signal)
+            timestamp = pd.Timestamp(signal.signal_time)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.tz_localize("UTC")
+            else:
+                timestamp = timestamp.tz_convert("UTC")
+            result.setdefault(timestamp, []).append(signal)
         return result
 
     def _build_trade(self, signal: StrategySignal, timestamp: datetime, raw_entry: float, entry_price: float, quantity: int, strategy_name: str) -> Trade:

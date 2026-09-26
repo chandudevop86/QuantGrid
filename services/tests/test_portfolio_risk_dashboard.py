@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import Backend.application.portfolio_risk as portfolio_risk
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_portfolio_risk_dashboard_computes_period_pnl_and_sizing(monkeypatch):
@@ -65,7 +65,7 @@ def test_portfolio_risk_dashboard_computes_period_pnl_and_sizing(monkeypatch):
 
 
 def test_portfolio_risk_dashboard_api_contract(app_client):
-    headers = admin_headers(app_client)
+    headers = make_admin_headers(app_client)
 
     response = app_client.get("/risk/dashboard?symbol=NIFTY&entry_price=100&stop_loss=95", headers=headers)
 

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_app_compose_includes_full_local_stack_with_healthchecks():
@@ -27,7 +27,8 @@ def test_app_compose_includes_full_local_stack_with_healthchecks():
     assert "http://127.0.0.1:8000/health" in compose
     assert '"127.0.0.1:5432:5432"' in compose
     assert '"127.0.0.1:6379:6379"' in compose
-    assert '"127.0.0.1:5173:80"' in compose
+    assert '"127.0.0.1:5173:8080"' in compose
+    assert "http://127.0.0.1:8080/" in compose
 
 
 def test_frontend_container_uses_compiled_nginx_build():
@@ -37,17 +38,17 @@ def test_frontend_container_uses_compiled_nginx_build():
     assert "ARG VITE_API_BASE_URL=/api" in dockerfile
     assert "ARG VITE_WS_URL=/ws" in dockerfile
     assert "RUN npm run build" in dockerfile
-    assert "FROM nginx:" in dockerfile
+    assert "FROM nginxinc/nginx-unprivileged:1.27-alpine" in dockerfile
+    assert "USER 101" in dockerfile
+    assert "EXPOSE 8080" in dockerfile
     assert 'CMD ["nginx", "-g", "daemon off;"]' in dockerfile
     assert "npm\", \"run\", \"dev" not in dockerfile
 
 
 def test_app_stack_documents_safe_env_defaults():
-    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    env_example = (ROOT / "services" / "trading-service" / ".env.example").read_text(encoding="utf-8")
 
     assert "QUANTGRID_ENV=local" in env_example
-    assert "QUANTGRID_AUTH_SECRET=local-dev-auth-secret-at-least-32-characters" in env_example
-    assert "DATABASE_URL=postgresql+psycopg://quant:local-quantgrid-postgres@postgres:5432/quantgrid" in env_example
-    assert "REDIS_URL=redis://redis:6379/0" in env_example
-    assert "VITE_API_URL=/api" in env_example
-    assert "VITE_WS_URL=/ws" in env_example
+    assert "QUANTGRID_AUTH_SECRET=replace-with-a-stable-secret-at-least-32-characters" in env_example
+    assert "DATABASE_URL=postgresql+psycopg://..." in env_example
+    assert "REDIS_URL=redis://127.0.0.1:6379" in env_example

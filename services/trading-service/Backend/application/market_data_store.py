@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 import sqlite3
@@ -18,9 +19,12 @@ def _use_sqlite() -> bool:
     return use_legacy_sqlite_store()
 
 
-def _connect():
+def _connect() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(...)
+    connection = sqlite3.connect(DB_FILE, timeout=30)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout = 30000")
+    return connection
 
 
 def _init_db_store() -> None:
@@ -349,7 +353,11 @@ def _db_store_candles(
             record = MarketCandleRecord(
                 symbol=symbol.upper(),
                 interval=interval,
-                timestamp=str(candle["timestamp"]),
+                timestamp=(
+                    candle["timestamp"]
+                    if isinstance(candle["timestamp"], datetime)
+                    else datetime.fromisoformat(str(candle["timestamp"]).replace("Z", "+00:00"))
+                ),
                 market_symbol=market_symbol,
                 open=float(candle["open"]),
                 high=float(candle["high"]),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_all_frontend_nginx_configs_define_restrictive_csp():
@@ -64,7 +64,7 @@ def test_production_nginx_rejects_unknown_hosts_and_avoids_host_header_redirects
         assert "server_name _;" in content
         assert "return 444;" in content
         assert "https://$host" not in content
-        assert "return 301 https://chandudevopai.shop$request_uri;" in content
+        assert "return 301 https://quantgrid.info$request_uri;" in content
     assert "listen 443 ssl default_server;" in https
     assert "ssl_reject_handshake on;" in https
 

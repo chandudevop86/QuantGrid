@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from Backend.application.institutional_dashboard import build_institutional_dashboard
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def _option_chain_payload() -> dict:
@@ -85,7 +85,7 @@ def test_institutional_dashboard_api_contract(app_client, monkeypatch):
         "warnings": [],
     })
 
-    response = app_client.get("/institutional/dashboard?symbol=NIFTY", headers=admin_headers(app_client))
+    response = app_client.get("/institutional/dashboard?symbol=NIFTY", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200, response.text
     assert response.json()["module"] == "institutional_dashboard"

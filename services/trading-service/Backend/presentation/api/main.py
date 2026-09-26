@@ -359,6 +359,9 @@ def create_app():
     from Backend.presentation.api.execution import router as execution_router
     app.include_router(execution_router, prefix="/execution")
 
+    from Backend.presentation.api.trading_engine_router import router as trading_engine_router
+    app.include_router(trading_engine_router, prefix="/execution")
+
     from Backend.presentation.api.market_api import router as market_router
     app.include_router(market_router, prefix="/market")
 

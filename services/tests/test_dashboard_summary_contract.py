@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from conftest import admin_headers
+from conftest import make_admin_headers
 
 
 def test_dashboard_summary_exposes_only_canonical_five_section_contract(app_client):
-    response = app_client.get("/dashboard/summary", headers=admin_headers(app_client))
+    response = app_client.get("/dashboard/summary", headers=make_admin_headers(app_client))
 
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -36,7 +36,7 @@ def test_dashboard_summary_exposes_only_canonical_five_section_contract(app_clie
 def test_product_dashboard_summary_uses_same_contract(app_client):
     response = app_client.get(
         "/product/dashboard-summary",
-        headers=admin_headers(app_client),
+        headers=make_admin_headers(app_client),
     )
 
     assert response.status_code == 200, response.text
