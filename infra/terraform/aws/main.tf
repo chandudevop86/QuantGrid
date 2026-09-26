@@ -29,7 +29,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   availability_zone       = local.azs[count.index]
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false
 
   tags = {
     Name = "${local.name_prefix}-public-${count.index + 1}"
@@ -227,10 +227,11 @@ resource "aws_security_group" "redis" {
 }
 
 resource "aws_lb" "app" {
-  name               = "${local.name_prefix}-alb"
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = aws_subnet.public[*].id
+  name                       = "${local.name_prefix}-alb"
+  load_balancer_type         = "application"
+  security_groups            = [aws_security_group.alb.id]
+  subnets                    = aws_subnet.public[*].id
+  drop_invalid_header_fields = true
 }
 
 resource "aws_lb_target_group" "app" {
@@ -342,6 +343,11 @@ resource "aws_launch_template" "app" {
     name = aws_iam_instance_profile.app.name
   }
 
+  metadata_options {
+    http_endpoint = "enabled"
+    http_tokens   = "required"
+  }
+
   network_interfaces {
     associate_public_ip_address = false
     security_groups             = [aws_security_group.app.id]
@@ -385,6 +391,7 @@ resource "aws_db_instance" "postgres" {
   engine_version          = "15"
   instance_class          = var.db_instance_class
   allocated_storage       = var.db_allocated_storage_gb
+  storage_encrypted       = true
   db_name                 = var.db_name
   username                = var.db_username
   password                = var.db_password
@@ -413,5 +420,7 @@ resource "aws_elasticache_replication_group" "redis" {
   subnet_group_name          = aws_elasticache_subnet_group.main.name
   security_group_ids         = [aws_security_group.redis.id]
   port                       = 6379
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
   automatic_failover_enabled = var.environment == "production"
 }
