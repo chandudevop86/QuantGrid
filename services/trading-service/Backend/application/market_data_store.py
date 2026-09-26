@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 import sqlite3
@@ -352,7 +353,11 @@ def _db_store_candles(
             record = MarketCandleRecord(
                 symbol=symbol.upper(),
                 interval=interval,
-                timestamp=str(candle["timestamp"]),
+                timestamp=(
+                    candle["timestamp"]
+                    if isinstance(candle["timestamp"], datetime)
+                    else datetime.fromisoformat(str(candle["timestamp"]).replace("Z", "+00:00"))
+                ),
                 market_symbol=market_symbol,
                 open=float(candle["open"]),
                 high=float(candle["high"]),

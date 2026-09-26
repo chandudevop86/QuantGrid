@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone as UTC
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -59,5 +59,5 @@ class MarketRegime:
     warnings: list[str] = field(default_factory=list)
 
     generated_at: datetime = field(
-    default_factory=lambda: datetime.now(UTC))
+    default_factory=lambda: datetime.now(timezone.utc))
     diagnostics: dict[str, Any] = field(default_factory=dict)

@@ -71,7 +71,9 @@ class TradingCore:
             validated, rejected, stale = split_signals(
                 raw_signals,
                 candles_1m=candles_1m,
-                candles_15m=candles_15m,
+                candles_by_timeframe={
+                    "15m": candles_15m or [],
+                },
             )
 
             accepted = []

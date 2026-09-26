@@ -58,6 +58,7 @@ def test_send_alert_noops_without_config(monkeypatch):
 
 
 def test_send_alert_posts_to_telegram_and_slack(monkeypatch):
+    monkeypatch.setattr(notifications, "should_send", lambda _key: True)
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.com/services/test/example")
@@ -91,6 +92,7 @@ def test_send_alert_rejects_unapproved_webhook_host(monkeypatch):
 
 
 def test_send_alert_sends_email(monkeypatch):
+    monkeypatch.setattr(notifications, "should_send", lambda _key: True)
     _FakeSMTP.sent_messages = []
     monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
     monkeypatch.setenv("SMTP_PORT", "587")

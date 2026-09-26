@@ -1,6 +1,22 @@
 from __future__ import annotations
 
+import pytest
+
 from conftest import make_admin_headers
+
+
+@pytest.fixture(autouse=True)
+def _inactive_trading_engine_kill_switch(monkeypatch):
+    import Backend.application.trading_engine_upgrade as trading_engine_upgrade
+
+    monkeypatch.setattr(
+        trading_engine_upgrade,
+        "kill_switch_status",
+        lambda: {
+            "active": False,
+            "reason": None,
+        },
+    )
 
 
 def _basket_payload(**overrides):

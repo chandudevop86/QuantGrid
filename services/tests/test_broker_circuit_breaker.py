@@ -44,7 +44,7 @@ def test_live_guardrail_rejects_active_broker_circuit(monkeypatch):
     from Backend.presentation.api import execution as execution_api
     from Backend.application.execution import execution_guardrails
 
-    monkeypatch.setattr(execution_guardrails, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
     monkeypatch.setattr(
         execution_guardrails,
         "broker_circuit_status",

@@ -210,12 +210,16 @@ class TradeQualificationEngine:
         lh_ll = highs.iloc[-1] < highs.iloc[0] and lows.iloc[-1] < lows.iloc[0]
         structure_range = float(highs.max() - lows.min())
         atr = float(recent["atr_14"].iloc[-1] or 0.0)
-        if structure_range > 0 and atr / structure_range < 0.08:
-            return "RANGE"
+
+        # Price structure is the primary market-context signal.
+        # A smooth directional move may have low ATR relative to its
+        # total range and must not therefore be classified as RANGE.
         if hh_hl:
             return "UPTREND"
         if lh_ll:
             return "DOWNTREND"
+        if structure_range > 0 and atr / structure_range < 0.08:
+            return "RANGE"
         return "RANGE"
 
     @staticmethod

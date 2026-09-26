@@ -26,7 +26,12 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")
     env.setdefault("PYTHONUNBUFFERED", "1")
-    python_paths = [str(ROOT / "services" / "trading-service"), str(ROOT / "services" / "tests")]
+    env["COVERAGE_FILE"] = str(ROOT / ".coverage")
+    python_paths = [
+        str(ROOT / "services" / "trading-service"),
+        str(ROOT / "services" / "tests"),
+        str(ROOT),
+    ]
     existing_pythonpath = env.get("PYTHONPATH")
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
@@ -98,10 +103,10 @@ def main() -> None:
             "-q",
             f"--timeout={args.test_timeout}",
             "--timeout-method=thread",
-            *[str(path.relative_to(ROOT)) for path in group],
+            *[path.relative_to(ROOT).as_posix() for path in group],
         ]
         if args.coverage:
-            command.extend(["--cov=services/trading-service/Backend", "--cov-append", "--cov-report="])
+            command.extend(["--cov=Backend", "--cov-append", "--cov-report="])
         _run(command, timeout=args.group_timeout, verbose=args.verbose)
         print(f"Pytest group {index} passed.", flush=True)
 

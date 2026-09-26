@@ -139,14 +139,19 @@ def _post_json(url: str, payload: dict) -> dict:
 
             body = response.read().decode("utf-8")
 
-            result = json.loads(body)
+            response_status = getattr(response, "status", 200)
 
-            if response.status >= 400:
+            if response_status >= 400:
                 raise RuntimeError(
-                    f"HTTP {response.status}: {body}"
+                    f"HTTP {response_status}: {body}"
                 )
 
-            if result.get("ok") is False:
+            try:
+                result = json.loads(body)
+            except json.JSONDecodeError:
+                return {"ok": True, "body": body}
+
+            if isinstance(result, dict) and result.get("ok") is False:
                 raise RuntimeError(
                     result.get("description")
                 )
