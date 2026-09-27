@@ -70,6 +70,21 @@ def _stale_candle_result() -> SimpleNamespace:
     return SimpleNamespace(valid=False, valid_for_analysis=False, valid_for_execution=False, market_status="DELAYED FEED", model_dump=lambda: {})
 
 
+def _live_settings(**overrides: Any) -> SimpleNamespace:
+    values = {
+        "live_money_approved": True,
+        "broker_live_enabled": True,
+        "risk_engine_enabled": True,
+        "broker_configured": True,
+        "broker_provider": "mock",
+        "audit_logging_enabled": True,
+        "market_data_provider": "broker",
+        "allow_yahoo_for_live": False,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
 @contextmanager
 def _app_client(monkeypatch):
     monkeypatch.setenv("QUANTGRID_ENV", "test")
@@ -308,15 +323,29 @@ def test_live_guardrail_rejects_live_order_on_http():
 
     request = SimpleNamespace(headers={}, url=SimpleNamespace(scheme="http"))
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(
-        broker_live_enabled=True,
-        risk_engine_enabled=True,
-        broker_configured=True,
-        broker_provider="mock",
-        audit_logging_enabled=True,
-    )
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
     assert _live_guardrail_failure(request=request, actor=actor, settings=settings, candles_1m=_fresh_candle(), risk_decision=risk) == "Live trading requires HTTPS."
+
+
+def test_live_guardrail_rejects_without_real_money_approval(monkeypatch):
+    from Backend.presentation.api import execution as execution_api
+
+    monkeypatch.setattr(execution_api, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+    request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
+    actor = SimpleNamespace(role="trader")
+    risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
+
+    reason = execution_api._live_guardrail_failure(
+        request=request,
+        actor=actor,
+        settings=_live_settings(live_money_approved=False),
+        candles_1m=_fresh_candle(),
+        risk_decision=risk,
+    )
+
+    assert reason == "Live trading requires separate real-money approval (QUANTGRID_LIVE_MONEY_APPROVED=true)."
 
 
 @pytest.mark.parametrize(
@@ -339,17 +368,10 @@ def test_live_guardrail_rejects_broker_disabled_or_credentials_missing(settings,
         state=SimpleNamespace(),
     )
     actor = SimpleNamespace(role="trader")
-    base = {
-        "broker_live_enabled": True,
-        "risk_engine_enabled": True,
-        "broker_configured": True,
-        "broker_provider": "mock",
-        "audit_logging_enabled": True,
-    }
-    base.update(settings)
+    live_settings = _live_settings(**settings)
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
     try:
-        assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=SimpleNamespace(**base), candles_1m=_fresh_candle(), risk_decision=risk) == expected
+        assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=live_settings, candles_1m=_fresh_candle(), risk_decision=risk) == expected
     finally:
         monkeypatch.undo()
 
@@ -367,7 +389,7 @@ def test_live_guardrail_rejects_market_data_stale():
         state=SimpleNamespace(),
     )
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
     stale = [{**_fresh_candle()[0], "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()}]
     try:
@@ -385,7 +407,7 @@ def test_live_guardrail_rejects_viewer_role():
 
     request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
     actor = SimpleNamespace(role="viewer")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
     try:
         assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=settings, candles_1m=_fresh_candle(), risk_decision=risk) == "Live trading requires trader or admin role."
@@ -445,7 +467,7 @@ def test_live_guardrail_allows_when_all_checks_pass(monkeypatch):
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
     request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
     assert execution_api._live_guardrail_failure(request=request, actor=actor, settings=settings, candles_1m=_fresh_candle(), risk_decision=risk) is None
 
@@ -459,7 +481,7 @@ def test_live_guardrail_rejects_app_managed_stops_by_default(monkeypatch):
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
     request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
 
     reason = execution_api._live_guardrail_failure(
@@ -486,7 +508,7 @@ def test_live_guardrail_allows_app_managed_stops_when_explicitly_enabled(monkeyp
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
     request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
 
     assert execution_api._live_guardrail_failure(
@@ -519,7 +541,7 @@ def test_live_guardrail_rejects_app_managed_stops_without_live_monitor(monkeypat
     monkeypatch.setattr(execution_api, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
     request = SimpleNamespace(headers={"x-forwarded-proto": "https"}, url=SimpleNamespace(scheme="https"))
     actor = SimpleNamespace(role="trader")
-    settings = SimpleNamespace(broker_live_enabled=True, risk_engine_enabled=True, broker_configured=True, broker_provider="mock", audit_logging_enabled=True)
+    settings = _live_settings()
     risk = SimpleNamespace(allowed=True, reason="OK", details={"daily_pnl": 0, "max_daily_loss": 1000})
 
     reason = execution_api._live_guardrail_failure(
