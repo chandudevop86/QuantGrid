@@ -35,3 +35,9 @@ def test_system_health_widget_distinguishes_websocket_idle_from_offline():
     assert 'websocketAvailable' in widget
     assert '? "Idle"' in widget
     assert 'Endpoint available; no active clients' in widget
+
+
+def test_operations_page_labels_redis_fallback_explicitly():
+    operations = (ROOT / "apps/frontend/src/pages/Operations.tsx").read_text(encoding="utf-8")
+
+    assert 'health?.redis?.fallback_active ? "Fallback" : "Disconnected"' in operations
