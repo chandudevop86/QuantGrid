@@ -87,8 +87,16 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
   const marketOpen = market?.session_state === "open";
   const staleMarketData = marketOpen && typeof latestCandleAge === "number" && latestCandleAge > 600;
   const websocketOnline = websocketConnected === true || health?.websocket?.active === true;
-  const realtimeStatus = websocketOnline ? "Online" : websocketStatus === "polling" ? "Polling fallback" : "Offline";
-  const redisConfigured = health?.redis?.message !== "REDIS_URL is not configured.";
+  const websocketAvailable = health?.websocket?.available !== false;
+  const realtimeStatus = websocketOnline
+    ? "Online"
+    : websocketStatus === "polling"
+      ? "Polling fallback"
+      : websocketAvailable
+        ? "Idle"
+        : "Offline";
+  const redisFallbackActive = health?.redis?.fallback_active === true || health?.redis?.mode === "fallback";
+  const redisConfigured = health?.redis?.url_configured === true;
   const apiHealthy = apiReachable && healthOk(apiHealth);
   const apiDegraded = apiReachable && !apiHealthy && healthDegraded(apiHealth);
 
@@ -103,8 +111,14 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
       {
         label: "WebSocket",
         status: realtimeStatus,
-        tone: websocketOnline ? "green" : "yellow",
-        helper: websocketOnline ? `${health?.websocket?.connections ?? 0} client(s)` : realtimeStatus === "Polling fallback" ? "Polling after socket failure" : "Reconnect backoff active",
+        tone: websocketOnline ? "green" : realtimeStatus === "Offline" ? "red" : "yellow",
+        helper: websocketOnline
+          ? `${health?.websocket?.connections ?? 0} client(s)`
+          : realtimeStatus === "Polling fallback"
+            ? "Polling after socket failure"
+            : realtimeStatus === "Idle"
+              ? health?.websocket?.message ?? "Endpoint available; no active clients"
+              : "Reconnect backoff active",
       },
       {
         label: "Market Data",
@@ -120,12 +134,12 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
       },
       {
         label: "Redis",
-        status: health?.redis?.connected ? "Healthy" : redisConfigured ? "Offline" : "Not configured",
-        tone: health?.redis?.connected ? "green" : redisConfigured ? "red" : "yellow",
+        status: health?.redis?.connected ? "Healthy" : redisFallbackActive ? "Fallback" : redisConfigured ? "Offline" : "Not configured",
+        tone: health?.redis?.connected ? "green" : redisFallbackActive ? "yellow" : redisConfigured ? "red" : "yellow",
         helper: health?.redis?.message,
       },
     ] as HealthBadgeProps[],
-    [apiDegraded, apiHealthy, health, latestCandleAge, localOperations, realtimeStatus, redisConfigured, staleMarketData, websocketOnline],
+    [apiDegraded, apiHealthy, health, latestCandleAge, localOperations, realtimeStatus, redisConfigured, redisFallbackActive, staleMarketData, websocketOnline],
   );
 
   const attention = badges.some((badge) => badge.tone === "red") ? "Needs attention" : badges.some((badge) => badge.tone === "yellow") ? "Review" : "Healthy";
@@ -135,7 +149,13 @@ export default function SystemHealthWidget({ operations, websocketConnected, web
       <div className="system-health-header">
         <div>
           <h2>System Health</h2>
-          <p>{websocketOnline ? "Realtime channel connected." : realtimeStatus === "Polling fallback" ? "WebSocket is offline. Fallback polling is active." : "WebSocket reconnect backoff is active."}</p>
+          <p>{websocketOnline
+            ? "Realtime channel connected."
+            : realtimeStatus === "Polling fallback"
+              ? "WebSocket client is disconnected; fallback polling is active."
+              : realtimeStatus === "Idle"
+                ? "WebSocket endpoint is available with no active realtime client."
+                : "WebSocket reconnect backoff is active."}</p>
         </div>
         <strong className={`system-health-summary system-health-summary-${attention === "Healthy" ? "green" : attention === "Review" ? "yellow" : "red"}`}>
           {attention}

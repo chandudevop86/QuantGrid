@@ -177,9 +177,14 @@ def _product_summary(payload: dict) -> dict:
 
 def _redis_status() -> dict:
     status = redis_service.status()
+    connected = bool(status["healthy"])
+    fallback_active = status.get("mode") == "fallback"
     return {
-        "connected": bool(status["healthy"]),
-        "healthy": bool(status["healthy"]),
+        "connected": connected,
+        "healthy": connected,
+        "available": connected or fallback_active,
+        "degraded": fallback_active,
+        "fallback_active": fallback_active,
         "mode": status["mode"],
         "message": status["message"],
         "url_configured": status["url_configured"],
@@ -403,8 +408,15 @@ def operations(
             "redis": redis,
             "db": db_status,
             "websocket": {
+                "available": True,
                 "active": len(manager.active_connections) > 0,
+                "state": "active" if manager.active_connections else "idle",
                 "connections": len(manager.active_connections),
+                "message": (
+                    "Realtime clients connected."
+                    if manager.active_connections
+                    else "WebSocket endpoint available; no active clients."
+                ),
             },
             "broker": broker_health,
             "background_worker": _worker_status(),

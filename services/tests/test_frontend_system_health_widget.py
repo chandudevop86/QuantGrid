@@ -19,3 +19,25 @@ def test_strategies_page_marks_websocket_fallback_as_polling():
     strategies = (ROOT / "apps/frontend/src/pages/Strategies.tsx").read_text(encoding="utf-8")
 
     assert 'websocketStatus={socketConnected ? "online" : "polling"}' in strategies
+
+
+def test_system_health_widget_treats_redis_fallback_as_degraded_not_offline():
+    widget = (ROOT / "apps/frontend/src/components/SystemHealthWidget.tsx").read_text(encoding="utf-8")
+
+    assert 'redisFallbackActive' in widget
+    assert 'status: health?.redis?.connected ? "Healthy" : redisFallbackActive ? "Fallback"' in widget
+    assert 'tone: health?.redis?.connected ? "green" : redisFallbackActive ? "yellow"' in widget
+
+
+def test_system_health_widget_distinguishes_websocket_idle_from_offline():
+    widget = (ROOT / "apps/frontend/src/components/SystemHealthWidget.tsx").read_text(encoding="utf-8")
+
+    assert 'websocketAvailable' in widget
+    assert '? "Idle"' in widget
+    assert 'Endpoint available; no active clients' in widget
+
+
+def test_operations_page_labels_redis_fallback_explicitly():
+    operations = (ROOT / "apps/frontend/src/pages/Operations.tsx").read_text(encoding="utf-8")
+
+    assert 'health?.redis?.fallback_active ? "Fallback" : "Disconnected"' in operations
