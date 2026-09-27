@@ -249,3 +249,34 @@ def test_signals_alias_reuses_latest_handler(app_client):
     assert response.status_code == 200
     payload = response.json()
     assert {"active_signals", "rejected_signals", "stale_signals", "symbol"} <= set(payload)
+
+
+
+def test_real_money_readiness_api_reports_paper_progress(app_client, monkeypatch):
+    import Backend.presentation.api.professional_api as professional_api
+
+    monkeypatch.setattr(
+        professional_api,
+        "list_trade_journal",
+        lambda limit=500: [
+            {
+                "status": "closed",
+                "closed_at": f"2026-08-{day:02d}T10:00:00+05:30",
+                "net_pnl": 75.0,
+                "total_costs": 12.5,
+            }
+            for day in range(1, 31)
+        ],
+    )
+    headers = make_admin_headers(app_client)
+
+    response = app_client.get("/api/real-money/readiness", headers=headers)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["passed"] is True
+    assert payload["session_count"] == 30
+    assert payload["net_expectancy"] == 75.0
+    assert payload["total_costs"] == 375.0
+    assert payload["source"] == "trade_journal"
+    assert payload["live_money_approval_required"] is True
