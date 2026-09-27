@@ -360,6 +360,27 @@ class TradeJournalRecord(Base):
         default=0,
     )
 
+    gross_pnl: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    total_costs: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    net_pnl: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    broker_order_id: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+        index=True,
+    )
+
     quantity: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
