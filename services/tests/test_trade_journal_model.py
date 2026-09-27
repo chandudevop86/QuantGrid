@@ -16,6 +16,10 @@ def test_trade_journal_record_matches_store_contract():
         "target",
         "exit_price",
         "pnl",
+        "gross_pnl",
+        "total_costs",
+        "net_pnl",
+        "broker_order_id",
         "quantity",
         "reason",
         "exit_reason",
@@ -34,3 +38,8 @@ def test_trade_journal_record_matches_store_contract():
     assert table.c.pnl.nullable is False
     assert table.c.source.nullable is False
     assert table.c.created_at.nullable is False
+
+    assert table.c.gross_pnl.nullable is True
+    assert table.c.total_costs.nullable is True
+    assert table.c.net_pnl.nullable is True
+    assert table.c.broker_order_id.nullable is True
