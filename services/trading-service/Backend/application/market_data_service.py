@@ -50,13 +50,23 @@ class MarketDataService:
 
         self.settings = get_settings()
 
-        self.provider = (
+        selected_provider = (
             provider
             or select_market_data_provider(
                 self.settings.market_data_provider
             )
         )
 
+        if (
+            provider is None
+            and self.settings.market_data_provider == Provider.DHAN
+        ):
+            selected_provider = PaperFailoverProvider(
+                selected_provider,
+                [YahooProvider()],
+            )
+
+        self.provider = selected_provider
         self.consensus_engine = consensus_engine
 
         self.ttl = cache_ttl_seconds()
@@ -150,9 +160,10 @@ class MarketDataService:
         
         if mode == "live" and not validation.valid_for_execution:
             raise MarketDataProviderError(f"Live market feed is stale or invalid: {validation.market_status}")
+        reported_provider = self._reported_provider_name()
         payload = {
-            "provider": self.provider.provider_name,
-            "provider_name": self.provider.provider_name,
+            "provider": reported_provider,
+            "provider_name": reported_provider,
             "symbol": symbol.upper(),
             "market_symbol": self.provider.normalize_symbol(symbol),
             "interval": interval,
@@ -203,7 +214,18 @@ class MarketDataService:
             "paper_suitable": self.provider.paper_suitable,
             "feed_status": _feed_status(self.provider, fresh=fresh and not errors, errors=errors),
             "errors": errors,
+            "selected_provider": self._reported_provider_name(),
+            "failover_used": bool(getattr(self.provider, "failover_used", False)),
         }
+
+    def _reported_provider_name(self) -> str:
+        return str(
+            getattr(
+                self.provider,
+                "selected_provider_name",
+                self.provider.provider_name,
+            )
+        )
 
     def _assert_provider_allowed(self, mode: str) -> None:
         live_mode = mode == "live" or self.settings.live_trading_enabled
@@ -220,8 +242,8 @@ class MarketDataService:
         delay = _feed_delay_seconds(timestamp)
         return {
             **payload,
-            "provider": self.provider.provider_name,
-            "provider_name": self.provider.provider_name,
+            "provider": self._reported_provider_name(),
+            "provider_name": self._reported_provider_name(),
             "symbol": symbol.upper(),
             "market_symbol": payload.get("market_symbol") or self.provider.normalize_symbol(symbol),
             "exchange": payload.get("exchange") or "NSE",
@@ -330,6 +352,8 @@ def _candles_fresh(candles: list[dict[str, Any]], interval: str) -> bool:
 
 
 def _feed_status(provider: MarketDataProvider, *, fresh: bool, errors: list[str]) -> str:
+    if provider.provider_name == "paper-failover":
+        return "PAPER FALLBACK" if not errors else "FEED DOWN"
     if provider.provider_name == "yahoo":
         return "DEMO/YAHOO MODE"
     if errors:
