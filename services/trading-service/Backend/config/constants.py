@@ -13,9 +13,14 @@ from enum import StrEnum
 # ==========================================================
 
 class Provider(StrEnum):
+    AUTO = "auto"
     YAHOO = "yahoo"
     YAHOO_FINANCE = "yahoo-finance"
     DHAN = "dhan"
+    KITE = "kite"
+    UPSTOX = "upstox"
+    FYERS = "fyers"
+    ANGEL = "angel"
     BROKER = "broker"
     NSE = "nse"
 
@@ -27,6 +32,7 @@ class Provider(StrEnum):
 class Broker(StrEnum):
     DHAN = "dhan"
     ZERODHA = "zerodha"
+    UPSTOX = "upstox"
     FYERS = "fyers"
     ANGEL = "angel"
 
