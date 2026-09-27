@@ -301,6 +301,98 @@ class PaperTradeRecord(Base):
         nullable=False,
         index=True,
     )
+class TradeJournalRecord(Base):
+    __tablename__ = "trade_journal"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    strategy: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        index=True,
+    )
+
+    signal: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    symbol: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(60),
+        nullable=False,
+        default="recorded",
+        index=True,
+    )
+
+    entry: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    stop_loss: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    target: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    exit_price: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
+
+    pnl: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0,
+    )
+
+    quantity: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    exit_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="manual",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
 class OrderRecord(Base):
     __tablename__ = "orders"
 
