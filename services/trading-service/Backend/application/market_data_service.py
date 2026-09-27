@@ -15,6 +15,10 @@ from Backend.application.redis_service import redis_service
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
 from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
+from Backend.infrastructure.market_data.registry import (
+    create_market_data_provider,
+    create_paper_market_data_provider,
+)
 from Backend.config import Provider
 from Backend.application.provider_consensus_engine import (
     ProviderConsensusEngine,
@@ -50,11 +54,9 @@ class MarketDataService:
 
         self.settings = get_settings()
 
-        self.provider = (
-            provider
-            or select_market_data_provider(
-                self.settings.market_data_provider
-            )
+        self.provider = provider or select_market_data_provider(
+            self.settings.market_data_provider,
+            paper_failover=not self.settings.live_trading_enabled,
         )
 
         self.consensus_engine = consensus_engine
@@ -268,21 +270,15 @@ class MarketDataService:
         _MEMORY_CACHE[key] = (datetime.now(timezone.utc).timestamp() + self.ttl, value)
 
 
-def select_market_data_provider(name: str) -> MarketDataProvider:
-    provider = (name or "dhan").strip().lower()
-    if provider == "yahoo":
-        return YahooProvider()
-    if provider == "kite":
-        return KiteProvider()
-    if provider == "upstox":
-        return UpstoxProvider()
-    if provider == Provider.DHAN:
-        return DhanProvider()
-    if provider == "fyers":
-        return FyersProvider()
-    if provider in {"angel", "smartapi", "angelone"}:
-        return AngelProvider()
-    raise MarketDataProviderError(f"Unsupported market data provider: {provider}")
+def select_market_data_provider(
+    name: str,
+    *,
+    paper_failover: bool = False,
+) -> MarketDataProvider:
+    provider = (name or Provider.DHAN).strip().lower()
+    if paper_failover:
+        return create_paper_market_data_provider(provider)
+    return create_market_data_provider(provider)
 
 def get_provider_consensus_engine():
 
