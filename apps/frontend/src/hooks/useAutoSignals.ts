@@ -149,37 +149,41 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
 
         await Promise.all(
           strategies.map(async (strategy) => {
-            const result = await api.runSignals({
-              strategy_name: strategy,
-              symbol: "NIFTY",
-              capital: 100000,
-              risk_pct: 1,
-              rr_ratio: 2,
-              include_diagnostics: true,
-              candle_source: candleData?.source,
-              candles,
-              mtf_candles,
-              htf_candles,
-              daily_candles,
-            });
-            const signals = Array.isArray(result) ? result : result?.signals ?? [];
+            try {
+              const result = await api.runSignals({
+                strategy_name: strategy,
+                symbol: "NIFTY",
+                capital: 100000,
+                risk_pct: 1,
+                rr_ratio: 2,
+                include_diagnostics: true,
+                candle_source: candleData?.source,
+                candles,
+                mtf_candles,
+                htf_candles,
+                daily_candles,
+              });
+              const signals = Array.isArray(result) ? result : result?.signals ?? [];
 
-            nextSignals[strategy] = {
-              data: signals,
-              diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
-              raw_response: result,
-              raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
-              validated_signals:
-                typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
-              candles_analyzed: candles.length,
-              updated_at: updatedAt,
-              validation_context: result?.validation_context,
-              market_data: {
-                source: candleData?.source,
-                volume_status: candleData?.volume_status,
-                warning: candleData?.warning,
-              },
-            };
+              nextSignals[strategy] = {
+                data: signals,
+                diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics : [],
+                raw_response: result,
+                raw_signals: typeof result?.raw_signals === "number" ? result.raw_signals : signals.length,
+                validated_signals:
+                  typeof result?.validated_signals === "number" ? result.validated_signals : signals.length,
+                candles_analyzed: candles.length,
+                updated_at: updatedAt,
+                validation_context: result?.validation_context,
+                market_data: {
+                  source: candleData?.source,
+                  volume_status: candleData?.volume_status,
+                  warning: candleData?.warning,
+                },
+              };
+            } catch {
+              nextSignals[strategy] = { error: "Signal API unavailable" };
+            }
           })
         );
 
