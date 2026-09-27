@@ -68,7 +68,7 @@ def _m15_bullish_trigger() -> list[dict]:
             102.4 + index * 0.1,
             1000 + index * 20,
         )
-        for index in range(10)
+        for index in range(30)
     ]
     values.extend(
         [
