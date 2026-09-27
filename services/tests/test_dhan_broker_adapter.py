@@ -218,9 +218,22 @@ def test_live_broker_resolver_selects_dhan_when_credentials_exist(monkeypatch):
     _configure(monkeypatch)
     monkeypatch.delenv("QUANTGRID_BROKER_PROVIDER", raising=False)
     monkeypatch.setenv("QUANTGRID_ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("QUANTGRID_LIVE_MONEY_APPROVED", "true")
     monkeypatch.setenv("BROKER_LIVE_ENABLED", "true")
     reset_backend_modules()
     from Backend.infrastructure.broker.broker_client import broker_client_for_mode
     from Backend.infrastructure.broker.dhan_order_adapter import DhanBrokerClient
 
     assert isinstance(broker_client_for_mode("live"), DhanBrokerClient)
+
+
+def test_live_broker_resolver_requires_separate_real_money_approval(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setenv("QUANTGRID_ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("BROKER_LIVE_ENABLED", "true")
+    monkeypatch.delenv("QUANTGRID_LIVE_MONEY_APPROVED", raising=False)
+    reset_backend_modules()
+    from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+
+    with pytest.raises(RuntimeError, match="QUANTGRID_LIVE_MONEY_APPROVED"):
+        broker_client_for_mode("live")
