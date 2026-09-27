@@ -119,7 +119,7 @@ export default function Operations() {
           </div>
           <div className="metric-card">
             <span className="metric-label">Redis</span>
-            <strong className="metric-value">{health?.redis?.connected ? "Healthy" : "Disconnected"}</strong>
+            <strong className="metric-value">{health?.redis?.connected ? "Healthy" : health?.redis?.fallback_active ? "Fallback" : "Disconnected"}</strong>
             <span className="metric-helper">{health?.redis?.message}</span>
           </div>
           <div className="metric-card">
