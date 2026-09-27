@@ -14,23 +14,18 @@ from Backend.application.monitoring import (
 from Backend.application.redis_service import redis_service
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
-from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
-from Backend.config import Provider
-from Backend.application.provider_consensus_engine import (
-    ProviderConsensusEngine,
-)
-
-from Backend.infrastructure.market_data.consensus_adapter import (
-    ConsensusProviderAdapter,
-)
 from Backend.infrastructure.market_data import (
     AngelProvider,
     DhanProvider,
     FyersProvider,
     KiteProvider,
+    NseLicensedProvider,
+    PaperFallbackProvider,
     UpstoxProvider,
-    YahooProvider
+    YahooProvider,
 )
+from Backend.config import Provider
+from Backend.application.provider_consensus_engine import ProviderConsensusEngine
 _MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
 
 
@@ -150,9 +145,10 @@ class MarketDataService:
         
         if mode == "live" and not validation.valid_for_execution:
             raise MarketDataProviderError(f"Live market feed is stale or invalid: {validation.market_status}")
+        effective_provider = _effective_provider_name(self.provider)
         payload = {
-            "provider": self.provider.provider_name,
-            "provider_name": self.provider.provider_name,
+            "provider": effective_provider,
+            "provider_name": effective_provider,
             "symbol": symbol.upper(),
             "market_symbol": self.provider.normalize_symbol(symbol),
             "interval": interval,
@@ -220,8 +216,8 @@ class MarketDataService:
         delay = _feed_delay_seconds(timestamp)
         return {
             **payload,
-            "provider": self.provider.provider_name,
-            "provider_name": self.provider.provider_name,
+            "provider": _effective_provider_name(self.provider),
+            "provider_name": _effective_provider_name(self.provider),
             "symbol": symbol.upper(),
             "market_symbol": payload.get("market_symbol") or self.provider.normalize_symbol(symbol),
             "exchange": payload.get("exchange") or "NSE",
@@ -270,9 +266,16 @@ class MarketDataService:
 
 def select_market_data_provider(name: str) -> MarketDataProvider:
     provider = (name or "dhan").strip().lower()
+    if provider in {"auto", "fallback"}:
+        configured = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER_CHAIN", "dhan,yahoo")
+        names = [item.strip().lower() for item in configured.split(",") if item.strip()]
+        names = [item for item in names if item not in {"auto", "fallback"}]
+        if not names:
+            raise MarketDataProviderError("QUANTGRID_MARKET_DATA_PROVIDER_CHAIN must contain at least one provider.")
+        return PaperFallbackProvider([select_market_data_provider(item) for item in names])
     if provider == "yahoo":
         return YahooProvider()
-    if provider == "kite":
+    if provider in {"kite", "zerodha"}:
         return KiteProvider()
     if provider == "upstox":
         return UpstoxProvider()
@@ -282,6 +285,8 @@ def select_market_data_provider(name: str) -> MarketDataProvider:
         return FyersProvider()
     if provider in {"angel", "smartapi", "angelone"}:
         return AngelProvider()
+    if provider in {"nse", "nse-licensed"}:
+        return NseLicensedProvider()
     raise MarketDataProviderError(f"Unsupported market data provider: {provider}")
 
 def get_provider_consensus_engine():
@@ -304,6 +309,10 @@ def get_market_data_service() -> MarketDataService:
     return MarketDataService(
         consensus_engine=consensus_engine
     )
+
+
+def _effective_provider_name(provider: MarketDataProvider) -> str:
+    return str(getattr(provider, "active_provider_name", None) or provider.provider_name)
 
 
 def _utc_now() -> str:
@@ -330,10 +339,12 @@ def _candles_fresh(candles: list[dict[str, Any]], interval: str) -> bool:
 
 
 def _feed_status(provider: MarketDataProvider, *, fresh: bool, errors: list[str]) -> str:
-    if provider.provider_name == "yahoo":
-        return "DEMO/YAHOO MODE"
     if errors:
         return "FEED DOWN"
+    if provider.provider_name == "yahoo":
+        return "DEMO/YAHOO MODE"
+    if provider.provider_name == "auto":
+        return "PAPER FALLBACK" if fresh else "DELAYED PAPER FEED"
     if fresh:
         return "LIVE FEED"
     return "DELAYED FEED"
