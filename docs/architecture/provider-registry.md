@@ -43,3 +43,24 @@ Strategies consume normalized market data and produce signals. Risk checks run b
 broker layer. Provider failover never enables live trading, changes risk limits, or submits
 orders. Live execution still requires the existing explicit live-trading and broker-live
 feature flags plus configured credentials.
+
+
+## Health and failover visibility
+
+The market provider health response distinguishes the configured provider from the provider
+that actually served the latest paper-mode probe:
+
+- `configured_provider`: provider selected by configuration.
+- `active_provider`: provider that actually served the latest successful probe.
+- `fallback_chain`: ordered provider chain considered in paper mode.
+- `failover_used`: whether a fallback provider is currently active.
+- `provider_mode`: `primary` or `failover`.
+- `degraded`: true for provider errors, stale data, or active fallback operation.
+- `execution_eligible`: true only when the active provider is live-suitable, fresh, error-free,
+  and not operating through paper failover.
+- `status_reason`: concise machine-readable reason such as `healthy`,
+  `paper_failover_active`, `stale_market_data`, or `provider_error`.
+
+A fresh paper fallback may therefore report `fresh=true` while also reporting
+`degraded=true` and `execution_eligible=false`. This is intentional: data can remain
+useful for analysis without being approved for live execution.
