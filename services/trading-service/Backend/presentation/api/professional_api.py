@@ -22,6 +22,7 @@ from Backend.application.monitoring import observe_rejected_signal
 from Backend.application.signal_audit import AUDIT_STRATEGIES, StrategyAuditInput, audit_strategy
 from Backend.application.signal_quality import split_signals
 from Backend.application.signal_validation import validate_signals
+from Backend.application.real_money_readiness import evaluate_real_money_evidence
 from Backend.application.trading_service import TradingService
 from Backend.presentation.api.roles import require_roles
 from Backend.application.subscriptions import SubscriptionAccess, subscription_access
@@ -357,6 +358,20 @@ def patch_trade_journal(
         return update_trade_journal_entry(entry_id, payload_data)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade journal entry not found.") from exc
+
+
+@router.get("/api/real-money/readiness")
+@router.get("/real-money/readiness", include_in_schema=False)
+def real_money_readiness_status(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer", "ops")),
+):
+    rows = list_trade_journal(limit=500)
+    result = evaluate_real_money_evidence(rows, min_sessions=30)
+    return {
+        **result,
+        "source": "trade_journal",
+        "live_money_approval_required": True,
+    }
 
 
 @router.get("/api/risk/status")

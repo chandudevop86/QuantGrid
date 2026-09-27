@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS trade_journal (
     target REAL NOT NULL,
     exit_price REAL,
     pnl REAL NOT NULL DEFAULT 0,
+    gross_pnl REAL,
+    total_costs REAL,
+    net_pnl REAL,
+    broker_order_id TEXT,
     quantity INTEGER,
     reason TEXT,
     exit_reason TEXT,
@@ -25,3 +29,7 @@ ON trade_journal(strategy);
 
 CREATE INDEX IF NOT EXISTS idx_trade_journal_symbol
 ON trade_journal(symbol);
+
+
+CREATE INDEX IF NOT EXISTS idx_trade_journal_broker_order_id
+ON trade_journal(broker_order_id);
