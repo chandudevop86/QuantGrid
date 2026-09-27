@@ -65,6 +65,7 @@ def _live_readiness(settings) -> dict[str, object]:
         "broker_circuit_breaker_active": bool(circuit.get("active")),
         "live_ready": bool(
             settings.live_trading_enabled
+            and getattr(settings, "live_money_approved", False)
             and settings.broker_live_enabled
             and settings.broker_configured
             and settings.risk_configured
