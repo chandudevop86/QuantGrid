@@ -512,6 +512,8 @@ def close_paper_trade_evidence(
         from Backend.core.database import SessionLocal
         from Backend.domain.trading_store_models import TradeJournalRecord
 
+        journal_updates["closed_at"] = _datetime_or_none(timestamp)
+
         with SessionLocal() as db:
             row = (
                 db.query(TradeJournalRecord)
