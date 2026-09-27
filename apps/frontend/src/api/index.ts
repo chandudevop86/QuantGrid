@@ -99,8 +99,8 @@ export const api = {
   auditTrail: () => API.get("/audit/logs", { params: { limit: 50 } }).then((res) => res.data),
   getStrategies: () => API.get("/trading/strategies").then((res) => res.data),
   strategies: () => API.get("/trading/strategies").then((res) => res.data),
-  candles: (symbol: string, interval = "5m") =>
-    API.get(`/market/candles/${symbol}`, { params: { interval } }).then((res) => res.data),
+  candles: (symbol: string, interval = "5m", limit = 100) =>
+    API.get(`/market/candles/${symbol}`, { params: { interval, limit } }).then((res) => res.data),
   storedCandles: (symbol: string, interval = "1m", limit = 100) =>
     API.get(`/market/stored/${symbol}`, { params: { interval, limit } }).then((res) => res.data),
   marketStoreStatus: (symbol = "NIFTY", interval = "1m") =>
