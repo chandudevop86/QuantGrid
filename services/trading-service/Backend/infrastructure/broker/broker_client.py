@@ -6,10 +6,9 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from Backend.core.config import get_settings
-from Backend.infrastructure.broker.dhan_status import dhan_credentials
+from Backend.infrastructure.broker.registry import create_live_broker_adapter
 from Backend.domain.models.order import Order
 from Backend.domain.shared import IBrokerAdapter
-from Backend.config import Provider
 
 @dataclass(slots=True)
 class BrokerOrderResult:
@@ -196,10 +195,9 @@ def broker_client_for_mode(mode: str) -> BrokerClient:
         raise RuntimeError("Live broker is disabled. Set BROKER_LIVE_ENABLED=true to enable live broker integration.")
     if not settings.broker_configured:
         raise RuntimeError("Live broker requires broker provider and credentials.")
-    if _dhan_configured(settings):
-        from Backend.infrastructure.broker.dhan_order_adapter import DhanBrokerClient
-
-        return DhanBrokerClient()
+    adapter = create_live_broker_adapter(settings.broker_provider)
+    if adapter is not None:
+        return adapter
     return LiveBrokerClient()
 
 
@@ -215,11 +213,3 @@ def _order_metadata(order: Order) -> dict[str, Any]:
         "metadata": order.metadata,
     }
 
-
-def _dhan_configured(settings: Any) -> bool:
-    provider = str(getattr(settings, "broker_provider", "") or "").strip().lower()
-    credentials = dhan_credentials()
-    return bool(
-        provider == Provider.DHAN
-        or (credentials.get("client_id") and credentials.get("access_token"))
-    )
