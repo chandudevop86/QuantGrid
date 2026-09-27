@@ -8,8 +8,8 @@ application can support multiple brokers without coupling strategy code to one v
 Implemented market-data adapters are registered centrally. Current adapters include Dhan,
 Yahoo, Zerodha/Kite, Upstox, Fyers, and Angel One/SmartAPI.
 
-Paper mode may use a failover chain. By default the configured primary provider falls back
-to Yahoo when the primary provider is unavailable:
+Paper mode may use a failover chain. Configure Yahoo as a fallback when the primary
+provider is unavailable:
 
 ```env
 QUANTGRID_MARKET_DATA_PROVIDER=dhan
