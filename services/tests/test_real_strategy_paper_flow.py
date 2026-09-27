@@ -167,7 +167,7 @@ def test_real_mtfa_signal_validates_and_submits_one_paper_order(monkeypatch):
     context = {
         "trades_today": 0,
         "daily_pnl": 0,
-        "capital_per_trade": 100000,
+        "capital_per_trade": 25000,
         "open_positions": 0,
         "market_data_age_seconds": 5,
         "vix": 14,
