@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import Any
 
 
@@ -157,16 +158,14 @@ class AutoPaperExecutionRequest(BaseModel):
 
     interval: Literal[
         "1m",
-        "3m",
         "5m",
-        "10m",
         "15m",
-        "30m",
+        "25m",
+        "60m",
         "1h",
-        "1d",
     ] = Field(
         default="1m",
-        description="Candle interval",
+        description="Dhan-supported candle interval",
     )
 
     period: Literal[
@@ -232,6 +231,91 @@ def model_to_dict(model: BaseModel) -> dict[str, Any]:
 
     return model.dict()
 
+
+def _session_key(candle: dict[str, Any]) -> str:
+    value = candle.get("timestamp")
+    if value in (None, ""):
+        return "unknown"
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return str(value)[:10]
+
+
+def _aggregate_session_candles(candles: list[dict[str, Any]], group_size: int) -> list[dict[str, Any]]:
+    if group_size <= 0:
+        raise ValueError("group_size must be positive.")
+
+    output: list[dict[str, Any]] = []
+    session: list[dict[str, Any]] = []
+    current_session: str | None = None
+
+    def flush_group(group: list[dict[str, Any]]) -> None:
+        if not group:
+            return
+        output.append(
+            {
+                "symbol": group[0].get("symbol"),
+                "timestamp": group[0].get("timestamp"),
+                "exchange_timezone": group[0].get("exchange_timezone"),
+                "open": float(group[0].get("open") or 0.0),
+                "high": max(float(item.get("high") or 0.0) for item in group),
+                "low": min(float(item.get("low") or 0.0) for item in group),
+                "close": float(group[-1].get("close") or 0.0),
+                "volume": sum(int(item.get("volume") or 0) for item in group),
+            }
+        )
+
+    def flush_session() -> None:
+        nonlocal session
+        for index in range(0, len(session), group_size):
+            flush_group(session[index : index + group_size])
+        session = []
+
+    for candle in candles:
+        key = _session_key(candle)
+        if current_session is not None and key != current_session:
+            flush_session()
+        current_session = key
+        session.append(candle)
+
+    flush_session()
+    return output
+
+
+def _aggregate_daily_candles(candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    session: list[dict[str, Any]] = []
+    current_session: str | None = None
+
+    def flush_session() -> None:
+        nonlocal session
+        if not session:
+            return
+        output.append(
+            {
+                "symbol": session[0].get("symbol"),
+                "timestamp": session[0].get("timestamp"),
+                "exchange_timezone": session[0].get("exchange_timezone"),
+                "open": float(session[0].get("open") or 0.0),
+                "high": max(float(item.get("high") or 0.0) for item in session),
+                "low": min(float(item.get("low") or 0.0) for item in session),
+                "close": float(session[-1].get("close") or 0.0),
+                "volume": sum(int(item.get("volume") or 0) for item in session),
+            }
+        )
+        session = []
+
+    for candle in candles:
+        key = _session_key(candle)
+        if current_session is not None and key != current_session:
+            flush_session()
+        current_session = key
+        session.append(candle)
+
+    flush_session()
+    return output
+
 @router.post("/auto-paper")
 async def auto_paper_order(
     payload: AutoPaperExecutionRequest,
@@ -295,12 +379,16 @@ async def auto_paper_order(
             execution_mode=execution_mode,
         )
 
-    candles_response = market_service.get_candles(symbol, interval=payload.interval, period=payload.period, limit=150)
-    confirmation_response = market_service.get_candles(symbol, interval="5m", period=payload.period, limit=150)
-    trend_response = market_service.get_candles(symbol, interval="15m", period=payload.period, limit=150)
+    candles_response = market_service.get_candles(symbol, interval=payload.interval, period=payload.period, limit=500)
+    confirmation_response = market_service.get_candles(symbol, interval="5m", period=payload.period, limit=500)
+    trend_response = market_service.get_candles(symbol, interval="15m", period=payload.period, limit=500)
+    hourly_response = market_service.get_candles(symbol, interval="60m", period=payload.period, limit=500)
     candles = _strategy_candles(candles_response)
     confirmation_candles = _strategy_candles(confirmation_response)
     trend_candles = _strategy_candles(trend_response)
+    hourly_candles = _strategy_candles(hourly_response)
+    h4_candles = _aggregate_session_candles(hourly_candles, 4)
+    daily_candles = _aggregate_daily_candles(hourly_candles)
     candle_validation = validate_live_candle(
         candles,
         interval=payload.interval,
@@ -321,7 +409,15 @@ async def auto_paper_order(
                 capital=payload.capital,
                 risk_pct=payload.risk_pct,
                 rr_ratio=payload.rr_ratio,
-                params={"mtf_candles": confirmation_candles, "htf_candles": trend_candles},
+                params={
+                    "m5_candles": confirmation_candles,
+                    "m15_candles": trend_candles,
+                    "mtf_candles": trend_candles,
+                    "h1_candles": hourly_candles,
+                    "h4_candles": h4_candles,
+                    "htf_candles": hourly_candles,
+                    "daily_candles": daily_candles,
+                },
             )
             observe_signal_generation(strategy, "success")
             validated_signals, data_source = validate_signals(

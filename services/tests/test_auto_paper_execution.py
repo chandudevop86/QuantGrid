@@ -251,3 +251,59 @@ def test_manual_paper_rejects_buy_signal_with_stop_above_entry(app_client, monke
     assert payload["reason"] == "BUY_STOP_MUST_BE_BELOW_ENTRY"
 
 
+
+
+def test_auto_paper_passes_explicit_multi_timeframe_inputs(app_client, monkeypatch):
+    import Backend.presentation.api.execution as execution_api
+    from Backend.application.trading_service import TradingService
+
+    calls = []
+
+    def fake_market(symbol, interval="1m", period="1d", limit=150):
+        calls.append((interval, limit))
+        return _market_response(interval)
+
+    captured_params = {}
+
+    def fake_run_strategy(self, **kwargs):
+        captured_params.update(kwargs.get("params") or {})
+        return []
+
+    monkeypatch.setattr(execution_api.market_service, "get_candles", fake_market)
+    monkeypatch.setattr(TradingService, "run_strategy", fake_run_strategy)
+
+    headers = make_admin_headers(app_client)
+    response = app_client.post(
+        "/execution/auto-paper",
+        json={"symbol": "NIFTY", "strategies": ["mtfa"]},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "no_trade"
+    assert ("1m", 500) in calls
+    assert ("5m", 500) in calls
+    assert ("15m", 500) in calls
+    assert ("60m", 500) in calls
+
+    for key in (
+        "m5_candles",
+        "m15_candles",
+        "mtf_candles",
+        "h1_candles",
+        "h4_candles",
+        "htf_candles",
+        "daily_candles",
+    ):
+        assert key in captured_params
+
+
+def test_auto_paper_rejects_unsupported_dhan_interval(app_client):
+    headers = make_admin_headers(app_client)
+    response = app_client.post(
+        "/execution/auto-paper",
+        json={"symbol": "NIFTY", "interval": "1d"},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
