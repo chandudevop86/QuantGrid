@@ -71,7 +71,9 @@ def init_database() -> None:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
-    Base.metadata.create_all(bind=engine)
+    from Backend.core.schema_migrations import apply_versioned_migrations
+
+    apply_versioned_migrations(engine, Base.metadata)
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
