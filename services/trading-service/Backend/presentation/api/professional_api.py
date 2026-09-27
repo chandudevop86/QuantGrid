@@ -88,6 +88,87 @@ def _clean_candles(response: dict) -> list[dict]:
     return cleaned
 
 
+def _candle_session_key(candle: dict) -> str:
+    value = candle.get("timestamp")
+    if value in (None, ""):
+        return "unknown"
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return str(value)[:10]
+
+
+def _aggregate_session_candles(candles: list[dict], group_size: int) -> list[dict]:
+    if group_size <= 0:
+        raise ValueError("group_size must be positive.")
+
+    output: list[dict] = []
+    session: list[dict] = []
+    current_session: str | None = None
+
+    def flush_group(group: list[dict]) -> None:
+        if not group:
+            return
+        output.append(
+            {
+                "timestamp": group[0].get("timestamp"),
+                "open": float(group[0].get("open") or 0.0),
+                "high": max(float(item.get("high") or 0.0) for item in group),
+                "low": min(float(item.get("low") or 0.0) for item in group),
+                "close": float(group[-1].get("close") or 0.0),
+                "volume": sum(float(item.get("volume") or 0.0) for item in group),
+            }
+        )
+
+    def flush_session() -> None:
+        nonlocal session
+        for index in range(0, len(session), group_size):
+            flush_group(session[index : index + group_size])
+        session = []
+
+    for candle in candles:
+        key = _candle_session_key(candle)
+        if current_session is not None and key != current_session:
+            flush_session()
+        current_session = key
+        session.append(candle)
+
+    flush_session()
+    return output
+
+
+def _aggregate_daily_candles(candles: list[dict]) -> list[dict]:
+    output: list[dict] = []
+    session: list[dict] = []
+    current_session: str | None = None
+
+    def flush_session() -> None:
+        nonlocal session
+        if not session:
+            return
+        output.append(
+            {
+                "timestamp": session[0].get("timestamp"),
+                "open": float(session[0].get("open") or 0.0),
+                "high": max(float(item.get("high") or 0.0) for item in session),
+                "low": min(float(item.get("low") or 0.0) for item in session),
+                "close": float(session[-1].get("close") or 0.0),
+                "volume": sum(float(item.get("volume") or 0.0) for item in session),
+            }
+        )
+        session = []
+
+    for candle in candles:
+        key = _candle_session_key(candle)
+        if current_session is not None and key != current_session:
+            flush_session()
+        current_session = key
+        session.append(candle)
+
+    flush_session()
+    return output
+
+
 
 def _filter_candles_by_date(candles: list[dict], start_date: str | None, end_date: str | None) -> list[dict]:
     if not start_date and not end_date:
@@ -308,9 +389,12 @@ def latest_signals(
     access: SubscriptionAccess = Depends(subscription_access),
 ):
     try:
-        one_minute = _clean_candles(market_service.get_candles(symbol, interval="1m", period="1d", limit=100))
-        five_minute = _clean_candles(market_service.get_candles(symbol, interval="5m", period="1d", limit=100))
-        fifteen_minute = _clean_candles(market_service.get_candles(symbol, interval="15m", period="1d", limit=100))
+        one_minute = _clean_candles(market_service.get_candles(symbol, interval="1m", period="1d", limit=500))
+        five_minute = _clean_candles(market_service.get_candles(symbol, interval="5m", period="1d", limit=500))
+        fifteen_minute = _clean_candles(market_service.get_candles(symbol, interval="15m", period="1d", limit=500))
+        hourly = _clean_candles(market_service.get_candles(symbol, interval="60m", period="1d", limit=500))
+        h4_candles = _aggregate_session_candles(hourly, 4)
+        daily_candles = _aggregate_daily_candles(hourly)
     except Exception as exc:
         logger.exception("latest_signals_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
         return _empty_signals(symbol, reason="Market candles are unavailable; no signals generated.")
@@ -335,7 +419,15 @@ def latest_signals(
                 capital=100_000,
                 risk_pct=2,
                 rr_ratio=2,
-                params={"mtf_candles": five_minute, "htf_candles": fifteen_minute},
+                params={
+                    "m5_candles": five_minute,
+                    "m15_candles": fifteen_minute,
+                    "mtf_candles": fifteen_minute,
+                    "h1_candles": hourly,
+                    "h4_candles": h4_candles,
+                    "htf_candles": hourly,
+                    "daily_candles": daily_candles,
+                },
             )
         except Exception as exc:
             logger.exception("latest_signals_strategy_failed", extra={"strategy": item, "error_type": exc.__class__.__name__})
@@ -348,6 +440,9 @@ def latest_signals(
             candles_by_timeframe={
                 "5m": five_minute,
                 "15m": fifteen_minute,
+                "1h": hourly,
+                "4h": h4_candles,
+                "1d": daily_candles,
             },
         )
         for signal_obj in active_signals:
@@ -484,16 +579,20 @@ def system_audit(
 
 def _build_signal_audit(symbol: str = "NIFTY") -> dict:
     try:
-        candles_response = market_service.get_candles(symbol, interval="1m", period="1d", limit=150)
-        confirmation_response = market_service.get_candles(symbol, interval="5m", period="1d", limit=150)
-        trend_response = market_service.get_candles(symbol, interval="15m", period="1d", limit=150)
+        candles_response = market_service.get_candles(symbol, interval="1m", period="1d", limit=500)
+        confirmation_response = market_service.get_candles(symbol, interval="5m", period="1d", limit=500)
+        trend_response = market_service.get_candles(symbol, interval="15m", period="1d", limit=500)
+        hourly_response = market_service.get_candles(symbol, interval="60m", period="1d", limit=500)
         one_minute = _clean_candles(candles_response)
         five_minute = _clean_candles(confirmation_response)
         fifteen_minute = _clean_candles(trend_response)
+        hourly = _clean_candles(hourly_response)
+        h4_candles = _aggregate_session_candles(hourly, 4)
+        daily_candles = _aggregate_daily_candles(hourly)
     except Exception as exc:
         logger.exception("signal_audit_candle_load_failed", extra={"symbol": symbol, "error_type": exc.__class__.__name__})
-        candles_response, confirmation_response, trend_response = {}, {}, {}
-        one_minute, five_minute, fifteen_minute = [], [], []
+        candles_response, confirmation_response, trend_response, hourly_response = {}, {}, {}, {}
+        one_minute, five_minute, fifteen_minute, hourly, h4_candles, daily_candles = [], [], [], [], [], []
 
     try:
         service = TradingService()
@@ -536,13 +635,13 @@ def _build_signal_audit(symbol: str = "NIFTY") -> dict:
                 risk_pct=2,
                 rr_ratio=2,
                 params={
-                    "mtf_candles": five_minute,
-                    "htf_candles": fifteen_minute,
-                    "m15_candles": fifteen_minute,
                     "m5_candles": five_minute,
-                    "h1_candles": fifteen_minute,
-                    "h4_candles": fifteen_minute,
-                    "daily_candles": fifteen_minute,
+                    "m15_candles": fifteen_minute,
+                    "mtf_candles": fifteen_minute,
+                    "h1_candles": hourly,
+                    "h4_candles": h4_candles,
+                    "htf_candles": hourly,
+                    "daily_candles": daily_candles,
                 },
             ) if one_minute else []
             validated_signals, _data_source = validate_signals(
@@ -583,6 +682,7 @@ def _build_signal_audit(symbol: str = "NIFTY") -> dict:
             "candle_source": candle_source,
             "confirmation_source": confirmation_response.get("source"),
             "trend_source": trend_response.get("source"),
+            "hourly_source": hourly_response.get("source"),
             "candle_count": len(one_minute),
             "candle_age_seconds": getattr(candle_validation, "delay_seconds", None),
             "valid_for_analysis": bool(getattr(candle_validation, "valid_for_analysis", False)),
@@ -590,7 +690,12 @@ def _build_signal_audit(symbol: str = "NIFTY") -> dict:
             "market_status": getattr(candle_validation, "market_status", None),
             "using_fallback_data": any(
                 _is_fallback_source(source)
-                for source in (candle_source, confirmation_response.get("source"), trend_response.get("source"))
+                for source in (
+                    candle_source,
+                    confirmation_response.get("source"),
+                    trend_response.get("source"),
+                    hourly_response.get("source"),
+                )
             ),
         },
         "strategies": rows,
