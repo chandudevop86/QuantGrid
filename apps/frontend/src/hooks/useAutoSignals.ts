@@ -254,7 +254,17 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
       try {
         setLoading(true);
 
-        const { candleData, candles, mtf_candles, htf_candles, daily_candles } = await loadStrategyCandles();
+        const {
+          candleData,
+          candles,
+          m5_candles,
+          m15_candles,
+          mtf_candles,
+          h1_candles,
+          h4_candles,
+          htf_candles,
+          daily_candles,
+        } = await loadStrategyCandles();
         const updatedAt = new Date().toISOString();
         const nextSignals: Record<string, AutoSignalState> = {};
 
@@ -270,7 +280,11 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
                 include_diagnostics: true,
                 candle_source: candleData?.source,
                 candles,
+                m5_candles,
+                m15_candles,
                 mtf_candles,
+                h1_candles,
+                h4_candles,
                 htf_candles,
                 daily_candles,
               });
