@@ -51,5 +51,48 @@ def test_versioned_migrations_record_baseline_and_compatibility():
         schema_migrations.COMPATIBILITY_VERSION,
         schema_migrations.SUBSCRIPTION_ENTITLEMENTS_VERSION,
         schema_migrations.INSTITUTIONAL_METRICS_VERSION,
+        schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION,
     ]
     assert "execution_mode" in {column["name"] for column in inspect(engine).get_columns("orders")}
+
+
+
+def test_cost_evidence_migration_runs_for_existing_compatibility_database():
+    from Backend.core import schema_migrations
+
+    engine = create_engine("sqlite:///:memory:")
+    metadata = MetaData()
+
+    with engine.begin() as connection:
+        connection.execute(schema_migrations.text(
+            "CREATE TABLE trade_journal (id INTEGER PRIMARY KEY)"
+        ))
+        connection.execute(schema_migrations.text(
+            f"CREATE TABLE {schema_migrations.MIGRATION_TABLE} ("
+            "version VARCHAR(80) PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
+        ))
+        for version in (
+            schema_migrations.BASELINE_VERSION,
+            schema_migrations.COMPATIBILITY_VERSION,
+            schema_migrations.SUBSCRIPTION_ENTITLEMENTS_VERSION,
+            schema_migrations.INSTITUTIONAL_METRICS_VERSION,
+        ):
+            connection.execute(
+                schema_migrations.text(
+                    f"INSERT INTO {schema_migrations.MIGRATION_TABLE} (version) VALUES (:version)"
+                ),
+                {"version": version},
+            )
+
+    schema_migrations.apply_versioned_migrations(engine, metadata)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("trade_journal")}
+    assert {"gross_pnl", "total_costs", "net_pnl", "broker_order_id"} <= columns
+
+    with engine.connect() as connection:
+        versions = set(connection.execute(
+            schema_migrations.text(
+                f"SELECT version FROM {schema_migrations.MIGRATION_TABLE}"
+            )
+        ).scalars())
+    assert schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION in versions
