@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from Backend.application.order_management import OrderManagementService
-from Backend.application.signal_validation import validate_signals
 from Backend.domain.models.context import StrategyContext
 from Backend.domain.models.order import Order
 from Backend.domain.strategies.mtfa import MTFAConfig, MTFAStrategy
@@ -96,6 +95,8 @@ class DeterministicPaperBroker:
 
 def test_real_mtfa_signal_validates_and_submits_one_paper_order(monkeypatch):
     import Backend.application.signal_validation as signal_validation
+
+    validate_signals = signal_validation.validate_signals
 
     m15 = _m15_bullish_trigger()
     strategy = MTFAStrategy(MTFAConfig(min_score=7))
