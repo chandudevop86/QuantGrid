@@ -45,6 +45,10 @@ COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
         "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
         "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
         "source": "ALTER TABLE trade_journal ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'manual'",
+        "gross_pnl": "ALTER TABLE trade_journal ADD COLUMN gross_pnl FLOAT",
+        "total_costs": "ALTER TABLE trade_journal ADD COLUMN total_costs FLOAT",
+        "net_pnl": "ALTER TABLE trade_journal ADD COLUMN net_pnl FLOAT",
+        "broker_order_id": "ALTER TABLE trade_journal ADD COLUMN broker_order_id VARCHAR(120)",
     },
 }
 
