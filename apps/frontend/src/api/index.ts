@@ -155,7 +155,7 @@ export const api = {
       .catch(() => API.patch(`/trades/journal/${id}`, payload).then((res) => res.data)),
   modulesDashboard: () => API.get("/modules/dashboard").then((res) => res.data),
   runSignals: (payload: SignalPayload) =>
-    API.post("/trading/signals", payload).then((res) => res.data),
+    API.post("/trading/signals", payload, { timeout: 30000 }).then((res) => res.data),
   marketCopilot: (symbol = "NIFTY") =>
     API.get("/trading/copilot/market", { params: { symbol } }).then((res) => res.data),
   executeOrder: (payload: unknown) =>
