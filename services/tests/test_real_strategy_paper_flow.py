@@ -4,10 +4,6 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from Backend.application.order_management import OrderManagementService
-from Backend.domain.models.context import StrategyContext
-from Backend.domain.models.order import Order
-from Backend.domain.strategies.mtfa import MTFAConfig, MTFAStrategy
 
 
 START = datetime(2026, 5, 29, 9, 15, tzinfo=timezone.utc)
@@ -86,15 +82,18 @@ class PaperResult:
 
 class DeterministicPaperBroker:
     def __init__(self) -> None:
-        self.orders: list[Order] = []
+        self.orders: list = []
 
-    async def place_order(self, order: Order) -> PaperResult:
+    async def place_order(self, order) -> PaperResult:
         self.orders.append(order)
         return PaperResult(broker_order_id="PAPER-E2E-1")
 
 
 def test_real_mtfa_signal_validates_and_submits_one_paper_order(monkeypatch):
     import Backend.application.signal_validation as signal_validation
+    from Backend.application.order_management import OrderManagementService
+    from Backend.domain.models.context import StrategyContext
+    from Backend.domain.strategies.mtfa import MTFAConfig, MTFAStrategy
 
     validate_signals = signal_validation.validate_signals
 
