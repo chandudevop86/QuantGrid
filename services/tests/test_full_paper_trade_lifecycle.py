@@ -253,5 +253,5 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
 
     journal = paper_trade_store.list_trade_journal()
     assert len(journal) == 1
-    assert journal[0]["source"] == "paper_execution"
+    assert journal[0]["source"] == "paper_trade"
     assert journal[0]["symbol"] == "NIFTY"
