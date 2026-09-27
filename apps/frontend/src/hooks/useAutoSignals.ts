@@ -25,20 +25,117 @@ type AutoSignalState = {
   error?: string;
 };
 
+type Candle = {
+  timestamp?: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
+
+function sessionKey(candle: Candle) {
+  const timestamp = candle?.timestamp;
+  if (!timestamp) return "unknown";
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return String(timestamp).slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
+}
+
+function aggregateCandles(candles: Candle[], groupSize: number) {
+  const result: Candle[] = [];
+  let session: Candle[] = [];
+  let currentSession: string | null = null;
+
+  const flushGroup = (group: Candle[]) => {
+    if (group.length === 0) return;
+    result.push({
+      timestamp: group[0]?.timestamp,
+      open: Number(group[0]?.open ?? 0),
+      high: Math.max(...group.map((candle) => Number(candle.high ?? 0))),
+      low: Math.min(...group.map((candle) => Number(candle.low ?? 0))),
+      close: Number(group[group.length - 1]?.close ?? 0),
+      volume: group.reduce((total, candle) => total + Number(candle.volume ?? 0), 0),
+    });
+  };
+
+  const flushSession = () => {
+    for (let index = 0; index < session.length; index += groupSize) {
+      flushGroup(session.slice(index, index + groupSize));
+    }
+    session = [];
+  };
+
+  for (const candle of candles) {
+    const key = sessionKey(candle);
+    if (currentSession !== null && key !== currentSession) flushSession();
+    currentSession = key;
+    session.push(candle);
+  }
+  flushSession();
+  return result;
+}
+
+function aggregateDailyCandles(candles: Candle[]) {
+  const result: Candle[] = [];
+  let session: Candle[] = [];
+  let currentSession: string | null = null;
+
+  const flushSession = () => {
+    if (session.length === 0) return;
+    result.push({
+      timestamp: session[0]?.timestamp,
+      open: Number(session[0]?.open ?? 0),
+      high: Math.max(...session.map((candle) => Number(candle.high ?? 0))),
+      low: Math.min(...session.map((candle) => Number(candle.low ?? 0))),
+      close: Number(session[session.length - 1]?.close ?? 0),
+      volume: session.reduce((total, candle) => total + Number(candle.volume ?? 0), 0),
+    });
+    session = [];
+  };
+
+  for (const candle of candles) {
+    const key = sessionKey(candle);
+    if (currentSession !== null && key !== currentSession) flushSession();
+    currentSession = key;
+    session.push(candle);
+  }
+  flushSession();
+  return result;
+}
+
 async function loadStrategyCandles() {
-  const [ltf, mtf, htf, daily] = await Promise.all([
-    api.candles("NIFTY", "1m"),
-    api.candles("NIFTY", "15m"),
-    api.candles("NIFTY", "60m"),
-    api.candles("NIFTY", "1d"),
+  // Dhan intraday supports 1m/5m/15m/60m. Build H4 and daily bars from the
+  // real 60-minute feed instead of requesting an unsupported "1d" interval.
+  const [ltf, m5, m15, h1] = await Promise.all([
+    api.candles("NIFTY", "1m", 500),
+    api.candles("NIFTY", "5m", 500),
+    api.candles("NIFTY", "15m", 500),
+    api.candles("NIFTY", "60m", 500),
   ]);
+
+  const candles = Array.isArray(ltf?.candles) ? ltf.candles : [];
+  const m5_candles = Array.isArray(m5?.candles) ? m5.candles : [];
+  const m15_candles = Array.isArray(m15?.candles) ? m15.candles : [];
+  const h1_candles = Array.isArray(h1?.candles) ? h1.candles : [];
+  const h4_candles = aggregateCandles(h1_candles, 4);
+  const daily_candles = aggregateDailyCandles(h1_candles);
 
   return {
     candleData: ltf,
-    candles: Array.isArray(ltf?.candles) ? ltf.candles : [],
-    mtf_candles: Array.isArray(mtf?.candles) ? mtf.candles : [],
-    htf_candles: Array.isArray(htf?.candles) ? htf.candles : [],
-    daily_candles: Array.isArray(daily?.candles) ? daily.candles : [],
+    candles,
+    m5_candles,
+    m15_candles,
+    mtf_candles: m15_candles,
+    h1_candles,
+    h4_candles,
+    htf_candles: h1_candles,
+    daily_candles,
   };
 }
 
@@ -59,7 +156,17 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
       try {
         setLoading(true);
 
-        const { candleData, candles, mtf_candles, htf_candles, daily_candles } = await loadStrategyCandles();
+        const {
+          candleData,
+          candles,
+          m5_candles,
+          m15_candles,
+          mtf_candles,
+          h1_candles,
+          h4_candles,
+          htf_candles,
+          daily_candles,
+        } = await loadStrategyCandles();
         const result = await api.runSignals({
           strategy_name: strategy,
           symbol: "NIFTY",
@@ -69,7 +176,11 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
           include_diagnostics: true,
           candle_source: candleData?.source,
           candles,
+          m5_candles,
+          m15_candles,
           mtf_candles,
+          h1_candles,
+          h4_candles,
           htf_candles,
           daily_candles,
         });
@@ -143,7 +254,17 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
       try {
         setLoading(true);
 
-        const { candleData, candles, mtf_candles, htf_candles, daily_candles } = await loadStrategyCandles();
+        const {
+          candleData,
+          candles,
+          m5_candles,
+          m15_candles,
+          mtf_candles,
+          h1_candles,
+          h4_candles,
+          htf_candles,
+          daily_candles,
+        } = await loadStrategyCandles();
         const updatedAt = new Date().toISOString();
         const nextSignals: Record<string, AutoSignalState> = {};
 
@@ -159,7 +280,11 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
                 include_diagnostics: true,
                 candle_source: candleData?.source,
                 candles,
+                m5_candles,
+                m15_candles,
                 mtf_candles,
+                h1_candles,
+                h4_candles,
                 htf_candles,
                 daily_candles,
               });
