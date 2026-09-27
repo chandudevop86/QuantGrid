@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
+from Backend.config import Provider
 from Backend.domain.market_data.provider import MarketDataProviderError
 from Backend.infrastructure.market_data.base import EnvConfiguredProvider
 from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, dhan_sdk_client
-from Backend.config import Provider
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
 
 SECURITY_MASTER = None
 
@@ -25,8 +23,6 @@ def _to_float(value: Any, default: float = 0.0) -> float:
     except (TypeError, ValueError):
         return default
 
-
-from typing import Any
 
 def _safe_index(values: list[Any], index: int) -> float | None:
     if index >= len(values):
@@ -73,16 +69,6 @@ class DhanProvider(EnvConfiguredProvider):
 
         # Cash / Index instrument
         normalized_symbol = str(symbol).strip().upper()
-
-        print(
-            "DHAN DEBUG:",
-            {
-                "raw_symbol": repr(symbol),
-                "normalized": normalized_symbol,
-                "env_key": f"DHAN_SECURITY_ID_{normalized_symbol}",
-                "value": os.getenv(f"DHAN_SECURITY_ID_{normalized_symbol}"),
-            }
-        )
 
         security_id = os.getenv(
             f"DHAN_SECURITY_ID_{normalized_symbol}"
@@ -136,24 +122,14 @@ class DhanProvider(EnvConfiguredProvider):
                     f"Unsupported index {normalized}"
                 )
 
-            try:
-                raw = dhan.ohlc_data(
-                    securities={
-                        "IDX_I": [int(security_id)]
-                    }
-                )
-
-            except Exception as e:
-                print("DHAN API ERROR:", repr(e))
-                raise
+            raw = dhan.ohlc_data(
+                securities={
+                    "IDX_I": [int(security_id)]
+                }
+            )
 
             quote = _extract_quote(raw, security_id)
-
             logger.debug("Fetched Dhan index quote for %s", normalized)
-            quote = _extract_quote(
-                raw,
-                security_id
-            )
 
             ltp = (
                 quote.get("last_price")
@@ -186,9 +162,7 @@ class DhanProvider(EnvConfiguredProvider):
         quote = _extract_quote(raw, security_id)
         
         logger.debug("Extracted quote: %r", quote)
-        
-        print("EXTRACTED QUOTE:", quote)
-        
+
         ltp = (
             quote.get("last_price")
             or quote.get("ltp")
@@ -374,23 +348,6 @@ class DhanProvider(EnvConfiguredProvider):
 # --- Helper Functions (Outside Class Block) ---
 
 def _exchange_segment(symbol: str | None = None) -> str:
-    print("SYMBOL =", repr(symbol))
-
-    print(
-        "ENV LOOKUP =",
-        f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}" if symbol else None,
-    )
-
-    print(
-        "ENV VALUE =",
-        os.getenv(f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}") if symbol else None,
-    )
-
-    print(
-        "DEFAULT =",
-        os.getenv("DHAN_MARKET_EXCHANGE_SEGMENT"),
-    )
-
     if symbol:
         value = os.getenv(f"DHAN_EXCHANGE_SEGMENT_{symbol.upper()}")
         if value:
@@ -452,6 +409,7 @@ def _extract_quote(raw: Any, security_id: str) -> dict[str, Any]:
 
 def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
     data = raw.get("data", raw) if isinstance(raw, dict) else raw
+    is_index_spot = str(symbol).strip().upper() in INDEX_SPOT_SYMBOLS
 
     rows: list[dict[str, Any]] = []
 
@@ -467,8 +425,10 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
 
             volume = int(_safe_index(volumes, index) or 0)
 
-            # Skip fake Dhan candle
-            if volume == 0:
+            # Dhan index candles can legitimately omit/report zero volume.
+            # Preserve those OHLC candles; zero-volume non-index rows keep the
+            # existing defensive filter.
+            if volume == 0 and not is_index_spot:
                 continue
 
             dt = datetime.fromtimestamp(
@@ -506,7 +466,7 @@ def _normalize_candles(symbol: str, raw: Any) -> list[dict[str, Any]]:
 
             volume = int(item.get("volume") or 0)
 
-            if volume == 0:
+            if volume == 0 and not is_index_spot:
                 continue
 
             ts = item.get("timestamp") or item.get("time") or item.get("start_Time")
