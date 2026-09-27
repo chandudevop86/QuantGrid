@@ -21,6 +21,7 @@ class Settings:
     allow_yahoo_for_live: bool
     broker_provider: str | None
     live_trading_enabled: bool
+    live_money_approved: bool
     broker_live_enabled: bool
     broker_configured: bool
     risk_engine_enabled: bool
@@ -157,6 +158,7 @@ def _cached_settings() -> Settings:
     market_data_provider = os.getenv("QUANTGRID_MARKET_DATA_PROVIDER", "yahoo").strip().lower()
     allow_yahoo_for_live = _truthy(os.getenv("QUANTGRID_ALLOW_YAHOO_LIVE") or os.getenv("QUANTGRID_ALLOW_YAHOO_FOR_LIVE"))
     live_trading_enabled = _truthy(os.getenv("QUANTGRID_ENABLE_LIVE_TRADING"))
+    live_money_approved = _truthy(os.getenv("QUANTGRID_LIVE_MONEY_APPROVED"))
     broker_live_enabled = _truthy(os.getenv("BROKER_LIVE_ENABLED"))
     risk_engine_enabled = not _truthy(os.getenv("RISK_ENGINE_DISABLED")) and os.getenv("RISK_ENGINE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     audit_logging_enabled = os.getenv("AUDIT_LOGGING_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -202,6 +204,7 @@ def _cached_settings() -> Settings:
         allow_yahoo_for_live=allow_yahoo_for_live,
         broker_provider=broker_provider,
         live_trading_enabled=live_trading_enabled,
+        live_money_approved=live_money_approved,
         broker_live_enabled=broker_live_enabled,
         broker_configured=broker_configured,
         risk_engine_enabled=risk_engine_enabled,
@@ -247,6 +250,8 @@ def validate_security_config(settings: Settings | None = None) -> Settings:
 
     validate_bootstrap_users(settings)
 
+    if settings.live_trading_enabled and not settings.live_money_approved:
+        raise RuntimeError("Live trading requires QUANTGRID_LIVE_MONEY_APPROVED=true after separate real-money authorization.")
     if settings.live_trading_enabled and not settings.broker_configured:
         raise RuntimeError("Live trading requires broker provider and credentials.")
     if settings.live_trading_enabled and not settings.broker_live_enabled:

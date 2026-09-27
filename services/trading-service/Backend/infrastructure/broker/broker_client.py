@@ -193,6 +193,8 @@ def broker_client_for_mode(mode: str) -> BrokerClient:
         raise RuntimeError("Invalid broker mode.")
     if not settings.live_trading_enabled:
         raise RuntimeError("Live broker is disabled. Set QUANTGRID_ENABLE_LIVE_TRADING=true to enable live broker integration.")
+    if not getattr(settings, "live_money_approved", False):
+        raise RuntimeError("Live broker is disabled until QUANTGRID_LIVE_MONEY_APPROVED=true is set after separate real-money authorization.")
     if not settings.broker_live_enabled:
         raise RuntimeError("Live broker is disabled. Set BROKER_LIVE_ENABLED=true to enable live broker integration.")
     if not settings.broker_configured:

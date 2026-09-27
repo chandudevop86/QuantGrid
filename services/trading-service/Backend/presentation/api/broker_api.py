@@ -65,6 +65,7 @@ def _live_readiness(settings) -> dict[str, object]:
         "broker_circuit_breaker_active": bool(circuit.get("active")),
         "live_ready": bool(
             settings.live_trading_enabled
+            and getattr(settings, "live_money_approved", False)
             and settings.broker_live_enabled
             and settings.broker_configured
             and settings.risk_configured
@@ -192,12 +193,14 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
 
     status["live_trading_enabled"] = settings.live_trading_enabled
     status["broker_live_enabled"] = settings.broker_live_enabled
+    status["live_money_approved"] = getattr(settings, "live_money_approved", False)
     status["risk_configured"] = settings.risk_configured
     status["audit_logging_enabled"] = settings.audit_logging_enabled
     status["circuit_breaker"] = broker_circuit_status()
     status["live_readiness"] = _live_readiness(settings)
     status["real_money_orders_enabled"] = bool(
         settings.live_trading_enabled
+        and getattr(settings, "live_money_approved", False)
         and settings.broker_live_enabled
         and settings.broker_configured
         and status.get("connected")

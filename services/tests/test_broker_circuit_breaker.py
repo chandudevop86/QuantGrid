@@ -55,6 +55,7 @@ def test_live_guardrail_rejects_active_broker_circuit(monkeypatch):
     actor = SimpleNamespace(role="trader")
     settings = SimpleNamespace(
         broker_live_enabled=True,
+        live_money_approved=True,
         risk_engine_enabled=True,
         broker_configured=True,
         broker_provider="mock",
