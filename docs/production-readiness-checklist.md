@@ -7,7 +7,7 @@
 - [ ] `CORS_ALLOWED_ORIGINS` explicitly configured
 - [ ] `python scripts/market_data_quality_probe.py --require-execution` passes during Indian market hours for the broker/live data provider
 - [ ] Backtest reports include `gross_pnl`, `total_costs`, `net_pnl`, `expectancy`, `max_drawdown`, and rejected signal counts
-- [ ] Paper trading journal has at least 30 market sessions of positive net expectancy after brokerage, taxes, slippage, and rejected orders
+- [ ] `python scripts/real_money_readiness_check.py` passes with at least 30 distinct closed paper sessions and explicit cost-adjusted `net_pnl` / `total_costs` evidence (gross-only P&L must fail closed)
 - [ ] Infrastructure ports are bound to private interfaces or `127.0.0.1`; no Redis/Postgres/Kafka listener is publicly exposed
 - [ ] Redis reachable
 - [ ] Nginx TLS configured
