@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from Backend.application.candle_validation import get_market_session
 from Backend.application.market_data_store import latest_candles
+from Backend.application.paper_trade_costs import calculate_paper_trade_costs
+from Backend.application.paper_trade_store import close_paper_trade_evidence
 from Backend.application.position_store import (
     close_open_position,
     get_position,
@@ -200,6 +202,25 @@ async def exit_position(
     if closed is None:
         raise ValueError("position could not be closed")
 
+    cost_evidence: dict[str, float] | None = None
+    if execution_mode == "paper" and position.get("broker_order_id"):
+        costs = calculate_paper_trade_costs(
+            side=str(position.get("side") or ""),
+            entry_price=float(position.get("entry_price") or 0.0),
+            exit_price=price,
+            quantity=int(position.get("quantity") or 0),
+        )
+        cost_evidence = costs.to_dict()
+        close_paper_trade_evidence(
+            broker_order_id=str(position["broker_order_id"]),
+            exit_price=price,
+            gross_pnl=costs.gross_pnl,
+            total_costs=costs.total_costs,
+            net_pnl=costs.net_pnl,
+            reason=normalized_reason,
+            closed_at=str(closed.get("closed_at") or datetime.now(timezone.utc).isoformat()),
+        )
+
     write_audit_log(
         db,
         action="position_exit",
@@ -213,12 +234,13 @@ async def exit_position(
             "execution_mode": execution_mode,
             "exit_price": price,
             "closed_pnl": closed.get("closed_pnl"),
+            "paper_cost_evidence": cost_evidence,
             "broker_order_id": (broker_payload or {}).get("broker_order_id"),
             "broker_status": (broker_payload or {}).get("status"),
             "broker_response": broker_payload,
         },
     )
-    return {"position": closed, "exit_reason": normalized_reason, "broker": broker_payload}
+    return {"position": closed, "exit_reason": normalized_reason, "broker": broker_payload, "cost_evidence": cost_evidence}
 
 
 async def exit_all_positions(

@@ -417,6 +417,7 @@ async def _submit_paper_signal(
             "trailing_stop_pct": signal.trailing_stop_pct,
             "status": "paper_order_submitted",
             "pnl": 0.0,
+            "quantity": requested_quantity(signal),
             "reason": "OK",
             "broker_order_id": broker_status.broker_order_id,
             "score": decision.score,

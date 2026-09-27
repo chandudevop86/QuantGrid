@@ -255,3 +255,45 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
     assert len(journal) == 1
     assert journal[0]["source"] == "paper_trade"
     assert journal[0]["symbol"] == "NIFTY"
+    assert journal[0]["quantity"] == 1
+    assert journal[0]["broker_order_id"] == "PAPER-FULL-E2E-1"
+
+    monkeypatch.setenv("QUANTGRID_PAPER_BROKERAGE_PER_ORDER", "1")
+    monkeypatch.setenv("QUANTGRID_PAPER_BROKERAGE_BPS", "0")
+    monkeypatch.setenv("QUANTGRID_PAPER_TAXES_BPS", "10")
+    monkeypatch.setenv("QUANTGRID_PAPER_SLIPPAGE_BPS", "10")
+    monkeypatch.setenv("QUANTGRID_PAPER_SPREAD_BPS", "0")
+
+    from Backend.application import trade_exit_engine
+
+    with SessionLocal() as db:
+        actor = db.query(User).filter(User.username == "paper-e2e").one()
+        exit_result = asyncio.run(
+            trade_exit_engine.exit_position(
+                position["id"],
+                db=db,
+                actor=actor,
+                execution_mode="paper",
+                reason="manual_exit",
+                exit_price=float(signal.entry_price) + 10.0,
+            )
+        )
+
+    evidence = exit_result["cost_evidence"]
+    assert evidence is not None
+    assert evidence["gross_pnl"] == 10.0
+    assert evidence["total_costs"] > 0
+    assert evidence["net_pnl"] < evidence["gross_pnl"]
+
+    closed_trade = paper_trade_store.list_paper_trades()[0]
+    assert closed_trade["status"] == "closed"
+    assert closed_trade["pnl"] == evidence["net_pnl"]
+
+    closed_journal = paper_trade_store.list_trade_journal()[0]
+    assert closed_journal["status"] == "closed"
+    assert closed_journal["gross_pnl"] == evidence["gross_pnl"]
+    assert closed_journal["total_costs"] == evidence["total_costs"]
+    assert closed_journal["net_pnl"] == evidence["net_pnl"]
+    assert closed_journal["pnl"] == evidence["net_pnl"]
+    assert closed_journal["exit_price"] == float(signal.entry_price) + 10.0
+    assert closed_journal["closed_at"] is not None

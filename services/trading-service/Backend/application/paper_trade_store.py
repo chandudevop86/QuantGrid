@@ -100,6 +100,10 @@ def _initialize_paper_trade_store() -> None:
                 target REAL NOT NULL,
                 exit_price REAL,
                 pnl REAL NOT NULL DEFAULT 0,
+                gross_pnl REAL,
+                total_costs REAL,
+                net_pnl REAL,
+                broker_order_id TEXT,
                 quantity INTEGER,
                 reason TEXT,
                 exit_reason TEXT,
@@ -138,6 +142,10 @@ def _initialize_paper_trade_store() -> None:
             "quantity": "ALTER TABLE trade_journal ADD COLUMN quantity INTEGER",
             "reason": "ALTER TABLE trade_journal ADD COLUMN reason TEXT",
             "source": "ALTER TABLE trade_journal ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+            "gross_pnl": "ALTER TABLE trade_journal ADD COLUMN gross_pnl REAL",
+            "total_costs": "ALTER TABLE trade_journal ADD COLUMN total_costs REAL",
+            "net_pnl": "ALTER TABLE trade_journal ADD COLUMN net_pnl REAL",
+            "broker_order_id": "ALTER TABLE trade_journal ADD COLUMN broker_order_id TEXT",
         }
         for column, statement in journal_additions.items():
             if column not in journal_columns:
@@ -180,6 +188,7 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
             row,
         )
         row["id"] = cursor.lastrowid
+    row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
     _record_trade_journal_from_paper_trade(row)
     return row
 
@@ -321,7 +330,11 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
         "stop_loss": float(payload.get("stop_loss") or 0.0),
         "target": float(payload.get("target") or payload.get("target_price") or 0.0),
         "exit_price": _float_or_none(payload.get("exit_price")),
-        "pnl": float(payload.get("pnl") or 0.0),
+        "pnl": float(payload.get("pnl") or payload.get("net_pnl") or 0.0),
+        "gross_pnl": _float_or_none(payload.get("gross_pnl")),
+        "total_costs": _float_or_none(payload.get("total_costs")),
+        "net_pnl": _float_or_none(payload.get("net_pnl")),
+        "broker_order_id": payload.get("broker_order_id"),
         "quantity": int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None,
         "reason": payload.get("reason"),
         "exit_reason": payload.get("exit_reason") or payload.get("reason"),
@@ -337,9 +350,9 @@ def create_trade_journal_entry(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO trade_journal
-                (strategy, signal, symbol, status, entry, stop_loss, target, exit_price, pnl, quantity, reason, exit_reason, source, created_at, closed_at)
+                (strategy, signal, symbol, status, entry, stop_loss, target, exit_price, pnl, gross_pnl, total_costs, net_pnl, broker_order_id, quantity, reason, exit_reason, source, created_at, closed_at)
             VALUES
-                (:strategy, :signal, :symbol, :status, :entry, :stop_loss, :target, :exit_price, :pnl, :quantity, :reason, :exit_reason, :source, :created_at, :closed_at)
+                (:strategy, :signal, :symbol, :status, :entry, :stop_loss, :target, :exit_price, :pnl, :gross_pnl, :total_costs, :net_pnl, :broker_order_id, :quantity, :reason, :exit_reason, :source, :created_at, :closed_at)
             """,
             row,
         )
@@ -421,7 +434,7 @@ def get_trade_journal_entry(entry_id: int) -> dict[str, Any] | None:
 
 def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[str, Any]:
     init_paper_trade_store()
-    allowed = {"strategy", "signal", "symbol", "status", "entry", "entry_price", "stop_loss", "target", "exit_price", "pnl", "quantity", "reason", "exit_reason", "source", "closed_at"}
+    allowed = {"strategy", "signal", "symbol", "status", "entry", "entry_price", "stop_loss", "target", "exit_price", "pnl", "gross_pnl", "total_costs", "net_pnl", "broker_order_id", "quantity", "reason", "exit_reason", "source", "closed_at"}
     filtered = {key: value for key, value in updates.items() if key in allowed and value is not None}
     if "entry_price" in filtered and "entry" not in filtered:
         filtered["entry"] = filtered.pop("entry_price")
@@ -436,7 +449,7 @@ def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[s
     values: list[Any] = []
     for key, value in filtered.items():
         assignments.append(f"{key} = ?")
-        if key in {"entry", "stop_loss", "target", "exit_price", "pnl"} and value is not None:
+        if key in {"entry", "stop_loss", "target", "exit_price", "pnl", "gross_pnl", "total_costs", "net_pnl"} and value is not None:
             value = float(value)
         if key == "quantity" and value is not None:
             value = int(value)
@@ -454,6 +467,64 @@ def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[s
         raise KeyError(entry_id)
     return updated
 
+
+
+def close_paper_trade_evidence(
+    *,
+    broker_order_id: str,
+    exit_price: float,
+    gross_pnl: float,
+    total_costs: float,
+    net_pnl: float,
+    reason: str,
+    closed_at: str | None = None,
+) -> dict[str, Any]:
+    """Synchronize a closed paper position into the paper trade and its journal row."""
+    timestamp = closed_at or utc_now()
+    trade = update_paper_trade_status(
+        broker_order_id,
+        status="closed",
+        reason=reason,
+        pnl=net_pnl,
+        broker_status="filled",
+    )
+
+    journal_updates = {
+        "status": "closed",
+        "exit_price": float(exit_price),
+        "pnl": float(net_pnl),
+        "gross_pnl": float(gross_pnl),
+        "total_costs": float(total_costs),
+        "net_pnl": float(net_pnl),
+        "exit_reason": reason,
+        "closed_at": timestamp,
+    }
+
+    if _use_sqlite():
+        init_paper_trade_store()
+        with _connect() as connection:
+            row = connection.execute(
+                "SELECT id FROM trade_journal WHERE broker_order_id = ? ORDER BY id DESC LIMIT 1",
+                (broker_order_id,),
+            ).fetchone()
+        journal = update_trade_journal_entry(int(row["id"]), journal_updates) if row else None
+    else:
+        from Backend.core.database import SessionLocal
+        from Backend.domain.trading_store_models import TradeJournalRecord
+
+        journal_updates["closed_at"] = _datetime_or_none(timestamp)
+
+        with SessionLocal() as db:
+            row = (
+                db.query(TradeJournalRecord)
+                .filter(TradeJournalRecord.broker_order_id == broker_order_id)
+                .order_by(TradeJournalRecord.id.desc())
+                .first()
+            )
+            journal_id = int(row.id) if row is not None else None
+        journal = update_trade_journal_entry(journal_id, journal_updates) if journal_id is not None else None
+
+    return {"paper_trade": trade, "journal": journal}
 
 def _use_sqlite() -> bool:
     from Backend.application.store_backend import use_legacy_sqlite_store
@@ -533,6 +604,7 @@ def _db_create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         db.commit()
         db.refresh(record)
         row = _record_to_dict(record)
+        row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
         _record_trade_journal_from_paper_trade(row)
         return row
 
@@ -549,6 +621,10 @@ def _record_trade_journal_from_paper_trade(trade: dict[str, Any]) -> None:
                 "stop_loss": trade.get("stop_loss"),
                 "target": trade.get("target"),
                 "pnl": trade.get("pnl") or 0.0,
+                "gross_pnl": trade.get("gross_pnl"),
+                "total_costs": trade.get("total_costs"),
+                "net_pnl": trade.get("net_pnl"),
+                "broker_order_id": trade.get("broker_order_id"),
                 "quantity": trade.get("quantity"),
                 "reason": trade.get("reason"),
                 "source": "paper_trade",
@@ -617,6 +693,10 @@ def _trade_journal_record_to_dict(record: Any) -> dict[str, Any]:
         "target": record.target,
         "exit_price": record.exit_price,
         "pnl": record.pnl,
+        "gross_pnl": record.gross_pnl,
+        "total_costs": record.total_costs,
+        "net_pnl": record.net_pnl,
+        "broker_order_id": record.broker_order_id,
         "quantity": record.quantity,
         "reason": record.reason,
         "exit_reason": record.exit_reason,
