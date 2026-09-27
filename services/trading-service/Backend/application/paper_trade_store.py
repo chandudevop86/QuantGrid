@@ -188,6 +188,7 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
             row,
         )
         row["id"] = cursor.lastrowid
+    row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
     _record_trade_journal_from_paper_trade(row)
     return row
 
@@ -601,6 +602,7 @@ def _db_create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         db.commit()
         db.refresh(record)
         row = _record_to_dict(record)
+        row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
         _record_trade_journal_from_paper_trade(row)
         return row
 
