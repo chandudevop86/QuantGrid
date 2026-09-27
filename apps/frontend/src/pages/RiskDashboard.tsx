@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 
+type ReadinessPayload = {
+  passed?: boolean;
+  min_sessions?: number;
+  closed_trades?: number;
+  cost_adjusted_trades?: number;
+  session_count?: number;
+  positive_session_count?: number;
+  net_pnl?: number;
+  total_costs?: number;
+  net_expectancy?: number;
+  blockers?: string[];
+  source?: string;
+  live_money_approval_required?: boolean;
+};
+
 type RiskPayload = {
   generated_at?: string;
   state?: string;
@@ -44,14 +59,16 @@ function checkClass(value?: boolean) {
 
 export default function RiskDashboard() {
   const [payload, setPayload] = useState<RiskPayload | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
-    api.portfolioRiskDashboard()
-      .then((data) => {
-        setPayload(data);
+    Promise.all([api.portfolioRiskDashboard(), api.realMoneyReadiness()])
+      .then(([riskData, readinessData]) => {
+        setPayload(riskData);
+        setReadiness(readinessData);
         setError(null);
       })
       .catch((err) => setError(err?.message ?? "Risk dashboard is unavailable."))
@@ -118,6 +135,45 @@ export default function RiskDashboard() {
               <span className="metric-helper">Limit {money(payload?.limits?.daily_loss_limit)}</span>
             </article>
           </div>
+
+          <section className="dashboard-section">
+            <div className="section-header">
+              <div>
+                <h2>Real-Money Evidence</h2>
+                <span>Paper evidence only. Separate human approval is still required before any funded trading.</span>
+              </div>
+              <span className={`status-pill${readiness?.passed ? "" : " error"}`}>
+                {readiness?.passed ? "Evidence threshold met" : "Not ready"}
+              </span>
+            </div>
+            <div className="risk-summary-grid">
+              <span>
+                <small>Paper Sessions</small>
+                <strong>{readiness?.session_count ?? 0}/{readiness?.min_sessions ?? 30}</strong>
+                <small>{readiness?.positive_session_count ?? 0} positive sessions</small>
+              </span>
+              <span>
+                <small>Cost-Adjusted Trades</small>
+                <strong>{readiness?.cost_adjusted_trades ?? 0}</strong>
+                <small>{readiness?.closed_trades ?? 0} closed trades</small>
+              </span>
+              <span>
+                <small>Net Expectancy</small>
+                <strong>{money(readiness?.net_expectancy)}</strong>
+                <small>After recorded costs</small>
+              </span>
+              <span>
+                <small>Total Costs</small>
+                <strong>{money(readiness?.total_costs)}</strong>
+                <small>Persisted paper evidence</small>
+              </span>
+            </div>
+            {(readiness?.blockers?.length ?? 0) > 0 && (
+              <div className="alert alert-error" role="status">
+                {readiness?.blockers?.map((blocker) => blocker.replace(/_/g, " ")).join(" · ")}
+              </div>
+            )}
+          </section>
 
           <section className="dashboard-section">
             <div className="section-header">
