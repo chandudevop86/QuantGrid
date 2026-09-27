@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from scripts.real_money_readiness_check import evaluate_real_money_evidence
+from Backend.application.real_money_readiness import evaluate_real_money_evidence
 
 
 def _trade(day: datetime, *, net_pnl=100.0, total_costs=10.0, status="closed"):
