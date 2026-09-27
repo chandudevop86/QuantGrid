@@ -174,8 +174,7 @@ class MarketDataService:
         return {**payload, "cache_status": "fresh"}
 
     def health(self, symbol: str = "NIFTY", interval: str = "1m") -> dict[str, Any]:
-        status = self.provider.health_check()
-        errors: list[str] = [] 
+        errors: list[str] = []
         ltp_payload = None
         candle_payload = None
         try:
@@ -186,24 +185,63 @@ class MarketDataService:
             candle_payload = self.get_candles(symbol, interval, "1d", 100, mode="paper")
         except Exception as exc:
             errors.append(str(exc))
+
+        # Probe first, then collect provider health so a paper-mode failover reports
+        # the provider that actually served this health check rather than stale state
+        # from before the probe.
+        status = self.provider.health_check()
+        active_provider = str(
+            status.get("provider_name")
+            or status.get("provider")
+            or self.provider.provider_name
+        )
+        configured_provider = str(self.settings.market_data_provider)
+        fallback_chain = list(status.get("fallback_chain") or [active_provider])
+        failover_used = bool(status.get("failover_used"))
         latest_fetch_at = (
             (ltp_payload or {}).get("timestamp")
             or (candle_payload or {}).get("latest_fetch_at")
             or getattr(self.provider, "latest_fetch_at", None)
         )
-        fresh = bool((ltp_payload or {}).get("cache_status") == "fresh" or (candle_payload or {}).get("fresh"))
+        fresh = bool(
+            (ltp_payload or {}).get("cache_status") == "fresh"
+            or (candle_payload or {}).get("fresh")
+        )
+        feed_fresh = fresh and not errors
         live_suitable = bool(self.provider.live_suitable and not errors)
+        execution_eligible = bool(
+            live_suitable
+            and feed_fresh
+            and not failover_used
+        )
+
+        if errors:
+            status_reason = "provider_error"
+        elif failover_used:
+            status_reason = "paper_failover_active"
+        elif not feed_fresh:
+            status_reason = "stale_market_data"
+        else:
+            status_reason = "healthy"
+
         return status | {
-            "configured_provider": self.settings.market_data_provider,
+            "configured_provider": configured_provider,
+            "active_provider": active_provider,
+            "fallback_chain": fallback_chain,
+            "failover_used": failover_used,
+            "provider_mode": "failover" if failover_used else "primary",
             "latest_fetch_at": latest_fetch_at,
             "last_tick_time": (ltp_payload or {}).get("timestamp"),
             "feed_delay_seconds": (ltp_payload or candle_payload or {}).get("feed_delay_seconds"),
             "cache_status": (ltp_payload or candle_payload or {}).get("cache_status", "miss"),
-            "fresh": fresh and not errors,
-            "stale": bool(errors) or not fresh,
+            "fresh": feed_fresh,
+            "stale": not feed_fresh,
+            "degraded": bool(errors or failover_used or not feed_fresh),
             "live_suitable": live_suitable,
             "paper_suitable": self.provider.paper_suitable,
-            "feed_status": _feed_status(self.provider, fresh=fresh and not errors, errors=errors),
+            "execution_eligible": execution_eligible,
+            "status_reason": status_reason,
+            "feed_status": _feed_status(self.provider, fresh=feed_fresh, errors=errors),
             "errors": errors,
         }
 
