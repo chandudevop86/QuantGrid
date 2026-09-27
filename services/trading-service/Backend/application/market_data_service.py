@@ -14,23 +14,15 @@ from Backend.application.monitoring import (
 from Backend.application.redis_service import redis_service
 from Backend.core.config import get_settings
 from Backend.domain.market_data.provider import MarketDataProvider, MarketDataProviderError
-from Backend.infrastructure.market_data import AngelProvider, DhanProvider, FyersProvider, KiteProvider, UpstoxProvider, YahooProvider
-from Backend.config import Provider
-from Backend.application.provider_consensus_engine import (
-    ProviderConsensusEngine,
-)
-
-from Backend.infrastructure.market_data.consensus_adapter import (
-    ConsensusProviderAdapter,
-)
+from Backend.application.provider_consensus_engine import ProviderConsensusEngine
 from Backend.infrastructure.market_data import (
     AngelProvider,
     DhanProvider,
     FyersProvider,
     KiteProvider,
     UpstoxProvider,
-    YahooProvider
 )
+from Backend.infrastructure.market_data.registry import create_market_data_provider
 _MEMORY_CACHE: dict[str, tuple[float, Any]] = {}
 
 
@@ -269,20 +261,7 @@ class MarketDataService:
 
 
 def select_market_data_provider(name: str) -> MarketDataProvider:
-    provider = (name or "dhan").strip().lower()
-    if provider == "yahoo":
-        return YahooProvider()
-    if provider == "kite":
-        return KiteProvider()
-    if provider == "upstox":
-        return UpstoxProvider()
-    if provider == Provider.DHAN:
-        return DhanProvider()
-    if provider == "fyers":
-        return FyersProvider()
-    if provider in {"angel", "smartapi", "angelone"}:
-        return AngelProvider()
-    raise MarketDataProviderError(f"Unsupported market data provider: {provider}")
+    return create_market_data_provider(name)
 
 def get_provider_consensus_engine():
 
