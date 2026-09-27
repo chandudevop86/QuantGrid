@@ -128,6 +128,9 @@ def _live_guardrail_failure(
     # ------------------------------------------------------------------
     # Feature flags
     # ------------------------------------------------------------------
+    if not getattr(settings, "live_money_approved", False):
+        return "Live trading requires separate real-money approval (QUANTGRID_LIVE_MONEY_APPROVED=true)."
+
     if not settings.broker_live_enabled:
         return "Live trading requires BROKER_LIVE_ENABLED=true."
 
