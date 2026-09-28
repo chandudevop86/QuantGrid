@@ -231,4 +231,11 @@ def test_production_deploy_uses_services_test_paths():
     ]
     for path in required:
         assert path in script
-    assert '"\${APP_DIR}/tests/' not in script
+    assert '"${APP_DIR}/tests/' not in script
+
+
+
+def test_production_deploy_sets_test_helper_pythonpath():
+    script = _text("deploy-production.sh")
+
+    assert 'PYTHONPATH="${APP_DIR}/services/tests:${TRADING_SERVICE_DIR}"' in script
