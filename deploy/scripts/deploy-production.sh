@@ -103,7 +103,7 @@ run "${PYTHON}" -m compileall -q "${TRADING_SERVICE_DIR}/Backend"
 
 if [[ "${SKIP_TESTS}" == "0" ]]; then
   log "Running critical release tests"
-  run "${PYTHON}" -m pytest -q \
+  run env PYTHONPATH="${APP_DIR}/services/tests:${TRADING_SERVICE_DIR}" "${PYTHON}" -m pytest -q \
     "${APP_DIR}/services/tests/test_auth_and_execution_access.py" \
     "${APP_DIR}/services/tests/test_live_execution_guard.py" \
     "${APP_DIR}/services/tests/test_broker_status.py" \
