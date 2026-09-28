@@ -93,7 +93,7 @@ def test_signal_identity_unique_index_is_installed(monkeypatch):
         if index["name"] == "uq_paper_trades_signal_identity"
     )
 
-    assert identity["unique"] is True
+    assert bool(identity["unique"]) is True
     assert identity["column_names"] == ["strategy", "symbol", "signal_time"]
 
 
