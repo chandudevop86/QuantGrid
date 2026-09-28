@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from Backend.core.config import get_settings
-from Backend.core.database import get_db, init_database
+from Backend.core.database import SessionLocal, get_db, init_database
 from Backend.domain.security.audit import request_ip, write_audit_log
 from Backend.domain.security.models import User
 from Backend.domain.security.passwords import hash_password, validate_password_policy, verify_password
@@ -149,17 +149,18 @@ def _find_user_by_id(db: Session, user_id: int) -> User:
 
 def current_user(
     authorization: str | None = Header(default=None),
-    db: Session = Depends(get_db),
 ) -> User:
-    logger.info("Authorization header received",extra={"token_present": bool(authorization)})
+    logger.info("Authorization header received", extra={"token_present": bool(authorization)})
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
     claims = verify_token(authorization.split(" ", 1)[1].strip())
-    user = db.get(User, int(claims["uid"]))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
-    return user
+    with SessionLocal() as db:
+        user = db.get(User, int(claims["uid"]))
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+        db.expunge(user)
+        return user
 
 
 def require_admin(
