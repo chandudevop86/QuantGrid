@@ -216,3 +216,19 @@ def test_compose_validation_never_prints_interpolated_configuration():
     script = (ROOT / "deploy" / "scripts" / "validate-compose.sh").read_text(encoding="utf-8")
     assert "config --quiet" in script
     assert "config\n" not in script
+
+
+
+def test_production_deploy_uses_services_test_paths():
+    script = _text("deploy-production.sh")
+
+    required = [
+        "services/tests/test_auth_and_execution_access.py",
+        "services/tests/test_live_execution_guard.py",
+        "services/tests/test_broker_status.py",
+        "services/tests/test_schema_migrations.py",
+        "services/tests/test_deploy_scripts.py",
+    ]
+    for path in required:
+        assert path in script
+    assert '"\${APP_DIR}/tests/' not in script
