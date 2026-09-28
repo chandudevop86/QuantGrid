@@ -58,6 +58,7 @@ def generate_signals(
     params = {
         key: value
         for key, value in {
+            "live_mode": True,
             "htf_candles": _candle_dicts(payload.htf_candles),
             "h1_candles": _candle_dicts(payload.h1_candles),
             "h4_candles": _candle_dicts(payload.h4_candles),
