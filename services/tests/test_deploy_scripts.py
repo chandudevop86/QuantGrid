@@ -267,3 +267,12 @@ def test_production_deploy_isolates_release_tests_from_env_file():
     script = _text("deploy-production.sh")
 
     assert 'QUANTGRID_ENV_FILE=/dev/null' in script
+
+
+
+def test_production_health_checks_mark_local_request_as_https_proxied():
+    common = _text("common.sh")
+    script = _text("deploy-production.sh")
+
+    assert 'curl -fsS -H "X-Forwarded-Proto: https"' in common
+    assert 'headers={"X-Forwarded-Proto": "https"}' in script
