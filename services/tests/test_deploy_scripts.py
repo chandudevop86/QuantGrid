@@ -253,3 +253,10 @@ def test_production_deploy_runs_critical_tests_from_trading_service():
     assert pytest_cmd in script
     assert popd in script
     assert script.index(pushd) < script.index(pytest_cmd) < script.index(popd)
+
+
+
+def test_production_deploy_disables_repo_root_pytest_pythonpath():
+    script = _text("deploy-production.sh")
+
+    assert "-o pythonpath=" in script
