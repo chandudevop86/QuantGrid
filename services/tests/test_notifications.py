@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC
 from email.message import EmailMessage
 
 from Backend.application import notifications
@@ -130,3 +132,22 @@ def test_admin_can_view_notification_status_and_send_test(app_client, monkeypatc
     assert response.status_code == 200
     assert response.json() == {"status": "sent"}
     assert sent
+
+
+
+def test_notification_retry_uses_utc_timezone_instance(monkeypatch):
+    from Backend.application import notification_retry
+
+    captured = {}
+
+    def fake_get_retry_notifications(_db, now):
+        captured["now"] = now
+        return []
+
+    monkeypatch.setattr(notification_retry, "get_retry_notifications", fake_get_retry_notifications)
+
+    worker = notification_retry.NotificationRetryWorker(db=object())
+    result = asyncio.run(worker.run())
+
+    assert captured["now"].tzinfo is UTC
+    assert result["processed"] == 0

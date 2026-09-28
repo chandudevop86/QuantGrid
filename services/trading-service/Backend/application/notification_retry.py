@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 
-from datetime import datetime, timezone as UTC
+from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from Backend.application.notifications import send_alert
