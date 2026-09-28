@@ -260,3 +260,10 @@ def test_production_deploy_disables_repo_root_pytest_pythonpath():
     script = _text("deploy-production.sh")
 
     assert "-o pythonpath=" in script
+
+
+
+def test_production_deploy_isolates_release_tests_from_env_file():
+    script = _text("deploy-production.sh")
+
+    assert 'QUANTGRID_ENV_FILE=/dev/null' in script
