@@ -246,7 +246,7 @@ def test_production_deploy_runs_critical_tests_from_trading_service():
     script = _text("deploy-production.sh")
 
     pushd = 'pushd "${TRADING_SERVICE_DIR}" >/dev/null'
-    pytest_cmd = 'run env PYTHONPATH="${APP_DIR}/services/tests:${TRADING_SERVICE_DIR}" "${PYTHON}" -m pytest -q'
+    pytest_cmd = 'run env QUANTGRID_ENV_FILE=/dev/null PYTHONPATH="${APP_DIR}/services/tests:${TRADING_SERVICE_DIR}" "${PYTHON}" -m pytest -q'
     popd = 'popd >/dev/null'
 
     assert pushd in script
