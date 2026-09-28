@@ -48,7 +48,8 @@ def create_market_data_provider(name: str) -> MarketDataProvider:
 
 
 def configured_paper_fallback_names(primary_name: str) -> tuple[str, ...]:
-    raw = os.getenv("QUANTGRID_MARKET_DATA_FALLBACKS", "")
+    configured = os.getenv("QUANTGRID_MARKET_DATA_FALLBACKS")
+    raw = "yahoo" if configured is None else configured
     primary = (primary_name or "").strip().lower()
     names: list[str] = []
     for item in raw.split(","):
