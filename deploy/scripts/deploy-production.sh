@@ -138,9 +138,10 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   HEALTH_URL="${BASE_URL}/health" "${PYTHON}" - <<'PY'
 import json
 import os
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
-with urlopen(os.environ["HEALTH_URL"], timeout=10) as response:
+request = Request(os.environ["HEALTH_URL"], headers={"X-Forwarded-Proto": "https"})
+with urlopen(request, timeout=10) as response:
     payload = json.load(response)
 if payload.get("database") != "connected":
     raise SystemExit("Health validation failed: database is not connected.")
