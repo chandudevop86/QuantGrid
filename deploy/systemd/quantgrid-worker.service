@@ -7,6 +7,9 @@ After=network-online.target postgresql.service
 Type=simple
 WorkingDirectory=/root/QuantGrid/services/trading-service
 EnvironmentFile=/root/QuantGrid/services/trading-service/.env
+Environment=QUANTGRID_AUTO_PAPER_ENABLED=true
+Environment=QUANTGRID_AUTO_PAPER_INTERVAL_SECONDS=60
+Environment=QUANTGRID_AUTO_PAPER_SYMBOLS=NIFTY
 ExecStart=/root/venv/bin/python -m Backend.application.worker --poll-interval 1
 Restart=on-failure
 RestartSec=5
