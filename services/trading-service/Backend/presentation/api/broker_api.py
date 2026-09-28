@@ -170,6 +170,9 @@ def _write_env_values(path: Path, values: dict[str, str]) -> None:
 @router.get("/status")
 def broker_status(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
     settings = get_settings()
+    env_provider = (os.getenv("QUANTGRID_BROKER_PROVIDER") or "").strip().lower()
+    if env_provider and env_provider != (settings.broker_provider or ""):
+        settings = reload_settings()
     provider = settings.broker_provider or "none"
 
     if provider == Provider.DHAN:
