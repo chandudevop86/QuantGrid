@@ -246,7 +246,7 @@ class DhanProvider(EnvConfiguredProvider):
         from_date = (
             to_date
             - timedelta(
-                days=max(1, _period_days(period))
+                days=max(7, _period_days(period))
             )
         )
 
