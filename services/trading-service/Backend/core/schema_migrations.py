@@ -155,14 +155,16 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
         )}
 
         if PAPER_TRADE_IDEMPOTENCY_VERSION not in applied:
-            connection.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_trades_signal_identity "
-                "ON paper_trades (strategy, symbol, signal_time)"
-            ))
-            connection.execute(
-                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
-                {"version": PAPER_TRADE_IDEMPOTENCY_VERSION},
-            )
+            existing_tables = set(inspect(connection).get_table_names())
+            if "paper_trades" in existing_tables:
+                connection.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_trades_signal_identity "
+                    "ON paper_trades (strategy, symbol, signal_time)"
+                ))
+                connection.execute(
+                    text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
+                    {"version": PAPER_TRADE_IDEMPOTENCY_VERSION},
+                )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
