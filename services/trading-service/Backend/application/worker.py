@@ -105,6 +105,7 @@ WORKER_ID = socket.gethostname()
 
 _LAST_STOCK_RESEARCH_DATE: str | None = None
 _LAST_FUND_RESEARCH_WEEK: str | None = None
+_LAST_AUTO_PAPER_CANDLE: dict[str, str] = {}
 
 
 
@@ -915,6 +916,87 @@ def _run_periodic_exit_monitor():
 
 
 
+def _auto_paper_enabled() -> bool:
+    return _truthy(
+        os.getenv(
+            "QUANTGRID_AUTO_PAPER_ENABLED"
+        )
+    )
+
+
+def _auto_paper_interval() -> float:
+    return max(
+        30.0,
+        _float_env(
+            "QUANTGRID_AUTO_PAPER_INTERVAL_SECONDS",
+            60.0,
+        ),
+    )
+
+
+def _auto_paper_symbols() -> list[str]:
+    configured = os.getenv(
+        "QUANTGRID_AUTO_PAPER_SYMBOLS",
+        "NIFTY",
+    )
+    symbols = [
+        item.strip().upper()
+        for item in configured.split(",")
+        if item.strip()
+    ]
+    return symbols or ["NIFTY"]
+
+
+def _run_periodic_auto_paper() -> dict[str, Any]:
+    if not is_market_hours_ist():
+        return {"status": "outside_market_hours", "execution_mode": "paper"}
+
+    service = get_market_data_service()
+    results: dict[str, Any] = {}
+
+    for symbol in _auto_paper_symbols():
+        response = service.get_candles(
+            symbol,
+            interval="1m",
+            period="1d",
+            limit=2,
+        )
+        candles = list(response.get("candles") or [])
+        if not candles:
+            results[symbol] = {"status": "no_market_data"}
+            continue
+
+        latest_candle = str(candles[-1].get("timestamp") or "")
+        if not latest_candle:
+            results[symbol] = {"status": "missing_candle_timestamp"}
+            continue
+
+        if _LAST_AUTO_PAPER_CANDLE.get(symbol) == latest_candle:
+            results[symbol] = {
+                "status": "already_scanned",
+                "latest_candle": latest_candle,
+            }
+            continue
+
+        _LAST_AUTO_PAPER_CANDLE[symbol] = latest_candle
+        results[symbol] = _run_auto_paper_job(
+            {
+                "symbol": symbol,
+                "interval": "1m",
+                "period": "1d",
+                "capital": 100000,
+                "risk_pct": 1,
+                "rr_ratio": 2,
+            }
+        )
+
+    return {
+        "status": "completed",
+        "execution_mode": "paper",
+        "symbols": results,
+    }
+
+
 def _narrative_loop_enabled():
 
     return _not_falsey(
@@ -1027,6 +1109,8 @@ def run_worker_loop(
 
     next_exit_check = time.monotonic()
 
+    next_auto_paper_check = time.monotonic()
+
     next_narrative_check = time.monotonic()
     
     next_notification_retry = time.monotonic()
@@ -1115,6 +1199,27 @@ def run_worker_loop(
             next_notification_retry = (
                 time.monotonic()
                 + _notification_retry_interval()
+            )
+
+
+        # -------------------------
+        # automatic paper scan
+        # -------------------------
+
+        if (
+            _auto_paper_enabled()
+            and
+            time.monotonic() >= next_auto_paper_check
+        ):
+            try:
+                result = _run_periodic_auto_paper()
+                logger.info("auto_paper_periodic_scan result=%s", result.get("status"))
+            except Exception:
+                logger.exception("Automatic paper scan failed")
+
+            next_auto_paper_check = (
+                time.monotonic()
+                + _auto_paper_interval()
             )
 
 
