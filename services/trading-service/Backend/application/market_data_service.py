@@ -364,10 +364,10 @@ def _candles_fresh(candles: list[dict[str, Any]], interval: str) -> bool:
 
 
 def _feed_status(provider: MarketDataProvider, *, fresh: bool, errors: list[str]) -> str:
-    if provider.provider_name == "yahoo":
-        return "DEMO/YAHOO MODE"
     if errors:
         return "FEED DOWN"
+    if provider.provider_name == "yahoo":
+        return "DEMO/YAHOO MODE"
     if fresh:
         return "LIVE FEED"
     return "DELAYED FEED"
