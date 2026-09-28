@@ -58,6 +58,7 @@ COMPATIBILITY_VERSION = "0002_legacy_columns"
 SUBSCRIPTION_ENTITLEMENTS_VERSION = "0003_subscription_entitlements"
 INSTITUTIONAL_METRICS_VERSION = "0004_institutional_metrics"
 PAPER_TRADE_COST_EVIDENCE_VERSION = "0005_paper_trade_cost_evidence"
+PAPER_TRADE_IDEMPOTENCY_VERSION = "0006_paper_trade_idempotency"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -146,6 +147,24 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                 text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
                 {"version": PAPER_TRADE_COST_EVIDENCE_VERSION},
             )
+
+
+    with engine.begin() as connection:
+        applied = {row[0] for row in connection.execute(
+            text(f"SELECT version FROM {MIGRATION_TABLE}")
+        )}
+
+        if PAPER_TRADE_IDEMPOTENCY_VERSION not in applied:
+            existing_tables = set(inspect(connection).get_table_names())
+            if "paper_trades" in existing_tables:
+                connection.execute(text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_trades_signal_identity "
+                    "ON paper_trades (strategy, symbol, signal_time)"
+                ))
+                connection.execute(
+                    text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
+                    {"version": PAPER_TRADE_IDEMPOTENCY_VERSION},
+                )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

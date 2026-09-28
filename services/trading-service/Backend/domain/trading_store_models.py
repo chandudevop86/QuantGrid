@@ -4,7 +4,7 @@ from datetime import datetime
 
 from Backend.core.database import Base
 
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -199,6 +199,15 @@ class MarketCandleRecord(Base):
 
 class PaperTradeRecord(Base):
     __tablename__ = "paper_trades"
+    __table_args__ = (
+        Index(
+            "uq_paper_trades_signal_identity",
+            "strategy",
+            "symbol",
+            "signal_time",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         Integer,
