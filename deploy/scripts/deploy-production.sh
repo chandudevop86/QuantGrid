@@ -109,7 +109,8 @@ if [[ "${SKIP_TESTS}" == "0" ]]; then
     "${APP_DIR}/services/tests/test_live_execution_guard.py" \
     "${APP_DIR}/services/tests/test_broker_status.py" \
     "${APP_DIR}/services/tests/test_schema_migrations.py" \
-    "${APP_DIR}/services/tests/test_deploy_scripts.py"
+    "${APP_DIR}/services/tests/test_deploy_scripts.py" \
+    -o pythonpath=
   popd >/dev/null
 else
   log "WARNING: critical tests skipped by operator request"
