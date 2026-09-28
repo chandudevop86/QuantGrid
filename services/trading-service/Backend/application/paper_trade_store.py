@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("PAPER_TRADE_DB_FILE", DATA_DIR / "paper_trades.sqlite3"))
@@ -85,6 +87,12 @@ def _initialize_paper_trade_store() -> None:
             """
             CREATE INDEX IF NOT EXISTS idx_paper_trades_created
             ON paper_trades(created_at DESC)
+            """
+        )
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_trades_signal_identity
+            ON paper_trades(strategy, symbol, signal_time)
             """
         )
         connection.execute(
@@ -174,22 +182,46 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
         "raw_safe_broker_response": _json_or_none(payload.get("raw_safe_broker_response")),
         "score": float(payload.get("score") or 0.0),
         "regime": payload.get("regime"),
-        "signal_time": payload.get("signal_time"),
+        "signal_time": (
+            str(payload.get("signal_time"))
+            if payload.get("signal_time") not in {None, ""}
+            else None
+        ),
         "created_at": created_at,
     }
+    created = True
     with _connect() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO paper_trades
-                (strategy, symbol, side, entry, stop_loss, target, trailing_stop_loss, trailing_stop_pct, status, pnl, reason, broker_order_id, broker_status, raw_safe_broker_response, score, regime, signal_time, created_at)
-            VALUES
-                (:strategy, :symbol, :side, :entry, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :status, :pnl, :reason, :broker_order_id, :broker_status, :raw_safe_broker_response, :score, :regime, :signal_time, :created_at)
-            """,
-            row,
-        )
-        row["id"] = cursor.lastrowid
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO paper_trades
+                    (strategy, symbol, side, entry, stop_loss, target, trailing_stop_loss, trailing_stop_pct, status, pnl, reason, broker_order_id, broker_status, raw_safe_broker_response, score, regime, signal_time, created_at)
+                VALUES
+                    (:strategy, :symbol, :side, :entry, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :status, :pnl, :reason, :broker_order_id, :broker_status, :raw_safe_broker_response, :score, :regime, :signal_time, :created_at)
+                """,
+                row,
+            )
+            row["id"] = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            if row["signal_time"] is None:
+                raise
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM paper_trades
+                WHERE strategy = ? AND symbol = ? AND signal_time = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (row["strategy"], row["symbol"], row["signal_time"]),
+            ).fetchone()
+            if existing is None:
+                raise
+            row = dict(existing)
+            created = False
     row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
-    _record_trade_journal_from_paper_trade(row)
+    if created:
+        _record_trade_journal_from_paper_trade(row)
     return row
 
 
@@ -598,15 +630,37 @@ def _db_create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
     from Backend.domain.trading_store_models import PaperTradeRecord
 
     row = _paper_trade_row(payload)
+    created = True
     with SessionLocal() as db:
         record = PaperTradeRecord(**row)
         db.add(record)
-        db.commit()
-        db.refresh(record)
+        try:
+            db.commit()
+            db.refresh(record)
+        except IntegrityError:
+            db.rollback()
+            if row["signal_time"] is None:
+                raise
+            record = (
+                db.query(PaperTradeRecord)
+                .filter(
+                    PaperTradeRecord.strategy == row["strategy"],
+                    PaperTradeRecord.symbol == row["symbol"],
+                    PaperTradeRecord.signal_time == row["signal_time"],
+                )
+                .order_by(PaperTradeRecord.id.desc())
+                .first()
+            )
+            if record is None:
+                raise
+            created = False
+
         row = _record_to_dict(record)
         row["quantity"] = int(payload["quantity"]) if payload.get("quantity") not in {None, ""} else None
+
+    if created:
         _record_trade_journal_from_paper_trade(row)
-        return row
+    return row
 
 
 def _record_trade_journal_from_paper_trade(trade: dict[str, Any]) -> None:
