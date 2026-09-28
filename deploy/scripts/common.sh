@@ -76,7 +76,7 @@ health_check() {
   local attempt
   log "Checking ${url}"
   for attempt in $(seq 1 "${attempts}"); do
-    if run curl -fsS "${url}" >/dev/null; then
+    if run curl -fsS -H "X-Forwarded-Proto: https" "${url}" >/dev/null; then
       log "Health check passed: ${url}"
       return 0
     fi
