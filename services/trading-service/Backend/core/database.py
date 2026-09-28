@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import NoInspectionAvailable, OperationalError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -71,7 +71,16 @@ def init_database() -> None:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
 
-    Base.metadata.create_all(bind=engine)
+    from Backend.core.schema_migrations import apply_versioned_migrations
+
+    try:
+        inspect(engine)
+    except NoInspectionAvailable:
+        # Test doubles and lightweight compatibility engines may implement
+        # connectivity without SQLAlchemy's inspection protocol.
+        Base.metadata.create_all(bind=engine)
+    else:
+        apply_versioned_migrations(engine, Base.metadata)
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()

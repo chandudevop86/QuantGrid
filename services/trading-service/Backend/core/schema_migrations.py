@@ -57,6 +57,7 @@ BASELINE_VERSION = "0001_metadata_baseline"
 COMPATIBILITY_VERSION = "0002_legacy_columns"
 SUBSCRIPTION_ENTITLEMENTS_VERSION = "0003_subscription_entitlements"
 INSTITUTIONAL_METRICS_VERSION = "0004_institutional_metrics"
+PAPER_TRADE_COST_EVIDENCE_VERSION = "0005_paper_trade_cost_evidence"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -132,6 +133,21 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                 text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
                 {"version": INSTITUTIONAL_METRICS_VERSION},
             )
+
+    with engine.begin() as connection:
+        applied = {row[0] for row in connection.execute(
+            text(f"SELECT version FROM {MIGRATION_TABLE}")
+        )}
+
+    if PAPER_TRADE_COST_EVIDENCE_VERSION not in applied:
+        apply_compatibility_migrations(engine, ["trade_journal"])
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
+                {"version": PAPER_TRADE_COST_EVIDENCE_VERSION},
+            )
+
+
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
     """Apply the small, idempotent upgrades that predate versioned migrations."""
     with engine.begin() as connection:
