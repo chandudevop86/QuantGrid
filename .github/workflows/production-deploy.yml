@@ -1,0 +1,168 @@
+name: Production Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: quantgrid-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+      EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+
+    steps:
+      - name: Verify required deployment secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in EC2_HOST EC2_USER EC2_SSH_KEY EC2_KNOWN_HOSTS; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Wait for Security and CodeQL
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest_run_state() {
+            local workflow_name="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${DEPLOY_SHA}&per_page=100" \
+              --jq ".workflow_runs
+                | map(select(.name == \"${workflow_name}\"))
+                | sort_by(.created_at)
+                | reverse
+                | .[0]
+                | if . == null then \"missing\\tmissing\" else [.status, (.conclusion // \"pending\")] | @tsv end"
+          }
+
+          for attempt in {1..30}; do
+            security="$(latest_run_state "Security")"
+            codeql="$(latest_run_state "CodeQL Advanced")"
+
+            echo "Security: $security"
+            echo "CodeQL Advanced: $codeql"
+
+            if [[ "$security" == $'completed\tsuccess' && "$codeql" == $'completed\tsuccess' ]]; then
+              echo "All required workflows passed for ${DEPLOY_SHA}."
+              exit 0
+            fi
+
+            if [[ "$security" == completed$'\t'failure || "$security" == completed$'\t'cancelled || "$security" == completed$'\t'timed_out ]]; then
+              echo "Security did not pass for ${DEPLOY_SHA}." >&2
+              exit 1
+            fi
+
+            if [[ "$codeql" == completed$'\t'failure || "$codeql" == completed$'\t'cancelled || "$codeql" == completed$'\t'timed_out ]]; then
+              echo "CodeQL Advanced did not pass for ${DEPLOY_SHA}." >&2
+              exit 1
+            fi
+
+            sleep 20
+          done
+
+          echo "Timed out waiting for Security and CodeQL Advanced." >&2
+          exit 1
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/quantgrid_deploy
+          chmod 600 ~/.ssh/quantgrid_deploy
+          printf '%s\n' "$EC2_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy exact main commit with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/quantgrid_deploy \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            "${EC2_USER}@${EC2_HOST}" \
+            "sudo bash -s -- '${DEPLOY_SHA}'" <<'REMOTE'
+          set -Eeuo pipefail
+
+          DEPLOY_SHA="$1"
+          APP_DIR="/root/QuantGrid"
+          cd "$APP_DIR"
+
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "Deployment refused: tracked changes exist on the production server." >&2
+            git status --short
+            exit 1
+          fi
+
+          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          echo "Previous production commit: $PREVIOUS_SHA"
+          echo "Requested deployment commit: $DEPLOY_SHA"
+
+          git fetch origin main
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+          if [[ "$ORIGIN_MAIN" != "$DEPLOY_SHA" ]]; then
+            echo "Deployment refused: requested SHA is not current origin/main." >&2
+            echo "origin/main: $ORIGIN_MAIN" >&2
+            exit 1
+          fi
+
+          rollback() {
+            echo "Deployment failed. Rolling back to $PREVIOUS_SHA." >&2
+            git checkout main
+            git reset --hard "$PREVIOUS_SHA"
+            bash deploy/scripts/deploy-production.sh --skip-pull
+          }
+
+          git checkout main
+          git reset --hard "$DEPLOY_SHA"
+
+          if ! bash deploy/scripts/deploy-production.sh --skip-pull; then
+            rollback
+            exit 1
+          fi
+
+          if ! curl -fsS https://quantgrid.info/api/health | /root/venv/bin/python -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          if payload.get("status") != "ok":
+              raise SystemExit("Public health status is not ok")
+          if payload.get("database") != "connected":
+              raise SystemExit("Public health database is not connected")
+          if payload.get("trading_mode") != "paper":
+              raise SystemExit("Public health is not in paper mode")
+          print("Public health: ok (database connected, paper mode)")
+          '; then
+            rollback
+            exit 1
+          fi
+
+          echo "Production deployment completed at $DEPLOY_SHA"
+          REMOTE
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "QuantGrid production deployed successfully."
+          echo "Commit: ${DEPLOY_SHA}"
+          echo "Trading mode remains paper-only."
