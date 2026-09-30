@@ -150,7 +150,7 @@ if payload.get("trading_mode") != "paper":
 print(f"Backend health: {payload.get('status')} (database connected, paper mode)")
 PY
 fi
-run curl -fsSI "http://127.0.0.1/" >/dev/null
+run curl -fsSI -H "Host: ${PRODUCTION_HOST:-quantgrid.info}" "http://127.0.0.1/" >/dev/null
 bash "${SCRIPT_DIR}/production_frontend.sh" check
 
 deployed_commit="$(git rev-parse HEAD)"
