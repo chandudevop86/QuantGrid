@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from Backend.application.candle_validation import validate_live_candle
 from Backend.application.dto import serialize_signal
 from Backend.application.job_events import publish_job_update
+from Backend.application.kill_switch import kill_switch_status
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
 from Backend.application.notifications import alert_job_finished
 from Backend.application.paper_trade_store import create_paper_trade
@@ -153,7 +154,23 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     )
     serialized_signals = [serialize_signal(signal) for signal in signals]
     institutional_analysis = analyze_market_structure(candles, signals=signals, raw_signals=raw_signals)
-    auto_trades = _generate_paper_trades(signals) if payload.auto_trade else []
+
+    auto_trade_blocked_reason: str | None = None
+    if payload.auto_trade:
+        halt = kill_switch_status()
+        market_status = str(getattr(candle_validation, "market_status", "UNKNOWN"))
+        if halt.get("active"):
+            auto_trade_blocked_reason = f"KILL_SWITCH_ACTIVE: {halt.get('reason') or 'Trading halted'}"
+        elif not bool(getattr(candle_validation, "valid_for_execution", False)):
+            auto_trade_blocked_reason = f"MARKET_DATA_NOT_EXECUTABLE: {market_status}"
+        elif market_status.upper() != "LIVE MARKET":
+            auto_trade_blocked_reason = f"MARKET_NOT_LIVE_FOR_EXECUTION: {market_status}"
+
+    auto_trades = (
+        _generate_paper_trades(signals)
+        if payload.auto_trade and auto_trade_blocked_reason is None
+        else []
+    )
     logger.info(
         "Live analysis generated %s signals and %s trades for %s/%s",
         len(serialized_signals),
@@ -165,6 +182,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         "data_source": data_source,
         "candles_analyzed": len(candles),
         "auto_trade": payload.auto_trade,
+        "auto_trade_blocked_reason": auto_trade_blocked_reason,
         "execution_mode": execution_mode,
         "market_data": {
             "source": candles_response.get("source"),
