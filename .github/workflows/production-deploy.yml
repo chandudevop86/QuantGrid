@@ -1,0 +1,216 @@
+name: Production Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: quantgrid-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      SSM_INSTANCE_ID: ${{ secrets.SSM_INSTANCE_ID }}
+
+    steps:
+      - name: Verify required deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AWS_REGION AWS_ROLE_ARN SSM_INSTANCE_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Wait for Security and CodeQL
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          latest_run_state() {
+            local workflow_name="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${DEPLOY_SHA}&per_page=100" \
+              --jq ".workflow_runs
+                | map(select(.name == \"${workflow_name}\"))
+                | sort_by(.created_at)
+                | reverse
+                | .[0]
+                | if . == null then \"missing\\tmissing\" else [.status, (.conclusion // \"pending\")] | @tsv end"
+          }
+
+          for attempt in {1..30}; do
+            security="$(latest_run_state "Security")"
+            codeql="$(latest_run_state "CodeQL Advanced")"
+
+            echo "Security: $security"
+            echo "CodeQL Advanced: $codeql"
+
+            if [[ "$security" == $'completed\tsuccess' && "$codeql" == $'completed\tsuccess' ]]; then
+              echo "All required workflows passed for ${DEPLOY_SHA}."
+              exit 0
+            fi
+
+            case "$security" in
+              completed$'\t'failure|completed$'\t'cancelled|completed$'\t'timed_out)
+                echo "Security did not pass for ${DEPLOY_SHA}." >&2
+                exit 1
+                ;;
+            esac
+
+            case "$codeql" in
+              completed$'\t'failure|completed$'\t'cancelled|completed$'\t'timed_out)
+                echo "CodeQL Advanced did not pass for ${DEPLOY_SHA}." >&2
+                exit 1
+                ;;
+            esac
+
+            sleep 20
+          done
+
+          echo "Timed out waiting for Security and CodeQL Advanced." >&2
+          exit 1
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Confirm SSM target is online
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(aws ssm describe-instance-information \
+            --filters "Key=InstanceIds,Values=${SSM_INSTANCE_ID}" \
+            --query 'InstanceInformationList[0].PingStatus' \
+            --output text)"
+
+          if [[ "$status" != "Online" ]]; then
+            echo "SSM target is not online: $status" >&2
+            exit 1
+          fi
+
+      - name: Deploy exact main commit through SSM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/deploy.sh <<'REMOTE'
+          set -Eeuo pipefail
+
+          APP_DIR="/root/QuantGrid"
+          cd "$APP_DIR"
+
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "Deployment refused: tracked changes exist on the production server." >&2
+            git status --short
+            exit 1
+          fi
+
+          PREVIOUS_SHA="$(git rev-parse HEAD)"
+          echo "Previous production commit: $PREVIOUS_SHA"
+          echo "Requested deployment commit: __DEPLOY_SHA__"
+
+          git fetch origin main
+          ORIGIN_MAIN="$(git rev-parse origin/main)"
+          if [[ "$ORIGIN_MAIN" != "__DEPLOY_SHA__" ]]; then
+            echo "Deployment refused: requested SHA is not current origin/main." >&2
+            echo "origin/main: $ORIGIN_MAIN" >&2
+            exit 1
+          fi
+
+          rollback() {
+            echo "Deployment failed. Rolling back to $PREVIOUS_SHA." >&2
+            git checkout main
+            git reset --hard "$PREVIOUS_SHA"
+            bash deploy/scripts/deploy-production.sh --skip-pull
+          }
+
+          git checkout main
+          git reset --hard "__DEPLOY_SHA__"
+
+          if ! bash deploy/scripts/deploy-production.sh --skip-pull; then
+            rollback
+            exit 1
+          fi
+
+          if ! curl -fsS https://quantgrid.info/api/health | /root/venv/bin/python -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          if payload.get("status") != "ok":
+              raise SystemExit("Public health status is not ok")
+          if payload.get("database") != "connected":
+              raise SystemExit("Public health database is not connected")
+          if payload.get("trading_mode") != "paper":
+              raise SystemExit("Public health is not in paper mode")
+          print("Public health: ok (database connected, paper mode)")
+          '; then
+            rollback
+            exit 1
+          fi
+
+          echo "Production deployment completed at __DEPLOY_SHA__"
+          REMOTE
+
+          sed -i "s/__DEPLOY_SHA__/${DEPLOY_SHA}/g" /tmp/deploy.sh
+          payload="$(base64 -w0 /tmp/deploy.sh)"
+          jq -n --arg command "echo '$payload' | base64 -d | bash" '{commands:[$command]}' > /tmp/ssm-parameters.json
+
+          command_id="$(aws ssm send-command \
+            --instance-ids "${SSM_INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "QuantGrid deploy ${DEPLOY_SHA}" \
+            --parameters file:///tmp/ssm-parameters.json \
+            --timeout-seconds 1800 \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          echo "SSM command: $command_id"
+
+          set +e
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "${SSM_INSTANCE_ID}"
+          wait_rc=$?
+          set -e
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "${SSM_INSTANCE_ID}" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+
+          status="$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "${SSM_INSTANCE_ID}" \
+            --query 'Status' \
+            --output text)"
+
+          if [[ "$wait_rc" -ne 0 || "$status" != "Success" ]]; then
+            echo "Production deployment failed through SSM (status=$status)." >&2
+            exit 1
+          fi
+
+      - name: Deployment summary
+        shell: bash
+        run: |
+          echo "QuantGrid production deployed successfully."
+          echo "Commit: ${DEPLOY_SHA}"
+          echo "Trading mode remains paper-only."
