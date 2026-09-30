@@ -285,6 +285,7 @@ def test_auto_paper_passes_explicit_multi_timeframe_inputs(app_client, monkeypat
     assert ("5m", 500) in calls
     assert ("15m", 500) in calls
     assert ("60m", 500) in calls
+    assert captured_params["live_mode"] is True
 
     for key in (
         "m5_candles",

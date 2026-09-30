@@ -410,6 +410,7 @@ async def auto_paper_order(
                 risk_pct=payload.risk_pct,
                 rr_ratio=payload.rr_ratio,
                 params={
+                    "live_mode": True,
                     "m5_candles": confirmation_candles,
                     "m15_candles": trend_candles,
                     "mtf_candles": trend_candles,
