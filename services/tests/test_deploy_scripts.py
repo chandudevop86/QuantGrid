@@ -207,6 +207,7 @@ def test_production_deploy_script_is_safe_and_supports_rollback():
     assert "check_database" in script
     assert 'systemctl_run restart "${SERVICE_NAME}" "${WORKER_SERVICE_NAME}"' in script
     assert 'health_check "${BASE_URL}/health"' in script
+    assert 'curl -fsSI -H "Host: ${PRODUCTION_HOST:-quantgrid.info}" "http://127.0.0.1/"' in script
     assert "QUANTGRID_ENABLE_LIVE_TRADING=true" not in script
     assert "BROKER_LIVE_ENABLED=true" not in script
     assert "git reset --hard" not in script

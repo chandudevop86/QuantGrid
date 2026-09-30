@@ -184,12 +184,32 @@ jobs:
 
           echo "SSM command: $command_id"
 
-          set +e
-          aws ssm wait command-executed \
-            --command-id "$command_id" \
-            --instance-id "${SSM_INSTANCE_ID}"
-          wait_rc=$?
-          set -e
+          status="Pending"
+          for attempt in {1..120}; do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "${SSM_INSTANCE_ID}" \
+              --query 'Status' \
+              --output text)"
+
+            echo "SSM deployment status: $status"
+
+            case "$status" in
+              Success)
+                break
+                ;;
+              Pending|InProgress|Delayed)
+                sleep 15
+                ;;
+              Cancelled|TimedOut|Failed|Cancelling)
+                break
+                ;;
+              *)
+                echo "Unexpected SSM command status: $status" >&2
+                sleep 15
+                ;;
+            esac
+          done
 
           aws ssm get-command-invocation \
             --command-id "$command_id" \
@@ -197,13 +217,7 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output json
 
-          status="$(aws ssm get-command-invocation \
-            --command-id "$command_id" \
-            --instance-id "${SSM_INSTANCE_ID}" \
-            --query 'Status' \
-            --output text)"
-
-          if [[ "$wait_rc" -ne 0 || "$status" != "Success" ]]; then
+          if [[ "$status" != "Success" ]]; then
             echo "Production deployment failed through SSM (status=$status)." >&2
             exit 1
           fi
