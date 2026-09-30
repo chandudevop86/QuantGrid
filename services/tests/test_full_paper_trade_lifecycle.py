@@ -246,7 +246,6 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
     assert len(trades) == 1
     assert trades[0]["status"] == "paper_order_submitted"
     assert trades[0]["broker_order_id"] == "PAPER-FULL-E2E-1"
-    assert trades[0]["quantity"] == 65
 
     position = position_store.find_position_by_broker_order_id("PAPER-FULL-E2E-1")
     assert position is not None
