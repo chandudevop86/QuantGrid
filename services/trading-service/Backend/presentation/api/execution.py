@@ -544,11 +544,39 @@ async def enqueue_auto_paper_order(
             detail="Auto-paper jobs are paper-only.",
         )
 
+    strategies = payload.strategies or AUTO_SCAN_STRATEGIES
+    jobs = []
+    for strategy in strategies:
+        job_payload = {
+            "symbol": payload.symbol,
+            "interval": payload.interval,
+            "period": payload.period,
+            "strategy": strategy,
+            "capital": payload.capital,
+            "risk_pct": payload.risk_pct,
+            "rr_ratio": payload.rr_ratio,
+            "auto_trade": True,
+            "execution_mode": "paper",
+        }
+        queued = enqueue_job(
+            "live-analysis",
+            job_payload,
+            metadata={
+                "symbol": payload.symbol,
+                "strategy": strategy,
+                "execution_mode": "paper",
+                "auto_trade": True,
+            },
+        )
+        jobs.append(queued)
+
     return {
-    "status": "accepted",
-    "message": "Auto paper job queued",
-    "symbol": payload.symbol if hasattr(payload, "symbol") else None,
-}
+        "status": "accepted",
+        "message": "Auto paper jobs queued",
+        "symbol": payload.symbol,
+        "job_count": len(jobs),
+        "jobs": jobs,
+    }
 
 
 @router.post("/order")
