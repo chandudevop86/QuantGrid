@@ -91,6 +91,7 @@ def _generate_paper_trades(signals: list[StrategySignal]) -> list[dict[str, Any]
                 "target": signal.target_price,
                 "status": "paper_simulated",
                 "pnl": 0.0,
+                "quantity": order.quantity,
                 "reason": "OK",
                 "score": signal.metadata.get("score") or signal.metadata.get("total_score") or 0,
                 "regime": signal.metadata.get("regime"),
