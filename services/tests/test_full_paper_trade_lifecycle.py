@@ -175,18 +175,20 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
         lambda _signal: SimpleNamespace(
             accepted=True,
             reason="OK",
-            lot_size=1,
-            quantity=1,
-            notional=float(signal.entry_price),
-            required_margin=float(signal.entry_price),
+            lot_size=65,
+            quantity=65,
+            notional=float(signal.entry_price) * 65,
+            required_margin=float(signal.entry_price) * 65,
         ),
     )
     monkeypatch.setattr(
         execution_pipeline,
         "apply_order_constraints",
-        lambda order, constraints, quantity: order,
+        lambda order, constraints, quantity: (
+            setattr(order, "quantity", constraints.quantity) or order
+        ),
     )
-    monkeypatch.setattr(execution_pipeline, "requested_quantity", lambda _signal: 1)
+    monkeypatch.setattr(execution_pipeline, "requested_quantity", lambda _signal: 70)
 
     class FilledPaperBroker:
         async def place_order(self, order):
@@ -206,7 +208,7 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
                 status="filled",
                 symbol="NIFTY",
                 side=signal.side,
-                quantity=1,
+                quantity=65,
                 price=signal.entry_price,
                 confirmed=True,
             )
@@ -249,13 +251,13 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
     assert position is not None
     assert position["status"] == "open"
     assert position["symbol"] == "NIFTY"
-    assert position["quantity"] == 1
+    assert position["quantity"] == 65
 
     journal = paper_trade_store.list_trade_journal()
     assert len(journal) == 1
     assert journal[0]["source"] == "paper_trade"
     assert journal[0]["symbol"] == "NIFTY"
-    assert journal[0]["quantity"] == 1
+    assert journal[0]["quantity"] == 65
     assert journal[0]["broker_order_id"] == "PAPER-FULL-E2E-1"
 
     monkeypatch.setenv("QUANTGRID_PAPER_BROKERAGE_PER_ORDER", "1")
@@ -281,7 +283,7 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
 
     evidence = exit_result["cost_evidence"]
     assert evidence is not None
-    assert evidence["gross_pnl"] == 10.0
+    assert evidence["gross_pnl"] == 650.0
     assert evidence["total_costs"] > 0
     assert evidence["net_pnl"] < evidence["gross_pnl"]
 
