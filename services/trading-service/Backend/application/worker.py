@@ -75,6 +75,7 @@ from app.security.security_ops_loop import (
 from Backend.application.market_data_service import (
     get_market_data_service
 )
+from Backend.domain.market_data.provider import MarketDataProviderError
 
 from Backend.application.market_data_store import (
     store_candles
@@ -216,6 +217,19 @@ def _candle_interval() -> str:
     )
 
 
+def _candle_market_hours_only() -> bool:
+    """Keep periodic NSE ingestion within the normal weekday session by default.
+
+    Set QUANTGRID_CANDLE_MARKET_HOURS_ONLY=false for explicit backfill or
+    instruments using other sessions. The calendar helper does not track
+    exchange-specific holidays.
+    """
+    return _not_falsey(
+        os.getenv("QUANTGRID_CANDLE_MARKET_HOURS_ONLY"),
+        default=True,
+    )
+
+
 
 # =====================================================
 # CANDLE FETCH + DATABASE STORAGE
@@ -223,6 +237,10 @@ def _candle_interval() -> str:
 
 
 def _run_candle_ingestion():
+
+    if _candle_market_hours_only() and not is_market_hours_ist():
+        logger.debug("candle_ingestion_skipped reason=outside_market_hours")
+        return
 
     service = get_market_data_service()
 
@@ -233,12 +251,21 @@ def _run_candle_ingestion():
 
     for symbol in symbols:
 
-        response = service.get_candles(
-            symbol,
-            interval=interval,
-            period="1d",
-            limit=200,
-        )
+        try:
+            response = service.get_candles(
+                symbol,
+                interval=interval,
+                period="1d",
+                limit=200,
+            )
+        except MarketDataProviderError as exc:
+            logger.warning(
+                "candle_ingestion_provider_error symbol=%s interval=%s error=%s",
+                symbol,
+                interval,
+                exc,
+            )
+            continue
 
 
         candles = response.get(
