@@ -217,6 +217,16 @@ def _candle_interval() -> str:
     )
 
 
+def _candle_history_period() -> str:
+    # Multi-day lookback also works when the current session has no candles.
+    return os.getenv("QUANTGRID_CANDLE_HISTORY_PERIOD", "5d").strip() or "5d"
+
+
+def _candle_history_limit() -> int:
+    # Five 1-minute NSE sessions can exceed the previous 200-candle cap.
+    return max(1, min(5000, int(_float_env("QUANTGRID_CANDLE_HISTORY_LIMIT", 2000))))
+
+
 def _candle_market_hours_only() -> bool:
     """Keep periodic NSE ingestion within the normal weekday session by default.
 
@@ -255,8 +265,8 @@ def _run_candle_ingestion():
             response = service.get_candles(
                 symbol,
                 interval=interval,
-                period="1d",
-                limit=200,
+                period=_candle_history_period(),
+                limit=_candle_history_limit(),
             )
         except MarketDataProviderError as exc:
             logger.warning(
