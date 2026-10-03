@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -475,106 +474,46 @@ Correlation   : {
                 # order after OMS returns.
                 # -------------------------------------------------
 
-                if attempt < self.max_retries:
+                # A raised broker call may have been accepted remotely.
+                # A missing/failed correlation lookup is NOT proof of absence.
+                # Do not resubmit an ambiguous order, even if retries remain.
+                already_placed = await self._check_already_placed(order)
+                if already_placed is not None:
+                    status = self._normalize_status(self._value(already_placed, "status"))
+                    broker_order_id = self._value(already_placed, "broker_order_id")
+                    self._audit(audit, "broker_reconciled", local_order_id, {
+                        "status": status, "broker_order_id": broker_order_id,
+                        "attempt": attempts,
+                    })
+                    if status in {"filled", "partially_filled"} and broker_order_id:
+                        return self._result(local_order_id, status, broker_order_id,
+                                            risk, attempts, ["Broker order recovered after submission error."],
+                                            risk.warnings, audit)
+                    if status == "submitted" and broker_order_id:
+                        return self._result(local_order_id, "submitted", broker_order_id,
+                                            risk, attempts, ["Broker order recovered after submission error."],
+                                            risk.warnings, audit)
+                    if status in {"rejected", "cancelled", "canceled"} and broker_order_id:
+                        return self._result(local_order_id, status, broker_order_id,
+                                            risk, attempts, [f"Broker confirmed {status} after submission error."],
+                                            risk.warnings, audit)
 
-                    already_placed = (
-                        await self._check_already_placed(
-                            order
-                        )
-                    )
+                self._audit(audit, "broker_outcome_unknown", local_order_id, {
+                    "status": "reconciliation_required",
+                    "attempt": attempts,
+                    "correlation_id": order.metadata.get("correlation_id"),
+                })
+                return self._result(
+                    local_order_id, "reconciliation_required", None, risk, attempts,
+                    ["Broker submission outcome is unknown; no automatic retry. "
+                     "Reconcile broker order book and positions before taking action."],
+                    risk.warnings, audit,
+                )
 
-                    if already_placed is not None:
-
-                        status = self._normalize_status(
-                            self._value(
-                                already_placed,
-                                "status",
-                            )
-                        )
-
-                        broker_order_id = self._value(
-                            already_placed,
-                            "broker_order_id",
-                        )
-
-                        self._audit(
-                            audit,
-                            "broker_duplicate_avoided",
-                            local_order_id,
-                            {
-                                "status": status,
-                                "broker_order_id": (
-                                    broker_order_id
-                                ),
-                                "attempt": attempts,
-                            },
-                        )
-
-                        if status == "partially_filled":
-                            return self._result(
-                                local_order_id,
-                                "partially_filled",
-                                broker_order_id,
-                                risk,
-                                attempts,
-                                [
-                                    "Order partially filled."
-                                ],
-                                risk.warnings,
-                                audit,
-                            )
-
-                        if status == "filled":
-                            return self._result(
-                                local_order_id,
-                                "filled",
-                                broker_order_id,
-                                risk,
-                                attempts,
-                                [
-                                    "Order filled after "
-                                    "broker reconciliation."
-                                ],
-                                risk.warnings,
-                                audit,
-                            )
-
-                        if status not in {
-                            "rejected",
-                            "failed",
-                            "not_found",
-                        }:
-                            return self._result(
-                                local_order_id,
-                                "submitted",
-                                broker_order_id,
-                                risk,
-                                attempts,
-                                [
-                                    "OK "
-                                    "(recovered after timeout)"
-                                ],
-                                risk.warnings,
-                                audit,
-                            )
-
-                    await asyncio.sleep(
-                        min(2**attempt, 5)
-                    )
-
-        return self._result(
-            local_order_id,
-            "failed",
-            None,
-            risk,
-            attempts,
-            [
-                last_error
-                or "Broker submission failed."
-            ],
-            risk.warnings,
-            audit,
-        )
+        # No order can safely be submitted after exhausting the loop.
+        return self._result(local_order_id, "reconciliation_required", None,
+                            risk, attempts, ["Broker outcome requires reconciliation."],
+                            risk.warnings, audit)
 
     async def _check_already_placed(
         self,
