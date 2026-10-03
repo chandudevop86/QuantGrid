@@ -39,7 +39,10 @@ def test_periodic_auto_paper_skips_outside_market_hours(monkeypatch):
 def test_periodic_auto_paper_scans_each_candle_once(monkeypatch):
     worker._LAST_AUTO_PAPER_CANDLE.clear()
     monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=True))
-    monkeypatch.setattr(worker, "get_market_data_service", lambda: _MarketService())
+    # Both scans must see the exact same market candle; creating a fresh
+    # service each call would generate a new timestamp and simulate new data.
+    market_service = _MarketService()
+    monkeypatch.setattr(worker, "get_market_data_service", lambda: market_service)
 
     calls = []
 
