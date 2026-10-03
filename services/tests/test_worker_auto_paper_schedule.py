@@ -1,9 +1,12 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
 from Backend.application import worker
 
 
 class _MarketService:
-    def __init__(self, timestamp="2026-09-28T10:00:00+00:00"):
-        self.timestamp = timestamp
+    def __init__(self, timestamp=None):
+        self.timestamp = timestamp or datetime.now(timezone.utc).isoformat()
 
     def get_candles(self, symbol, *, interval, period, limit):
         return {
@@ -22,7 +25,7 @@ class _MarketService:
 
 def test_periodic_auto_paper_skips_outside_market_hours(monkeypatch):
     worker._LAST_AUTO_PAPER_CANDLE.clear()
-    monkeypatch.setattr(worker, "is_market_hours_ist", lambda: False)
+    monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=False))
 
     called = []
     monkeypatch.setattr(worker, "_run_auto_paper_job", lambda payload: called.append(payload))
@@ -35,8 +38,11 @@ def test_periodic_auto_paper_skips_outside_market_hours(monkeypatch):
 
 def test_periodic_auto_paper_scans_each_candle_once(monkeypatch):
     worker._LAST_AUTO_PAPER_CANDLE.clear()
-    monkeypatch.setattr(worker, "is_market_hours_ist", lambda: True)
-    monkeypatch.setattr(worker, "get_market_data_service", lambda: _MarketService())
+    monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=True))
+    # Both scans must see the exact same market candle; creating a fresh
+    # service each call would generate a new timestamp and simulate new data.
+    market_service = _MarketService()
+    monkeypatch.setattr(worker, "get_market_data_service", lambda: market_service)
 
     calls = []
 
@@ -79,3 +85,21 @@ def test_auto_paper_worker_forces_paper_execution(monkeypatch):
     assert len(captured) == 1
     assert captured[0].auto_trade is True
     assert captured[0].execution_mode == "paper"
+
+
+def test_auto_paper_skips_stale_and_future_candles(monkeypatch):
+    monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=True))
+    worker._LAST_AUTO_PAPER_CANDLE.clear()
+    calls = []
+    monkeypatch.setattr(worker, "_run_auto_paper_job", lambda payload: calls.append(payload))
+
+    for timestamp in (
+        (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
+        (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    ):
+        monkeypatch.setattr(worker, "get_market_data_service", lambda timestamp=timestamp: _MarketService(timestamp))
+        result = worker._run_periodic_auto_paper()
+        assert result["symbols"]["NIFTY"]["status"] == "stale_candle"
+
+    assert calls == []
+    assert worker._LAST_AUTO_PAPER_CANDLE == {}

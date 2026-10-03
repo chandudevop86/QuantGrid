@@ -76,6 +76,7 @@ from Backend.application.market_data_service import (
     get_market_data_service
 )
 from Backend.domain.market_data.provider import MarketDataProviderError
+from Backend.application.candle_validation import get_market_session, normalize_timestamp, validation_settings
 
 from Backend.application.market_data_store import (
     store_candles
@@ -985,7 +986,8 @@ def _auto_paper_symbols() -> list[str]:
 
 
 def _run_periodic_auto_paper() -> dict[str, Any]:
-    if not is_market_hours_ist():
+    # The weekday/time-only narrative helper does not check NSE holidays.
+    if not get_market_session().market_live:
         return {"status": "outside_market_hours", "execution_mode": "paper"}
 
     service = get_market_data_service()
@@ -1006,6 +1008,16 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
         latest_candle = str(candles[-1].get("timestamp") or "")
         if not latest_candle:
             results[symbol] = {"status": "missing_candle_timestamp"}
+            continue
+
+        # Historical/paper-analysis freshness does not imply trade eligibility.
+        # Fail closed on missing, future or delayed timestamps even if the
+        # response describes old holiday candles as fresh for analysis.
+        latest_at = normalize_timestamp(latest_candle)
+        now = datetime.now(timezone.utc).astimezone(latest_at.tzinfo) if latest_at else None
+        max_age = validation_settings().reject_after_seconds
+        if latest_at is None or now is None or not (0 <= (now - latest_at).total_seconds() <= max_age):
+            results[symbol] = {"status": "stale_candle", "latest_candle": latest_candle}
             continue
 
         if _LAST_AUTO_PAPER_CANDLE.get(symbol) == latest_candle:
@@ -1369,10 +1381,12 @@ def main():
 
 
 
-    run_worker_loop(
-        poll_interval=
-        args.poll_interval
-    )
+    try:
+        run_worker_loop(
+            poll_interval=args.poll_interval
+        )
+    except KeyboardInterrupt:
+        logger.info("QuantGrid worker stopped on SIGINT")
 
 
 if __name__ == "__main__":
