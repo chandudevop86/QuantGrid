@@ -102,18 +102,57 @@ def test_oms_prevents_duplicate_active_order():
     assert "DUPLICATE_TRADE" in second.risk["blocked_by"]
 
 
-def test_oms_retries_temporary_broker_failure():
-    broker = FakeBroker(fail_first=True)
-    result = asyncio.run(
-        OrderManagementService(broker, max_retries=1).submit_signal(
-            _signal(),
-            {"trades_today": 0, "daily_pnl": 0, "capital_per_trade": 10000, "open_positions": 0, "market_data_age_seconds": 5, "vix": 14},
-        )
-    )
+def _context():
+    return {"trades_today": 0, "daily_pnl": 0, "capital_per_trade": 10000,
+            "open_positions": 0, "market_data_age_seconds": 5, "vix": 14}
 
+
+def test_oms_does_not_retry_ambiguous_broker_failure_without_lookup():
+    broker = FakeBroker(fail_first=True)
+    service = OrderManagementService(broker, max_retries=3)
+    result = asyncio.run(service.submit_signal(_signal(), _context()))
+
+    assert result.accepted is False
+    assert result.status == "reconciliation_required"
+    assert result.attempts == 1
+    assert len(broker.orders) == 1
+    # Outcome remains locked against duplicate submissions in this OMS instance.
+    duplicate = asyncio.run(service.submit_signal(_signal(), _context()))
+    assert duplicate.accepted is False
+    assert len(broker.orders) == 1
+
+
+def test_oms_recovers_broker_acceptance_after_timeout_without_resending():
+    class AcceptedThenTimeoutBroker(FakeBroker):
+        async def find_order_by_correlation_id(self, correlation_id):
+            assert correlation_id
+            return FakeBrokerResult(broker_order_id="accepted-1", status="confirmed")
+
+    broker = AcceptedThenTimeoutBroker(fail_first=True)
+    result = asyncio.run(OrderManagementService(broker, max_retries=3).submit_signal(_signal(), _context()))
     assert result.accepted is True
-    assert result.attempts == 2
-    assert len(broker.orders) == 2
+    assert result.status == "submitted"
+    assert result.broker_order_id == "accepted-1"
+    assert len(broker.orders) == 1
+
+
+def test_oms_does_not_retry_when_broker_lookup_fails_or_returns_none():
+    class LookupBroker(FakeBroker):
+        def __init__(self, raises):
+            super().__init__(fail_first=True)
+            self.raises = raises
+
+        async def find_order_by_correlation_id(self, correlation_id):
+            if self.raises:
+                raise TimeoutError("order book unavailable")
+            return None
+
+    for raises in (False, True):
+        broker = LookupBroker(raises)
+        result = asyncio.run(OrderManagementService(broker, max_retries=3).submit_signal(_signal(), _context()))
+        assert result.status == "reconciliation_required"
+        assert result.accepted is False
+        assert len(broker.orders) == 1
 
 
 def test_oms_handles_rejected_and_partial_fills():

@@ -9,6 +9,7 @@ ORDER_STATUSES = {
     "requested",
     "risk_approved",
     "broker_submitted",
+    "reconciliation_required",
     "pending",
     "open",
     "partially_filled",

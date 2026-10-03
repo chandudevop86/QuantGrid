@@ -281,6 +281,28 @@ async def _submit_paper_signal(
                 },
             },
         )
+        if oms_result.status == "reconciliation_required":
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "reconciliation_required",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="Broker outcome unknown; manual reconciliation required; do not resubmit.",
+                broker_status=oms_result.status,
+                broker_response=oms_result.to_dict(),
+            )
+            observe_rejected_order("oms_reconciliation_required", execution_mode)
+            return _paper_response(
+                status_value="reconciliation_required",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason="Broker outcome unknown; check broker order book and positions before retry.",
+                execution_mode=execution_mode,
+                strategy_diagnostics=strategy_diagnostics,
+                extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
+            )
         if not oms_result.accepted:
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
