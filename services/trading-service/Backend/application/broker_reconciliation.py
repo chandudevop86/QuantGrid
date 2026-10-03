@@ -29,7 +29,7 @@ REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
 FILLED_STATUSES = {"filled", "traded", "complete", "completed", "confirmed"}
 OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
 PRE_BROKER_STALE_STATUSES = {"requested", "risk_approved"}
-AMBIGUOUS_NO_BROKER_ID_STATUSES = {"broker_submitted", "pending", "open", "partially_filled"}
+AMBIGUOUS_NO_BROKER_ID_STATUSES = {"reconciliation_required", "broker_submitted", "pending", "open", "partially_filled"}
 STALE_LOCAL_ORDER_MINUTES = 30
 
 
