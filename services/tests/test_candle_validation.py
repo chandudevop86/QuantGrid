@@ -100,3 +100,26 @@ def test_feed_delay_reports_missing_candles_and_provider_latency():
     assert delay.delay_seconds == 240
     assert delay.provider_latency_seconds == 2
     assert delay.missing_candles == 3
+
+
+def test_default_nse_2026_equities_holidays_and_open_days(monkeypatch):
+    monkeypatch.delenv("QUANTGRID_NSE_HOLIDAYS", raising=False)
+    from Backend.application.candle_validation import DEFAULT_NSE_HOLIDAYS, validation_settings
+
+    expected = {
+        "2026-01-15", "2026-01-26", "2026-03-03", "2026-03-26",
+        "2026-03-31", "2026-04-03", "2026-04-14", "2026-05-01",
+        "2026-05-28", "2026-06-26", "2026-09-14", "2026-10-02",
+        "2026-10-20", "2026-11-10", "2026-11-24", "2026-12-25",
+    }
+    assert DEFAULT_NSE_HOLIDAYS == expected
+    settings = validation_settings()
+    for day in expected:
+        session = get_market_session(datetime.fromisoformat(day + "T10:00:00+05:30"), settings=settings)
+        assert session.status == "HOLIDAY", day
+        assert not session.market_live
+    # The former incorrect holiday must not block an otherwise normal weekday.
+    for day in ("2026-10-05", "2026-11-09"):
+        session = get_market_session(datetime.fromisoformat(day + "T10:00:00+05:30"), settings=settings)
+        assert session.status == "LIVE MARKET", day
+        assert session.market_live

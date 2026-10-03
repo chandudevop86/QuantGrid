@@ -19,16 +19,25 @@ UTC = timezone.utc
 MarketStatus = Literal["PREMARKET", "LIVE MARKET", "DELAYED FEED", "MARKET CLOSED", "HOLIDAY", "WEEKEND"]
 ValidationMode = Literal["live", "paper", "backtest"]
 
+# NSE equities segment: 2026 declared weekday trading holidays.
+# Source: https://www.nseindia.com/resources/exchange-communication-holidays
+# Weekends are separately closed by get_market_session().
 DEFAULT_NSE_HOLIDAYS = {
+    "2026-01-15",
     "2026-01-26",
     "2026-03-03",
+    "2026-03-26",
     "2026-03-31",
     "2026-04-03",
     "2026-04-14",
     "2026-05-01",
-    "2026-08-15",
+    "2026-05-28",
+    "2026-06-26",
+    "2026-09-14",
     "2026-10-02",
-    "2026-11-09",
+    "2026-10-20",
+    "2026-11-10",
+    "2026-11-24",
     "2026-12-25",
 }
 
