@@ -11,6 +11,7 @@ from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
 from Backend.application.order_management import OrderManagementService
+from Backend.application.broker_submission_intent import claim_submission, mark_submission_started, record_broker_evidence
 from Backend.application.order_store import (
     broker_status_to_order_status,
     create_order,
@@ -242,6 +243,18 @@ async def _submit_paper_signal(
         actor=actor,
         reason="Risk engine approved order.",
     )
+    try:
+        submission_intent = claim_submission(lifecycle_order["local_order_id"], lifecycle_order["order_key"])
+    except ValueError as exc:
+        observe_rejected_order("durable_submission_claim_conflict", execution_mode)
+        return _paper_response(
+            status_value="rejected", symbol=signal.symbol, strategy=signal.strategy_name,
+            signal=signal, reason=str(exc), execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics, extra={"broker_confirmed": False},
+        )
+    # Commit the ambiguous boundary before network I/O. Never retry this intent.
+    mark_submission_started(lifecycle_order["local_order_id"])
+    order.metadata["correlation_id"] = submission_intent["correlation_id"]
     broker_client = broker_client or broker_client_for_mode(execution_mode)
     try:
         lifecycle_order = _transition_lifecycle_order(
@@ -326,6 +339,11 @@ async def _submit_paper_signal(
                 strategy_diagnostics=strategy_diagnostics,
                 extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
             )
+        if not oms_result.broker_order_id:
+            raise ValueError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
+        record_broker_evidence(
+            lifecycle_order["local_order_id"], str(oms_result.broker_order_id), "submitted"
+        )
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "broker_submitted",
