@@ -181,11 +181,17 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
             connection.execute(text(
                 "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
                 "local_order_id VARCHAR(120) PRIMARY KEY, "
-                "logical_key VARCHAR(160) NOT NULL UNIQUE, "
+                "logical_key VARCHAR(160) NOT NULL, "
                 "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
                 "broker_order_id VARCHAR(120), "
                 "status VARCHAR(40) NOT NULL, "
                 "created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_submission_intents_active_key "
+                "ON broker_submission_intents (logical_key) "
+                "WHERE status IN ('claimed', 'reconciliation_required', 'submitted', "
+                "'open', 'partially_filled')"
             ))
             connection.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_submission_intents_broker_id "
