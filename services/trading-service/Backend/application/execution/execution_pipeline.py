@@ -317,6 +317,29 @@ async def _submit_paper_signal(
                 extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
             )
         if not oms_result.accepted:
+            # A broker-reported rejection without an authoritative order ID is
+            # still ambiguous after the committed submission boundary.
+            if not oms_result.broker_order_id:
+                lifecycle_order = _transition_lifecycle_order(
+                    lifecycle_order, "reconciliation_required",
+                    db=db, request=request, actor=actor,
+                    reason="Unverified broker response without order ID; do not resend.",
+                    broker_status=oms_result.status,
+                    broker_response=oms_result.to_dict(),
+                )
+                return _paper_response(
+                    status_value="reconciliation_required", symbol=signal.symbol,
+                    strategy=signal.strategy_name, signal=signal,
+                    reason="Broker response has no authoritative ID; reconcile before retry.",
+                    execution_mode=execution_mode,
+                    strategy_diagnostics=strategy_diagnostics,
+                    extra={"broker_confirmed": False, "oms": oms_result.to_dict()},
+                )
+            record_broker_evidence(
+                lifecycle_order["local_order_id"],
+                str(oms_result.broker_order_id),
+                "rejected" if oms_result.status == "rejected" else "submitted",
+            )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "rejected" if oms_result.status == "rejected" else "failed",
