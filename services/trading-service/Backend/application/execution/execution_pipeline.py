@@ -357,21 +357,22 @@ async def _submit_paper_signal(
         )
         broker_status = await broker_client.get_order_status(str(oms_result.broker_order_id))
     except Exception as exc:
+        # Once submission may have started, exceptions cannot prove rejection.
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
-            "failed",
+            "reconciliation_required",
             db=db,
             request=request,
             actor=actor,
-            reason=f"BROKER_FAILURE: {exc}",
+            reason="BROKER_OUTCOME_UNKNOWN: authoritative reconciliation required; do not resend.",
         )
-        observe_rejected_order("broker_failure", execution_mode)
+        observe_rejected_order("broker_reconciliation_required", execution_mode)
         return _paper_response(
-            status_value="rejected",
+            status_value="reconciliation_required",
             symbol=signal.symbol,
             strategy=signal.strategy_name,
             signal=signal,
-            reason=f"BROKER_FAILURE: {exc}",
+            reason="BROKER_OUTCOME_UNKNOWN: reconcile before any further action.",
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
             extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
