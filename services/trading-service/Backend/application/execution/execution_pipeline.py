@@ -401,22 +401,6 @@ async def _submit_paper_signal(
             extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
         )
 
-    if not broker_status.confirmed or broker_status.status in {"failed", "not_found"}:
-        lifecycle_order = _transition_lifecycle_order(
-            lifecycle_order, "reconciliation_required",
-            db=db, request=request, actor=actor,
-            reason=f"Unconfirmed broker status: {broker_status.status}; do not resend.",
-            broker_status=broker_status.status,
-            broker_response=broker_status.to_dict(),
-        )
-        return _paper_response(
-            status_value="reconciliation_required", symbol=signal.symbol,
-            strategy=signal.strategy_name, signal=signal,
-            reason="Broker status not authoritative; reconcile before retry.",
-            execution_mode=execution_mode,
-            strategy_diagnostics=strategy_diagnostics,
-            extra={"broker_confirmed": False, "broker_order": broker_status.to_dict()},
-        )
     if broker_status.status == "rejected":
         mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
         lifecycle_order = _transition_lifecycle_order(
@@ -448,6 +432,23 @@ async def _submit_paper_signal(
                 "broker_order": broker_status.to_dict(),
                 "raw_safe_broker_response": (broker_status.metadata or {}).get("raw_safe"),
             },
+        )
+
+    if not broker_status.confirmed or broker_status.status in {"failed", "not_found"}:
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order, "reconciliation_required",
+            db=db, request=request, actor=actor,
+            reason=f"Unconfirmed broker status: {broker_status.status}; do not resend.",
+            broker_status=broker_status.status,
+            broker_response=broker_status.to_dict(),
+        )
+        return _paper_response(
+            status_value="reconciliation_required", symbol=signal.symbol,
+            strategy=signal.strategy_name, signal=signal,
+            reason="Broker status not authoritative; reconcile before retry.",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={"broker_confirmed": False, "broker_order": broker_status.to_dict()},
         )
 
     order_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)

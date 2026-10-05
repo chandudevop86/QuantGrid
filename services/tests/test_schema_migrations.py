@@ -52,8 +52,35 @@ def test_versioned_migrations_record_baseline_and_compatibility():
         schema_migrations.SUBSCRIPTION_ENTITLEMENTS_VERSION,
         schema_migrations.INSTITUTIONAL_METRICS_VERSION,
         schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION,
+        schema_migrations.BROKER_SUBMISSION_INTENTS_VERSION,
     ]
-    assert "execution_mode" in {column["name"] for column in inspect(engine).get_columns("orders")}
+    inspector = inspect(engine)
+    assert "execution_mode" in {column["name"] for column in inspector.get_columns("orders")}
+
+    assert "broker_submission_intents" in inspector.get_table_names()
+
+    intent_columns = {
+        column["name"]
+        for column in inspector.get_columns("broker_submission_intents")
+    }
+    assert {
+        "local_order_id",
+        "logical_key",
+        "correlation_id",
+        "broker_order_id",
+        "status",
+        "created_at",
+        "updated_at",
+    } <= intent_columns
+
+    intent_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("broker_submission_intents")
+    }
+    assert "uq_broker_submission_intents_active_key" in intent_indexes
+    assert intent_indexes["uq_broker_submission_intents_active_key"]["unique"]
+    assert "uq_broker_submission_intents_broker_id" in intent_indexes
+    assert intent_indexes["uq_broker_submission_intents_broker_id"]["unique"]
 
 
 
