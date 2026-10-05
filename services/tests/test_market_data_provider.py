@@ -975,3 +975,36 @@ def test_option_contract_candles_resolve_missing_security_id(monkeypatch):
     result = market_api.get_option_candles("resolve", symbol="NIFTY", strike=24500, side="CE", _access=object())
 
     assert result["security_id"] == "42529"
+
+
+def test_yahoo_one_minute_candles_drop_unaligned_current_bar_and_preserve_decimals(monkeypatch):
+    from Backend.infrastructure.market_data.yahoo_provider import YahooProvider
+
+    provider = YahooProvider()
+
+    monkeypatch.setattr(
+        provider,
+        "fetch_chart",
+        lambda *_args, **_kwargs: {
+            "timestamp": [1791187200, 1791187240],
+            "meta": {"timezone": "Asia/Kolkata"},
+            "indicators": {
+                "quote": [{
+                    "open": [22552.25, 22553.75],
+                    "high": [22560.50, 22561.25],
+                    "low": [22550.10, 22551.20],
+                    "close": [22558.35, 22559.45],
+                    "volume": [100, 50],
+                }]
+            },
+        },
+    )
+
+    candles = provider.get_candles("NIFTY", "1m", "1d", 20)
+
+    assert len(candles) == 1
+    assert candles[0]["timestamp"].endswith(":00+00:00")
+    assert candles[0]["open"] == 22552.25
+    assert candles[0]["high"] == 22560.50
+    assert candles[0]["low"] == 22550.10
+    assert candles[0]["close"] == 22558.35
