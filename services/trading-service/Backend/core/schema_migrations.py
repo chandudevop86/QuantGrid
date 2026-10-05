@@ -59,6 +59,7 @@ SUBSCRIPTION_ENTITLEMENTS_VERSION = "0003_subscription_entitlements"
 INSTITUTIONAL_METRICS_VERSION = "0004_institutional_metrics"
 PAPER_TRADE_COST_EVIDENCE_VERSION = "0005_paper_trade_cost_evidence"
 PAPER_TRADE_IDEMPOTENCY_VERSION = "0006_paper_trade_idempotency"
+BROKER_SUBMISSION_INTENTS_VERSION = "0007_broker_submission_intents"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -165,6 +166,41 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                     text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
                     {"version": PAPER_TRADE_IDEMPOTENCY_VERSION},
                 )
+
+
+    # Persistent broker submission claims are created explicitly for existing
+    # installations, not only during metadata baseline creation.
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                               {"lock_id": POSTGRES_MIGRATION_LOCK_ID})
+        applied = {row[0] for row in connection.execute(
+            text(f"SELECT version FROM {MIGRATION_TABLE}")
+        )}
+        if BROKER_SUBMISSION_INTENTS_VERSION not in applied:
+            connection.execute(text(
+                "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
+                "local_order_id VARCHAR(120) PRIMARY KEY, "
+                "logical_key VARCHAR(160) NOT NULL, "
+                "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+                "broker_order_id VARCHAR(120), "
+                "status VARCHAR(40) NOT NULL, "
+                "created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_submission_intents_active_key "
+                "ON broker_submission_intents (logical_key) "
+                "WHERE status IN ('claimed', 'reconciliation_required', 'submitted', "
+                "'open', 'partially_filled')"
+            ))
+            connection.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_broker_submission_intents_broker_id "
+                "ON broker_submission_intents (broker_order_id)"
+            ))
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                {"version": BROKER_SUBMISSION_INTENTS_VERSION},
+            )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

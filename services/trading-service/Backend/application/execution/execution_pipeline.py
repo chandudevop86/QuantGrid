@@ -11,6 +11,7 @@ from Backend.core.config import get_settings
 from Backend.core.database import get_db
 from Backend.application.notifications import alert_execution_event
 from Backend.application.order_management import OrderManagementService
+from Backend.application.broker_submission_intent import claim_submission, mark_submission_started, record_broker_evidence
 from Backend.application.order_store import (
     broker_status_to_order_status,
     create_order,
@@ -242,6 +243,18 @@ async def _submit_paper_signal(
         actor=actor,
         reason="Risk engine approved order.",
     )
+    try:
+        submission_intent = claim_submission(lifecycle_order["local_order_id"], lifecycle_order["order_key"])
+    except ValueError as exc:
+        observe_rejected_order("durable_submission_claim_conflict", execution_mode)
+        return _paper_response(
+            status_value="rejected", symbol=signal.symbol, strategy=signal.strategy_name,
+            signal=signal, reason=str(exc), execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics, extra={"broker_confirmed": False},
+        )
+    # Commit the ambiguous boundary before network I/O. Never retry this intent.
+    mark_submission_started(lifecycle_order["local_order_id"])
+    order.metadata["correlation_id"] = submission_intent["correlation_id"]
     broker_client = broker_client or broker_client_for_mode(execution_mode)
     try:
         lifecycle_order = _transition_lifecycle_order(
@@ -304,6 +317,29 @@ async def _submit_paper_signal(
                 extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
             )
         if not oms_result.accepted:
+            # A broker-reported rejection without an authoritative order ID is
+            # still ambiguous after the committed submission boundary.
+            if not oms_result.broker_order_id:
+                lifecycle_order = _transition_lifecycle_order(
+                    lifecycle_order, "reconciliation_required",
+                    db=db, request=request, actor=actor,
+                    reason="Unverified broker response without order ID; do not resend.",
+                    broker_status=oms_result.status,
+                    broker_response=oms_result.to_dict(),
+                )
+                return _paper_response(
+                    status_value="reconciliation_required", symbol=signal.symbol,
+                    strategy=signal.strategy_name, signal=signal,
+                    reason="Broker response has no authoritative ID; reconcile before retry.",
+                    execution_mode=execution_mode,
+                    strategy_diagnostics=strategy_diagnostics,
+                    extra={"broker_confirmed": False, "oms": oms_result.to_dict()},
+                )
+            record_broker_evidence(
+                lifecycle_order["local_order_id"],
+                str(oms_result.broker_order_id),
+                "rejected" if oms_result.status == "rejected" else "submitted",
+            )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "rejected" if oms_result.status == "rejected" else "failed",
@@ -326,6 +362,11 @@ async def _submit_paper_signal(
                 strategy_diagnostics=strategy_diagnostics,
                 extra={**_risk_response_fields(risk_decision), "oms": oms_result.to_dict(), "broker_confirmed": False},
             )
+        if not oms_result.broker_order_id:
+            raise ValueError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
+        record_broker_evidence(
+            lifecycle_order["local_order_id"], str(oms_result.broker_order_id), "submitted"
+        )
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "broker_submitted",
@@ -339,27 +380,28 @@ async def _submit_paper_signal(
         )
         broker_status = await broker_client.get_order_status(str(oms_result.broker_order_id))
     except Exception as exc:
+        # Once submission may have started, exceptions cannot prove rejection.
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
-            "failed",
+            "reconciliation_required",
             db=db,
             request=request,
             actor=actor,
-            reason=f"BROKER_FAILURE: {exc}",
+            reason="BROKER_OUTCOME_UNKNOWN: authoritative reconciliation required; do not resend.",
         )
-        observe_rejected_order("broker_failure", execution_mode)
+        observe_rejected_order("broker_reconciliation_required", execution_mode)
         return _paper_response(
-            status_value="rejected",
+            status_value="reconciliation_required",
             symbol=signal.symbol,
             strategy=signal.strategy_name,
             signal=signal,
-            reason=f"BROKER_FAILURE: {exc}",
+            reason="BROKER_OUTCOME_UNKNOWN: reconcile before any further action.",
             execution_mode=execution_mode,
             strategy_diagnostics=strategy_diagnostics,
             extra={**_risk_response_fields(risk_decision), "broker_confirmed": False},
         )
 
-    if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+    if broker_status.status == "rejected":
         mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
@@ -392,7 +434,29 @@ async def _submit_paper_signal(
             },
         )
 
+    if not broker_status.confirmed or broker_status.status in {"failed", "not_found"}:
+        lifecycle_order = _transition_lifecycle_order(
+            lifecycle_order, "reconciliation_required",
+            db=db, request=request, actor=actor,
+            reason=f"Unconfirmed broker status: {broker_status.status}; do not resend.",
+            broker_status=broker_status.status,
+            broker_response=broker_status.to_dict(),
+        )
+        return _paper_response(
+            status_value="reconciliation_required", symbol=signal.symbol,
+            strategy=signal.strategy_name, signal=signal,
+            reason="Broker status not authoritative; reconcile before retry.",
+            execution_mode=execution_mode,
+            strategy_diagnostics=strategy_diagnostics,
+            extra={"broker_confirmed": False, "broker_order": broker_status.to_dict()},
+        )
+
     order_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
+    record_broker_evidence(
+        lifecycle_order["local_order_id"],
+        str(broker_status.broker_order_id),
+        order_status if order_status in {"open", "partially_filled", "filled", "cancelled", "rejected"} else "submitted",
+    )
     lifecycle_order = _transition_lifecycle_order(
         lifecycle_order,
         order_status,
