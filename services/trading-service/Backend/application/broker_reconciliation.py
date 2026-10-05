@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from Backend.application.paper_trade_store import DATA_DIR, list_paper_trades, update_paper_trade_status
 from Backend.application.order_store import broker_status_to_order_status, list_orders, transition_order
+from Backend.application.broker_submission_intent import record_broker_evidence
 from Backend.application.position_store import (
     close_open_position,
     create_open_position,
@@ -31,6 +32,40 @@ OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
 PRE_BROKER_STALE_STATUSES = {"requested", "risk_approved"}
 AMBIGUOUS_NO_BROKER_ID_STATUSES = {"reconciliation_required", "broker_submitted", "pending", "open", "partially_filled"}
 STALE_LOCAL_ORDER_MINUTES = 30
+
+
+def _record_terminal_submission_intent(
+    *,
+    local_order_id: str,
+    broker_order_id: str,
+    broker_status: str,
+) -> None:
+    """Synchronize authoritative terminal broker evidence to durable intent."""
+    normalized = _normal_status(broker_status)
+
+    if normalized in FILLED_STATUSES:
+        terminal_status = "filled"
+    elif normalized == "rejected":
+        terminal_status = "rejected"
+    elif normalized == "cancelled":
+        terminal_status = "cancelled"
+    else:
+        # failed/expired/not_found are not authoritative terminal evidence
+        # for releasing the durable submission key.
+        return
+
+    try:
+        record_broker_evidence(
+            local_order_id,
+            broker_order_id,
+            terminal_status,
+        )
+    except ValueError as exc:
+        # Reconciliation also processes legacy orders created before durable
+        # submission intents existed. Absence of an applicable intent must not
+        # prevent those orders from reconciling.
+        if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+            raise
 
 
 async def reconcile_broker_state(
@@ -104,6 +139,12 @@ async def reconcile_broker_state(
             continue
 
         if local_order.get("status") in SUBMITTED_STATUSES and order_status in REJECTED_STATUSES:
+            if order_status in {"rejected", "cancelled"} and local_order.get("local_order_id"):
+                _record_terminal_submission_intent(
+                    local_order_id=str(local_order["local_order_id"]),
+                    broker_order_id=broker_order_id,
+                    broker_status=broker_order.status,
+                )
             _record_fix(
                 summary,
                 db,
@@ -130,6 +171,13 @@ async def reconcile_broker_state(
             if position and position.get("status") == "open":
                 close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
             continue
+
+        if order_status in FILLED_STATUSES and local_order.get("local_order_id"):
+            _record_terminal_submission_intent(
+                local_order_id=str(local_order["local_order_id"]),
+                broker_order_id=broker_order_id,
+                broker_status=broker_order.status,
+            )
 
         if order_status in FILLED_STATUSES and local_order.get("local_order_id") and _normal_status(local_order.get("status")) != "filled":
             _record_fix(
