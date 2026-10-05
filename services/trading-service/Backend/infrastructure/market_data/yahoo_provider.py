@@ -102,6 +102,13 @@ class YahooProvider(MarketDataProvider):
         timezone_name = chart.get("meta", {}).get("timezone", "Asia/Kolkata")
         candles: list[dict[str, Any]] = []
         for index, timestamp in enumerate(timestamps):
+            candle_time = datetime.fromtimestamp(timestamp, timezone.utc)
+
+            # Yahoo can return the currently forming 1-minute candle with a
+            # non-minute-aligned timestamp. Do not persist that unstable bar.
+            if interval == "1m" and (candle_time.second != 0 or candle_time.microsecond != 0):
+                continue
+
             values = [
                 opens[index] if index < len(opens) else None,
                 highs[index] if index < len(highs) else None,
@@ -113,12 +120,12 @@ class YahooProvider(MarketDataProvider):
             candles.append(
                 {
                     "symbol": symbol.upper(),
-                    "timestamp": datetime.fromtimestamp(timestamp, timezone.utc).isoformat(),
+                    "timestamp": candle_time.isoformat(),
                     "exchange_timezone": timezone_name,
-                    "open": round(_safe_float(values[0]) or  2),
-                    "high": round(_safe_float(values[1]) or  2),
-                    "low": round(_safe_float(values[2]) or  2),
-                    "close": round(_safe_float(values[3]) or 2),
+                    "open": round(float(values[0]), 2),
+                    "high": round(float(values[1]), 2),
+                    "low": round(float(values[2]), 2),
+                    "close": round(float(values[3]), 2),
                     "volume": int(volumes[index] or 0) if index < len(volumes) else 0,
                 }
             )
