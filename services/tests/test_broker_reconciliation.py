@@ -413,3 +413,264 @@ def test_reconciliation_marks_ambiguous_submitted_order_without_broker_id_for_re
     assert summary["needs_review"] == 1
     assert unchanged["status"] == "broker_submitted"
     assert order_store.get_active_order_by_key("NIFTY:BUY:BREAKOUT")["local_order_id"] == local_order["local_order_id"]
+
+def test_reconciliation_terminal_broker_state_releases_durable_submission_intent(monkeypatch):
+    """Real reconciliation must terminalize durable intent and release its logical key."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    from Backend.application import (
+        broker_reconciliation,
+        broker_submission_intent as intent,
+        order_store,
+    )
+    from Backend.core.database import SessionLocal, engine, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+
+    # broker_submission_intents is migration-managed rather than ORM-managed.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_active_intent_key "
+            "ON broker_submission_intents(logical_key) "
+            "WHERE status IN "
+            "('claimed', 'reconciliation_required', 'submitted', 'open', 'partially_filled')"
+        ))
+
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
+    local_order_id = "ORD-RECON-INTENT-1"
+    broker_order_id = "BROKER-RECON-INTENT-1"
+    logical_key = "NIFTY:BUY:RECONCILE-TERMINAL"
+
+    local_order = order_store.create_order(
+        {
+            "local_order_id": local_order_id,
+            "broker_order_id": broker_order_id,
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "paper",
+            "status": "broker_submitted",
+        }
+    )
+
+    intent.claim_submission(local_order_id, logical_key)
+    intent.mark_submission_started(local_order_id)
+    intent.record_broker_evidence(
+        local_order_id,
+        broker_order_id,
+        "partially_filled",
+    )
+
+    # Active/partial durable intent must block duplicate submission.
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
+    ):
+        intent.claim_submission(
+            "ORD-RECON-DUPLICATE",
+            logical_key,
+        )
+
+    class FakeBroker:
+        async def get_positions(self):
+            return [
+                {
+                    "tradingSymbol": "NIFTY",
+                    "transactionType": "BUY",
+                    "netQty": 25,
+                    "averagePrice": 101,
+                }
+            ]
+
+        async def get_order_status(self, requested_broker_order_id):
+            assert requested_broker_order_id == broker_order_id
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="filled",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=25,
+                price=101,
+                confirmed=True,
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="ops-pr65",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=FakeBroker(),
+                actor=actor,
+            )
+        )
+
+    updated_order = order_store.get_order(local_order["local_order_id"])
+    assert updated_order["status"] == "filled"
+    assert updated_order["broker_status"] == "filled"
+
+    with engine.connect() as conn:
+        durable_status = conn.execute(
+            text(
+                "SELECT status FROM broker_submission_intents "
+                "WHERE local_order_id = :local_order_id"
+            ),
+            {"local_order_id": local_order_id},
+        ).scalar_one()
+
+    assert durable_status == "filled"
+    assert summary["needs_review"] == 0
+
+    # Terminal authoritative evidence releases the logical key.
+    replacement = intent.claim_submission(
+        "ORD-RECON-REPLACEMENT",
+        logical_key,
+    )
+    assert replacement["status"] == "claimed"
+
+
+
+def test_reconciliation_not_found_does_not_release_durable_submission_intent(monkeypatch):
+    """Missing broker lookup must remain fail-closed and keep the logical key blocked."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    import pytest
+
+    from Backend.application import (
+        broker_reconciliation,
+        broker_submission_intent as intent,
+        order_store,
+    )
+    from Backend.core.database import SessionLocal, engine, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_active_intent_key "
+            "ON broker_submission_intents(logical_key) "
+            "WHERE status IN "
+            "('claimed', 'reconciliation_required', 'submitted', 'open', 'partially_filled')"
+        ))
+
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
+    local_order_id = "ORD-RECON-MISSING-1"
+    broker_order_id = "BROKER-RECON-MISSING-1"
+    logical_key = "NIFTY:BUY:RECONCILE-MISSING"
+
+    order_store.create_order(
+        {
+            "local_order_id": local_order_id,
+            "broker_order_id": broker_order_id,
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "paper",
+            "status": "broker_submitted",
+        }
+    )
+
+    intent.claim_submission(local_order_id, logical_key)
+    intent.mark_submission_started(local_order_id)
+    intent.record_broker_evidence(
+        local_order_id,
+        broker_order_id,
+        "submitted",
+    )
+
+    class MissingBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, requested_broker_order_id):
+            assert requested_broker_order_id == broker_order_id
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="not_found",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=25,
+                price=100,
+                confirmed=False,
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="ops-pr65-missing",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=MissingBroker(),
+                actor=actor,
+            )
+        )
+
+    with engine.connect() as conn:
+        durable_status = conn.execute(
+            text(
+                "SELECT status FROM broker_submission_intents "
+                "WHERE local_order_id = :local_order_id"
+            ),
+            {"local_order_id": local_order_id},
+        ).scalar_one()
+
+    # Missing lookup is ambiguous; durable submission evidence stays active.
+    assert durable_status == "submitted"
+
+    with pytest.raises(
+        ValueError,
+        match="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
+    ):
+        intent.claim_submission(
+            "ORD-RECON-MISSING-DUPLICATE",
+            logical_key,
+        )
