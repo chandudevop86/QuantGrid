@@ -485,6 +485,7 @@ async def _run_reconciliation_job_async(
                     execution_mode
                 ),
             actor=actor,
+            execution_mode=execution_mode,
             request=None,
         )
 

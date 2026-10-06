@@ -344,3 +344,111 @@ def test_init_database_retries_postgres_service_name_on_localhost(monkeypatch):
         "postgresql+psycopg://quant:secret@127.0.0.1:5432/quantgrid"
     ]
     assert database.engine is working_engine
+
+
+def test_position_execution_mode_persists_and_filters(monkeypatch):
+    """Positions must persist execution ownership and mode-scoped reads must isolate it."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import position_store
+    from Backend.core.database import init_database
+
+    init_database()
+
+    paper_position = position_store.create_open_position(
+        {
+            "broker_order_id": "PAPER-POS-MODE-TEST",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "current_price": 100,
+            "execution_mode": "paper",
+        }
+    )
+
+    live_position = position_store.create_open_position(
+        {
+            "broker_order_id": "LIVE-POS-MODE-TEST",
+            "symbol": "BANKNIFTY",
+            "side": "SELL",
+            "quantity": 15,
+            "entry_price": 200,
+            "current_price": 200,
+            "execution_mode": "live",
+        }
+    )
+
+    assert paper_position["execution_mode"] == "paper"
+    assert live_position["execution_mode"] == "live"
+
+    paper_lookup = position_store.find_position_by_broker_order_id(
+        "PAPER-POS-MODE-TEST",
+        execution_mode="paper",
+    )
+    assert paper_lookup is not None
+    assert paper_lookup["execution_mode"] == "paper"
+
+    assert (
+        position_store.find_position_by_broker_order_id(
+            "PAPER-POS-MODE-TEST",
+            execution_mode="live",
+        )
+        is None
+    )
+
+    live_lookup = position_store.find_position_by_broker_order_id(
+        "LIVE-POS-MODE-TEST",
+        execution_mode="live",
+    )
+    assert live_lookup is not None
+    assert live_lookup["execution_mode"] == "live"
+
+    assert (
+        position_store.find_position_by_broker_order_id(
+            "LIVE-POS-MODE-TEST",
+            execution_mode="paper",
+        )
+        is None
+    )
+
+    paper_open = position_store.list_open_positions(execution_mode="paper")
+    live_open = position_store.list_open_positions(execution_mode="live")
+
+    assert {p["broker_order_id"] for p in paper_open} == {
+        "PAPER-POS-MODE-TEST"
+    }
+    assert {p["broker_order_id"] for p in live_open} == {
+        "LIVE-POS-MODE-TEST"
+    }
+
+
+def test_position_execution_mode_defaults_to_paper(monkeypatch):
+    """Existing PAPER callers that omit execution_mode retain PAPER semantics."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import position_store
+    from Backend.core.database import init_database
+
+    init_database()
+
+    position = position_store.create_open_position(
+        {
+            "broker_order_id": "DEFAULT-PAPER-POS-MODE-TEST",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "current_price": 100,
+        }
+    )
+
+    assert position["execution_mode"] == "paper"
+
+    found = position_store.find_position_by_broker_order_id(
+        "DEFAULT-PAPER-POS-MODE-TEST",
+        execution_mode="paper",
+    )
+
+    assert found is not None
+    assert found["execution_mode"] == "paper"

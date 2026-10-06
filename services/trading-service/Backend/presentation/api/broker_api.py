@@ -319,6 +319,7 @@ async def reconcile_broker(
             db=db,
             broker_client=broker_client_for_mode(execution_mode),
             actor=actor,
+            execution_mode=execution_mode,
             request=request,
         )
     except Exception as exc:

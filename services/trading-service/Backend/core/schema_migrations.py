@@ -27,6 +27,7 @@ COMPATIBILITY_COLUMNS: dict[str, dict[str, str]] = {
         "order_key": "ALTER TABLE orders ADD COLUMN order_key VARCHAR(160)",
     },
     "positions": {
+        "execution_mode": "ALTER TABLE positions ADD COLUMN execution_mode VARCHAR(20) DEFAULT 'paper' NOT NULL",
         "exit_price": "ALTER TABLE positions ADD COLUMN exit_price FLOAT",
         "exit_reason": "ALTER TABLE positions ADD COLUMN exit_reason VARCHAR(80)",
         "trailing_stop_loss": "ALTER TABLE positions ADD COLUMN trailing_stop_loss FLOAT",
@@ -60,6 +61,7 @@ INSTITUTIONAL_METRICS_VERSION = "0004_institutional_metrics"
 PAPER_TRADE_COST_EVIDENCE_VERSION = "0005_paper_trade_cost_evidence"
 PAPER_TRADE_IDEMPOTENCY_VERSION = "0006_paper_trade_idempotency"
 BROKER_SUBMISSION_INTENTS_VERSION = "0007_broker_submission_intents"
+POSITION_EXECUTION_MODE_VERSION = "0008_position_execution_mode"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -200,6 +202,25 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
             connection.execute(
                 text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
                 {"version": BROKER_SUBMISSION_INTENTS_VERSION},
+            )
+
+
+
+    # Positions must carry the same execution-mode ownership as their source
+    # orders so broker reconciliation can never cross PAPER/LIVE boundaries.
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                               {"lock_id": POSTGRES_MIGRATION_LOCK_ID})
+        applied = {row[0] for row in connection.execute(
+            text(f"SELECT version FROM {MIGRATION_TABLE}")
+        )}
+    if POSITION_EXECUTION_MODE_VERSION not in applied:
+        apply_compatibility_migrations(engine, ["positions"])
+        with engine.begin() as connection:
+            connection.execute(
+                text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
+                {"version": POSITION_EXECUTION_MODE_VERSION},
             )
 
 

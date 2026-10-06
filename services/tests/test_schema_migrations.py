@@ -53,6 +53,7 @@ def test_versioned_migrations_record_baseline_and_compatibility():
         schema_migrations.INSTITUTIONAL_METRICS_VERSION,
         schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION,
         schema_migrations.BROKER_SUBMISSION_INTENTS_VERSION,
+        schema_migrations.POSITION_EXECUTION_MODE_VERSION,
     ]
     inspector = inspect(engine)
     assert "execution_mode" in {column["name"] for column in inspector.get_columns("orders")}

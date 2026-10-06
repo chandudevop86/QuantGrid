@@ -70,7 +70,7 @@ def test_reconciliation_updates_rejected_order_and_missing_position(monkeypatch)
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="paper"))
 
     assert summary["checked_orders"] == 2
     assert summary["mismatches"] == 2
@@ -122,7 +122,7 @@ def test_reconciliation_marks_quantity_mismatch_for_review(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="paper"))
 
     assert summary["mismatches"] == 1
     assert summary["fixed"] == 0
@@ -170,7 +170,7 @@ def test_reconciliation_fixes_price_only_mismatch(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="paper"))
 
     assert summary["mismatches"] == 1
     assert summary["fixed"] == 1
@@ -208,7 +208,7 @@ def test_reconciliation_marks_broker_only_position_for_review(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="paper"))
         audit = db.query(AuditLog).filter(AuditLog.action == "broker_reconciliation_change").first()
 
     assert summary["checked_orders"] == 0
@@ -258,7 +258,7 @@ def test_reconciliation_closes_local_open_when_broker_closed(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="paper"))
         audit = db.query(AuditLog).filter(AuditLog.action == "broker_reconciliation_change").first()
 
     closed = position_store.get_position(opened["id"])
@@ -312,7 +312,7 @@ def test_reconciliation_updates_lifecycle_order_when_broker_filled(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="live"))
 
     updated_order = order_store.get_order(local_order["local_order_id"])
     created_position = position_store.find_position_by_broker_order_id("BROKER-FILLED-1")
@@ -360,7 +360,7 @@ def test_reconciliation_recovers_stale_pre_broker_order(monkeypatch):
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="live"))
 
     recovered = order_store.get_order(local_order["local_order_id"])
     assert summary["mismatches"] == 1
@@ -405,7 +405,7 @@ def test_reconciliation_marks_ambiguous_submitted_order_without_broker_id_for_re
         db.add(actor)
         db.commit()
         db.refresh(actor)
-        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor))
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(db=db, broker_client=FakeBroker(), actor=actor, execution_mode="live"))
 
     unchanged = order_store.get_order(local_order["local_order_id"])
     assert summary["mismatches"] == 1
@@ -528,6 +528,7 @@ def test_reconciliation_terminal_broker_state_releases_durable_submission_intent
                 db=db,
                 broker_client=FakeBroker(),
                 actor=actor,
+                execution_mode="paper",
             )
         )
 
@@ -651,6 +652,7 @@ def test_reconciliation_not_found_does_not_release_durable_submission_intent(mon
                 db=db,
                 broker_client=MissingBroker(),
                 actor=actor,
+                execution_mode="paper",
             )
         )
 
@@ -674,3 +676,264 @@ def test_reconciliation_not_found_does_not_release_durable_submission_intent(mon
             "ORD-RECON-MISSING-DUPLICATE",
             logical_key,
         )
+
+
+def test_paper_reconciliation_ignores_live_orders(monkeypatch):
+    """PAPER reconciliation must never inspect or mutate LIVE lifecycle orders."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+
+    init_database()
+
+    live_order = order_store.create_order(
+        {
+            "local_order_id": "ORD-LIVE-ISOLATION-1",
+            "broker_order_id": "LIVE-BROKER-ISOLATION-1",
+            "order_key": "NIFTY:BUY:LIVE-ISOLATION",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "status": "broker_submitted",
+        }
+    )
+
+    queried = []
+
+    class PaperBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            queried.append(broker_order_id)
+            raise AssertionError(
+                f"PAPER reconciliation queried LIVE order {broker_order_id}"
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="paper-isolation-ops",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=PaperBroker(),
+                actor=actor,
+                execution_mode="paper",
+            )
+        )
+
+    unchanged = order_store.get_order(live_order["local_order_id"])
+
+    assert queried == []
+    assert summary["checked_orders"] == 0
+    assert unchanged["status"] == "broker_submitted"
+    assert unchanged["execution_mode"] == "live"
+
+
+def test_live_reconciliation_ignores_paper_orders(monkeypatch):
+    """LIVE reconciliation must never inspect or mutate PAPER lifecycle orders."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+
+    init_database()
+
+    paper_order = order_store.create_order(
+        {
+            "local_order_id": "ORD-PAPER-ISOLATION-1",
+            "broker_order_id": "PAPER-BROKER-ISOLATION-1",
+            "order_key": "NIFTY:BUY:PAPER-ISOLATION",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "paper",
+            "status": "broker_submitted",
+        }
+    )
+
+    queried = []
+
+    class LiveBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            queried.append(broker_order_id)
+            raise AssertionError(
+                f"LIVE reconciliation queried PAPER order {broker_order_id}"
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="live-isolation-ops",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=LiveBroker(),
+                actor=actor,
+                execution_mode="live",
+            )
+        )
+
+    unchanged = order_store.get_order(paper_order["local_order_id"])
+
+    assert queried == []
+    assert summary["checked_orders"] == 0
+    assert unchanged["status"] == "broker_submitted"
+    assert unchanged["execution_mode"] == "paper"
+
+
+def test_paper_reconciliation_ignores_live_open_positions(monkeypatch):
+    """PAPER reconciliation must not inspect or close LIVE positions."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+
+    init_database()
+
+    live_position = position_store.create_open_position(
+        {
+            "broker_order_id": "LIVE-POSITION-ISOLATION-1",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "current_price": 100,
+            "execution_mode": "live",
+        }
+    )
+
+    queried = []
+
+    class PaperBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            queried.append(broker_order_id)
+            raise AssertionError(
+                f"PAPER reconciliation queried LIVE position order {broker_order_id}"
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="position-isolation-ops",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=PaperBroker(),
+                actor=actor,
+                execution_mode="paper",
+            )
+        )
+
+    unchanged = position_store.get_position(live_position["id"])
+
+    assert queried == []
+    assert summary["checked_positions"] == 0
+    assert unchanged["status"] == "open"
+    assert unchanged["execution_mode"] == "live"
+
+
+def test_live_reconciliation_never_updates_paper_trade_store(monkeypatch):
+    """LIVE reconciliation must never write through PAPER trade persistence."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+
+    order_store.create_order(
+        {
+            "local_order_id": "ORD-LIVE-NO-PAPER-WRITE-1",
+            "broker_order_id": "LIVE-NO-PAPER-WRITE-1",
+            "order_key": "NIFTY:SELL:LIVE-NO-PAPER-WRITE",
+            "symbol": "NIFTY",
+            "side": "SELL",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "live",
+            "status": "broker_submitted",
+        }
+    )
+
+    paper_writes = []
+
+    def forbidden_paper_write(*args, **kwargs):
+        paper_writes.append((args, kwargs))
+        raise AssertionError("LIVE reconciliation wrote to paper_trade_store")
+
+    monkeypatch.setattr(
+        broker_reconciliation,
+        "update_paper_trade_status",
+        forbidden_paper_write,
+    )
+
+    class LiveBroker:
+        async def get_positions(self):
+            return []
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="rejected",
+                symbol="NIFTY",
+                side="SELL",
+                quantity=25,
+                price=100,
+                confirmed=False,
+            )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="live-no-paper-write-ops",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=LiveBroker(),
+                actor=actor,
+                execution_mode="live",
+            )
+        )
+
+    assert paper_writes == []

@@ -959,6 +959,7 @@ async def place_order(
                 {
                     "broker_order_id": broker_status.broker_order_id,
                     "symbol": signal.symbol,
+                    "execution_mode": execution_mode,
                     "side": signal.side,
                     "quantity": requested_quantity(signal),
                     "entry_price": signal.entry_price,
