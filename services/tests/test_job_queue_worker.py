@@ -244,3 +244,59 @@ def test_exit_monitor_worker_settings(monkeypatch):
     monkeypatch.setenv("QUANTGRID_INVESTMENT_RESEARCH_LOOP_ENABLED", "false")
     assert worker._narrative_loop_enabled() is False
     assert worker._investment_loop_enabled() is False
+
+
+def test_periodic_paper_reconciliation_settings(monkeypatch):
+    from Backend.application import worker
+
+    monkeypatch.delenv(
+        "QUANTGRID_PAPER_RECONCILIATION_ENABLED",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "QUANTGRID_PAPER_RECONCILIATION_INTERVAL_SECONDS",
+        raising=False,
+    )
+
+    assert worker._paper_reconciliation_enabled() is True
+    assert worker._paper_reconciliation_interval() == 30.0
+
+    monkeypatch.setenv(
+        "QUANTGRID_PAPER_RECONCILIATION_ENABLED",
+        "false",
+    )
+    monkeypatch.setenv(
+        "QUANTGRID_PAPER_RECONCILIATION_INTERVAL_SECONDS",
+        "1",
+    )
+
+    assert worker._paper_reconciliation_enabled() is False
+    assert worker._paper_reconciliation_interval() == 5.0
+
+
+def test_periodic_reconciliation_is_forced_to_paper(monkeypatch):
+    from Backend.application import worker
+
+    captured = []
+
+    def fake_reconciliation(payload):
+        captured.append(payload)
+        return {
+            "checked_orders": 0,
+            "checked_positions": 0,
+            "mismatches": 0,
+            "fixed": 0,
+            "needs_review": 0,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(
+        worker,
+        "_run_reconciliation_job",
+        fake_reconciliation,
+    )
+
+    result = worker._run_periodic_paper_reconciliation()
+
+    assert result["errors"] == []
+    assert captured == [{"execution_mode": "paper"}]

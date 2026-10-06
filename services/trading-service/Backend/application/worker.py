@@ -904,6 +904,34 @@ def process_job(
 # =====================================================
 
 
+def _paper_reconciliation_enabled() -> bool:
+    """Enable periodic reconciliation for PAPER execution only."""
+    return _truthy(
+        os.getenv(
+            "QUANTGRID_PAPER_RECONCILIATION_ENABLED",
+            "true",
+        )
+    )
+
+
+def _paper_reconciliation_interval() -> float:
+    return max(
+        5.0,
+        _float_env(
+            "QUANTGRID_PAPER_RECONCILIATION_INTERVAL_SECONDS",
+            30.0,
+        ),
+    )
+
+
+def _run_periodic_paper_reconciliation() -> dict[str, Any]:
+    # Intentionally hard-coded. Periodic reconciliation introduced for the
+    # automated paper lifecycle must never inherit or switch to live mode.
+    return _run_reconciliation_job(
+        {"execution_mode": "paper"}
+    )
+
+
 def _exit_monitor_enabled():
 
     return _truthy(
@@ -1157,6 +1185,7 @@ def run_worker_loop(
     next_candle_ingestion = time.monotonic()
 
     next_exit_check = time.monotonic()
+    next_paper_reconciliation = time.monotonic()
 
     next_auto_paper_check = time.monotonic()
 
@@ -1271,6 +1300,31 @@ def run_worker_loop(
                 + _auto_paper_interval()
             )
 
+
+        # -------------------------
+        # periodic PAPER reconciliation
+        # -------------------------
+        if (
+            _paper_reconciliation_enabled()
+            and
+            time.monotonic()
+            >= next_paper_reconciliation
+        ):
+            try:
+                result = _run_periodic_paper_reconciliation()
+                logger.info(
+                    "paper_reconciliation_periodic result=%s",
+                    result,
+                )
+            except Exception:
+                logger.exception(
+                    "Periodic PAPER reconciliation failed"
+                )
+
+            next_paper_reconciliation = (
+                time.monotonic()
+                + _paper_reconciliation_interval()
+            )
 
         # -------------------------
         # exit monitor
