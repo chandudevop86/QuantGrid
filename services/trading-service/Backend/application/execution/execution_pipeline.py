@@ -528,6 +528,7 @@ async def _submit_paper_signal(
             {
                 "broker_order_id": broker_status.broker_order_id,
                 "symbol": signal.symbol,
+                "execution_mode": execution_mode,
                 "side": signal.side,
                 "quantity": order.quantity,
                 "entry_price": signal.entry_price,

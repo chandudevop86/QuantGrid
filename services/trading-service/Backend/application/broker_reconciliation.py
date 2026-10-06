@@ -73,8 +73,10 @@ async def reconcile_broker_state(
     db: Session,
     broker_client: BrokerClient,
     actor: User,
+    execution_mode: str,
     request: Request | None = None,
 ) -> dict[str, Any]:
+    execution_mode = _validate_execution_mode(execution_mode)
     summary : dict[str, Any] = {
         "checked_orders": 0,
         "checked_positions": 0,
@@ -83,8 +85,14 @@ async def reconcile_broker_state(
         "needs_review": 0,
         "errors": [],
     }
-    _recover_stale_local_orders(summary, db, actor, request)
-    local_orders = _local_orders(db)
+    _recover_stale_local_orders(
+        summary,
+        db,
+        actor,
+        request,
+        execution_mode=execution_mode,
+    )
+    local_orders = _local_orders(db, execution_mode=execution_mode)
     
 
     try:
@@ -109,7 +117,10 @@ async def reconcile_broker_state(
             continue
 
         order_status = _normal_status(broker_order.status)
-        position = find_position_by_broker_order_id(broker_order_id)
+        position = find_position_by_broker_order_id(
+            broker_order_id,
+            execution_mode=execution_mode,
+        )
 
         if order_status == "not_found":
             _record_fix(
@@ -121,13 +132,14 @@ async def reconcile_broker_state(
                 broker_order_id,
                 {"local_order": local_order, "broker_status": broker_order.to_dict()},
             )
-            update_paper_trade_status(
-                broker_order_id,
-                status="broker_missing",
-                reason="Broker order was not found during reconciliation.",
-                broker_status=broker_order.status,
-                raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
-            )
+            if execution_mode == "paper":
+                update_paper_trade_status(
+                    broker_order_id,
+                    status="broker_missing",
+                    reason="Broker order was not found during reconciliation.",
+                    broker_status=broker_order.status,
+                    raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
+                )
             _transition_local_order_if_present(
                 local_order,
                 "rejected",
@@ -154,13 +166,14 @@ async def reconcile_broker_state(
                 broker_order_id,
                 {"local_order": local_order, "broker_status": broker_order.to_dict()},
             )
-            update_paper_trade_status(
-                broker_order_id,
-                status=f"broker_{order_status}",
-                reason=f"Broker status is {order_status}.",
-                broker_status=broker_order.status,
-                raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
-            )
+            if execution_mode == "paper":
+                update_paper_trade_status(
+                    broker_order_id,
+                    status=f"broker_{order_status}",
+                    reason=f"Broker status is {order_status}.",
+                    broker_status=broker_order.status,
+                    raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
+                )
             _transition_local_order_if_present(
                 local_order,
                 broker_status_to_order_status(broker_order.status, confirmed=broker_order.confirmed),
@@ -213,7 +226,7 @@ async def reconcile_broker_state(
         if position:
             _fix_position_differences(summary, db, actor, request, position, broker_order, broker_position_index)
 
-    open_positions = list_open_positions()
+    open_positions = list_open_positions(execution_mode=execution_mode)
     summary["checked_positions"] = len(open_positions) + len(broker_positions)
     if not broker_positions_available:
         _write_status(summary)
@@ -318,9 +331,13 @@ def _recover_stale_local_orders(
     db: Session,
     actor: User,
     request: Request | None,
+    *,
+    execution_mode: str,
 ) -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_LOCAL_ORDER_MINUTES)
     for order in list_orders(500):
+        if _order_execution_mode(order) != execution_mode:
+            continue
         status = _normal_status(order.get("status"))
         if status not in PRE_BROKER_STALE_STATUSES | AMBIGUOUS_NO_BROKER_ID_STATUSES:
             continue
@@ -357,14 +374,20 @@ def _recover_stale_local_orders(
         )
     
 
-def _local_orders(db: Session) -> list[dict[str, Any]]:
+def _local_orders(
+    db: Session,
+    *,
+    execution_mode: str,
+) -> list[dict[str, Any]]:
     orders: dict[str, dict[str, Any]] = {}
     positions_by_order = {
         str(position.get("broker_order_id")): position
-        for position in list_open_positions()
+        for position in list_open_positions(execution_mode=execution_mode)
         if position.get("broker_order_id")
     }
     for order in list_orders(500):
+        if _order_execution_mode(order) != execution_mode:
+            continue
         broker_order_id = order.get("broker_order_id")
         if not broker_order_id:
             continue
@@ -372,6 +395,7 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
             "source": "orders",
             "local_order_id": order.get("local_order_id"),
             "broker_order_id": str(broker_order_id),
+            "execution_mode": execution_mode,
             "symbol": order.get("symbol"),
             "side": order.get("side"),
             "quantity": order.get("quantity"),
@@ -379,25 +403,32 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
             "status": order.get("status"),
             "raw": order,
         }
-    for trade in list_paper_trades(500):
-        broker_order_id = trade.get("broker_order_id")
-        if not broker_order_id:
-            continue
-        if str(broker_order_id) in orders:
-            continue
-        orders[str(broker_order_id)] = {
-            "source": "paper_trades",
-            "broker_order_id": str(broker_order_id),
-            "symbol": trade.get("symbol"),
-            "side": trade.get("side"),
-            "price": trade.get("entry"),
-            "status": trade.get("status"),
-            "raw": trade,
-        }
+    if execution_mode == "paper":
+        for trade in list_paper_trades(500):
+            broker_order_id = trade.get("broker_order_id")
+            if not broker_order_id:
+                continue
+            if str(broker_order_id) in orders:
+                continue
+            orders[str(broker_order_id)] = {
+                "source": "paper_trades",
+                "broker_order_id": str(broker_order_id),
+                "execution_mode": "paper",
+                "symbol": trade.get("symbol"),
+                "side": trade.get("side"),
+                "price": trade.get("entry"),
+                "status": trade.get("status"),
+                "raw": trade,
+            }
 
+    audit_action = (
+        "paper_order_submitted"
+        if execution_mode == "paper"
+        else "live_order_submitted"
+    )
     rows = (
         db.query(AuditLog)
-        .filter(AuditLog.action.in_(["paper_order_submitted", "live_order_submitted"]))
+        .filter(AuditLog.action == audit_action)
         .order_by(desc(AuditLog.created_at), desc(AuditLog.id))
         .limit(500)
         .all()
@@ -417,6 +448,7 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
         orders[str(broker_order_id)] = {
             "source": "audit_logs",
             "broker_order_id": str(broker_order_id),
+            "execution_mode": execution_mode,
             "symbol": row.target_id or broker_order.get("symbol"),
             "side": broker_order.get("side") or metadata.get("side"),
             "price": broker_order.get("price"),
@@ -430,6 +462,7 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
             {
                 "source": "positions",
                 "broker_order_id": broker_order_id,
+                "execution_mode": execution_mode,
                 "symbol": position.get("symbol"),
                 "side": position.get("side"),
                 "price": position.get("entry_price"),
@@ -439,6 +472,19 @@ def _local_orders(db: Session) -> list[dict[str, Any]]:
         )
         orders[broker_order_id]["quantity"] = position.get("quantity")
     return list(orders.values())
+
+
+def _validate_execution_mode(execution_mode: str) -> str:
+    normalized = str(execution_mode or "").strip().lower()
+    if normalized not in {"paper", "live"}:
+        raise ValueError(f"unsupported execution mode: {execution_mode}")
+    return normalized
+
+
+def _order_execution_mode(order: dict[str, Any]) -> str:
+    # Historical order-store rows predate explicit mode persistence and
+    # originated from the PAPER lifecycle. New writes persist the mode.
+    return _validate_execution_mode(str(order.get("execution_mode") or "paper"))
 
 
 def _transition_local_order_if_present(
@@ -568,6 +614,7 @@ def _position_payload_from_order(broker_order: BrokerOrderResult, local_order: d
     return {
         "broker_order_id": broker_order.broker_order_id,
         "symbol": broker_order.symbol or local_order.get("symbol"),
+        "execution_mode": str(local_order.get("execution_mode") or "paper").lower(),
         "side": broker_order.side or local_order.get("side"),
         "quantity": broker_order.quantity or local_order.get("quantity") or 0,
         "entry_price": price,

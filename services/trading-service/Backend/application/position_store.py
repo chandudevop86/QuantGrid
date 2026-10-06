@@ -62,6 +62,7 @@ def _initialize_position_store() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 broker_order_id TEXT,
                 symbol TEXT NOT NULL,
+                execution_mode TEXT NOT NULL DEFAULT 'paper',
                 side TEXT NOT NULL,
                 quantity INTEGER NOT NULL,
                 entry_price REAL NOT NULL,
@@ -85,6 +86,8 @@ def _initialize_position_store() -> None:
             row["name"]
             for row in connection.execute("PRAGMA table_info(positions)").fetchall()
         }
+        if "execution_mode" not in columns:
+            connection.execute("ALTER TABLE positions ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'paper'")
         if "exit_price" not in columns:
             connection.execute("ALTER TABLE positions ADD COLUMN exit_price REAL")
         if "exit_reason" not in columns:
@@ -118,6 +121,7 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
     row = {
         "broker_order_id": payload.get("broker_order_id"),
         "symbol": symbol,
+        "execution_mode": _validate_execution_mode(str(payload.get("execution_mode") or "paper")),
         "side": side,
         "quantity": quantity,
         "entry_price": entry,
@@ -139,10 +143,10 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO positions
-                (broker_order_id, symbol, side, quantity, entry_price, stop_loss, target, trailing_stop_loss, trailing_stop_pct, current_price,
+                (broker_order_id, symbol, execution_mode, side, quantity, entry_price, stop_loss, target, trailing_stop_loss, trailing_stop_pct, current_price,
                 exit_price, exit_reason, open_pnl, closed_pnl, status, opened_at, closed_at, updated_at)
             VALUES
-                (:broker_order_id, :symbol, :side, :quantity, :entry_price, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :current_price,
+                (:broker_order_id, :symbol, :execution_mode, :side, :quantity, :entry_price, :stop_loss, :target, :trailing_stop_loss, :trailing_stop_pct, :current_price,
                 :exit_price, :exit_reason, :open_pnl, :closed_pnl, :status, :opened_at, :closed_at, :updated_at)
             """,
             row,
@@ -151,13 +155,21 @@ def create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def list_open_positions() -> list[dict[str, Any]]:
+def list_open_positions(*, execution_mode: str | None = None) -> list[dict[str, Any]]:
     init_position_store()
+    normalized_mode = _validate_execution_mode(execution_mode) if execution_mode is not None else None
     if not _use_sqlite():
         _db_refresh_open_positions()
-        return _db_list_positions("open")
+        return _db_list_positions("open", execution_mode=normalized_mode)
     _refresh_open_positions()
-    return _list_positions("open")
+    positions = _list_positions("open")
+    if normalized_mode is not None:
+        positions = [
+            position
+            for position in positions
+            if str(position.get("execution_mode") or "").strip().lower() == normalized_mode
+        ]
+    return positions
 
 
 def list_closed_positions(limit: int = 100) -> list[dict[str, Any]]:
@@ -167,20 +179,40 @@ def list_closed_positions(limit: int = 100) -> list[dict[str, Any]]:
     return _list_positions("closed", limit=limit)
 
 
-def find_position_by_broker_order_id(broker_order_id: str) -> dict[str, Any] | None:
+def find_position_by_broker_order_id(
+    broker_order_id: str,
+    *,
+    execution_mode: str | None = None,
+) -> dict[str, Any] | None:
     init_position_store()
+    normalized_mode = _validate_execution_mode(execution_mode) if execution_mode is not None else None
     if not _use_sqlite():
-        return _db_find_position_by_broker_order_id(broker_order_id)
+        return _db_find_position_by_broker_order_id(
+            broker_order_id,
+            execution_mode=normalized_mode,
+        )
     with _connect() as connection:
-        row = connection.execute(
-            """
-            SELECT * FROM positions
-            WHERE broker_order_id = ?
-            ORDER BY updated_at DESC, id DESC
-            LIMIT 1
-            """,
-            (broker_order_id,),
-        ).fetchone()
+        if normalized_mode is None:
+            row = connection.execute(
+                """
+                SELECT * FROM positions
+                WHERE broker_order_id = ?
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                (broker_order_id,),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                """
+                SELECT * FROM positions
+                WHERE broker_order_id = ?
+                  AND execution_mode = ?
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                (broker_order_id, normalized_mode),
+            ).fetchone()
     return dict(row) if row else None
 
 
@@ -363,6 +395,7 @@ def _position_row(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "broker_order_id": payload.get("broker_order_id"),
         "symbol": symbol,
+        "execution_mode": _validate_execution_mode(str(payload.get("execution_mode") or "paper")),
         "side": side,
         "quantity": quantity,
         "entry_price": entry,
@@ -389,6 +422,7 @@ def _record_to_dict(record: Any) -> dict[str, Any]:
         "id": record.id,
         "broker_order_id": record.broker_order_id,
         "symbol": record.symbol,
+        "execution_mode": record.execution_mode,
         "side": record.side,
         "quantity": record.quantity,
         "entry_price": record.entry_price,
@@ -423,21 +457,47 @@ def _db_create_open_position(payload: dict[str, Any]) -> dict[str, Any]:
         return _record_to_dict(record)
 
 
-def _db_list_positions(status: str, *, limit: int = 100) -> list[dict[str, Any]]:
+def _db_list_positions(
+    status: str,
+    *,
+    limit: int = 100,
+    execution_mode: str | None = None,
+) -> list[dict[str, Any]]:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import PositionRecord
 
     with SessionLocal() as db:
-        rows = db.query(PositionRecord).filter(PositionRecord.status == status).order_by(PositionRecord.updated_at.desc(), PositionRecord.id.desc()).limit(max(1, min(int(limit), 500))).all()
+        query = db.query(PositionRecord).filter(PositionRecord.status == status)
+        if execution_mode is not None:
+            query = query.filter(PositionRecord.execution_mode == execution_mode)
+        rows = (
+            query
+            .order_by(PositionRecord.updated_at.desc(), PositionRecord.id.desc())
+            .limit(max(1, min(int(limit), 500)))
+            .all()
+        )
         return [_record_to_dict(row) for row in rows]
 
 
-def _db_find_position_by_broker_order_id(broker_order_id: str) -> dict[str, Any] | None:
+def _db_find_position_by_broker_order_id(
+    broker_order_id: str,
+    *,
+    execution_mode: str | None = None,
+) -> dict[str, Any] | None:
     from Backend.core.database import SessionLocal
     from Backend.domain.trading_store_models import PositionRecord
 
     with SessionLocal() as db:
-        row = db.query(PositionRecord).filter(PositionRecord.broker_order_id == broker_order_id).order_by(PositionRecord.updated_at.desc(), PositionRecord.id.desc()).first()
+        query = db.query(PositionRecord).filter(
+            PositionRecord.broker_order_id == broker_order_id
+        )
+        if execution_mode is not None:
+            query = query.filter(PositionRecord.execution_mode == execution_mode)
+        row = (
+            query
+            .order_by(PositionRecord.updated_at.desc(), PositionRecord.id.desc())
+            .first()
+        )
         return _record_to_dict(row) if row else None
 
 
@@ -517,3 +577,10 @@ def _db_refresh_open_positions() -> None:
             row.open_pnl = _open_pnl(str(row.side), int(row.quantity), float(row.entry_price), current)
             row.updated_at = utc_now()
         db.commit()
+
+
+def _validate_execution_mode(mode: str) -> str:
+    normalized = mode.strip().lower()
+    if normalized not in {"paper", "live"}:
+        raise ValueError(f"unsupported execution mode: {mode}")
+    return normalized

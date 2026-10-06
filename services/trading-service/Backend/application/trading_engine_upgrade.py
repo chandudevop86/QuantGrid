@@ -83,6 +83,7 @@ def submit_paper_basket(*, legs: list[dict[str, Any]], execution_mode: str = "pa
                     "entry_price": normalized["entry"],
                     "target_price": normalized["target"],
                     "current_price": normalized["entry"],
+                    "execution_mode": "paper",
                     "broker_order_id": broker_order_id,
                 }
             )

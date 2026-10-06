@@ -466,6 +466,12 @@ class PositionRecord(Base):
         index=True,
     )
 
+    execution_mode: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="paper",
+    )
+
     side: Mapped[str] = mapped_column(
         String(10),
         nullable=False,
