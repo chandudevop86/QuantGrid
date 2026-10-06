@@ -78,11 +78,41 @@ def _m15_bullish_trigger() -> list[dict]:
 def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypatch):
     configure_sqlalchemy_store(monkeypatch)
 
-    from Backend.application import order_store, paper_trade_store, position_store
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+
+    from Backend.application import (
+        broker_submission_intent as intent,
+        order_store,
+        paper_trade_store,
+        position_store,
+    )
     from Backend.application.execution import execution_pipeline
     from Backend.application.signal_validation import validate_signals
     import Backend.application.signal_validation as signal_validation
-    from Backend.core.database import SessionLocal
+    from Backend.core.database import SessionLocal, engine
+
+    # broker_submission_intents is migration-managed rather than ORM-managed.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_active_intent_key "
+            "ON broker_submission_intents(logical_key) "
+            "WHERE status IN "
+            "('claimed', 'reconciliation_required', 'submitted', 'open', 'partially_filled')"
+        ))
+
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
     from Backend.domain.engine.execution_engine import ExecutionEngine
     from Backend.domain.models.context import StrategyContext
     from Backend.domain.security.models import User
@@ -236,6 +266,29 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
     assert result["status"] == "paper_order_submitted"
     assert result["broker_confirmed"] is True
     assert result["broker_order_id"] == "PAPER-FULL-E2E-1"
+    assert result["local_order_id"]
+
+    # The real execution pipeline must carry the durable submission intent
+    # through the ambiguous boundary to authoritative terminal evidence.
+    with engine.connect() as conn:
+        durable_intent = conn.execute(
+            text(
+                "SELECT logical_key, broker_order_id, status "
+                "FROM broker_submission_intents "
+                "WHERE local_order_id = :local_order_id"
+            ),
+            {"local_order_id": result["local_order_id"]},
+        ).mappings().one()
+
+    assert durable_intent["broker_order_id"] == "PAPER-FULL-E2E-1"
+    assert durable_intent["status"] == "filled"
+
+    # Terminal evidence must release the logical key for a future order.
+    replacement = intent.claim_submission(
+        "ORD-PAPER-FULL-E2E-REPLACEMENT",
+        durable_intent["logical_key"],
+    )
+    assert replacement["status"] == "claimed"
 
     orders = order_store.list_orders()
     assert len(orders) == 1
@@ -299,3 +352,35 @@ def test_real_strategy_reaches_persisted_paper_trade_and_open_position(monkeypat
     assert closed_journal["pnl"] == evidence["net_pnl"]
     assert closed_journal["exit_price"] == float(signal.entry_price) + 10.0
     assert closed_journal["closed_at"] is not None
+
+    # The completed PAPER lifecycle must leave durable audit evidence for
+    # the position exit, including the same cost evidence persisted above.
+    from Backend.domain.security.models import AuditLog
+
+    with SessionLocal() as audit_db:
+        exit_audit = (
+            audit_db.query(AuditLog)
+            .filter(
+                AuditLog.action == "position_exit",
+                AuditLog.target_type == "position",
+            )
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
+
+    assert exit_audit is not None
+    assert str(exit_audit.target_id) == str(position["id"])
+
+    import json
+
+    audit_metadata = json.loads(exit_audit.metadata_json)
+    assert audit_metadata["status"] == "closed"
+    assert audit_metadata["reason"] == "manual_exit"
+    assert audit_metadata["execution_mode"] == "paper"
+    assert audit_metadata["exit_price"] == float(signal.entry_price) + 10.0
+    assert audit_metadata["paper_cost_evidence"]["gross_pnl"] == 650.0
+    assert audit_metadata["paper_cost_evidence"]["total_costs"] > 0
+    assert (
+        audit_metadata["paper_cost_evidence"]["net_pnl"]
+        < audit_metadata["paper_cost_evidence"]["gross_pnl"]
+    )
