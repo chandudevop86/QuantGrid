@@ -28,6 +28,12 @@ class BrokerAdapterError(RuntimeError):
 
 
 class DhanBrokerClient:
+    # Dhan exposes partial-fill states through order status/order book. Broker-
+    # native protective-stop acknowledgement is not yet implemented by QuantGrid,
+    # so the capability must remain false until that lifecycle is proven.
+    supports_partial_fills = True
+    supports_broker_native_protective_stop = False
+
     def __init__(self, *, timeout: float = 8.0) -> None:
         credentials = dhan_credentials()
         self.client_id = credentials["client_id"]
@@ -166,7 +172,7 @@ class DhanBrokerClient:
         timeout) to check whether the order actually went through before retrying -- Dhan
         echoes back the correlationId on every order-book entry, so this lets us tell "the
         request timed out but the order exists" apart from "the request never reached Dhan."
-        Returns None if nothing matches, which the caller treats as "safe to retry."
+        Returns None if nothing matches. Absence is not authoritative rejection evidence; the OMS must fail closed and require reconciliation rather than automatically resubmitting.
         """
         if not correlation_id:
             return None
