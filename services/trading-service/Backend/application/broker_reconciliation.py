@@ -122,6 +122,47 @@ async def reconcile_broker_state(
             execution_mode=execution_mode,
         )
 
+        if execution_mode == "live" and int(broker_order.filled_quantity or 0) > 0:
+            super_status_getter = getattr(broker_client, "get_super_order_status", None)
+            if callable(super_status_getter):
+                try:
+                    protected_order = await super_status_getter(broker_order_id)
+                except Exception as exc:
+                    protected_order = None
+                    summary["errors"].append(
+                        f"{broker_order_id}: Super Order protection unavailable: {exc}"
+                    )
+                protection = (
+                    ((protected_order.metadata or {}).get("super_order") or {}).get("protection")
+                    if protected_order is not None
+                    else None
+                )
+                if not protection or not bool(protection.get("protected")):
+                    _record_review(
+                        summary,
+                        db,
+                        actor,
+                        request,
+                        "live_filled_exposure_not_broker_protected",
+                        broker_order_id,
+                        {
+                            "local_order": local_order,
+                            "broker_status": broker_order.to_dict(),
+                            "protection": protection,
+                        },
+                    )
+                    _transition_local_order_if_present(
+                        local_order,
+                        "reconciliation_required",
+                        status_reason=(
+                            "LIVE filled exposure does not have authoritative broker-native "
+                            "stop-loss protection covering the filled quantity."
+                        ),
+                        broker_status=broker_order.status,
+                        entry_price=broker_order.price,
+                    )
+                    continue
+
         if order_status == "not_found":
             # A missing lookup is ambiguous, not authoritative terminal broker
             # evidence. This is especially important for PaperBrokerClient,
