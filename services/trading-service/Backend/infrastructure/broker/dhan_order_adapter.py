@@ -33,7 +33,8 @@ class DhanBrokerClient:
     # native protective-stop acknowledgement is not yet implemented by QuantGrid,
     # so the capability must remain false until that lifecycle is proven.
     supports_partial_fills = True
-    supports_broker_native_protective_stop = True
+    supports_protected_order_submission = True
+    supports_broker_native_protective_stop = False
 
     def __init__(self, *, timeout: float = 8.0) -> None:
         credentials = dhan_credentials()
