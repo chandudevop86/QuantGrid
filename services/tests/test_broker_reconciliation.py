@@ -1104,6 +1104,16 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
                 side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
                 price=101, confirmed=True,
             )
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
+                price=101, confirmed=True,
+                metadata={"super_order": {"protection": {
+                    "exposed_quantity": 10, "stop_loss_present": True,
+                    "stop_loss_active": True, "protected": True,
+                }}},
+            )
 
     with SessionLocal() as db:
         actor = User(username="partial-ops", password_hash="hash", role="ops")
@@ -1122,3 +1132,104 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
             "SELECT status FROM broker_submission_intents WHERE local_order_id=:id"
         ), {"id": local_id}).scalar_one()
     assert durable == "partially_filled"
+
+
+
+def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-LIVE-NO-STOP-1"
+    local_id = "ORD-LIVE-NO-STOP-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:NO-STOP", "symbol": "NIFTY", "side": "BUY",
+        "quantity": 25, "entry_price": 100, "execution_mode": "live",
+        "status": "broker_submitted",
+    })
+
+    class UnprotectedBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY", "netQty": 25, "averagePrice": 100}]
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=25, remaining_quantity=0,
+                price=100, confirmed=True,
+            )
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=25, remaining_quantity=0,
+                price=100, confirmed=True,
+                metadata={"super_order": {"protection": {
+                    "exposed_quantity": 25, "stop_loss_present": False,
+                    "stop_loss_active": False, "protected": False,
+                }}},
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="live-protection-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=UnprotectedBroker(), actor=actor, execution_mode="live"
+        ))
+
+    updated = order_store.get_order(local_id)
+    assert summary["needs_review"] >= 1
+    assert updated["status"] == "reconciliation_required"
+
+
+def test_live_undercovered_super_order_stop_requires_review(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-LIVE-UNDERCOVERED-1"
+    local_id = "ORD-LIVE-UNDERCOVERED-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:UNDERCOVERED", "symbol": "NIFTY", "side": "BUY",
+        "quantity": 25, "entry_price": 100, "execution_mode": "live",
+        "status": "broker_submitted",
+    })
+
+    class UndercoveredBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY", "netQty": 10, "averagePrice": 100}]
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
+                price=100, confirmed=True,
+            )
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
+                price=100, confirmed=True,
+                metadata={"super_order": {"protection": {
+                    "exposed_quantity": 10, "stop_loss_present": True,
+                    "stop_loss_active": False, "protected": False,
+                }}},
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="live-undercovered-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=UndercoveredBroker(), actor=actor, execution_mode="live"
+        ))
+
+    updated = order_store.get_order(local_id)
+    assert summary["needs_review"] >= 1
+    assert updated["status"] == "reconciliation_required"
