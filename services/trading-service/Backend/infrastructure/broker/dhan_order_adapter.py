@@ -310,8 +310,20 @@ def _result_from_raw(
     if not raw_status and isinstance(raw, dict):
         raw_status = raw.get("orderStatus")
     status = _normalize_status(str(raw_status or "pending"))
-    quantity = int(data.get("quantity") or data.get("filledQty") or (fallback_order.quantity if fallback_order else 0) or 0)
-    price = data.get("price") or data.get("averageTradedPrice") or (fallback_order.price if fallback_order else None)
+    quantity = int(data.get("quantity") or (fallback_order.quantity if fallback_order else 0) or 0)
+    filled_quantity = int(data.get("filledQty") or data.get("filledQuantity") or 0)
+    remaining_raw = data.get("remainingQuantity")
+    if remaining_raw is None:
+        remaining_quantity = max(0, quantity - filled_quantity)
+    else:
+        remaining_quantity = max(0, int(remaining_raw))
+    # Some broker payloads report partial execution through quantities before
+    # their textual status catches up. Preserve that evidence fail-closed.
+    if 0 < filled_quantity < quantity:
+        status = "partially_filled"
+    elif quantity > 0 and filled_quantity >= quantity:
+        status = "filled"
+    price = data.get("averageTradedPrice") or data.get("price") or (fallback_order.price if fallback_order else None)
     normalized_status = status
     confirmed_status = (
         status in {"pending", "transit", "open", "traded", "filled", "confirmed"}
@@ -324,6 +336,8 @@ def _result_from_raw(
         symbol=str(data.get("tradingSymbol") or data.get("securityId") or (fallback_order.symbol if fallback_order else "")),
         side=str(data.get("transactionType") or (fallback_order.side if fallback_order else "")).upper(),
         quantity=quantity,
+        filled_quantity=filled_quantity,
+        remaining_quantity=remaining_quantity,
         price=float(price) if price not in {None, ""} else None,
         message=message,
         confirmed=confirmed_status,
@@ -350,6 +364,8 @@ def _normalize_status(value: str) -> str:
         return "filled"
     if status in {"pending", "transit", "open", "after_market_order_req_received"}:
         return "open"
+    if status in {"partially_filled", "partial", "part_filled"}:
+        return "partially_filled"
     if status in {"rejected", "cancelled", "expired", "failed"}:
         return status
     return status or "pending"
