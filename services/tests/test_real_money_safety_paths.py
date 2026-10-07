@@ -741,3 +741,82 @@ def test_trading_readiness_blocks_yahoo_as_live_market_data(monkeypatch):
     assert readiness["live"]["technical_ready"] is False
     assert readiness["live"]["technical_checks"]["trading_grade_market_data"] is False
     assert readiness["live"]["real_money_enabled"] is False
+
+
+
+def test_trading_readiness_fails_closed_when_reconciliation_needs_review(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-07T12:00:00+00:00", "needs_review": 1, "errors": []},
+    )
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(_live_settings())
+
+    assert result["live"]["technical_ready"] is False
+    assert result["live"]["technical_checks"]["reconciliation_clean"] is False
+    assert "reconciliation_clean" in result["live"]["blockers"]
+
+
+def test_trading_readiness_requires_broker_native_protection(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    class Capabilities:
+        broker_native_protective_stop = False
+        live_execution_ready = False
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-07T12:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(_live_settings())
+
+    assert result["live"]["technical_ready"] is False
+    assert result["live"]["technical_checks"]["broker_native_protection"] is False
+    assert "broker_native_protection" in result["live"]["blockers"]
+
+
+def test_trading_readiness_accepts_clean_reconciliation_and_protected_broker(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-07T12:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(_live_settings())
+
+    assert result["live"]["technical_checks"]["reconciliation_clean"] is True
+    assert result["live"]["technical_checks"]["broker_native_protection"] is True
+    assert result["live"]["technical_checks"]["broker_capability_ready"] is True
