@@ -5,6 +5,7 @@ import json
 import os
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from Backend.domain.models.order import Order
@@ -166,30 +167,30 @@ class DhanBrokerClient:
         return _safe_raw(raw if isinstance(raw, list) else raw.get("data", raw))
 
     async def find_order_by_correlation_id(self, correlation_id: str) -> BrokerOrderResult | None:
-        """Look up an order in Dhan's order book by the correlationId we sent when placing it.
+        """Authoritatively query Dhan by the client correlation ID after an ambiguous submit.
 
-        Used by OrderManagementService after a place_order() call raises (e.g. a network
-        timeout) to check whether the order actually went through before retrying -- Dhan
-        echoes back the correlationId on every order-book entry, so this lets us tell "the
-        request timed out but the order exists" apart from "the request never reached Dhan."
-        Returns None if nothing matches. Absence is not authoritative rejection evidence; the OMS must fail closed and require reconciliation rather than automatically resubmitting.
+        A missing result is still not proof that resubmission is safe. The caller must
+        keep the durable submission intent locked and require reconciliation.
         """
-        if not correlation_id:
+        normalized = str(correlation_id or "").strip()
+        if not normalized:
             return None
         try:
-            orders = await self.get_order_book()
-        except Exception:
+            raw = await asyncio.to_thread(
+                self._request,
+                "GET",
+                f"/orders/external/{quote(normalized, safe='')}",
+            )
+        except BrokerAdapterError:
             return None
-        for entry in orders if isinstance(orders, list) else []:
-            if not isinstance(entry, dict):
-                continue
-            entry_correlation_id = entry.get("correlationId") or entry.get("correlation_id")
-            if entry_correlation_id and str(entry_correlation_id) == str(correlation_id):
-                order_id = _extract_order_id(entry)
-                if not order_id:
-                    continue
-                return _result_from_raw(order_id, entry, message="Found via correlationId lookup after a broker error.")
-        return None
+        order_id = _extract_order_id(raw)
+        if not order_id:
+            return None
+        return _result_from_raw(
+            order_id,
+            raw,
+            message="Dhan order recovered by correlationId after ambiguous submission.",
+        )
 
     def status(self) -> dict[str, Any]:
         return {
