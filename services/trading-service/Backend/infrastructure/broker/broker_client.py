@@ -23,6 +23,7 @@ class BrokerCapabilities:
     cancel_order: bool
     correlation_lookup: bool
     partial_fills: bool
+    protected_order_submission: bool
     broker_native_protective_stop: bool
 
     @property
@@ -60,6 +61,7 @@ def broker_capabilities(client: Any) -> BrokerCapabilities:
         cancel_order=callable(getattr(client, "cancel_order", None)),
         correlation_lookup=callable(getattr(client, "find_order_by_correlation_id", None)),
         partial_fills=bool(getattr(client, "supports_partial_fills", False)),
+        protected_order_submission=bool(getattr(client, "supports_protected_order_submission", False)),
         broker_native_protective_stop=bool(getattr(client, "supports_broker_native_protective_stop", False)),
     )
 
@@ -111,6 +113,7 @@ class BrokerClient(IBrokerAdapter, Protocol):
 
 class PaperBrokerClient:
     supports_partial_fills = False
+    supports_protected_order_submission = False
     supports_broker_native_protective_stop = False
 
     def __init__(self) -> None:
