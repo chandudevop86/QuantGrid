@@ -51,6 +51,7 @@ from Backend.application.job_queue import enqueue_job
 from Backend.core.config import get_settings
 from Backend.application.notifications import alert_execution_event
 from Backend.application.order_management import OrderManagementService
+from Backend.application.broker_submission_intent import claim_submission, mark_submission_started, record_broker_evidence
 from Backend.application.order_store import (
     broker_status_to_order_status,
     create_order,
@@ -802,6 +803,29 @@ async def place_order(
             reason="Risk engine and live guardrails approved order.",
         )
         try:
+            submission_intent = claim_submission(
+                lifecycle_order["local_order_id"],
+                lifecycle_order["order_key"],
+            )
+        except ValueError as exc:
+            result = _paper_response(
+                status_value="rejected",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=str(exc),
+                execution_mode=execution_mode,
+                extra={"broker_confirmed": False},
+            )
+            _audit_execution_result(db, request, actor, result)
+            return result
+
+        # Commit the live submission boundary before broker I/O. Once this is
+        # marked started, an exception cannot prove the broker rejected it.
+        mark_submission_started(lifecycle_order["local_order_id"])
+        order.metadata["correlation_id"] = submission_intent["correlation_id"]
+
+        try:
             broker_client = broker_client_for_mode(execution_mode)
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
@@ -812,6 +836,13 @@ async def place_order(
                 reason="Submitted to broker adapter.",
             )
             broker_order = await broker_client.place_order(order)
+            if not broker_order.broker_order_id:
+                raise RuntimeError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
+            record_broker_evidence(
+                lifecycle_order["local_order_id"],
+                str(broker_order.broker_order_id),
+                "submitted",
+            )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "broker_submitted",
@@ -835,18 +866,18 @@ async def place_order(
             )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
-                "failed",
+                "reconciliation_required",
                 db=db,
                 request=request,
                 actor=actor,
-                reason=f"BROKER_FAILURE: {exc}",
+                reason="BROKER_OUTCOME_UNKNOWN: authoritative reconciliation required; do not resubmit.",
             )
             result = _paper_response(
-                status_value="rejected",
+                status_value="reconciliation_required",
                 symbol=signal.symbol,
                 strategy=signal.strategy_name,
                 signal=signal,
-                reason=f"BROKER_FAILURE: {exc}",
+                reason="BROKER_OUTCOME_UNKNOWN: reconcile broker order/positions before any further action.",
                 execution_mode=execution_mode,
                 extra={
                     **_risk_response_fields(risk_decision),
@@ -857,7 +888,32 @@ async def place_order(
             _audit_execution_result(db, request, actor, result)
             alert_execution_event(result)
             return result
-        if not broker_status.confirmed or broker_status.status in {"rejected", "failed", "not_found"}:
+        if not broker_status.confirmed or broker_status.status in {"failed", "not_found"}:
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "reconciliation_required",
+                db=db,
+                request=request,
+                actor=actor,
+                reason=f"Unconfirmed broker status: {broker_status.status}; do not resubmit.",
+                broker_order_id=broker_status.broker_order_id,
+                broker_status=broker_status.status,
+                broker_response=broker_status.to_dict(),
+            )
+            result = _paper_response(
+                status_value="reconciliation_required",
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=f"Unconfirmed broker status: {broker_status.status}; reconcile before action.",
+                execution_mode=execution_mode,
+                extra={"broker_confirmed": False, "broker_status": broker_status.status},
+            )
+            _audit_execution_result(db, request, actor, result)
+            alert_execution_event(result)
+            return result
+
+        if broker_status.status == "rejected":
             record_broker_failure(
                 reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
                 db=db,
@@ -935,25 +991,9 @@ async def place_order(
                 "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
             },
         )
-        create_paper_trade(
-            {
-                "strategy": signal.strategy_name,
-                "symbol": signal.symbol,
-                "side": signal.side,
-                "entry": signal.entry_price,
-                "stop_loss": signal.stop_loss,
-                "target": signal.target_price,
-                "trailing_stop_loss": signal.trailing_stop_loss,
-                "trailing_stop_pct": signal.trailing_stop_pct,
-                "status": "live_order_submitted",
-                "pnl": 0.0,
-                "reason": "OK",
-                "broker_order_id": broker_status.broker_order_id,
-                "broker_status": broker_status.status,
-                "raw_safe_broker_response": broker_status.metadata.get("raw_safe"),
-                "signal_time": signal.signal_time.isoformat(),
-            }
-        )
+        # LIVE orders are represented by the durable order/position ledger only;
+        # never mirror real-money activity into the PAPER trade ledger.
+
         if should_create_position(order_status):
             create_open_position(
                 {
