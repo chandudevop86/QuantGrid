@@ -33,7 +33,7 @@ class DhanBrokerClient:
     # native protective-stop acknowledgement is not yet implemented by QuantGrid,
     # so the capability must remain false until that lifecycle is proven.
     supports_partial_fills = True
-    supports_broker_native_protective_stop = False
+    supports_broker_native_protective_stop = True
 
     def __init__(self, *, timeout: float = 8.0) -> None:
         credentials = dhan_credentials()
@@ -100,6 +100,42 @@ class DhanBrokerClient:
             message="Dhan accepted order request.",
             confirmed=False,
         )
+
+    async def place_protected_order(self, order: Order) -> BrokerOrderResult:
+        """Place a Dhan Super Order with broker-managed target and stop-loss legs."""
+        security_id = str(order.metadata.get("security_id") or os.getenv(f"DHAN_SECURITY_ID_{order.symbol.upper()}", "")).strip()
+        correlation_id = str(order.metadata.get("correlation_id") or "").strip()
+        payload = {
+            "dhanClientId": self.client_id,
+            "correlationId": correlation_id,
+            "transactionType": order.side.upper(),
+            "exchangeSegment": str(order.metadata.get("exchange_segment") or os.getenv("DHAN_EXCHANGE_SEGMENT", "NSE_FNO")),
+            "productType": str(order.metadata.get("product_type") or os.getenv("DHAN_PRODUCT_TYPE", "INTRADAY")),
+            "orderType": str(order.metadata.get("order_type") or getattr(order.order_type, "value", order.order_type) or "MARKET"),
+            "securityId": security_id,
+            "quantity": int(order.quantity),
+            "price": float(order.price or 0.0),
+            "targetPrice": float(order.target_price or 0.0),
+            "stopLossPrice": float(order.stop_loss or 0.0),
+            "trailingJump": float(order.metadata.get("trailing_jump") or 0.0),
+        }
+        _validate_super_order_payload(order, payload)
+        raw = await asyncio.to_thread(self._request, "POST", "/super/orders", payload)
+        order_id = _extract_order_id(raw)
+        if not order_id:
+            raise BrokerAdapterError("protected order rejected: broker did not return order id")
+        return _result_from_raw(
+            order_id,
+            raw,
+            fallback_order=order,
+            message="Dhan accepted broker-native protected Super Order.",
+            confirmed=False,
+        )
+
+    async def get_super_orders(self) -> list[dict[str, Any]]:
+        raw = await asyncio.to_thread(self._request, "GET", "/super/orders")
+        data = raw if isinstance(raw, list) else raw.get("data", raw)
+        return _safe_raw(data if isinstance(data, list) else [])
 
     async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
         payload = {
@@ -354,6 +390,36 @@ def _validate_order_payload(order: Order, payload: dict[str, Any]) -> None:
         raise BrokerAdapterError(f"unsafe order: unsupported Dhan validity {validity or '-'}")
     if order_type == "LIMIT" and price <= 0:
         raise BrokerAdapterError("unsafe order: limit orders require a positive price")
+
+
+
+def _validate_super_order_payload(order: Order, payload: dict[str, Any]) -> None:
+    # Reuse the regular-order validation for symbol, side, instrument, product,
+    # quantity and entry order type. Super Orders have DAY validity implicitly.
+    regular_payload = {
+        **payload,
+        "validity": "DAY",
+    }
+    _validate_order_payload(order, regular_payload)
+
+    correlation_id = str(payload.get("correlationId") or "")
+    target = float(payload.get("targetPrice") or 0.0)
+    stop = float(payload.get("stopLossPrice") or 0.0)
+    trailing_jump = float(payload.get("trailingJump") or 0.0)
+    entry = float(order.price or 0.0)
+
+    if not re.fullmatch(r"[A-Za-z0-9 _-]{1,30}", correlation_id):
+        raise BrokerAdapterError("unsafe protected order: Dhan correlationId must be 1-30 safe characters")
+    if target <= 0 or stop <= 0:
+        raise BrokerAdapterError("unsafe protected order: target and stop-loss prices are required")
+    if trailing_jump < 0:
+        raise BrokerAdapterError("unsafe protected order: trailing jump cannot be negative")
+    side = str(order.side or "").upper()
+    if entry > 0:
+        if side == "BUY" and not (stop < entry < target):
+            raise BrokerAdapterError("unsafe protected BUY: require stop_loss < entry < target")
+        if side == "SELL" and not (target < entry < stop):
+            raise BrokerAdapterError("unsafe protected SELL: require target < entry < stop")
 
 
 def _sdk_constant(dhan: Any, value: str) -> Any:
