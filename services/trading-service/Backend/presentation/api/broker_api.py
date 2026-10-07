@@ -76,6 +76,50 @@ def _live_readiness(settings) -> dict[str, object]:
     }
 
 
+def _trading_readiness(settings) -> dict[str, object]:
+    """Separate technical capability from authorization to risk real money."""
+    live = _live_readiness(settings)
+    provider = str(getattr(settings, "market_data_provider", "") or "").strip().lower()
+    trading_grade_market_data = bool(provider and (provider != "yahoo" or getattr(settings, "allow_yahoo_for_live", False)))
+    technical_checks = {
+        "broker_configured": bool(settings.broker_configured),
+        "risk_configured": bool(settings.risk_configured),
+        "risk_engine_enabled": bool(settings.risk_engine_enabled),
+        "audit_logging_enabled": bool(settings.audit_logging_enabled),
+        "trading_grade_market_data": trading_grade_market_data,
+        "stop_protection_ready": bool(live["stop_protection_ready"]),
+        "broker_circuit_clear": not bool(live["broker_circuit_breaker_active"]),
+    }
+    technical_live_ready = all(technical_checks.values())
+    authorization_checks = {
+        "live_trading_enabled": bool(settings.live_trading_enabled),
+        "broker_live_enabled": bool(settings.broker_live_enabled),
+        "live_money_approved": bool(getattr(settings, "live_money_approved", False)),
+    }
+    real_money_enabled = bool(technical_live_ready and all(authorization_checks.values()))
+    blockers = [name for name, passed in {**technical_checks, **authorization_checks}.items() if not passed]
+    return {
+        "paper": {
+            "mode": "paper",
+            "available": True,
+            "real_money": False,
+        },
+        "live": {
+            "mode": "live",
+            "technical_ready": technical_live_ready,
+            "technical_checks": technical_checks,
+            "authorization_checks": authorization_checks,
+            "real_money_enabled": real_money_enabled,
+            "blockers": blockers,
+        },
+        "safety": {
+            "paper_live_state_isolated": True,
+            "authorization_separate_from_technical_readiness": True,
+            "default_real_money_state": "disabled" if not real_money_enabled else "enabled",
+        },
+    }
+
+
 def _dhan_option_chain_readiness(symbol: str = "NIFTY") -> dict[str, object]:
     profile = check_dhan_profile()
     normalized = symbol.upper()
@@ -210,6 +254,11 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
         and not status["circuit_breaker"].get("active")
     )
     return status
+
+
+@router.get("/readiness/trading")
+def trading_readiness(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
+    return _trading_readiness(get_settings())
 
 
 @router.get("/dhan/option-chain/status")
