@@ -272,3 +272,69 @@ def test_dhan_capabilities_claim_native_protection_only_after_super_order_suppor
 
     assert capabilities.broker_native_protective_stop is True
     assert capabilities.live_execution_ready is True
+
+
+
+def test_dhan_partial_fill_keeps_total_filled_and_remaining_quantities_distinct(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda method, path, payload=None: {
+            "orderId": "DHAN-PARTIAL-1",
+            "orderStatus": "PENDING",
+            "tradingSymbol": "NIFTY",
+            "transactionType": "BUY",
+            "quantity": 25,
+            "filledQty": 10,
+            "remainingQuantity": 15,
+            "averageTradedPrice": 101.25,
+        },
+    )
+
+    result = asyncio.run(client.get_order_status("DHAN-PARTIAL-1"))
+
+    assert result.status == "partially_filled"
+    assert result.quantity == 25
+    assert result.filled_quantity == 10
+    assert result.remaining_quantity == 15
+    assert result.price == 101.25
+
+
+def test_dhan_quantities_can_authoritatively_promote_stale_status_to_filled(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda method, path, payload=None: {
+            "orderId": "DHAN-FILLED-QTY-1",
+            "orderStatus": "PENDING",
+            "quantity": 25,
+            "filledQty": 25,
+            "remainingQuantity": 0,
+            "averageTradedPrice": 102.0,
+        },
+    )
+
+    result = asyncio.run(client.get_order_status("DHAN-FILLED-QTY-1"))
+
+    assert result.status == "filled"
+    assert result.filled_quantity == 25
+    assert result.remaining_quantity == 0

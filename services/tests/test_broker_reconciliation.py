@@ -1060,3 +1060,65 @@ def test_paper_not_found_never_closes_position_without_local_order(monkeypatch):
     assert summary["fixed"] == 0
     assert summary["needs_review"] >= 1
     assert updated_position["status"] == "open"
+
+
+
+def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    from Backend.application import broker_reconciliation, broker_submission_intent as intent, order_store, position_store
+    from Backend.core.database import SessionLocal, engine, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)"
+        ))
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
+    local_id = "ORD-LIVE-PARTIAL-1"
+    broker_id = "DHAN-PARTIAL-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:PARTIAL", "symbol": "NIFTY", "side": "BUY",
+        "quantity": 25, "entry_price": 100, "execution_mode": "live",
+        "status": "broker_submitted",
+    })
+    intent.claim_submission(local_id, "NIFTY:BUY:PARTIAL")
+    intent.mark_submission_started(local_id)
+    intent.record_broker_evidence(local_id, broker_id, "submitted")
+
+    class PartialBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY", "netQty": 10, "averagePrice": 101}]
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
+                price=101, confirmed=True,
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="partial-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=PartialBroker(), actor=actor, execution_mode="live"
+        ))
+
+    updated = order_store.get_order(local_id)
+    positions = position_store.list_open_positions(execution_mode="live")
+    assert updated["status"] == "partially_filled"
+    assert len(positions) == 1
+    assert positions[0]["quantity"] == 10
+    with engine.connect() as conn:
+        durable = conn.execute(text(
+            "SELECT status FROM broker_submission_intents WHERE local_order_id=:id"
+        ), {"id": local_id}).scalar_one()
+    assert durable == "partially_filled"

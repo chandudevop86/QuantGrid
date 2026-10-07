@@ -188,6 +188,40 @@ async def reconcile_broker_state(
                 close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
             continue
 
+        if order_status == "partially_filled":
+            if local_order.get("local_order_id"):
+                try:
+                    record_broker_evidence(
+                        str(local_order["local_order_id"]),
+                        broker_order_id,
+                        "partially_filled",
+                    )
+                except ValueError as exc:
+                    if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+                        raise
+                _transition_local_order_if_present(
+                    local_order,
+                    "partially_filled",
+                    status_reason=(
+                        f"Broker reports partial fill: {broker_order.filled_quantity}/"
+                        f"{broker_order.quantity}."
+                    ),
+                    broker_status=broker_order.status,
+                    entry_price=broker_order.price,
+                )
+            if broker_order.filled_quantity > 0:
+                if not position:
+                    partial_payload = _position_payload_from_order(broker_order, local_order)
+                    partial_payload["quantity"] = broker_order.filled_quantity
+                    create_open_position(partial_payload)
+                elif int(position.get("quantity") or 0) != broker_order.filled_quantity:
+                    update_open_position(
+                        int(position["id"]),
+                        quantity=broker_order.filled_quantity,
+                        current_price=broker_order.price,
+                    )
+            continue
+
         if order_status in FILLED_STATUSES and local_order.get("local_order_id"):
             _record_terminal_submission_intent(
                 local_order_id=str(local_order["local_order_id"]),
