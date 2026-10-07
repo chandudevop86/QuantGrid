@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from Backend.domain.models.order import Order
@@ -175,11 +175,16 @@ class DhanBrokerClient:
         normalized = str(correlation_id or "").strip()
         if not normalized:
             return None
+        # Dhan correlation IDs are application-generated identifiers. Reject
+        # anything outside the broker-safe identifier alphabet instead of
+        # interpolating arbitrary input into an outbound request path.
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", normalized):
+            return None
         try:
             raw = await asyncio.to_thread(
                 self._request,
                 "GET",
-                f"/orders/external/{quote(normalized, safe='')}",
+                f"/orders/external/{normalized}",
             )
         except BrokerAdapterError:
             return None
