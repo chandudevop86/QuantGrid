@@ -133,3 +133,56 @@ def test_paper_capabilities_do_not_claim_live_execution_readiness():
     assert capabilities.provider == "paper"
     assert capabilities.place_order is True
     assert capabilities.live_execution_ready is False
+
+
+
+def test_dhan_correlation_lookup_uses_authoritative_endpoint(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+    calls = []
+
+    def fake_request(method, path, payload=None):
+        calls.append((method, path, payload))
+        return {
+            "orderId": "DHAN-123",
+            "correlationId": "OMS-abc",
+            "orderStatus": "PENDING",
+            "transactionType": "BUY",
+            "securityId": "12345",
+            "quantity": 25,
+        }
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = asyncio.run(client.find_order_by_correlation_id("OMS-abc"))
+
+    assert calls == [("GET", "/orders/external/OMS-abc", None)]
+    assert result is not None
+    assert result.broker_order_id == "DHAN-123"
+    assert result.status == "open"
+
+
+def test_dhan_correlation_lookup_missing_result_does_not_invent_rejection(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+
+    def missing_request(method, path, payload=None):
+        raise dhan_order_adapter.BrokerAdapterError("order not found")
+
+    monkeypatch.setattr(client, "_request", missing_request)
+
+    assert asyncio.run(client.find_order_by_correlation_id("OMS-missing")) is None
