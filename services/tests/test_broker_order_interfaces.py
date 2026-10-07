@@ -100,7 +100,7 @@ def test_paper_broker_stays_behind_broker_adapter_contract():
 
 
 
-def test_dhan_capabilities_fail_closed_without_broker_native_stop(monkeypatch):
+def test_dhan_capabilities_report_broker_native_super_order_support(monkeypatch):
     from Backend.infrastructure.broker import dhan_order_adapter
     from Backend.infrastructure.broker.broker_client import broker_capabilities
 
@@ -121,8 +121,8 @@ def test_dhan_capabilities_fail_closed_without_broker_native_stop(monkeypatch):
     assert capabilities.correlation_lookup is True
     assert capabilities.partial_fills is True
     assert capabilities.reconciliation_ready is True
-    assert capabilities.broker_native_protective_stop is False
-    assert capabilities.live_execution_ready is False
+    assert capabilities.broker_native_protective_stop is True
+    assert capabilities.live_execution_ready is True
 
 
 def test_paper_capabilities_do_not_claim_live_execution_readiness():
