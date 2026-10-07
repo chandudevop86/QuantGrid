@@ -688,3 +688,56 @@ def test_admin_trader_ops_can_activate_kill_switch(monkeypatch):
         assert app_client.post("/risk/kill-switch/activate", json={"reason": "trader"}, headers=trader).status_code == 200
         assert app_client.post("/risk/kill-switch/deactivate", headers=admin).status_code == 200
         assert app_client.post("/risk/kill-switch/activate", json={"reason": "ops"}, headers=ops).status_code == 200
+
+
+
+def test_trading_readiness_separates_technical_live_capability_from_money_authorization(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "false")
+
+    settings = _live_settings(
+        live_trading_enabled=False,
+        live_money_approved=False,
+        broker_live_enabled=False,
+        risk_configured=True,
+        risk_engine_enabled=True,
+        audit_logging_enabled=True,
+        broker_configured=True,
+        market_data_provider="broker",
+    )
+
+    readiness = broker_api._trading_readiness(settings)
+
+    assert readiness["paper"]["available"] is True
+    assert readiness["paper"]["real_money"] is False
+    assert readiness["live"]["technical_ready"] is True
+    assert readiness["live"]["real_money_enabled"] is False
+    assert "live_money_approved" in readiness["live"]["blockers"]
+    assert readiness["safety"]["default_real_money_state"] == "disabled"
+
+
+def test_trading_readiness_blocks_yahoo_as_live_market_data(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "false")
+
+    settings = _live_settings(
+        live_trading_enabled=False,
+        live_money_approved=False,
+        broker_live_enabled=False,
+        risk_configured=True,
+        risk_engine_enabled=True,
+        audit_logging_enabled=True,
+        broker_configured=True,
+        market_data_provider="yahoo",
+        allow_yahoo_for_live=False,
+    )
+
+    readiness = broker_api._trading_readiness(settings)
+
+    assert readiness["live"]["technical_ready"] is False
+    assert readiness["live"]["technical_checks"]["trading_grade_market_data"] is False
+    assert readiness["live"]["real_money_enabled"] is False
