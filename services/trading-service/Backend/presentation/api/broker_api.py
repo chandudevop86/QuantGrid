@@ -13,7 +13,7 @@ from Backend.application.broker_circuit_breaker import broker_circuit_status, re
 from Backend.application.job_queue import enqueue_job
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
-from Backend.infrastructure.broker.broker_client import broker_client_for_mode
+from Backend.infrastructure.broker.broker_client import broker_capabilities, broker_client_for_mode
 from Backend.infrastructure.broker.dhan_status import cached_dhan_profile, check_dhan_profile
 from Backend.presentation.api.roles import current_user, require_roles
 from Backend.presentation.api.upstream_errors import upstream_service_error
@@ -259,6 +259,33 @@ def broker_status(_role: str = Depends(require_roles("admin", "developer", "trad
 @router.get("/readiness/trading")
 def trading_readiness(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
     return _trading_readiness(get_settings())
+
+
+@router.get("/capabilities")
+def broker_capability_status(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
+    settings = get_settings()
+    provider = str(settings.broker_provider or "").strip().lower()
+    if not provider or not settings.broker_configured:
+        return {
+            "provider": provider or "none",
+            "configured": False,
+            "capabilities": None,
+            "live_execution_ready": False,
+            "reason": "Concrete live broker is not configured.",
+        }
+    # Capability inspection must not bypass the money-authorization gate by
+    # constructing the normal live execution client. Instantiate only the
+    # configured adapter metadata path; this endpoint never submits an order.
+    from Backend.infrastructure.broker.registry import create_broker_adapter
+
+    client = create_broker_adapter(provider)
+    capabilities = broker_capabilities(client)
+    return {
+        "provider": provider,
+        "configured": True,
+        "capabilities": capabilities.to_dict(),
+        "live_execution_ready": capabilities.live_execution_ready,
+    }
 
 
 @router.get("/dhan/option-chain/status")
