@@ -123,31 +123,34 @@ async def reconcile_broker_state(
         )
 
         if order_status == "not_found":
-            _record_fix(
+            # A missing lookup is ambiguous, not authoritative terminal broker
+            # evidence. This is especially important for PaperBrokerClient,
+            # whose simulated order cache is process-local and is empty after
+            # a worker restart. Fail closed: keep the durable submission lock,
+            # keep any position open, and require reconciliation/review.
+            _record_review(
                 summary,
                 db,
                 actor,
                 request,
-                "missing_broker_order",
+                "broker_order_not_found_requires_reconciliation",
                 broker_order_id,
                 {"local_order": local_order, "broker_status": broker_order.to_dict()},
             )
             if execution_mode == "paper":
                 update_paper_trade_status(
                     broker_order_id,
-                    status="broker_missing",
-                    reason="Broker order was not found during reconciliation.",
+                    status="reconciliation_required",
+                    reason="Broker order lookup returned not_found; terminal state is unconfirmed.",
                     broker_status=broker_order.status,
                     raw_safe_broker_response=broker_order.metadata.get("raw_safe"),
                 )
             _transition_local_order_if_present(
                 local_order,
-                "rejected",
-                status_reason="Broker order was not found during reconciliation.",
+                "reconciliation_required",
+                status_reason="Broker order lookup returned not_found; terminal state is unconfirmed.",
                 broker_status=broker_order.status,
             )
-            if position and position.get("status") == "open":
-                close_open_position(int(position["id"]), reason="missing_broker_order")
             continue
 
         if local_order.get("status") in SUBMITTED_STATUSES and order_status in REJECTED_STATUSES:
@@ -269,13 +272,17 @@ async def reconcile_broker_state(
             except Exception:
                 position_broker_order = None
 
-        if (
-            position_broker_order
-            and _normal_status(position_broker_order.status) in OPEN_STATUSES | FILLED_STATUSES
-        ):
-            continue
-        
-        
+        if position_broker_order:
+            position_order_status = _normal_status(position_broker_order.status)
+            if position_order_status in OPEN_STATUSES | FILLED_STATUSES:
+                continue
+            if position_order_status == "not_found":
+                # Do not infer that a position is closed from an ambiguous
+                # lookup. A restarted PAPER broker has no in-memory order
+                # cache, so not_found cannot authorize lifecycle mutation.
+                continue
+
+
         _record_fix(
             summary,
             db,

@@ -667,6 +667,8 @@ def test_reconciliation_not_found_does_not_release_durable_submission_intent(mon
 
     # Missing lookup is ambiguous; durable submission evidence stays active.
     assert durable_status == "submitted"
+    reconciled_order = order_store.get_order(local_order_id)
+    assert reconciled_order["status"] == "reconciliation_required"
 
     with pytest.raises(
         ValueError,
@@ -937,3 +939,124 @@ def test_live_reconciliation_never_updates_paper_trade_store(monkeypatch):
         )
 
     assert paper_writes == []
+
+
+
+def test_paper_restart_not_found_keeps_open_position_and_requires_review(monkeypatch):
+    """Fresh PAPER broker after restart must not reject orders or close positions."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import PaperBrokerClient
+
+    init_database()
+
+    broker_order_id = "PAPER-BEFORE-RESTART-1"
+    local_order = order_store.create_order(
+        {
+            "local_order_id": "ORD-BEFORE-RESTART-1",
+            "broker_order_id": broker_order_id,
+            "order_key": "NIFTY:BUY:RESTART-SAFETY",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "execution_mode": "paper",
+            "status": "broker_submitted",
+        }
+    )
+    position = position_store.create_open_position(
+        {
+            "broker_order_id": broker_order_id,
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "current_price": 100,
+            "execution_mode": "paper",
+        }
+    )
+
+    # Simulate a worker/server restart: a new PaperBrokerClient has an empty
+    # process-local order cache and therefore returns not_found for the
+    # previously persisted broker order id.
+    restarted_broker = PaperBrokerClient()
+    assert restarted_broker.orders == {}
+
+    with SessionLocal() as db:
+        actor = User(
+            username="paper-restart-safety",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=restarted_broker,
+                actor=actor,
+                execution_mode="paper",
+            )
+        )
+
+    updated_order = order_store.get_order(local_order["local_order_id"])
+    updated_position = position_store.get_position(position["id"])
+
+    assert summary["fixed"] == 0
+    assert summary["needs_review"] >= 1
+    assert summary["errors"] == []
+    assert updated_order["status"] == "reconciliation_required"
+    assert updated_position["status"] == "open"
+
+
+def test_paper_not_found_never_closes_position_without_local_order(monkeypatch):
+    """Position-only PAPER state must also survive ambiguous not_found."""
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import PaperBrokerClient
+
+    init_database()
+
+    position = position_store.create_open_position(
+        {
+            "broker_order_id": "PAPER-POSITION-ONLY-RESTART",
+            "symbol": "NIFTY",
+            "side": "BUY",
+            "quantity": 25,
+            "entry_price": 100,
+            "current_price": 100,
+            "execution_mode": "paper",
+        }
+    )
+
+    with SessionLocal() as db:
+        actor = User(
+            username="paper-position-restart-safety",
+            password_hash="hash",
+            role="ops",
+        )
+        db.add(actor)
+        db.commit()
+        db.refresh(actor)
+
+        summary = asyncio.run(
+            broker_reconciliation.reconcile_broker_state(
+                db=db,
+                broker_client=PaperBrokerClient(),
+                actor=actor,
+                execution_mode="paper",
+            )
+        )
+
+    updated_position = position_store.get_position(position["id"])
+    assert summary["fixed"] == 0
+    assert summary["needs_review"] >= 1
+    assert updated_position["status"] == "open"
