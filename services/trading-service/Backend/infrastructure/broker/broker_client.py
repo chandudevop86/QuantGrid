@@ -71,6 +71,8 @@ class BrokerOrderResult:
     symbol: str
     side: str
     quantity: int
+    filled_quantity: int = 0
+    remaining_quantity: int = 0
     price: float | None = None
     message: str = ""
     confirmed: bool = False
