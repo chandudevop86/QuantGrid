@@ -72,8 +72,10 @@ def _stale_candle_result() -> SimpleNamespace:
 
 def _live_settings(**overrides: Any) -> SimpleNamespace:
     values = {
+        "live_trading_enabled": True,
         "live_money_approved": True,
         "broker_live_enabled": True,
+        "risk_configured": True,
         "risk_engine_enabled": True,
         "broker_configured": True,
         "broker_provider": "mock",
@@ -695,6 +697,19 @@ def test_trading_readiness_separates_technical_live_capability_from_money_author
     from Backend.presentation.api import broker_api
 
     monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-07T12:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
     monkeypatch.setenv("QUANTGRID_ALLOW_APP_MANAGED_STOPS", "false")
 
     settings = _live_settings(
