@@ -137,6 +137,31 @@ class DhanBrokerClient:
         data = raw if isinstance(raw, list) else raw.get("data", raw)
         return _safe_raw(data if isinstance(data, list) else [])
 
+    async def get_super_order_status(self, broker_order_id: str) -> BrokerOrderResult | None:
+        """Return parent Super Order state plus normalized target/stop leg evidence."""
+        normalized = str(broker_order_id or "").strip()
+        if not normalized or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", normalized):
+            return None
+        orders = await self.get_super_orders()
+        parent = next(
+            (item for item in orders if str(item.get("orderId") or "") == normalized),
+            None,
+        )
+        if not isinstance(parent, dict):
+            return None
+        result = _result_from_raw(
+            normalized,
+            parent,
+            message="Dhan Super Order state fetched for protective-leg reconciliation.",
+        )
+        legs = _super_order_leg_state(parent)
+        result.metadata["super_order"] = {
+            "leg_name": str(parent.get("legName") or ""),
+            "legs": legs,
+            "protection": _super_order_protection_state(result, legs),
+        }
+        return result
+
     async def modify_order(self, broker_order_id: str, updates: dict[str, Any]) -> BrokerOrderResult:
         payload = {
             key: value
@@ -436,6 +461,49 @@ def _validate_super_order_payload(order: Order, payload: dict[str, Any]) -> None
             raise BrokerAdapterError("unsafe protected BUY: require stop_loss < entry < target")
         if side == "SELL" and not (target < entry < stop):
             raise BrokerAdapterError("unsafe protected SELL: require target < entry < stop")
+
+
+def _super_order_leg_state(parent: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    legs: dict[str, dict[str, Any]] = {}
+    for raw_leg in parent.get("legDetails") or []:
+        if not isinstance(raw_leg, dict):
+            continue
+        name = str(raw_leg.get("legName") or "").upper()
+        if name not in {"TARGET_LEG", "STOP_LOSS_LEG"}:
+            continue
+        legs[name] = {
+            "order_id": str(raw_leg.get("orderId") or ""),
+            "status": _normalize_status(str(raw_leg.get("orderStatus") or "pending")),
+            "quantity": int(raw_leg.get("totalQuatity") or raw_leg.get("quantity") or 0),
+            "remaining_quantity": int(raw_leg.get("remainingQuantity") or 0),
+            "triggered_quantity": int(raw_leg.get("triggeredQuantity") or 0),
+            "price": float(raw_leg.get("price") or 0.0),
+            "trailing_jump": float(raw_leg.get("trailingJump") or 0.0),
+        }
+    return legs
+
+
+def _super_order_protection_state(
+    parent: BrokerOrderResult,
+    legs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    stop = legs.get("STOP_LOSS_LEG")
+    target = legs.get("TARGET_LEG")
+    exposed_quantity = int(parent.filled_quantity or 0)
+    stop_status = str((stop or {}).get("status") or "")
+    stop_quantity = int((stop or {}).get("triggered_quantity") or (stop or {}).get("quantity") or 0)
+    stop_active = bool(
+        stop
+        and stop_status not in {"rejected", "cancelled", "expired", "failed"}
+        and (exposed_quantity == 0 or stop_quantity >= exposed_quantity)
+    )
+    return {
+        "exposed_quantity": exposed_quantity,
+        "stop_loss_present": stop is not None,
+        "target_present": target is not None,
+        "stop_loss_active": stop_active,
+        "protected": bool(exposed_quantity == 0 or stop_active),
+    }
 
 
 def _sdk_constant(dhan: Any, value: str) -> Any:
