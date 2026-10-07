@@ -338,3 +338,85 @@ def test_dhan_quantities_can_authoritatively_promote_stale_status_to_filled(monk
     assert result.status == "filled"
     assert result.filled_quantity == 25
     assert result.remaining_quantity == 0
+
+
+
+def test_dhan_super_order_status_reports_active_stop_protection(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(dhan_order_adapter, "dhan_credentials", lambda: {"client_id": "x", "access_token": "y"})
+    client = dhan_order_adapter.DhanBrokerClient()
+    monkeypatch.setattr(client, "get_super_orders", lambda: None)
+
+    async def fake_orders():
+        return [{
+            "orderId": "SUPER-PROTECTED-1", "orderStatus": "PART_TRADED",
+            "quantity": 25, "filledQty": 10, "remainingQuantity": 15,
+            "legName": "ENTRY_LEG",
+            "legDetails": [
+                {"orderId": "SL-1", "legName": "STOP_LOSS_LEG", "orderStatus": "PENDING",
+                 "totalQuatity": 10, "remainingQuantity": 10, "triggeredQuantity": 10, "price": 95},
+                {"orderId": "TG-1", "legName": "TARGET_LEG", "orderStatus": "PENDING",
+                 "totalQuatity": 10, "remainingQuantity": 10, "triggeredQuantity": 10, "price": 110},
+            ],
+        }]
+    monkeypatch.setattr(client, "get_super_orders", fake_orders)
+
+    result = asyncio.run(client.get_super_order_status("SUPER-PROTECTED-1"))
+    assert result is not None
+    assert result.status == "partially_filled"
+    protection = result.metadata["super_order"]["protection"]
+    assert protection["exposed_quantity"] == 10
+    assert protection["stop_loss_active"] is True
+    assert protection["protected"] is True
+
+
+def test_dhan_super_order_filled_exposure_without_stop_is_unprotected(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(dhan_order_adapter, "dhan_credentials", lambda: {"client_id": "x", "access_token": "y"})
+    client = dhan_order_adapter.DhanBrokerClient()
+
+    async def fake_orders():
+        return [{
+            "orderId": "SUPER-NO-STOP-1", "orderStatus": "TRADED",
+            "quantity": 25, "filledQty": 25, "remainingQuantity": 0,
+            "legName": "ENTRY_LEG", "legDetails": [
+                {"orderId": "TG-2", "legName": "TARGET_LEG", "orderStatus": "PENDING",
+                 "totalQuatity": 25, "triggeredQuantity": 25, "price": 110},
+            ],
+        }]
+    monkeypatch.setattr(client, "get_super_orders", fake_orders)
+
+    result = asyncio.run(client.get_super_order_status("SUPER-NO-STOP-1"))
+    protection = result.metadata["super_order"]["protection"]
+    assert protection["exposed_quantity"] == 25
+    assert protection["stop_loss_present"] is False
+    assert protection["protected"] is False
+
+
+def test_dhan_super_order_undercovered_stop_is_unprotected(monkeypatch):
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(dhan_order_adapter, "dhan_credentials", lambda: {"client_id": "x", "access_token": "y"})
+    client = dhan_order_adapter.DhanBrokerClient()
+
+    async def fake_orders():
+        return [{
+            "orderId": "SUPER-UNDERCOVERED-1", "orderStatus": "PART_TRADED",
+            "quantity": 25, "filledQty": 10, "remainingQuantity": 15,
+            "legDetails": [
+                {"orderId": "SL-3", "legName": "STOP_LOSS_LEG", "orderStatus": "PENDING",
+                 "totalQuatity": 5, "triggeredQuantity": 5, "price": 95},
+            ],
+        }]
+    monkeypatch.setattr(client, "get_super_orders", fake_orders)
+
+    result = asyncio.run(client.get_super_order_status("SUPER-UNDERCOVERED-1"))
+    protection = result.metadata["super_order"]["protection"]
+    assert protection["exposed_quantity"] == 10
+    assert protection["stop_loss_active"] is False
+    assert protection["protected"] is False
