@@ -81,6 +81,26 @@ def _trading_readiness(settings) -> dict[str, object]:
     live = _live_readiness(settings)
     provider = str(getattr(settings, "market_data_provider", "") or "").strip().lower()
     trading_grade_market_data = bool(provider and (provider != "yahoo" or getattr(settings, "allow_yahoo_for_live", False)))
+    reconciliation = reconciliation_status()
+    reconciliation_clean = bool(
+        reconciliation.get("last_run_at")
+        and not reconciliation.get("errors")
+        and int(reconciliation.get("needs_review") or 0) == 0
+    )
+    broker_native_protection = False
+    broker_capability_ready = False
+    provider_name = str(getattr(settings, "broker_provider", "") or "").strip().lower()
+    if settings.broker_configured and provider_name:
+        try:
+            from Backend.infrastructure.broker.registry import create_broker_adapter
+            capabilities = broker_capabilities(create_broker_adapter(provider_name))
+            broker_native_protection = bool(capabilities.broker_native_protective_stop)
+            broker_capability_ready = bool(capabilities.live_execution_ready)
+        except Exception:
+            # Readiness must fail closed when adapter capability inspection fails.
+            broker_native_protection = False
+            broker_capability_ready = False
+
     technical_checks = {
         "broker_configured": bool(settings.broker_configured),
         "risk_configured": bool(settings.risk_configured),
@@ -88,6 +108,9 @@ def _trading_readiness(settings) -> dict[str, object]:
         "audit_logging_enabled": bool(settings.audit_logging_enabled),
         "trading_grade_market_data": trading_grade_market_data,
         "stop_protection_ready": bool(live["stop_protection_ready"]),
+        "broker_native_protection": broker_native_protection,
+        "broker_capability_ready": broker_capability_ready,
+        "reconciliation_clean": reconciliation_clean,
         "broker_circuit_clear": not bool(live["broker_circuit_breaker_active"]),
     }
     technical_live_ready = all(technical_checks.values())
@@ -111,6 +134,11 @@ def _trading_readiness(settings) -> dict[str, object]:
             "authorization_checks": authorization_checks,
             "real_money_enabled": real_money_enabled,
             "blockers": blockers,
+            "reconciliation": {
+                "last_run_at": reconciliation.get("last_run_at"),
+                "needs_review": int(reconciliation.get("needs_review") or 0),
+                "errors": list(reconciliation.get("errors") or []),
+            },
         },
         "safety": {
             "paper_live_state_isolated": True,
