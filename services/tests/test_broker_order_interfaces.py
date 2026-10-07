@@ -186,3 +186,89 @@ def test_dhan_correlation_lookup_missing_result_does_not_invent_rejection(monkey
     monkeypatch.setattr(client, "_request", missing_request)
 
     assert asyncio.run(client.find_order_by_correlation_id("OMS-missing")) is None
+
+
+
+def test_dhan_places_broker_native_protected_super_order(monkeypatch):
+    import asyncio
+    from Backend.domain.models.order import Order
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+    calls = []
+
+    def fake_request(method, path, payload=None):
+        calls.append((method, path, payload))
+        return {"orderId": "SUPER-1", "orderStatus": "PENDING"}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    order = Order(
+        symbol="NIFTY",
+        side="BUY",
+        quantity=25,
+        price=100.0,
+        stop_loss=95.0,
+        target_price=110.0,
+        metadata={
+            "security_id": "12345",
+            "exchange_segment": "NSE_FNO",
+            "product_type": "INTRADAY",
+            "correlation_id": "OMS-safe-123",
+            "trailing_jump": 2.0,
+        },
+    )
+
+    result = asyncio.run(client.place_protected_order(order))
+
+    assert result.broker_order_id == "SUPER-1"
+    assert calls[0][0:2] == ("POST", "/super/orders")
+    payload = calls[0][2]
+    assert payload["targetPrice"] == 110.0
+    assert payload["stopLossPrice"] == 95.0
+    assert payload["trailingJump"] == 2.0
+
+
+def test_dhan_protected_order_rejects_invalid_buy_geometry(monkeypatch):
+    import asyncio
+    import pytest
+    from Backend.domain.models.order import Order
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+    order = Order(
+        symbol="NIFTY",
+        side="BUY",
+        quantity=25,
+        price=100.0,
+        stop_loss=105.0,
+        target_price=110.0,
+        metadata={"security_id": "12345", "correlation_id": "OMS-safe-123"},
+    )
+
+    with pytest.raises(dhan_order_adapter.BrokerAdapterError, match="protected BUY"):
+        asyncio.run(client.place_protected_order(order))
+
+
+def test_dhan_capabilities_claim_native_protection_only_after_super_order_support(monkeypatch):
+    from Backend.infrastructure.broker.broker_client import broker_capabilities
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    capabilities = broker_capabilities(dhan_order_adapter.DhanBrokerClient())
+
+    assert capabilities.broker_native_protective_stop is True
+    assert capabilities.live_execution_ready is True
