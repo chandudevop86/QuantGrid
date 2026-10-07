@@ -389,7 +389,7 @@ def _normalize_status(value: str) -> str:
         return "filled"
     if status in {"pending", "transit", "open", "after_market_order_req_received"}:
         return "open"
-    if status in {"partially_filled", "partial", "part_filled"}:
+    if status in {"partially_filled", "partial", "part_filled", "part_traded"}:
         return "partially_filled"
     if status in {"rejected", "cancelled", "expired", "failed"}:
         return status
