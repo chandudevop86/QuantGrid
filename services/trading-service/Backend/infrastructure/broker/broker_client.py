@@ -12,6 +12,58 @@ from Backend.domain.models.order import Order
 from Backend.domain.shared import IBrokerAdapter
 from Backend.config import Provider
 
+@dataclass(frozen=True, slots=True)
+class BrokerCapabilities:
+    provider: str
+    place_order: bool
+    order_status: bool
+    order_book: bool
+    positions: bool
+    modify_order: bool
+    cancel_order: bool
+    correlation_lookup: bool
+    partial_fills: bool
+    broker_native_protective_stop: bool
+
+    @property
+    def reconciliation_ready(self) -> bool:
+        return bool(self.order_status and self.order_book and self.positions and self.correlation_lookup)
+
+    @property
+    def live_execution_ready(self) -> bool:
+        return bool(
+            self.place_order
+            and self.reconciliation_ready
+            and self.modify_order
+            and self.cancel_order
+            and self.partial_fills
+            and self.broker_native_protective_stop
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **asdict(self),
+            "reconciliation_ready": self.reconciliation_ready,
+            "live_execution_ready": self.live_execution_ready,
+        }
+
+
+def broker_capabilities(client: Any) -> BrokerCapabilities:
+    provider = str((client.status() or {}).get("provider") or client.__class__.__name__).lower()
+    return BrokerCapabilities(
+        provider=provider,
+        place_order=callable(getattr(client, "place_order", None)),
+        order_status=callable(getattr(client, "get_order_status", None)),
+        order_book=callable(getattr(client, "get_order_book", None)),
+        positions=callable(getattr(client, "get_positions", None)),
+        modify_order=callable(getattr(client, "modify_order", None)),
+        cancel_order=callable(getattr(client, "cancel_order", None)),
+        correlation_lookup=callable(getattr(client, "find_order_by_correlation_id", None)),
+        partial_fills=bool(getattr(client, "supports_partial_fills", False)),
+        broker_native_protective_stop=bool(getattr(client, "supports_broker_native_protective_stop", False)),
+    )
+
+
 @dataclass(slots=True)
 class BrokerOrderResult:
     broker_order_id: str
@@ -56,6 +108,9 @@ class BrokerClient(IBrokerAdapter, Protocol):
 
 
 class PaperBrokerClient:
+    supports_partial_fills = False
+    supports_broker_native_protective_stop = False
+
     def __init__(self) -> None:
         self.orders: dict[str, BrokerOrderResult] = {}
 

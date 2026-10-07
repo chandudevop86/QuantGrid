@@ -97,3 +97,39 @@ def test_paper_broker_stays_behind_broker_adapter_contract():
     assert result.confirmed is True
     assert broker.status()["provider"] == "paper"
     assert margin["provider"] == "paper"
+
+
+
+def test_dhan_capabilities_fail_closed_without_broker_native_stop(monkeypatch):
+    from Backend.infrastructure.broker import dhan_order_adapter
+    from Backend.infrastructure.broker.broker_client import broker_capabilities
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+    client = dhan_order_adapter.DhanBrokerClient()
+    capabilities = broker_capabilities(client)
+
+    assert capabilities.place_order is True
+    assert capabilities.order_status is True
+    assert capabilities.order_book is True
+    assert capabilities.positions is True
+    assert capabilities.modify_order is True
+    assert capabilities.cancel_order is True
+    assert capabilities.correlation_lookup is True
+    assert capabilities.partial_fills is True
+    assert capabilities.reconciliation_ready is True
+    assert capabilities.broker_native_protective_stop is False
+    assert capabilities.live_execution_ready is False
+
+
+def test_paper_capabilities_do_not_claim_live_execution_readiness():
+    from Backend.infrastructure.broker.broker_client import PaperBrokerClient, broker_capabilities
+
+    capabilities = broker_capabilities(PaperBrokerClient())
+
+    assert capabilities.provider == "paper"
+    assert capabilities.place_order is True
+    assert capabilities.live_execution_ready is False
