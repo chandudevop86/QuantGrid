@@ -121,8 +121,11 @@ def test_dhan_capabilities_report_broker_native_super_order_support(monkeypatch)
     assert capabilities.correlation_lookup is True
     assert capabilities.partial_fills is True
     assert capabilities.reconciliation_ready is True
-    assert capabilities.broker_native_protective_stop is True
-    assert capabilities.live_execution_ready is True
+    assert capabilities.protected_order_submission is True
+    # Dhan exposes the Super Order API, but QuantGrid has not yet proven the
+    # complete protected submission + restart/reconciliation lifecycle.
+    assert capabilities.broker_native_protective_stop is False
+    assert capabilities.live_execution_ready is False
 
 
 def test_paper_capabilities_do_not_claim_live_execution_readiness():
@@ -132,6 +135,7 @@ def test_paper_capabilities_do_not_claim_live_execution_readiness():
 
     assert capabilities.provider == "paper"
     assert capabilities.place_order is True
+    assert capabilities.protected_order_submission is False
     assert capabilities.live_execution_ready is False
 
 
@@ -270,8 +274,9 @@ def test_dhan_capabilities_claim_native_protection_only_after_super_order_suppor
     )
     capabilities = broker_capabilities(dhan_order_adapter.DhanBrokerClient())
 
-    assert capabilities.broker_native_protective_stop is True
-    assert capabilities.live_execution_ready is True
+    assert capabilities.protected_order_submission is True
+    assert capabilities.broker_native_protective_stop is False
+    assert capabilities.live_execution_ready is False
 
 
 
