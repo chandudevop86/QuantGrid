@@ -835,7 +835,18 @@ async def place_order(
                 actor=actor,
                 reason="Submitted to broker adapter.",
             )
-            broker_order = await broker_client.place_order(order)
+            # LIVE entries must never fall back to an unprotected regular order.
+            # The explicit readiness gate remains disabled until full lifecycle
+            # reconciliation and restart recovery are certified.
+            if not callable(getattr(broker_client, "place_protected_order", None)):
+                raise RuntimeError("LIVE_PROTECTED_ORDER_ADAPTER_REQUIRED")
+            if not bool(getattr(broker_client, "supports_protected_order_submission", False)):
+                raise RuntimeError("LIVE_PROTECTED_ORDER_SUBMISSION_UNSUPPORTED")
+            if not bool(getattr(broker_client, "supports_broker_native_protective_stop", False)):
+                raise RuntimeError("LIVE_PROTECTED_LIFECYCLE_NOT_CERTIFIED")
+            if not order.stop_loss or not order.target_price:
+                raise RuntimeError("LIVE_BROKER_NATIVE_STOP_AND_TARGET_REQUIRED")
+            broker_order = await broker_client.place_protected_order(order)
             if not broker_order.broker_order_id:
                 raise RuntimeError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
             record_broker_evidence(
