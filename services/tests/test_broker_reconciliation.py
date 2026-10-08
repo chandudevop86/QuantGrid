@@ -1,3 +1,4 @@
+import pytest
 from __future__ import annotations
 
 import asyncio
@@ -1135,7 +1136,8 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
 
 
 
-def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypatch):
+@pytest.mark.parametrize("missing_lookup", [False, True])
+def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypatch, missing_lookup):
     configure_sqlalchemy_store(monkeypatch)
 
     from Backend.application import broker_reconciliation, order_store
@@ -1175,7 +1177,8 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
 
     # A broker lacking the Super Order lookup must also fail closed.
     # Removing the method exercises the missing-adapter recovery path.
-    monkeypatch.delattr(UnprotectedBroker, "get_super_order_status")
+    if missing_lookup:
+        monkeypatch.delattr(UnprotectedBroker, "get_super_order_status")
 
     with SessionLocal() as db:
         actor = User(username="live-protection-ops", password_hash="hash", role="ops")
