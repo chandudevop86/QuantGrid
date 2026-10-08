@@ -274,8 +274,9 @@ def test_dhan_capabilities_claim_native_protection_only_after_super_order_suppor
     )
     capabilities = broker_capabilities(dhan_order_adapter.DhanBrokerClient())
 
-    assert capabilities.broker_native_protective_stop is True
-    assert capabilities.live_execution_ready is True
+    assert capabilities.protected_order_submission is True
+    assert capabilities.broker_native_protective_stop is False
+    assert capabilities.live_execution_ready is False
 
 
 
