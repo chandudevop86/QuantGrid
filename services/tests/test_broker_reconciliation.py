@@ -1173,6 +1173,10 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
                 }}},
             )
 
+    # A broker lacking the Super Order lookup must also fail closed.
+    # Removing the method exercises the missing-adapter recovery path.
+    monkeypatch.delattr(UnprotectedBroker, "get_super_order_status")
+
     with SessionLocal() as db:
         actor = User(username="live-protection-ops", password_hash="hash", role="ops")
         db.add(actor); db.commit(); db.refresh(actor)
