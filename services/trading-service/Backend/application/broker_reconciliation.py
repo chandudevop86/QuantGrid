@@ -167,6 +167,8 @@ async def reconcile_broker_state(
                 and protection.get("protected")
                 and protection.get("stop_loss_present")
                 and protection.get("stop_loss_active")
+                and str((stop_leg or {}).get("status") or "").lower()
+                in {"open", "partially_filled"}
                 and stop_quantity >= required_exposure
             )
             if not protection_verified:
