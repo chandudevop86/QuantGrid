@@ -122,7 +122,16 @@ async def reconcile_broker_state(
             execution_mode=execution_mode,
         )
 
-        if execution_mode == "live" and int(broker_order.filled_quantity or 0) > 0:
+        # A stale/zero broker fill count must not bypass protection checks when
+        # a durable LIVE position already shows open exposure after restart.
+        local_exposure = (
+            int(position.get("quantity") or 0)
+            if isinstance(position, dict) and str(position.get("status") or "").lower() == "open"
+            else 0
+        )
+        if execution_mode == "live" and (
+            int(broker_order.filled_quantity or 0) > 0 or local_exposure > 0
+        ):
             super_status_getter = getattr(broker_client, "get_super_order_status", None)
             protected_order = None
             if callable(super_status_getter):
