@@ -1246,7 +1246,10 @@ def test_live_undercovered_super_order_stop_requires_review(monkeypatch):
     assert updated["status"] == "reconciliation_required"
 
 
-def test_live_restart_position_requires_protection_even_with_zero_reported_fill(monkeypatch):
+@pytest.mark.parametrize("stale_protected_flag", [False, True])
+def test_live_restart_position_requires_protection_even_with_zero_reported_fill(
+    monkeypatch, stale_protected_flag
+):
     configure_sqlalchemy_store(monkeypatch)
 
     from Backend.application import broker_reconciliation, order_store, position_store
@@ -1279,6 +1282,22 @@ def test_live_restart_position_requires_protection_even_with_zero_reported_fill(
                 side="BUY", quantity=10, filled_quantity=0,
                 remaining_quantity=10, price=100, confirmed=True,
             )
+
+    if stale_protected_flag:
+        async def stale_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="open", symbol="NIFTY",
+                side="BUY", quantity=10, filled_quantity=0,
+                remaining_quantity=10, price=100, confirmed=True,
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 0, "status": "open"}},
+                    "protection": {
+                        "protected": True, "stop_loss_present": True,
+                        "stop_loss_active": True, "exposed_quantity": 0,
+                    },
+                }},
+            )
+        StaleFillBroker.get_super_order_status = stale_super_order_status
 
     with SessionLocal() as db:
         actor = User(username="restart-protection-ops", password_hash="hash", role="ops")
