@@ -260,7 +260,28 @@ async def reconcile_broker_state(
                 entry_price=broker_order.price,
             )
             if position and position.get("status") == "open":
-                close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
+                if execution_mode == "live":
+                    # A rejected/cancelled entry lookup cannot prove that a
+                    # previously persisted LIVE position has exited. Never
+                    # delete exposure without authoritative exit-leg and
+                    # broker-position evidence.
+                    _record_review(
+                        summary, db, actor, request,
+                        "live_open_exposure_after_entry_terminal_status",
+                        broker_order_id,
+                        {"local_order": local_order, "broker_status": broker_order.to_dict(),
+                         "position": position},
+                    )
+                    _transition_local_order_if_present(
+                        local_order, "reconciliation_required",
+                        status_reason="LIVE open exposure requires authoritative exit reconciliation.",
+                        broker_status=broker_order.status,
+                    )
+                else:
+                    close_open_position(
+                        int(position["id"]), current_price=broker_order.price,
+                        reason=f"broker_{order_status}",
+                    )
             continue
 
         if order_status == "partially_filled":
