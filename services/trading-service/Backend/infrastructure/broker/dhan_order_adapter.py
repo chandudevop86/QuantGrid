@@ -495,7 +495,9 @@ def _super_order_protection_state(
     stop_quantity = int((stop or {}).get("triggered_quantity") or (stop or {}).get("quantity") or 0)
     stop_active = bool(
         stop
-        and stop_status not in {"rejected", "cancelled", "expired", "failed"}
+        # Only a broker-confirmed active stop leg protects open exposure.
+        # Filled/unknown/terminal legs must not be treated as active.
+        and stop_status in {"open", "partially_filled"}
         and (exposed_quantity == 0 or stop_quantity >= exposed_quantity)
     )
     return {
