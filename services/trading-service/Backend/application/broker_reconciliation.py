@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,13 @@ from Backend.application.position_store import (
     list_open_positions,
     update_open_position,
 )
+from Backend.application.notifications import send_alert
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import AuditLog, User
 from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrderResult
 
+
+logger = logging.getLogger(__name__)
 
 STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
 SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
@@ -717,6 +721,26 @@ def _record_review(
             **metadata,
         },
     )
+
+
+    if mismatch_type == "live_filled_exposure_not_broker_protected":
+        try:
+            send_alert(
+                "CRITICAL: QuantGrid LIVE position protection failure",
+                (
+                    "LIVE filled exposure lacks verified broker-native "
+                    "stop-loss protection. "
+                    f"Broker order ID: {target_id}. "
+                    "Immediate operator review required. "
+                    "Automated broker order resubmission is prohibited."
+                ),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to deliver critical LIVE protection alert "
+                "for broker order %s",
+                target_id,
+            )
 
 
 def _record_fix(

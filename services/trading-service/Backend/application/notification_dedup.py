@@ -25,3 +25,9 @@ def should_send(key: str) -> bool:
 
         _SENT[key] = now
         return True
+
+
+def release(key: str) -> None:
+    """Release a deduplication claim after complete delivery failure."""
+    with _LOCK:
+        _SENT.pop(key, None)

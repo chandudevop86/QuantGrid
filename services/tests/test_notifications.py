@@ -88,7 +88,13 @@ def test_send_alert_rejects_unapproved_webhook_host(monkeypatch):
     calls = []
     monkeypatch.setattr(notifications.request, "urlopen", lambda *_args, **_kwargs: calls.append("called"))
 
-    notifications.send_alert("Subject", "Message")
+    import pytest
+
+    with pytest.raises(
+        RuntimeError,
+        match="Outbound URL must use HTTPS and an approved host",
+    ):
+        notifications.send_alert("Subject", "Message")
 
     assert calls == []
 
@@ -151,3 +157,79 @@ def test_notification_retry_uses_utc_timezone_instance(monkeypatch):
 
     assert captured["now"].tzinfo is UTC
     assert result["processed"] == 0
+
+
+def test_failed_alert_delivery_can_be_retried(monkeypatch):
+    """A failed delivery must not suppress the next alert attempt."""
+    import pytest
+
+    from Backend.application import notification_dedup
+
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("QUANTGRID_SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("QUANTGRID_SMTP_HOST", raising=False)
+
+    monkeypatch.setattr(notification_dedup, "_SENT", {})
+
+    attempts = []
+
+    def fake_telegram(settings, message):
+        attempts.append(message)
+        if len(attempts) == 1:
+            raise RuntimeError("Simulated Telegram outage")
+
+    monkeypatch.setattr(
+        notifications,
+        "_send_telegram",
+        fake_telegram,
+    )
+
+    subject = "QuantGrid retry regression test"
+    message = "Simulated delivery failure"
+
+    with pytest.raises(RuntimeError, match="Notification delivery failed"):
+        notifications.send_alert(subject, message)
+
+    # The second attempt should be delivered, not deduplicated.
+    notifications.send_alert(subject, message)
+
+    assert len(attempts) == 2
+
+
+def test_alert_without_channels_can_be_retried(monkeypatch):
+    """Enabling a channel later must not be blocked by deduplication."""
+    from Backend.application import notification_dedup
+
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("QUANTGRID_SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("QUANTGRID_SMTP_HOST", raising=False)
+
+    monkeypatch.setattr(notification_dedup, "_SENT", {})
+
+    attempts = []
+
+    monkeypatch.setattr(
+        notifications,
+        "_send_telegram",
+        lambda settings, message: attempts.append(message),
+    )
+
+    subject = "No-channel retry regression"
+    message = "Critical test alert"
+
+    notifications.send_alert(subject, message)
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    notifications.send_alert(subject, message)
+
+    assert attempts == [message]

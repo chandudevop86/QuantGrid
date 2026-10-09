@@ -16,7 +16,7 @@ from urllib.error import HTTPError
 from urllib.error import URLError
 import time
 from urllib import request
-from Backend.application.notification_dedup import should_send
+from Backend.application.notification_dedup import should_send, release
 
 
 
@@ -240,15 +240,18 @@ def send_alert(subject: str, message: str) -> None:
         logger.warning(
             "Notifications enabled but no delivery channels configured."
         )
+        release(alert_key)
         return
 
     failures = []
+    successes = 0
 
     for channel, _, sender in enabled_channels:
 
         try:
 
             sender()
+            successes += 1
 
             logger.info(
                 "Notification delivered via %s",
@@ -276,6 +279,8 @@ def send_alert(subject: str, message: str) -> None:
             
 
     if failures:
+        if successes == 0:
+            release(alert_key)
 
         raise RuntimeError(
             "Notification delivery failed: "
