@@ -147,7 +147,29 @@ async def reconcile_broker_state(
                 if protected_order is not None
                 else None
             )
-            if not protection or not bool(protection.get("protected")):
+            # The broker parent may report a stale zero fill after restart.
+            # Never accept a "protected" flag unless authoritative stop-leg
+            # coverage also meets the larger persisted/broker exposure.
+            required_exposure = max(
+                int(broker_order.filled_quantity or 0), local_exposure
+            )
+            stop_leg = (
+                ((protected_order.metadata or {}).get("super_order") or {})
+                .get("legs", {}).get("STOP_LOSS_LEG", {})
+                if protected_order is not None
+                else {}
+            )
+            stop_quantity = int(
+                (stop_leg or {}).get("quantity") or 0
+            )
+            protection_verified = bool(
+                protection
+                and protection.get("protected")
+                and protection.get("stop_loss_present")
+                and protection.get("stop_loss_active")
+                and stop_quantity >= required_exposure
+            )
+            if not protection_verified:
                 _record_review(
                     summary,
                     db,
