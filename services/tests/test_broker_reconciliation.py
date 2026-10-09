@@ -1241,3 +1241,52 @@ def test_live_undercovered_super_order_stop_requires_review(monkeypatch):
     updated = order_store.get_order(local_id)
     assert summary["needs_review"] >= 1
     assert updated["status"] == "reconciliation_required"
+
+
+def test_live_restart_position_requires_protection_even_with_zero_reported_fill(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-RESTART-STALE-FILL-1"
+    local_id = "ORD-RESTART-STALE-FILL-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:RESTART-STALE-FILL", "symbol": "NIFTY",
+        "side": "BUY", "quantity": 10, "entry_price": 100,
+        "execution_mode": "live", "status": "broker_submitted",
+    })
+    position_store.create_open_position({
+        "broker_order_id": broker_id, "symbol": "NIFTY", "side": "BUY",
+        "quantity": 10, "entry_price": 100, "execution_mode": "live",
+    })
+
+    class StaleFillBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY",
+                     "netQty": 10, "averagePrice": 100}]
+
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="open", symbol="NIFTY",
+                side="BUY", quantity=10, filled_quantity=0,
+                remaining_quantity=10, price=100, confirmed=True,
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="restart-protection-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=StaleFillBroker(), actor=actor,
+            execution_mode="live",
+        ))
+
+    assert summary["needs_review"] >= 1
+    assert order_store.get_order(local_id)["status"] == "reconciliation_required"
+    assert position_store.find_position_by_broker_order_id(
+        broker_id, execution_mode="live"
+    )["status"] == "open"
