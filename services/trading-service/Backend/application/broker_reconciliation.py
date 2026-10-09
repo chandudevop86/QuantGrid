@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,13 @@ from Backend.application.position_store import (
     list_open_positions,
     update_open_position,
 )
+from Backend.application.notifications import send_alert
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import AuditLog, User
 from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrderResult
 
+
+logger = logging.getLogger(__name__)
 
 STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
 SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
@@ -122,8 +126,18 @@ async def reconcile_broker_state(
             execution_mode=execution_mode,
         )
 
-        if execution_mode == "live" and int(broker_order.filled_quantity or 0) > 0:
+        # A stale/zero broker fill count must not bypass protection checks when
+        # a durable LIVE position already shows open exposure after restart.
+        local_exposure = (
+            int(position.get("quantity") or 0)
+            if isinstance(position, dict) and str(position.get("status") or "").lower() == "open"
+            else 0
+        )
+        if execution_mode == "live" and (
+            int(broker_order.filled_quantity or 0) > 0 or local_exposure > 0
+        ):
             super_status_getter = getattr(broker_client, "get_super_order_status", None)
+            protected_order = None
             if callable(super_status_getter):
                 try:
                     protected_order = await super_status_getter(broker_order_id)
@@ -132,36 +146,60 @@ async def reconcile_broker_state(
                     summary["errors"].append(
                         f"{broker_order_id}: Super Order protection unavailable: {exc}"
                     )
-                protection = (
-                    ((protected_order.metadata or {}).get("super_order") or {}).get("protection")
-                    if protected_order is not None
-                    else None
+            protection = (
+                ((protected_order.metadata or {}).get("super_order") or {}).get("protection")
+                if protected_order is not None
+                else None
+            )
+            # The broker parent may report a stale zero fill after restart.
+            # Never accept a "protected" flag unless authoritative stop-leg
+            # coverage also meets the larger persisted/broker exposure.
+            required_exposure = max(
+                int(broker_order.filled_quantity or 0), local_exposure
+            )
+            stop_leg = (
+                ((protected_order.metadata or {}).get("super_order") or {})
+                .get("legs", {}).get("STOP_LOSS_LEG", {})
+                if protected_order is not None
+                else {}
+            )
+            stop_quantity = int(
+                (stop_leg or {}).get("quantity") or 0
+            )
+            protection_verified = bool(
+                protection
+                and protection.get("protected")
+                and protection.get("stop_loss_present")
+                and protection.get("stop_loss_active")
+                and str((stop_leg or {}).get("status") or "").lower()
+                in {"open", "partially_filled"}
+                and stop_quantity >= required_exposure
+            )
+            if not protection_verified:
+                _record_review(
+                    summary,
+                    db,
+                    actor,
+                    request,
+                    "live_filled_exposure_not_broker_protected",
+                    broker_order_id,
+                    {
+                        "local_order": local_order,
+                        "broker_status": broker_order.to_dict(),
+                        "protection": protection,
+                    },
                 )
-                if not protection or not bool(protection.get("protected")):
-                    _record_review(
-                        summary,
-                        db,
-                        actor,
-                        request,
-                        "live_filled_exposure_not_broker_protected",
-                        broker_order_id,
-                        {
-                            "local_order": local_order,
-                            "broker_status": broker_order.to_dict(),
-                            "protection": protection,
-                        },
-                    )
-                    _transition_local_order_if_present(
-                        local_order,
-                        "reconciliation_required",
-                        status_reason=(
-                            "LIVE filled exposure does not have authoritative broker-native "
-                            "stop-loss protection covering the filled quantity."
-                        ),
-                        broker_status=broker_order.status,
-                        entry_price=broker_order.price,
-                    )
-                    continue
+                _transition_local_order_if_present(
+                    local_order,
+                    "reconciliation_required",
+                    status_reason=(
+                        "LIVE filled exposure does not have authoritative broker-native "
+                        "stop-loss protection covering the filled quantity."
+                    ),
+                    broker_status=broker_order.status,
+                    entry_price=broker_order.price,
+                )
+                continue
 
         if order_status == "not_found":
             # A missing lookup is ambiguous, not authoritative terminal broker
@@ -226,7 +264,28 @@ async def reconcile_broker_state(
                 entry_price=broker_order.price,
             )
             if position and position.get("status") == "open":
-                close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
+                if execution_mode == "live":
+                    # A rejected/cancelled entry lookup cannot prove that a
+                    # previously persisted LIVE position has exited. Never
+                    # delete exposure without authoritative exit-leg and
+                    # broker-position evidence.
+                    _record_review(
+                        summary, db, actor, request,
+                        "live_open_exposure_after_entry_terminal_status",
+                        broker_order_id,
+                        {"local_order": local_order, "broker_status": broker_order.to_dict(),
+                         "position": position},
+                    )
+                    _transition_local_order_if_present(
+                        local_order, "reconciliation_required",
+                        status_reason="LIVE open exposure requires authoritative exit reconciliation.",
+                        broker_status=broker_order.status,
+                    )
+                else:
+                    close_open_position(
+                        int(position["id"]), current_price=broker_order.price,
+                        reason=f"broker_{order_status}",
+                    )
             continue
 
         if order_status == "partially_filled":
@@ -662,6 +721,26 @@ def _record_review(
             **metadata,
         },
     )
+
+
+    if mismatch_type == "live_filled_exposure_not_broker_protected":
+        try:
+            send_alert(
+                "CRITICAL: QuantGrid LIVE position protection failure",
+                (
+                    "LIVE filled exposure lacks verified broker-native "
+                    "stop-loss protection. "
+                    f"Broker order ID: {target_id}. "
+                    "Immediate operator review required. "
+                    "Automated broker order resubmission is prohibited."
+                ),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to deliver critical LIVE protection alert "
+                "for broker order %s",
+                target_id,
+            )
 
 
 def _record_fix(

@@ -18,4 +18,4 @@ def test_invalid_signal_shape_rejected():
         metadata={"quantity": 75},
     )
 
-    assert _trade_shape_reason(signal) == "BUY signal requires stop < entry < target."
+    assert _trade_shape_reason(signal) == "BUY_STOP_MUST_BE_BELOW_ENTRY"

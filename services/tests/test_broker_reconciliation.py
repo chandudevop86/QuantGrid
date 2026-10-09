@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -1109,10 +1111,13 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
                 broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
                 side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
                 price=101, confirmed=True,
-                metadata={"super_order": {"protection": {
-                    "exposed_quantity": 10, "stop_loss_present": True,
-                    "stop_loss_active": True, "protected": True,
-                }}},
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 10, "status": "open"}},
+                    "protection": {
+                        "exposed_quantity": 10, "stop_loss_present": True,
+                        "stop_loss_active": True, "protected": True,
+                    },
+                }},
             )
 
     with SessionLocal() as db:
@@ -1135,13 +1140,26 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
 
 
 
-def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypatch):
+@pytest.mark.parametrize("missing_lookup", [False, True])
+def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypatch, missing_lookup):
     configure_sqlalchemy_store(monkeypatch)
 
     from Backend.application import broker_reconciliation, order_store
     from Backend.core.database import SessionLocal, init_database
     from Backend.domain.security.models import User
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    alert_calls = []
+
+    def fake_send_alert(subject, message):
+        alert_calls.append((subject, message))
+
+    monkeypatch.setattr(
+        broker_reconciliation,
+        "send_alert",
+        fake_send_alert,
+        raising=False,
+    )
 
     init_database()
     broker_id = "DHAN-LIVE-NO-STOP-1"
@@ -1173,6 +1191,11 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
                 }}},
             )
 
+    # A broker lacking the Super Order lookup must also fail closed.
+    # Removing the method exercises the missing-adapter recovery path.
+    if missing_lookup:
+        monkeypatch.delattr(UnprotectedBroker, "get_super_order_status")
+
     with SessionLocal() as db:
         actor = User(username="live-protection-ops", password_hash="hash", role="ops")
         db.add(actor); db.commit(); db.refresh(actor)
@@ -1183,6 +1206,91 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
     updated = order_store.get_order(local_id)
     assert summary["needs_review"] >= 1
     assert updated["status"] == "reconciliation_required"
+    assert len(alert_calls) == 1
+    assert "CRITICAL" in alert_calls[0][0]
+    assert broker_id in alert_calls[0][1]
+    assert len(alert_calls) == 1
+    subject, message = alert_calls[0]
+    assert "CRITICAL" in subject.upper()
+    assert broker_id in message
+    assert "stop" in message.lower()
+
+
+@pytest.mark.parametrize("missing_lookup", [False, True])
+def test_live_protection_alert_failure_does_not_interrupt_reconciliation(monkeypatch, missing_lookup):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    alert_calls = []
+
+    def fake_send_alert(subject, message):
+        alert_calls.append((subject, message))
+        raise RuntimeError("Simulated notification outage")
+
+    monkeypatch.setattr(
+        broker_reconciliation,
+        "send_alert",
+        fake_send_alert,
+        raising=False,
+    )
+
+    init_database()
+    broker_id = "DHAN-LIVE-NO-STOP-1"
+    local_id = "ORD-LIVE-NO-STOP-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:NO-STOP", "symbol": "NIFTY", "side": "BUY",
+        "quantity": 25, "entry_price": 100, "execution_mode": "live",
+        "status": "broker_submitted",
+    })
+
+    class UnprotectedBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY", "netQty": 25, "averagePrice": 100}]
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=25, remaining_quantity=0,
+                price=100, confirmed=True,
+            )
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="filled", symbol="NIFTY",
+                side="BUY", quantity=25, filled_quantity=25, remaining_quantity=0,
+                price=100, confirmed=True,
+                metadata={"super_order": {"protection": {
+                    "exposed_quantity": 25, "stop_loss_present": False,
+                    "stop_loss_active": False, "protected": False,
+                }}},
+            )
+
+    # A broker lacking the Super Order lookup must also fail closed.
+    # Removing the method exercises the missing-adapter recovery path.
+    if missing_lookup:
+        monkeypatch.delattr(UnprotectedBroker, "get_super_order_status")
+
+    with SessionLocal() as db:
+        actor = User(username="live-protection-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=UnprotectedBroker(), actor=actor, execution_mode="live"
+        ))
+
+    updated = order_store.get_order(local_id)
+    assert summary["needs_review"] >= 1
+    assert updated["status"] == "reconciliation_required"
+    assert len(alert_calls) == 1
+    assert "CRITICAL" in alert_calls[0][0]
+    assert broker_id in alert_calls[0][1]
+    assert len(alert_calls) == 1
+    subject, message = alert_calls[0]
+    assert "CRITICAL" in subject.upper()
+    assert broker_id in message
+    assert "stop" in message.lower()
 
 
 def test_live_undercovered_super_order_stop_requires_review(monkeypatch):
@@ -1233,3 +1341,160 @@ def test_live_undercovered_super_order_stop_requires_review(monkeypatch):
     updated = order_store.get_order(local_id)
     assert summary["needs_review"] >= 1
     assert updated["status"] == "reconciliation_required"
+
+
+@pytest.mark.parametrize("stale_protected_flag", [False, True])
+def test_live_restart_position_requires_protection_even_with_zero_reported_fill(
+    monkeypatch, stale_protected_flag
+):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-RESTART-STALE-FILL-1"
+    local_id = "ORD-RESTART-STALE-FILL-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:RESTART-STALE-FILL", "symbol": "NIFTY",
+        "side": "BUY", "quantity": 10, "entry_price": 100,
+        "execution_mode": "live", "status": "broker_submitted",
+    })
+    position_store.create_open_position({
+        "broker_order_id": broker_id, "symbol": "NIFTY", "side": "BUY",
+        "quantity": 10, "entry_price": 100, "execution_mode": "live",
+    })
+
+    class StaleFillBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY",
+                     "netQty": 10, "averagePrice": 100}]
+
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="open", symbol="NIFTY",
+                side="BUY", quantity=10, filled_quantity=0,
+                remaining_quantity=10, price=100, confirmed=True,
+            )
+
+    if stale_protected_flag:
+        async def stale_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status="open", symbol="NIFTY",
+                side="BUY", quantity=10, filled_quantity=0,
+                remaining_quantity=10, price=100, confirmed=True,
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 0, "status": "open"}},
+                    "protection": {
+                        "protected": True, "stop_loss_present": True,
+                        "stop_loss_active": True, "exposed_quantity": 0,
+                    },
+                }},
+            )
+        StaleFillBroker.get_super_order_status = stale_super_order_status
+
+    with SessionLocal() as db:
+        actor = User(username="restart-protection-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=StaleFillBroker(), actor=actor,
+            execution_mode="live",
+        ))
+
+    assert summary["needs_review"] >= 1
+    assert order_store.get_order(local_id)["status"] == "reconciliation_required"
+    assert position_store.find_position_by_broker_order_id(
+        broker_id, execution_mode="live"
+    )["status"] == "open"
+
+
+@pytest.mark.parametrize("terminal_status", ["rejected", "cancelled"])
+def test_live_terminal_entry_does_not_close_persisted_exposure(monkeypatch, terminal_status):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-LIVE-TERMINAL-ENTRY-1"
+    local_id = "ORD-LIVE-TERMINAL-ENTRY-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:TERMINAL-ENTRY", "symbol": "NIFTY",
+        "side": "BUY", "quantity": 10, "entry_price": 100,
+        "execution_mode": "live", "status": "broker_submitted",
+    })
+    position_store.create_open_position({
+        "broker_order_id": broker_id, "symbol": "NIFTY", "side": "BUY",
+        "quantity": 10, "entry_price": 100, "execution_mode": "live",
+    })
+
+    class TerminalEntryBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY",
+                     "netQty": 10, "averagePrice": 100}]
+
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status=terminal_status,
+                symbol="NIFTY", side="BUY", quantity=10,
+                filled_quantity=0, remaining_quantity=10,
+                price=100, confirmed=True,
+            )
+
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status=terminal_status,
+                symbol="NIFTY", side="BUY", quantity=10,
+                filled_quantity=0, remaining_quantity=10,
+                price=100, confirmed=True,
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 10, "status": "open"}},
+                    "protection": {
+                        "protected": True, "stop_loss_present": True,
+                        "stop_loss_active": True, "exposed_quantity": 0,
+                    },
+                }},
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="terminal-entry-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=TerminalEntryBroker(), actor=actor,
+            execution_mode="live",
+        ))
+
+    assert summary["needs_review"] >= 1
+    assert order_store.get_order(local_id)["status"] == "reconciliation_required"
+    assert position_store.find_position_by_broker_order_id(
+        broker_id, execution_mode="live"
+    )["status"] == "open"
+
+
+@pytest.fixture(autouse=True)
+def isolate_reconciliation_status_file(tmp_path, monkeypatch):
+    """Isolate reconciliation status even when backend modules reload."""
+    original_configure = configure_sqlalchemy_store
+
+    def configure_and_isolate(patch):
+        original_configure(patch)
+
+        from Backend.application import broker_reconciliation
+
+        patch.setattr(
+            broker_reconciliation,
+            "STATUS_FILE",
+            tmp_path / "broker_reconciliation_status.json",
+        )
+
+    monkeypatch.setitem(
+        globals(),
+        "configure_sqlalchemy_store",
+        configure_and_isolate,
+    )

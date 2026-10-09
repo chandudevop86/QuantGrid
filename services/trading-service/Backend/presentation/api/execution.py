@@ -802,6 +802,17 @@ async def place_order(
             actor=actor,
             reason="Risk engine and live guardrails approved order.",
         )
+        # Refuse unprotected LIVE routing before claiming a durable submission
+        # intent or crossing the broker I/O boundary.
+        broker_client = broker_client_for_mode(execution_mode)
+        if not callable(getattr(broker_client, "place_protected_order", None)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_ORDER_ADAPTER_REQUIRED")
+        if not bool(getattr(broker_client, "supports_protected_order_submission", False)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_ORDER_SUBMISSION_UNSUPPORTED")
+        if not bool(getattr(broker_client, "supports_broker_native_protective_stop", False)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_LIFECYCLE_NOT_CERTIFIED")
+        if not order.stop_loss or not order.target_price:
+            raise HTTPException(status_code=403, detail="LIVE_BROKER_NATIVE_STOP_AND_TARGET_REQUIRED")
         try:
             submission_intent = claim_submission(
                 lifecycle_order["local_order_id"],
@@ -826,7 +837,6 @@ async def place_order(
         order.metadata["correlation_id"] = submission_intent["correlation_id"]
 
         try:
-            broker_client = broker_client_for_mode(execution_mode)
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "broker_submitted",
@@ -835,7 +845,7 @@ async def place_order(
                 actor=actor,
                 reason="Submitted to broker adapter.",
             )
-            broker_order = await broker_client.place_order(order)
+            broker_order = await broker_client.place_protected_order(order)
             if not broker_order.broker_order_id:
                 raise RuntimeError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
             record_broker_evidence(
