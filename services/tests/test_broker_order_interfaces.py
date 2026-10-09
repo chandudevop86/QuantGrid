@@ -429,7 +429,6 @@ def test_dhan_super_order_undercovered_stop_is_unprotected(monkeypatch):
 
 def test_dhan_super_order_terminal_stop_leg_is_not_active_protection(monkeypatch):
     import asyncio
-    import pytest
     from Backend.infrastructure.broker import dhan_order_adapter
 
     monkeypatch.setattr(dhan_order_adapter, "dhan_credentials", lambda: {
