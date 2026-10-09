@@ -1111,10 +1111,13 @@ def test_live_partial_fill_persists_filled_position_and_keeps_order_active(monke
                 broker_order_id=broker_id, status="partially_filled", symbol="NIFTY",
                 side="BUY", quantity=25, filled_quantity=10, remaining_quantity=15,
                 price=101, confirmed=True,
-                metadata={"super_order": {"protection": {
-                    "exposed_quantity": 10, "stop_loss_present": True,
-                    "stop_loss_active": True, "protected": True,
-                }}},
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 10, "status": "open"}},
+                    "protection": {
+                        "exposed_quantity": 10, "stop_loss_present": True,
+                        "stop_loss_active": True, "protected": True,
+                    },
+                }},
             )
 
     with SessionLocal() as db:
