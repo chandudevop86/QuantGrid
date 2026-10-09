@@ -1312,3 +1312,69 @@ def test_live_restart_position_requires_protection_even_with_zero_reported_fill(
     assert position_store.find_position_by_broker_order_id(
         broker_id, execution_mode="live"
     )["status"] == "open"
+
+
+@pytest.mark.parametrize("terminal_status", ["rejected", "cancelled"])
+def test_live_terminal_entry_does_not_close_persisted_exposure(monkeypatch, terminal_status):
+    configure_sqlalchemy_store(monkeypatch)
+
+    from Backend.application import broker_reconciliation, order_store, position_store
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.domain.security.models import User
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    broker_id = "DHAN-LIVE-TERMINAL-ENTRY-1"
+    local_id = "ORD-LIVE-TERMINAL-ENTRY-1"
+    order_store.create_order({
+        "local_order_id": local_id, "broker_order_id": broker_id,
+        "order_key": "NIFTY:BUY:TERMINAL-ENTRY", "symbol": "NIFTY",
+        "side": "BUY", "quantity": 10, "entry_price": 100,
+        "execution_mode": "live", "status": "broker_submitted",
+    })
+    position_store.create_open_position({
+        "broker_order_id": broker_id, "symbol": "NIFTY", "side": "BUY",
+        "quantity": 10, "entry_price": 100, "execution_mode": "live",
+    })
+
+    class TerminalEntryBroker:
+        async def get_positions(self):
+            return [{"tradingSymbol": "NIFTY", "transactionType": "BUY",
+                     "netQty": 10, "averagePrice": 100}]
+
+        async def get_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status=terminal_status,
+                symbol="NIFTY", side="BUY", quantity=10,
+                filled_quantity=0, remaining_quantity=10,
+                price=100, confirmed=True,
+            )
+
+        async def get_super_order_status(self, requested):
+            return BrokerOrderResult(
+                broker_order_id=broker_id, status=terminal_status,
+                symbol="NIFTY", side="BUY", quantity=10,
+                filled_quantity=0, remaining_quantity=10,
+                price=100, confirmed=True,
+                metadata={"super_order": {
+                    "legs": {"STOP_LOSS_LEG": {"quantity": 10, "status": "open"}},
+                    "protection": {
+                        "protected": True, "stop_loss_present": True,
+                        "stop_loss_active": True, "exposed_quantity": 0,
+                    },
+                }},
+            )
+
+    with SessionLocal() as db:
+        actor = User(username="terminal-entry-ops", password_hash="hash", role="ops")
+        db.add(actor); db.commit(); db.refresh(actor)
+        summary = asyncio.run(broker_reconciliation.reconcile_broker_state(
+            db=db, broker_client=TerminalEntryBroker(), actor=actor,
+            execution_mode="live",
+        ))
+
+    assert summary["needs_review"] >= 1
+    assert order_store.get_order(local_id)["status"] == "reconciliation_required"
+    assert position_store.find_position_by_broker_order_id(
+        broker_id, execution_mode="live"
+    )["status"] == "open"
