@@ -56,13 +56,25 @@ def _send_telegram(
         "/sendMessage"
     )
 
-    _post_with_retry(
+    response = _post_with_retry(
         url,
         {
             "chat_id": settings.telegram_chat_id,
             "text": message,
         },
     )
+
+    try:
+        result = json.loads(response)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Telegram returned an invalid response"
+        ) from exc
+
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        raise RuntimeError(
+            "Telegram did not confirm message acceptance"
+        )
 @dataclass(frozen=True)
 class NotificationSettings:
     enabled: bool
@@ -196,6 +208,63 @@ def _send_email(settings: NotificationSettings, subject: str, message: str) -> N
             logger.exception("SMTP connection error")
             raise
 
+
+
+def send_notification_channel(
+    channel: str,
+    recipient: str,
+    subject: str,
+    message: str,
+) -> None:
+    """Deliver one persisted notification to its configured channel.
+
+    Return only after provider acceptance; otherwise raise.
+    """
+    settings = get_notification_settings()
+
+    if not settings.enabled:
+        raise RuntimeError("Notification delivery is disabled")
+
+    channel = str(channel).strip().lower()
+    recipient = str(recipient).strip()
+
+    if channel == "telegram":
+        if not settings.telegram_enabled:
+            raise RuntimeError("Telegram is not configured")
+        if recipient != str(settings.telegram_chat_id):
+            raise RuntimeError("Telegram recipient does not match configuration")
+        _send_telegram(settings, message)
+
+    elif channel == "slack":
+        if not settings.slack_enabled:
+            raise RuntimeError("Slack is not configured")
+        # Resolve the webhook from runtime configuration.
+        # Never persist the webhook URL as a notification recipient.
+        if recipient != "configured":
+            raise RuntimeError("Slack recipient does not match configuration")
+        _send_slack(settings, message)
+
+    elif channel == "email":
+        if not settings.email_enabled:
+            raise RuntimeError("Email is not configured")
+        configured = {
+            address.strip().lower()
+            for address in settings.smtp_to
+        }
+        if recipient.lower() not in configured:
+            raise RuntimeError("Email recipient is not configured")
+
+        # The existing email sender sends to all configured recipients.
+        # Until a single-recipient sender exists, fail closed to prevent
+        # accidental duplicate or unintended deliveries.
+        if len(configured) != 1:
+            raise RuntimeError(
+                "Strict email delivery requires exactly one configured recipient"
+            )
+        _send_email(settings, subject, message)
+
+    else:
+        raise ValueError(f"Unsupported notification channel: {channel}")
 
 def send_alert(subject: str, message: str) -> None:
 

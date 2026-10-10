@@ -1149,17 +1149,11 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
     from Backend.domain.security.models import User
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 
-    alert_calls = []
+    from Backend.application.notification_entity import NotificationEntity
 
-    def fake_send_alert(subject, message):
-        alert_calls.append((subject, message))
-
-    monkeypatch.setattr(
-        broker_reconciliation,
-        "send_alert",
-        fake_send_alert,
-        raising=False,
-    )
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
 
     init_database()
     broker_id = "DHAN-LIVE-NO-STOP-1"
@@ -1206,14 +1200,21 @@ def test_live_filled_exposure_without_super_order_stop_requires_review(monkeypat
     updated = order_store.get_order(local_id)
     assert summary["needs_review"] >= 1
     assert updated["status"] == "reconciliation_required"
-    assert len(alert_calls) == 1
-    assert "CRITICAL" in alert_calls[0][0]
-    assert broker_id in alert_calls[0][1]
-    assert len(alert_calls) == 1
-    subject, message = alert_calls[0]
-    assert "CRITICAL" in subject.upper()
-    assert broker_id in message
-    assert "stop" in message.lower()
+    with SessionLocal() as db:
+        records = db.query(NotificationEntity).filter(
+            NotificationEntity.channel == "telegram",
+            NotificationEntity.subject.like(
+                "%LIVE position protection failure%"
+            ),
+        ).all()
+
+    assert len(records) == 1
+    notification = records[0]
+    assert notification.status == "PENDING"
+    assert notification.recipient == "test-chat"
+    assert "CRITICAL" in notification.subject.upper()
+    assert broker_id in notification.message
+    assert "stop" in notification.message.lower()
 
 
 @pytest.mark.parametrize("missing_lookup", [False, True])
@@ -1225,16 +1226,20 @@ def test_live_protection_alert_failure_does_not_interrupt_reconciliation(monkeyp
     from Backend.domain.security.models import User
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 
-    alert_calls = []
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
 
-    def fake_send_alert(subject, message):
-        alert_calls.append((subject, message))
-        raise RuntimeError("Simulated notification outage")
+    persistence_attempts = []
+
+    def fake_enqueue_notifications_atomic(db, **kwargs):
+        persistence_attempts.append(kwargs)
+        raise RuntimeError("Simulated notification database outage")
 
     monkeypatch.setattr(
         broker_reconciliation,
-        "send_alert",
-        fake_send_alert,
+        "enqueue_notifications_atomic",
+        fake_enqueue_notifications_atomic,
         raising=False,
     )
 
@@ -1283,14 +1288,14 @@ def test_live_protection_alert_failure_does_not_interrupt_reconciliation(monkeyp
     updated = order_store.get_order(local_id)
     assert summary["needs_review"] >= 1
     assert updated["status"] == "reconciliation_required"
-    assert len(alert_calls) == 1
-    assert "CRITICAL" in alert_calls[0][0]
-    assert broker_id in alert_calls[0][1]
-    assert len(alert_calls) == 1
-    subject, message = alert_calls[0]
-    assert "CRITICAL" in subject.upper()
-    assert broker_id in message
-    assert "stop" in message.lower()
+    assert len(persistence_attempts) == 1
+    attempted = persistence_attempts[0]
+    assert ("telegram", "test-chat") in attempted["destinations"]
+    assert isinstance(attempted["incident_key"], str)
+    assert attempted["incident_key"]
+    assert "CRITICAL" in attempted["subject"].upper()
+    assert broker_id in attempted["message"]
+    assert "stop" in attempted["message"].lower()
 
 
 def test_live_undercovered_super_order_stop_requires_review(monkeypatch):

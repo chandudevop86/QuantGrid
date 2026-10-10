@@ -54,6 +54,9 @@ def test_versioned_migrations_record_baseline_and_compatibility():
         schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION,
         schema_migrations.BROKER_SUBMISSION_INTENTS_VERSION,
         schema_migrations.POSITION_EXECUTION_MODE_VERSION,
+        schema_migrations.NOTIFICATION_DELIVERY_LEASES_VERSION,
+        schema_migrations.NOTIFICATION_DEDUPLICATION_VERSION,
+        schema_migrations.PROTECTION_ALERT_EPISODES_VERSION,
     ]
     inspector = inspect(engine)
     assert "execution_mode" in {column["name"] for column in inspector.get_columns("orders")}
@@ -124,3 +127,100 @@ def test_cost_evidence_migration_runs_for_existing_compatibility_database():
             )
         ).scalars())
     assert schema_migrations.PAPER_TRADE_COST_EVIDENCE_VERSION in versions
+
+
+def test_notification_migration_creates_missing_table():
+    from Backend.core import schema_migrations
+    from Backend.application.notification_entity import NotificationEntity
+
+    engine = create_engine("sqlite:///:memory:")
+    metadata = MetaData()
+
+    try:
+        # Simulate an established deployment with a migration ledger
+        # but no notifications table.
+        with engine.begin() as connection:
+            connection.execute(schema_migrations.text(
+                f"CREATE TABLE {schema_migrations.MIGRATION_TABLE} ("
+                "version VARCHAR(80) PRIMARY KEY, "
+                "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
+            ))
+
+        schema_migrations.apply_versioned_migrations(engine, metadata)
+        schema_migrations.apply_versioned_migrations(engine, metadata)
+
+        columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("notifications")
+        }
+
+        assert set(NotificationEntity.__table__.columns.keys()) <= columns
+
+        with engine.connect() as connection:
+            versions = connection.execute(schema_migrations.text(
+                f"SELECT version FROM {schema_migrations.MIGRATION_TABLE} "
+                "WHERE version = '0009_notification_delivery_leases'"
+            )).scalars().all()
+
+        assert versions == ["0009_notification_delivery_leases"]
+
+    finally:
+        engine.dispose()
+
+
+def test_notification_migration_upgrades_existing_table():
+    from Backend.core import schema_migrations
+
+    engine = create_engine("sqlite:///:memory:")
+    metadata = MetaData()
+
+    try:
+        with engine.begin() as connection:
+            connection.execute(schema_migrations.text(
+                "CREATE TABLE notifications ("
+                "id INTEGER PRIMARY KEY, "
+                "channel VARCHAR(30) NOT NULL, "
+                "recipient VARCHAR(255) NOT NULL, "
+                "subject VARCHAR(255) NOT NULL, "
+                "message TEXT NOT NULL, "
+                "status VARCHAR(20) NOT NULL, "
+                "delivered BOOLEAN NOT NULL, "
+                "retries INTEGER NOT NULL, "
+                "error TEXT, "
+                "created_at TIMESTAMP, "
+                "updated_at TIMESTAMP, "
+                "sent_at TIMESTAMP, "
+                "next_retry_at TIMESTAMP)"
+            ))
+            connection.execute(schema_migrations.text(
+                f"CREATE TABLE {schema_migrations.MIGRATION_TABLE} ("
+                "version VARCHAR(80) PRIMARY KEY, "
+                "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)"
+            ))
+            connection.execute(schema_migrations.text(
+                "INSERT INTO notifications "
+                "(id, channel, recipient, subject, message, status, "
+                "delivered, retries) "
+                "VALUES (1, 'telegram', 'test-chat', 'Test', "
+                "'Existing alert', 'PENDING', 0, 0)"
+            ))
+
+        schema_migrations.apply_versioned_migrations(engine, metadata)
+        schema_migrations.apply_versioned_migrations(engine, metadata)
+
+        columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("notifications")
+        }
+        assert {"claim_token", "lease_expires_at"} <= columns
+
+        with engine.connect() as connection:
+            row = connection.execute(schema_migrations.text(
+                "SELECT status, message, claim_token, lease_expires_at "
+                "FROM notifications WHERE id = 1"
+            )).one()
+
+        assert row == ("PENDING", "Existing alert", None, None)
+
+    finally:
+        engine.dispose()

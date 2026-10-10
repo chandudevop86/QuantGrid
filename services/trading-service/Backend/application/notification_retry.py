@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
+from uuid import uuid4
 
 from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
-from Backend.application.notifications import send_alert
+from Backend.application.notifications import send_notification_channel
 from Backend.application.notification_store import (
+    claim_notification,
     get_retry_notifications,
     mark_sent,
     mark_failed,
@@ -15,6 +17,15 @@ from Backend.application.notification_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_delivery_error(exc: Exception) -> str:
+    """Return a bounded error category without provider response details."""
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return "notification_delivery_network_failure"
+    if isinstance(exc, (ValueError, TypeError)):
+        return "notification_delivery_validation_failure"
+    return "notification_delivery_provider_failure"
 
 
 class NotificationRetryWorker:
@@ -77,6 +88,21 @@ class NotificationRetryWorker:
 
         for notification in notifications:
 
+            notification_id = notification.id
+            claim_token = uuid4().hex
+
+            if not claim_notification(
+                self.db,
+                notification_id,
+                claim_token,
+                datetime.now(UTC),
+            ):
+                logger.info(
+                    "Notification %s already claimed by another worker.",
+                    notification_id,
+                )
+                continue
+
             processed += 1
 
             try:
@@ -84,70 +110,113 @@ class NotificationRetryWorker:
                 logger.info(
                     "Retrying notification id=%s attempt=%s",
                     notification.id,
-                    getattr(notification, "retry_count", 0) + 1,
+                    getattr(notification, "retries", 0) + 1,
                 )
 
-                send_alert(
+                send_notification_channel(
+                    notification.channel,
+                    notification.recipient,
                     notification.subject,
                     notification.message,
                 )
 
-                mark_sent(
-                    self.db,
-                    notification.id,
-                )
-
-                self.db.commit()
-
-                succeeded += 1
-
-                logger.info(
-                    "Notification %s sent successfully.",
-                    notification.id,
-                )
-
             except Exception as exc:
 
-                logger.exception(
-                    "Notification retry failed id=%s",
+                safe_error = _safe_delivery_error(exc)
+                logger.error(
+                    "Notification retry failed id=%s category=%s",
                     notification.id,
+                    safe_error,
                 )
 
                 retry_count = getattr(
                     notification,
-                    "retry_count",
+                    "retries",
                     0,
                 )
 
-                if retry_count + 1 >= self.max_retries:
+                try:
+                    if retry_count + 1 >= self.max_retries:
 
-                    mark_failed(
-                        self.db,
-                        notification.id,
-                        str(exc),
-                    )
+                        updated = mark_failed(
+                            self.db,
+                            notification.id,
+                            safe_error,
+                            claim_token=claim_token,
+                        )
+                        if not updated:
+                            logger.warning(
+                                "Notification %s lost claim before FAILED update",
+                                notification.id,
+                            )
+                            continue
 
-                    self.db.commit()
+                        self.db.commit()
 
-                    permanently_failed += 1
+                        permanently_failed += 1
 
+                        logger.error(
+                            "Notification %s permanently failed after %s retries.",
+                            notification.id,
+                            self.max_retries,
+                        )
+
+                    else:
+
+                        updated = schedule_retry(
+                            self.db,
+                            notification.id,
+                            safe_error,
+                            claim_token=claim_token,
+                        )
+                        if not updated:
+                            logger.warning(
+                                "Notification %s lost claim before RETRY update",
+                                notification.id,
+                            )
+                            continue
+
+                        self.db.commit()
+
+                        failed += 1
+                except Exception:
+                    self.db.rollback()
                     logger.error(
-                        "Notification %s permanently failed after %s retries.",
-                        notification.id,
-                        self.max_retries,
+                        "Notification %s retry status database update failed",
+                        notification_id,
                     )
-
-                else:
-
-                    schedule_retry(
+                    raise
+            else:
+                try:
+                    updated = mark_sent(
                         self.db,
                         notification.id,
-                        str(exc),
+                        claim_token=claim_token,
                     )
+                    if not updated:
+                        logger.warning(
+                            "Notification %s lost claim before SENT update",
+                            notification.id,
+                        )
+                        continue
 
                     self.db.commit()
 
-                    failed += 1
+                    succeeded += 1
+
+                    logger.info(
+                        "Notification %s sent successfully.",
+                        notification.id,
+                    )
+
+                except Exception:
+                    self.db.rollback()
+                    logger.error(
+                        "Notification %s delivery accepted but "
+                        "database confirmation failed",
+                        notification_id,
+                    )
+                    raise
 
         logger.info(
             "Notification retry finished "

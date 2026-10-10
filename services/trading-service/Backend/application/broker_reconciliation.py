@@ -20,7 +20,13 @@ from Backend.application.position_store import (
     list_open_positions,
     update_open_position,
 )
-from Backend.application.notifications import send_alert
+from Backend.application.notifications import get_notification_settings
+from Backend.application.notification_store import enqueue_notifications_atomic
+from Backend.application.protection_alert_episodes import (
+    close_protection_failure_episode,
+    open_protection_failure_episode,
+)
+from Backend.core.database import SessionLocal
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import AuditLog, User
 from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrderResult
@@ -200,6 +206,24 @@ async def reconcile_broker_state(
                     entry_price=broker_order.price,
                 )
                 continue
+
+            # Close only after authoritative broker-native protection
+            # has been positively verified for the required exposure.
+            local_order_id = local_order.get("local_order_id")
+            if local_order_id:
+                try:
+                    with SessionLocal() as episode_db:
+                        close_protection_failure_episode(
+                            episode_db,
+                            local_order_id=str(local_order_id),
+                        )
+                        episode_db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to close verified LIVE protection episode "
+                        "for local order %s",
+                        local_order_id,
+                    )
 
         if order_status == "not_found":
             # A missing lookup is ambiguous, not authoritative terminal broker
@@ -724,20 +748,64 @@ def _record_review(
 
 
     if mismatch_type == "live_filled_exposure_not_broker_protected":
+        subject = "CRITICAL: QuantGrid LIVE position protection failure"
+        message = (
+            "LIVE filled exposure lacks verified broker-native "
+            "stop-loss protection. "
+            f"Broker order ID: {target_id}. "
+            "Immediate operator review required. "
+            "Automated broker order resubmission is prohibited."
+        )
         try:
-            send_alert(
-                "CRITICAL: QuantGrid LIVE position protection failure",
-                (
-                    "LIVE filled exposure lacks verified broker-native "
-                    "stop-loss protection. "
-                    f"Broker order ID: {target_id}. "
-                    "Immediate operator review required. "
-                    "Automated broker order resubmission is prohibited."
-                ),
+            settings = get_notification_settings()
+            destinations = []
+            if settings.telegram_bot_token and settings.telegram_chat_id:
+                destinations.append(("telegram", settings.telegram_chat_id))
+            if settings.slack_webhook_url:
+                destinations.append(("slack", "configured"))
+            if settings.smtp_host and len(settings.smtp_to) == 1:
+                destinations.append(("email", settings.smtp_to[0]))
+
+            if not destinations:
+                logger.critical(
+                    "Critical LIVE protection alert has no configured "
+                    "notification destination for broker order %s",
+                    target_id,
+                )
+
+            local_order = metadata.get("local_order")
+            local_order_id = (
+                local_order.get("local_order_id")
+                if isinstance(local_order, dict)
+                else None
             )
+
+            if not local_order_id:
+                # Compatibility for isolated review tests without
+                # a persisted local order.
+                local_order_id = f"broker:{target_id}"
+
+            with SessionLocal() as alert_db:
+                try:
+                    episode_id = open_protection_failure_episode(
+                        alert_db,
+                        local_order_id=str(local_order_id),
+                    )
+                    if destinations:
+                        enqueue_notifications_atomic(
+                            alert_db,
+                            destinations=destinations,
+                            subject=subject,
+                            message=message,
+                            incident_key=episode_id,
+                        )
+                    alert_db.commit()
+                except Exception:
+                    alert_db.rollback()
+                    raise
         except Exception:
             logger.exception(
-                "Failed to deliver critical LIVE protection alert "
+                "Failed to persist critical LIVE protection alert "
                 "for broker order %s",
                 target_id,
             )
