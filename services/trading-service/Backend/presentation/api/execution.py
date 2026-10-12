@@ -810,7 +810,7 @@ async def place_order(
                 symbol=signal.symbol,
                 strategy=signal.strategy_name,
                 signal=signal,
-                reason=str(exc),
+                reason="DUPLICATE_ACTIVE_ORDER",
                 execution_mode=execution_mode,
                 extra={
                     **_risk_response_fields(risk_decision),
@@ -844,12 +844,22 @@ async def place_order(
                 lifecycle_order["order_key"],
             )
         except ValueError as exc:
+            if str(exc) != "DUPLICATE_OR_UNRESOLVED_BROKER_INTENT":
+                raise
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "rejected",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
+            )
             result = _paper_response(
                 status_value="rejected",
                 symbol=signal.symbol,
                 strategy=signal.strategy_name,
                 signal=signal,
-                reason=str(exc),
+                reason="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
                 execution_mode=execution_mode,
                 extra={"broker_confirmed": False},
             )

@@ -359,10 +359,123 @@ def test_live_broker_and_failure_logger_exceptions_keep_durable_reconciliation(
         )
         assert second.status_code == 200, second.text
         assert second.json()["status"] == "rejected"
-        assert "DUPLICATE_ACTIVE_ORDER" in second.json()["reason"]
+        assert second.json()["reason"] == "DUPLICATE_ACTIVE_ORDER"
         assert second.json()["broker_confirmed"] is False
         assert len(broker_calls) == 1
 
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+
+
+def test_duplicate_submission_intent_rejects_without_broker_io(
+    app_client, monkeypatch
+):
+    """A conflicting durable claim must reject without broker I/O or leaking details."""
+    from sqlalchemy import text
+
+    import Backend.presentation.api.execution as execution_api
+    from Backend.application.subscriptions import subscription_access
+    from Backend.core.database import SessionLocal
+    from Backend.presentation.api.main import app
+
+    broker_calls = []
+
+    class FakeBroker:
+        supports_protected_order_submission = True
+        supports_broker_native_protective_stop = True
+
+        async def place_protected_order(self, order):
+            broker_calls.append(order)
+            raise AssertionError("Broker must not be called after a failed claim")
+
+    class FakeAccess:
+        snapshot = {"plan_code": "test"}
+
+        def can(self, feature):
+            return True
+
+    def duplicate_claim(*args, **kwargs):
+        raise ValueError("DUPLICATE_OR_UNRESOLVED_BROKER_INTENT")
+
+    monkeypatch.setattr(execution_api, "claim_submission", duplicate_claim)
+    monkeypatch.setattr(
+        execution_api, "broker_client_for_mode", lambda mode: FakeBroker()
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "get_settings",
+        lambda: SimpleNamespace(
+            live_trading_enabled=True,
+            broker_live_enabled=True,
+            broker_configured=True,
+        ),
+    )
+    monkeypatch.setattr(execution_api, "_request_is_https", lambda request: True)
+    monkeypatch.setattr(
+        execution_api, "_execution_qualification", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        execution_api, "_live_guardrail_failure", lambda **kw: None
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *a, **kw: SimpleNamespace(allowed=True, reason="approved"),
+    )
+    monkeypatch.setattr(execution_api, "latest_candles", lambda *a, **kw: [])
+    monkeypatch.setattr(
+        execution_api, "_audit_risk_decision", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        execution_api, "_audit_execution_result", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        execution_api, "alert_execution_event", lambda *a, **kw: None
+    )
+    monkeypatch.setattr(
+        execution_api, "write_audit_log", lambda *a, **kw: None
+    )
+
+    original_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[subscription_access] = lambda: FakeAccess()
+
+    payload = {
+        "strategy_name": "INTENT_CONFLICT_REGRESSION",
+        "symbol": "NIFTY",
+        "side": "BUY",
+        "entry_price": 22500,
+        "stop_loss": 22450,
+        "target_price": 22600,
+        "signal_time": "2026-05-20T05:00:00Z",
+        "metadata": {"quantity": 1},
+    }
+    headers = make_admin_headers(app_client)
+    headers["X-QuantGrid-Mode"] = "live"
+
+    try:
+        response = app_client.post(
+            "/execution/order", json=payload, headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "rejected"
+        assert (
+            response.json()["reason"]
+            == "DUPLICATE_OR_UNRESOLVED_BROKER_INTENT"
+        )
+        assert response.json()["broker_confirmed"] is False
+        assert broker_calls == []
+
+        with SessionLocal() as db:
+            orders = db.execute(
+                text(
+                    "SELECT status FROM orders "
+                    "WHERE order_key = :key"
+                ),
+                {"key": "NIFTY:BUY:INTENT_CONFLICT_REGRESSION"},
+            ).all()
+            assert len(orders) == 1
+            assert orders[0][0] == "rejected"
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)
