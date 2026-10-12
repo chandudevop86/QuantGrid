@@ -454,3 +454,27 @@ def test_dhan_super_order_terminal_stop_leg_is_not_active_protection(monkeypatch
     protection = result.metadata["super_order"]["protection"]
     assert protection["stop_loss_active"] is False
     assert protection["protected"] is False
+
+
+import pytest
+
+@pytest.mark.parametrize(
+    "response, expected",
+    [
+        ({"orderId": "SUPER-123", "orderStatus": "PENDING"}, "SUPER-123"),
+        ({}, None),
+        ({"id": "GENERIC-123"}, None),
+        ({"orderId": ""}, None),
+        ({"orderId": "   "}, None),
+        ({"orderId": "SUPER-1", "data": {"orderId": "SUPER-2"}}, None),
+        ({"orderId": "SUPER-1", "order_id": "SUPER-2"}, None),
+        ({"orderId": "INVALID ID"}, None),
+    ],
+)
+def test_dhan_super_order_parent_id_validation_cases(response, expected):
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    assert (
+        dhan_order_adapter._extract_super_order_parent_id(response)
+        == expected
+    )

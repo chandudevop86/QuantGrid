@@ -13,7 +13,7 @@ from Backend.application.execution.execution_service import (
     _audit_execution_result,
     _execution_qualification,
 )
-from Backend.application.execution.execution_response import _paper_response
+from Backend.application.execution.execution_response import _paper_response, _risk_response_fields
 from Backend.application.execution import execution_pipeline as _execution_pipeline
 from Backend.application.execution import execution_guardrails as _execution_guardrails
 from Backend.application.execution.execution_guardrails import (
@@ -93,7 +93,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from Backend.application.execution.execution_utils import (
     _trade_shape_reason,
     _tqe_response_fields,
-    _risk_response_fields,
 )
 import logging
 
@@ -793,7 +792,33 @@ async def place_order(
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
         order = engine.order_from_signal(signal)
-        lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
+        try:
+            lifecycle_order = _create_lifecycle_order(
+                order,
+                signal=signal,
+                execution_mode=execution_mode,
+                db=db,
+                request=request,
+                actor=actor,
+            )
+        except ValueError as exc:
+            if not str(exc).startswith('DUPLICATE_ACTIVE_ORDER'):
+                raise
+            observe_rejected_order('duplicate_active_order', execution_mode)
+            result = _paper_response(
+                status_value='rejected',
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason=str(exc),
+                execution_mode=execution_mode,
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    'broker_confirmed': False,
+                },
+            )
+            _audit_execution_result(db, request, actor, result)
+            return result
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "risk_approved",
@@ -867,13 +892,18 @@ async def place_order(
             )
             broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
         except Exception as exc:
-            record_broker_failure(
-                reason=str(exc),
-                db=db,
-                actor=actor,
-                request=request,
-                metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
-            )
+            try:
+                record_broker_failure(
+                    reason=str(exc),
+                    db=db,
+                    actor=actor,
+                    request=request,
+                    metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Broker failure recording failed; preserving reconciliation-required handling"
+                )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "reconciliation_required",

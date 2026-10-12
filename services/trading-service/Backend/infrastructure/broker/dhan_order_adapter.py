@@ -122,9 +122,12 @@ class DhanBrokerClient:
         }
         _validate_super_order_payload(order, payload)
         raw = await asyncio.to_thread(self._request, "POST", "/super/orders", payload)
-        order_id = _extract_order_id(raw)
+        order_id = _extract_super_order_parent_id(raw)
         if not order_id:
-            raise BrokerAdapterError("protected order rejected: broker did not return order id")
+            raise BrokerAdapterError(
+                "protected order response has no unambiguous Super Order parent ID; "
+                "authoritative reconciliation required; do not resubmit"
+            )
         return _result_from_raw(
             order_id,
             raw,
@@ -304,6 +307,71 @@ class DhanBrokerClient:
             raise BrokerAdapterError(_map_http_error(exc)) from exc
         except (OSError, URLError, TimeoutError, ValueError) as exc:
             raise BrokerAdapterError(f"broker request failed: {exc}") from exc
+
+
+
+def _extract_super_order_parent_id(raw: Any) -> str | None:
+    """Accept only an unambiguous Super Order parent identifier.
+
+    A malformed submission response is an unknown broker outcome,
+    not permission to submit the order again.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    data = raw.get("data")
+    if data is not None and not isinstance(data, dict):
+        return None
+
+    identifiers = []
+
+    for payload in (raw, data):
+        if not isinstance(payload, dict):
+            continue
+
+        for key in ("orderId", "order_id", "id"):
+            if key not in payload:
+                continue
+
+            value = payload[key]
+
+            if key != "orderId" and value is not None:
+                # Generic identifiers are not authoritative parent IDs.
+                # They may only corroborate an explicit orderId.
+                identifiers.append(("secondary", str(value)))
+            elif key == "orderId":
+                identifiers.append(("parent", value))
+
+    parents = [
+        value for kind, value in identifiers
+        if kind == "parent"
+    ]
+
+    if not parents:
+        return None
+
+    parent = parents[0]
+
+    if not isinstance(parent, str):
+        return None
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", parent):
+        return None
+
+    if any(
+        not isinstance(value, str) or value != parent
+        for value in parents
+    ):
+        return None
+
+    if any(
+        value != parent
+        for kind, value in identifiers
+        if kind == "secondary"
+    ):
+        return None
+
+    return parent
 
 
 def _extract_order_id(raw: Any) -> str | None:
