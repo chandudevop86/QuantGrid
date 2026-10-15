@@ -62,6 +62,9 @@ PAPER_TRADE_COST_EVIDENCE_VERSION = "0005_paper_trade_cost_evidence"
 PAPER_TRADE_IDEMPOTENCY_VERSION = "0006_paper_trade_idempotency"
 BROKER_SUBMISSION_INTENTS_VERSION = "0007_broker_submission_intents"
 POSITION_EXECUTION_MODE_VERSION = "0008_position_execution_mode"
+NOTIFICATION_DELIVERY_LEASES_VERSION = "0009_notification_delivery_leases"
+NOTIFICATION_DEDUPLICATION_VERSION = "0010_notification_deduplication"
+PROTECTION_ALERT_EPISODES_VERSION = "0011_protection_alert_episodes"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -222,6 +225,189 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
                 text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),  # nosec B608
                 {"version": POSITION_EXECUTION_MODE_VERSION},
             )
+
+
+
+    apply_notification_delivery_leases_migration(engine)
+    apply_notification_deduplication_migration(engine)
+    apply_protection_alert_episodes_migration(engine)
+
+def apply_notification_delivery_leases_migration(engine: Engine) -> None:
+    """Create or upgrade persistent notification delivery storage."""
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_MIGRATION_LOCK_ID},
+            )
+
+        applied = {
+            row[0]
+            for row in connection.execute(
+                text(f"SELECT version FROM {MIGRATION_TABLE}")
+            )
+        }
+        if NOTIFICATION_DELIVERY_LEASES_VERSION in applied:
+            return
+
+        dialect = engine.dialect.name
+        primary_key = (
+            "SERIAL PRIMARY KEY"
+            if dialect == "postgresql"
+            else "INTEGER PRIMARY KEY"
+        )
+
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS notifications ("
+            f"id {primary_key}, "
+            "channel VARCHAR(30) NOT NULL, "
+            "recipient VARCHAR(255) NOT NULL, "
+            "subject VARCHAR(255) NOT NULL, "
+            "message TEXT NOT NULL, "
+            "status VARCHAR(20) NOT NULL DEFAULT 'PENDING', "
+            "delivered BOOLEAN NOT NULL DEFAULT FALSE, "
+            "retries INTEGER NOT NULL DEFAULT 0, "
+            "error TEXT, "
+            "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "sent_at TIMESTAMP, "
+            "claim_token VARCHAR(80), "
+            "lease_expires_at TIMESTAMP, "
+            "next_retry_at TIMESTAMP)"
+        ))
+
+        existing_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("notifications")
+        }
+
+        for column, definition in (
+            ("claim_token", "VARCHAR(80)"),
+            ("lease_expires_at", "TIMESTAMP"),
+        ):
+            if column not in existing_columns:
+                clause = (
+                    "ADD COLUMN IF NOT EXISTS"
+                    if dialect == "postgresql"
+                    else "ADD COLUMN"
+                )
+                connection.execute(text(
+                    f"ALTER TABLE notifications {clause} "
+                    f"{column} {definition}"
+                ))
+
+        for name, column in (
+            ("ix_notifications_id", "id"),
+            ("ix_notifications_channel", "channel"),
+            ("ix_notifications_status", "status"),
+            ("ix_notifications_next_retry_at", "next_retry_at"),
+            ("ix_notifications_lease_expires_at", "lease_expires_at"),
+        ):
+            connection.execute(text(
+                f"CREATE INDEX IF NOT EXISTS {name} "
+                f"ON notifications ({column})"
+            ))
+
+        connection.execute(
+            text(
+                f"INSERT INTO {MIGRATION_TABLE} (version) "
+                "VALUES (:version)"
+            ),
+            {"version": NOTIFICATION_DELIVERY_LEASES_VERSION},
+        )
+
+def apply_notification_deduplication_migration(engine: Engine) -> None:
+    """Add database-enforced notification deduplication."""
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_MIGRATION_LOCK_ID},
+            )
+
+        applied = {
+            row[0]
+            for row in connection.execute(
+                text(f"SELECT version FROM {MIGRATION_TABLE}")
+            )
+        }
+        if NOTIFICATION_DEDUPLICATION_VERSION in applied:
+            return
+
+        columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("notifications")
+        }
+
+        if "dedup_key" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE notifications "
+                    "ADD COLUMN dedup_key VARCHAR(160)"
+                )
+            )
+
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "uq_notifications_dedup_key "
+                "ON notifications (dedup_key)"
+            )
+        )
+
+        connection.execute(
+            text(
+                f"INSERT INTO {MIGRATION_TABLE} (version) "
+                "VALUES (:version)"
+            ),
+            {"version": NOTIFICATION_DEDUPLICATION_VERSION},
+        )
+
+
+def apply_protection_alert_episodes_migration(
+    engine: Engine,
+) -> None:
+    """Create durable protection-failure episode storage."""
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_MIGRATION_LOCK_ID},
+            )
+
+        applied = {
+            row[0]
+            for row in connection.execute(
+                text(f"SELECT version FROM {MIGRATION_TABLE}")
+            )
+        }
+
+        if PROTECTION_ALERT_EPISODES_VERSION in applied:
+            return
+
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS protection_alert_episodes ("
+            "episode_id VARCHAR(36) PRIMARY KEY, "
+            "local_order_id VARCHAR(120) NOT NULL, "
+            "opened_at TIMESTAMP NOT NULL, "
+            "closed_at TIMESTAMP NULL"
+            ")"
+        ))
+
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "uq_protection_alert_active_order "
+            "ON protection_alert_episodes (local_order_id) "
+            "WHERE closed_at IS NULL"
+        ))
+
+        connection.execute(
+            text(
+                f"INSERT INTO {MIGRATION_TABLE} (version) "
+                "VALUES (:version)"
+            ),
+            {"version": PROTECTION_ALERT_EPISODES_VERSION},
+        )
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:

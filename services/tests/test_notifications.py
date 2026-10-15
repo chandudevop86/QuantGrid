@@ -16,7 +16,7 @@ class _FakeResponse:
         return False
 
     def read(self):
-        return b"ok"
+        return b'{"ok":true,"result":{"message_id":123}}'
 
 
 class _FakeSMTP:
@@ -88,7 +88,13 @@ def test_send_alert_rejects_unapproved_webhook_host(monkeypatch):
     calls = []
     monkeypatch.setattr(notifications.request, "urlopen", lambda *_args, **_kwargs: calls.append("called"))
 
-    notifications.send_alert("Subject", "Message")
+    import pytest
+
+    with pytest.raises(
+        RuntimeError,
+        match="Outbound URL must use HTTPS and an approved host",
+    ):
+        notifications.send_alert("Subject", "Message")
 
     assert calls == []
 
@@ -151,3 +157,286 @@ def test_notification_retry_uses_utc_timezone_instance(monkeypatch):
 
     assert captured["now"].tzinfo is UTC
     assert result["processed"] == 0
+
+
+def test_failed_alert_delivery_can_be_retried(monkeypatch):
+    """A failed delivery must not suppress the next alert attempt."""
+    import pytest
+
+    from Backend.application import notification_dedup
+
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("QUANTGRID_SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("QUANTGRID_SMTP_HOST", raising=False)
+
+    monkeypatch.setattr(notification_dedup, "_SENT", {})
+
+    attempts = []
+
+    def fake_telegram(settings, message):
+        attempts.append(message)
+        if len(attempts) == 1:
+            raise RuntimeError("Simulated Telegram outage")
+
+    monkeypatch.setattr(
+        notifications,
+        "_send_telegram",
+        fake_telegram,
+    )
+
+    subject = "QuantGrid retry regression test"
+    message = "Simulated delivery failure"
+
+    with pytest.raises(RuntimeError, match="Notification delivery failed"):
+        notifications.send_alert(subject, message)
+
+    # The second attempt should be delivered, not deduplicated.
+    notifications.send_alert(subject, message)
+
+    assert len(attempts) == 2
+
+
+def test_alert_without_channels_can_be_retried(monkeypatch):
+    """Enabling a channel later must not be blocked by deduplication."""
+    from Backend.application import notification_dedup
+
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("QUANTGRID_SLACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("QUANTGRID_SMTP_HOST", raising=False)
+
+    monkeypatch.setattr(notification_dedup, "_SENT", {})
+
+    attempts = []
+
+    monkeypatch.setattr(
+        notifications,
+        "_send_telegram",
+        lambda settings, message: attempts.append(message),
+    )
+
+    subject = "No-channel retry regression"
+    message = "Critical test alert"
+
+    notifications.send_alert(subject, message)
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+
+    notifications.send_alert(subject, message)
+
+    assert attempts == [message]
+
+
+def test_notification_retry_uses_persisted_retries_counter(monkeypatch):
+    """A notification at its final attempt must become permanently failed."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from Backend.application import notification_retry
+
+    notification = SimpleNamespace(
+        id=101,
+        channel="telegram",
+        recipient="test-recipient",
+        subject="Critical LIVE protection failure",
+        message="Broker stop-loss protection missing",
+        retries=4,
+    )
+
+    events = []
+
+    monkeypatch.setattr(
+        notification_retry,
+        "get_retry_notifications",
+        lambda db, now: [notification],
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "claim_notification",
+        lambda db, notification_id, claim_token, now: True,
+    )
+
+    def fail_delivery(channel, recipient, subject, message):
+        raise RuntimeError("Notification provider unavailable")
+
+    monkeypatch.setattr(
+        notification_retry,
+        "send_notification_channel",
+        fail_delivery,
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "mark_failed",
+        lambda db, notification_id, error, *, claim_token:
+            (events.append(("failed", notification_id)), True)[1],
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "schedule_retry",
+        lambda db, notification_id, error, *, claim_token:
+            (events.append(("retry", notification_id)), True)[1],
+    )
+
+    class FakeDB:
+        def commit(self):
+            pass
+
+    worker = notification_retry.NotificationRetryWorker(FakeDB())
+    worker.max_retries = 5
+
+    result = asyncio.run(worker.run())
+
+    assert events == [("failed", 101)]
+    assert result["permanently_failed"] == 1
+    assert result["retry_scheduled"] == 0
+
+
+def test_notification_retry_does_not_mark_skipped_delivery_sent(monkeypatch):
+    """A skipped notification must not be recorded as delivered."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from Backend.application import notification_retry
+
+    notification = SimpleNamespace(
+        id=102,
+        channel="telegram",
+        recipient="test-recipient",
+        subject="Critical LIVE protection failure",
+        message="Broker stop-loss protection missing",
+        retries=0,
+    )
+
+    events = []
+
+    monkeypatch.setattr(
+        notification_retry,
+        "get_retry_notifications",
+        lambda db, now: [notification],
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "claim_notification",
+        lambda db, notification_id, claim_token, now: True,
+    )
+
+    # Current send_alert() returns None when alerts are disabled.
+    monkeypatch.setattr(
+        notification_retry,
+        "send_notification_channel",
+        lambda channel, recipient, subject, message: (_ for _ in ()).throw(RuntimeError("Delivery disabled")),
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "mark_sent",
+        lambda db, notification_id, *, claim_token:
+            (events.append(("sent", notification_id)), True)[1],
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "schedule_retry",
+        lambda db, notification_id, error, *, claim_token:
+            (events.append(("retry", notification_id)), True)[1],
+    )
+
+    monkeypatch.setattr(
+        notification_retry,
+        "mark_failed",
+        lambda db, notification_id, error, *, claim_token:
+            (events.append(("failed", notification_id)), True)[1],
+    )
+
+    class FakeDB:
+        def commit(self):
+            pass
+
+    worker = notification_retry.NotificationRetryWorker(FakeDB())
+    result = asyncio.run(worker.run())
+
+    assert ("sent", 102) not in events
+    assert ("retry", 102) in events
+    assert result["succeeded"] == 0
+
+
+
+def test_telegram_rejects_provider_ok_false(monkeypatch):
+    """Telegram API failure must not be treated as delivery."""
+    import pytest
+    from types import SimpleNamespace
+    from Backend.application import notifications
+
+    settings = SimpleNamespace(
+        telegram_bot_token="test-token",
+        telegram_chat_id="test-chat",
+    )
+
+    monkeypatch.setattr(
+        notifications,
+        "_post_with_retry",
+        lambda url, payload: (
+            b'{"ok":false,"description":"chat not found"}'
+        ),
+    )
+
+    with pytest.raises(RuntimeError):
+        notifications._send_telegram(
+            settings,
+            "Critical LIVE protection alert",
+        )
+
+
+def test_strict_telegram_delivery_does_not_send_other_channels(monkeypatch):
+    """Retrying Telegram must not resend Slack or email."""
+    from Backend.application import notifications
+
+    monkeypatch.setenv("QUANTGRID_ALERTS_ENABLED", "true")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "test-chat")
+    monkeypatch.setenv(
+        "SLACK_WEBHOOK_URL",
+        "https://hooks.slack.com/services/test/example",
+    )
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.test")
+    monkeypatch.setenv("SMTP_TO", "admin@example.test")
+
+    calls = []
+
+    monkeypatch.setattr(
+        notifications,
+        "_send_telegram",
+        lambda settings, message: calls.append("telegram"),
+    )
+    monkeypatch.setattr(
+        notifications,
+        "_send_slack",
+        lambda settings, message: calls.append("slack"),
+    )
+    monkeypatch.setattr(
+        notifications,
+        "_send_email",
+        lambda settings, subject, message: calls.append("email"),
+    )
+
+    notifications.send_notification_channel(
+        "telegram",
+        "test-chat",
+        "Critical protection alert",
+        "Stop-loss protection missing",
+    )
+
+    assert calls == ["telegram"]

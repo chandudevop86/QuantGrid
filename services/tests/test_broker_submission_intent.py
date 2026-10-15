@@ -194,3 +194,222 @@ def test_terminal_evidence_releases_claim_but_partial_fill_does_not(tmp_path, mo
     )["status"] == "claimed"
 
     engine.dispose()
+
+
+def test_conflicting_broker_evidence_cannot_overwrite_intent(tmp_path, monkeypatch):
+    """Conflicting broker IDs must never replace previously recorded evidence."""
+    engine = create_engine(
+        "sqlite:///" + str(tmp_path / "conflicting-evidence.db")
+    )
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
+    intent.claim_submission("conflict-a", "NIFTY:BUY:CONFLICT")
+    intent.mark_submission_started("conflict-a")
+
+    # First authoritative evidence is accepted.
+    intent.record_broker_evidence(
+        "conflict-a", "broker-original", "submitted"
+    )
+
+    # Simulate a later reconciliation-required state without erasing evidence.
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE broker_submission_intents "
+            "SET status = 'reconciliation_required' "
+            "WHERE local_order_id = 'conflict-a'"
+        ))
+
+    # Conflicting broker evidence must fail closed.
+    with pytest.raises(
+        ValueError,
+        match="BROKER_INTENT_NOT_AWAITING_RECONCILIATION",
+    ):
+        intent.record_broker_evidence(
+            "conflict-a", "broker-conflicting", "filled"
+        )
+
+    with engine.connect() as conn:
+        row = conn.execute(text(
+            "SELECT broker_order_id, status "
+            "FROM broker_submission_intents "
+            "WHERE local_order_id = 'conflict-a'"
+        )).one()
+
+    assert row == ("broker-original", "reconciliation_required")
+
+    # Matching evidence remains acceptable during reconciliation.
+    intent.record_broker_evidence(
+        "conflict-a", "broker-original", "filled"
+    )
+
+    with engine.connect() as conn:
+        row = conn.execute(text(
+            "SELECT broker_order_id, status "
+            "FROM broker_submission_intents "
+            "WHERE local_order_id = 'conflict-a'"
+        )).one()
+
+    assert row == ("broker-original", "filled")
+    engine.dispose()
+
+
+def test_stale_broker_evidence_cannot_regress_intent(tmp_path, monkeypatch):
+    """Older broker responses cannot move a durable intent backward."""
+    engine = create_engine(
+        "sqlite:///" + str(tmp_path / "stale-evidence.db")
+    )
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+
+    monkeypatch.setattr(intent, "SessionLocal", sessionmaker(bind=engine))
+
+    intent.claim_submission("stale-a", "NIFTY:BUY:STALE")
+    intent.mark_submission_started("stale-a")
+    intent.record_broker_evidence("stale-a", "broker-stale", "submitted")
+    intent.record_broker_evidence("stale-a", "broker-stale", "open")
+    intent.record_broker_evidence("stale-a", "broker-stale", "partially_filled")
+
+    for stale_status in ("submitted", "open", "rejected"):
+        with pytest.raises(
+            ValueError,
+            match="BROKER_INTENT_NOT_AWAITING_RECONCILIATION",
+        ):
+            intent.record_broker_evidence(
+                "stale-a", "broker-stale", stale_status
+            )
+
+    with engine.connect() as conn:
+        status = conn.execute(text(
+            "SELECT status FROM broker_submission_intents "
+            "WHERE local_order_id = 'stale-a'"
+        )).scalar_one()
+
+    assert status == "partially_filled"
+
+    intent.record_broker_evidence("stale-a", "broker-stale", "filled")
+
+    with pytest.raises(
+        ValueError,
+        match="BROKER_INTENT_NOT_AWAITING_RECONCILIATION",
+    ):
+        intent.record_broker_evidence(
+            "stale-a", "broker-stale", "submitted"
+        )
+
+    with engine.connect() as conn:
+        status = conn.execute(text(
+            "SELECT status FROM broker_submission_intents "
+            "WHERE local_order_id = 'stale-a'"
+        )).scalar_one()
+
+    assert status == "filled"
+    engine.dispose()
+
+
+
+@pytest.mark.parametrize(
+    "terminal_status,conflicting_status",
+    [
+        ("filled", "cancelled"),
+        ("cancelled", "filled"),
+        ("rejected", "filled"),
+    ],
+)
+def test_terminal_broker_evidence_is_idempotent_and_identity_locked(
+    tmp_path, monkeypatch, terminal_status, conflicting_status
+):
+    """Repeated terminal evidence is safe; conflicting evidence is rejected."""
+    from sqlalchemy import text
+    from Backend.application import broker_submission_intent as intent
+
+    engine = create_engine(
+        "sqlite:///" + str(tmp_path / "terminal-idempotency.db")
+    )
+
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE broker_submission_intents ("
+            "local_order_id VARCHAR(120) PRIMARY KEY, "
+            "logical_key VARCHAR(160) NOT NULL, "
+            "correlation_id VARCHAR(120) NOT NULL UNIQUE, "
+            "broker_order_id VARCHAR(120) UNIQUE, "
+            "status VARCHAR(40) NOT NULL, "
+            "created_at VARCHAR(40) NOT NULL, "
+            "updated_at VARCHAR(40) NOT NULL)"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_active_intent_key "
+            "ON broker_submission_intents(logical_key) "
+            "WHERE status IN "
+            "('claimed', 'reconciliation_required', "
+            "'submitted', 'open', 'partially_filled')"
+        ))
+
+    monkeypatch.setattr(
+        intent, "SessionLocal", sessionmaker(bind=engine)
+    )
+
+    local_id = f"terminal-idempotent-{terminal_status}"
+    broker_id = f"broker-idempotent-{terminal_status}"
+
+    intent.claim_submission(local_id, f"KEY:{terminal_status}")
+    intent.mark_submission_started(local_id)
+
+    intent.record_broker_evidence(
+        local_id, broker_id, terminal_status
+    )
+
+    # Repeating the identical authoritative evidence must succeed.
+    intent.record_broker_evidence(
+        local_id, broker_id, terminal_status
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="BROKER_INTENT_NOT_AWAITING_RECONCILIATION",
+    ):
+        intent.record_broker_evidence(
+            local_id, f"{broker_id}-OTHER", terminal_status
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="BROKER_INTENT_NOT_AWAITING_RECONCILIATION",
+    ):
+        intent.record_broker_evidence(
+            local_id, broker_id, conflicting_status
+        )
+
+    with intent.SessionLocal() as db:
+        row = db.execute(
+            text(
+                "SELECT broker_order_id, status "
+                "FROM broker_submission_intents "
+                "WHERE local_order_id = :id"
+            ),
+            {"id": local_id},
+        ).one()
+
+    assert tuple(row) == (broker_id, terminal_status)
