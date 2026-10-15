@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from conftest import make_admin_headers
 
 
@@ -476,6 +478,331 @@ def test_duplicate_submission_intent_rejects_without_broker_io(
             ).all()
             assert len(orders) == 1
             assert orders[0][0] == "rejected"
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+
+
+def test_live_confirmed_rejection_durable_consistency(
+    app_client, monkeypatch
+):
+    """Broker rejection must update both local and durable records."""
+    from sqlalchemy import text
+    import Backend.presentation.api.execution as execution_api
+    from Backend.application.subscriptions import subscription_access
+    from Backend.core.database import SessionLocal
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+    from Backend.presentation.api.main import app
+
+    class FakeAccess:
+        snapshot = {"plan_code": "test"}
+
+        def can(self, feature):
+            return True
+
+    class FakeBroker:
+        supports_protected_order_submission = True
+        supports_broker_native_protective_stop = True
+        submissions = 0
+
+        async def place_protected_order(self, order):
+            self.submissions += 1
+            return BrokerOrderResult(
+                broker_order_id="regression-broker-1",
+                status="submitted",
+                symbol=order.symbol,
+                side=order.side,
+                quantity=order.quantity,
+                confirmed=True,
+            )
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id,
+                status="rejected",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=1,
+                confirmed=True,
+            )
+
+    broker = FakeBroker()
+
+    monkeypatch.setattr(
+        execution_api, "broker_client_for_mode", lambda mode: broker
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "get_settings",
+        lambda: SimpleNamespace(
+            live_trading_enabled=True,
+            broker_live_enabled=True,
+            broker_configured=True,
+        ),
+    )
+    monkeypatch.setattr(
+        execution_api, "_request_is_https", lambda request: True
+    )
+    monkeypatch.setattr(
+        execution_api, "_execution_qualification",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        execution_api, "_live_guardrail_failure",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True, reason="approved"
+        ),
+    )
+    for name in (
+        "_audit_risk_decision",
+        "_audit_execution_result",
+        "alert_execution_event",
+        "write_audit_log",
+    ):
+        monkeypatch.setattr(
+            execution_api, name, lambda *args, **kwargs: None
+        )
+    monkeypatch.setattr(
+        execution_api, "latest_candles", lambda *args, **kwargs: []
+    )
+    monkeypatch.setattr(
+        execution_api, "record_broker_failure",
+        lambda **kwargs: None,
+    )
+
+    original_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[subscription_access] = lambda: FakeAccess()
+
+    payload = {
+        "strategy_name": "CONFIRMED_REJECTION_REGRESSION",
+        "symbol": "NIFTY",
+        "side": "BUY",
+        "entry_price": 22500,
+        "stop_loss": 22450,
+        "target_price": 22600,
+        "signal_time": "2026-05-20T05:00:00Z",
+        "metadata": {"quantity": 1},
+    }
+
+    headers = make_admin_headers(app_client)
+    headers["X-QuantGrid-Mode"] = "live"
+
+    try:
+        response = app_client.post(
+            "/execution/order", json=payload, headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "rejected"
+        assert broker.submissions == 1
+
+        key = "NIFTY:BUY:CONFIRMED_REJECTION_REGRESSION"
+
+        with SessionLocal() as db:
+            orders = db.execute(
+                text(
+                    "SELECT local_order_id, status FROM orders "
+                    "WHERE order_key = :key"
+                ),
+                {"key": key},
+            ).all()
+
+            intents = db.execute(
+                text(
+                    "SELECT local_order_id, status "
+                    "FROM broker_submission_intents "
+                    "WHERE logical_key = :key"
+                ),
+                {"key": key},
+            ).all()
+
+        assert len(orders) == 1
+        assert len(intents) == 1
+        assert orders[0][0] == intents[0][0]
+        assert orders[0][1] == "rejected"
+        assert intents[0][1] == "rejected"
+
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_overrides)
+
+
+
+@pytest.mark.parametrize(
+    "scenario,strategy,expected_local,expected_intent,expected_reason",
+    [
+        ('broker_id_mismatch', 'REJECTION_ID_MISMATCH', 'reconciliation_required', 'submitted', 'BROKER_REJECTION_IDENTITY_NOT_VERIFIED'),
+        ('intent_persistence_failure', 'REJECTION_PERSISTENCE_FAILURE', 'reconciliation_required', 'submitted', 'BROKER_REJECTION_INTENT_PERSISTENCE_FAILED'),
+        ('failure_logger_exception', 'REJECTION_LOGGER_FAILURE', 'rejected', 'rejected', 'BROKER_NOT_CONFIRMED'),
+    ],
+)
+def test_live_rejection_safety_variants(
+    app_client, monkeypatch, scenario, strategy,
+    expected_local, expected_intent, expected_reason
+):
+    """Broker rejection must update both local and durable records."""
+    from sqlalchemy import text
+    import Backend.presentation.api.execution as execution_api
+    from Backend.application.subscriptions import subscription_access
+    from Backend.core.database import SessionLocal
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+    from Backend.presentation.api.main import app
+
+    class FakeAccess:
+        snapshot = {"plan_code": "test"}
+
+        def can(self, feature):
+            return True
+
+    class FakeBroker:
+        supports_protected_order_submission = True
+        supports_broker_native_protective_stop = True
+        submissions = 0
+
+        async def place_protected_order(self, order):
+            self.submissions += 1
+            return BrokerOrderResult(
+                broker_order_id="regression-broker-1",
+                status="submitted",
+                symbol=order.symbol,
+                side=order.side,
+                quantity=order.quantity,
+                confirmed=True,
+            )
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=("different-broker-id" if scenario == "broker_id_mismatch" else broker_order_id),
+                status="rejected",
+                symbol="NIFTY",
+                side="BUY",
+                quantity=1,
+                confirmed=True,
+            )
+
+    broker = FakeBroker()
+
+    if scenario == "intent_persistence_failure":
+        def fail_evidence(local_order_id, broker_order_id, status):
+            if status == "rejected":
+                raise OSError("simulated durable evidence write failure")
+            return original_evidence(local_order_id, broker_order_id, status)
+
+        original_evidence = execution_api.record_broker_evidence
+        monkeypatch.setattr(
+            execution_api, "record_broker_evidence", fail_evidence
+        )
+
+    monkeypatch.setattr(
+        execution_api, "broker_client_for_mode", lambda mode: broker
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "get_settings",
+        lambda: SimpleNamespace(
+            live_trading_enabled=True,
+            broker_live_enabled=True,
+            broker_configured=True,
+        ),
+    )
+    monkeypatch.setattr(
+        execution_api, "_request_is_https", lambda request: True
+    )
+    monkeypatch.setattr(
+        execution_api, "_execution_qualification",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        execution_api, "_live_guardrail_failure",
+        lambda **kwargs: None,
+    )
+    monkeypatch.setattr(
+        execution_api,
+        "validate_order_risk",
+        lambda *args, **kwargs: SimpleNamespace(
+            allowed=True, reason="approved"
+        ),
+    )
+    for name in (
+        "_audit_risk_decision",
+        "_audit_execution_result",
+        "alert_execution_event",
+        "write_audit_log",
+    ):
+        monkeypatch.setattr(
+            execution_api, name, lambda *args, **kwargs: None
+        )
+    monkeypatch.setattr(
+        execution_api, "latest_candles", lambda *args, **kwargs: []
+    )
+    if scenario == "failure_logger_exception":
+        def fail_logger(**kwargs):
+            raise OSError("simulated rejection logging failure")
+        monkeypatch.setattr(
+            execution_api, "record_broker_failure", fail_logger
+        )
+    else:
+        monkeypatch.setattr(
+            execution_api, "record_broker_failure",
+            lambda **kwargs: None,
+        )
+
+    original_overrides = dict(app.dependency_overrides)
+    app.dependency_overrides[subscription_access] = lambda: FakeAccess()
+
+    payload = {
+        "strategy_name": strategy,
+        "symbol": "NIFTY",
+        "side": "BUY",
+        "entry_price": 22500,
+        "stop_loss": 22450,
+        "target_price": 22600,
+        "signal_time": "2026-05-20T05:00:00Z",
+        "metadata": {"quantity": 1},
+    }
+
+    headers = make_admin_headers(app_client)
+    headers["X-QuantGrid-Mode"] = "live"
+
+    try:
+        response = app_client.post(
+            "/execution/order", json=payload, headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == expected_local
+        assert broker.submissions == 1
+        assert expected_reason in response.json()["reason"]
+
+        key = f"NIFTY:BUY:{strategy}"
+
+        with SessionLocal() as db:
+            orders = db.execute(
+                text(
+                    "SELECT local_order_id, status FROM orders "
+                    "WHERE order_key = :key"
+                ),
+                {"key": key},
+            ).all()
+
+            intents = db.execute(
+                text(
+                    "SELECT local_order_id, status "
+                    "FROM broker_submission_intents "
+                    "WHERE logical_key = :key"
+                ),
+                {"key": key},
+            ).all()
+
+        assert len(orders) == 1
+        assert len(intents) == 1
+        assert orders[0][0] == intents[0][0]
+        assert orders[0][1] == expected_local
+        assert intents[0][1] == expected_intent
+
     finally:
         app.dependency_overrides.clear()
         app.dependency_overrides.update(original_overrides)

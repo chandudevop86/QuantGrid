@@ -81,6 +81,7 @@ def test_live_protection_failure_recovery_and_recurrence(monkeypatch):
                         "legs": {
                             "STOP_LOSS_LEG": {
                                 "quantity": 25 if protected else 0,
+                                "remaining_quantity": 25 if protected else 0,
                                 "status": "open" if protected else "missing",
                             }
                         },

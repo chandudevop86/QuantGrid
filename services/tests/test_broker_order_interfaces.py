@@ -478,3 +478,56 @@ def test_dhan_super_order_parent_id_validation_cases(response, expected):
         dhan_order_adapter._extract_super_order_parent_id(response)
         == expected
     )
+
+
+def test_dhan_partially_filled_stop_remaining_quantity_is_insufficient(monkeypatch):
+    """Original stop quantity must not hide insufficient remaining protection."""
+    import asyncio
+    from Backend.infrastructure.broker import dhan_order_adapter
+
+    monkeypatch.setattr(
+        dhan_order_adapter,
+        "dhan_credentials",
+        lambda: {"client_id": "test-client", "access_token": "test-token"},
+    )
+
+    client = dhan_order_adapter.DhanBrokerClient()
+
+    async def fake_orders():
+        return [{
+            "orderId": "SUPER-PARTIAL-STOP-1",
+            "orderStatus": "PART_TRADED",
+            "quantity": 25,
+            "filledQty": 10,
+            "remainingQuantity": 15,
+            "legName": "ENTRY_LEG",
+            "legDetails": [{
+                "orderId": "SL-PARTIAL-1",
+                "legName": "STOP_LOSS_LEG",
+                "orderStatus": "PART_TRADED",
+                "totalQuatity": 25,
+                "remainingQuantity": 5,
+                "triggeredQuantity": 25,
+                "price": 95,
+            }],
+        }]
+
+    monkeypatch.setattr(client, "get_super_orders", fake_orders)
+
+    result = asyncio.run(
+        client.get_super_order_status("SUPER-PARTIAL-STOP-1")
+    )
+
+    assert result is not None
+
+    protection = result.metadata["super_order"]["protection"]
+    stop = result.metadata["super_order"]["legs"]["STOP_LOSS_LEG"]
+
+    assert result.filled_quantity == 10
+    assert stop["quantity"] == 25
+    assert stop["remaining_quantity"] == 5
+    assert stop["status"] == "partially_filled"
+
+    # Five remaining stop units cannot protect ten exposed units.
+    assert protection["stop_loss_active"] is False
+    assert protection["protected"] is False

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from Backend.application.paper_trade_store import DATA_DIR, list_paper_trades, update_paper_trade_status
@@ -37,11 +37,25 @@ logger = logging.getLogger(__name__)
 STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
 SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
 REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
-FILLED_STATUSES = {"filled", "traded", "complete", "completed", "confirmed"}
+FILLED_STATUSES = {"filled", "traded", "complete", "completed"}
 OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
 PRE_BROKER_STALE_STATUSES = {"requested", "risk_approved"}
 AMBIGUOUS_NO_BROKER_ID_STATUSES = {"reconciliation_required", "broker_submitted", "pending", "open", "partially_filled"}
 STALE_LOCAL_ORDER_MINUTES = 30
+
+
+
+
+def _submission_intent_exists(local_order_id: str) -> bool:
+    """Check whether rejection belongs to an existing durable intent."""
+    with SessionLocal() as intent_db:
+        return intent_db.execute(
+            text(
+                "SELECT 1 FROM broker_submission_intents "
+                "WHERE local_order_id = :id"
+            ),
+            {"id": local_order_id},
+        ).first() is not None
 
 
 def _record_terminal_submission_intent(
@@ -71,10 +85,13 @@ def _record_terminal_submission_intent(
             terminal_status,
         )
     except ValueError as exc:
-        # Reconciliation also processes legacy orders created before durable
-        # submission intents existed. Absence of an applicable intent must not
-        # prevent those orders from reconciling.
-        if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+        # Only a genuinely missing legacy intent may bypass this rejection.
+        # An existing intent rejecting conflicting/stale evidence is a
+        # safety failure and must stop this reconciliation path.
+        if (
+            str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION"
+            or _submission_intent_exists(local_order_id)
+        ):
             raise
 
 
@@ -126,7 +143,143 @@ async def reconcile_broker_state(
             summary["errors"].append(f"{broker_order_id}: broker order unavailable: {exc}")
             continue
 
+        # A broker lookup must identify the exact order requested.
+        # Never apply another order's status to local or durable state.
+        returned_broker_order_id = str(
+            broker_order.broker_order_id or ""
+        ).strip()
+
+        if returned_broker_order_id != broker_order_id:
+            summary["errors"].append(
+                f"{broker_order_id}: broker lookup identity mismatch"
+            )
+            _record_review(
+                summary,
+                db,
+                actor,
+                request,
+                "broker_lookup_identity_mismatch",
+                broker_order_id,
+                {
+                    "local_order": local_order,
+                    "broker_status": broker_order.to_dict(),
+                },
+            )
+            continue
+
         order_status = _normal_status(broker_order.status)
+
+        # Validate durable broker identity before any local order or position
+        # changes. An existing intent with a different broker ID is unsafe.
+        local_order_id = local_order.get("local_order_id")
+        if local_order_id:
+            with SessionLocal() as intent_db:
+                intent_row = intent_db.execute(
+                    text(
+                        "SELECT broker_order_id, status "
+                        "FROM broker_submission_intents "
+                        "WHERE local_order_id = :id"
+                    ),
+                    {"id": str(local_order_id)},
+                ).first()
+
+            if (
+                intent_row is not None
+                and intent_row[0] is not None
+                and str(intent_row[0]) != broker_order_id
+            ):
+                summary["errors"].append(
+                    f"{broker_order_id}: durable broker submission identity conflict"
+                )
+                _record_review(
+                    summary,
+                    db,
+                    actor,
+                    request,
+                    "broker_submission_identity_conflict",
+                    broker_order_id,
+                    {
+                        "local_order": local_order,
+                        "broker_status": broker_order.to_dict(),
+                    },
+                )
+                continue
+
+            if intent_row is not None:
+                durable_status = str(intent_row[1] or "").lower()
+                observed_status = (
+                    "filled" if order_status in FILLED_STATUSES
+                    else "open" if order_status in OPEN_STATUSES
+                    else order_status
+                )
+                allowed_transitions = {
+                    "submitted": {
+                        "submitted", "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    },
+                    "open": {
+                        "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    },
+                    "partially_filled": {
+                        "partially_filled", "filled", "cancelled",
+                    },
+                    "filled": {"filled"},
+                    "cancelled": {"cancelled"},
+                    "rejected": {"rejected"},
+                }
+
+                if (
+                    durable_status in allowed_transitions
+                    and observed_status in {
+                        "submitted", "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    }
+                    and observed_status not in allowed_transitions[durable_status]
+                ):
+                    summary["errors"].append(
+                        f"{broker_order_id}: stale or conflicting durable "
+                        "broker submission state"
+                    )
+                    _record_review(
+                        summary,
+                        db,
+                        actor,
+                        request,
+                        "broker_submission_state_regression",
+                        broker_order_id,
+                        {
+                            "local_order": local_order,
+                            "durable_status": durable_status,
+                            "broker_status": broker_order.to_dict(),
+                        },
+                    )
+                    continue
+
+        # Terminal broker evidence must be explicitly confirmed.
+        # An unconfirmed terminal status cannot release a durable intent,
+        # close a local order, or establish that exposure has exited.
+        if (
+            order_status in {"rejected", "cancelled", "failed", "expired", "filled"}
+            and not broker_order.confirmed
+        ):
+            summary["errors"].append(
+                f"{broker_order_id}: unconfirmed terminal broker status"
+            )
+            _record_review(
+                summary,
+                db,
+                actor,
+                request,
+                "unconfirmed_terminal_broker_status",
+                broker_order_id,
+                {
+                    "local_order": local_order,
+                    "broker_status": broker_order.to_dict(),
+                },
+            )
+            continue
+
         position = find_position_by_broker_order_id(
             broker_order_id,
             execution_mode=execution_mode,
@@ -169,11 +322,17 @@ async def reconcile_broker_state(
                 if protected_order is not None
                 else {}
             )
+            # Verify outstanding stop coverage, not original order size.
+            # Missing or insufficient remaining quantity fails closed.
             stop_quantity = int(
-                (stop_leg or {}).get("quantity") or 0
+                (stop_leg or {}).get("remaining_quantity") or 0
             )
             protection_verified = bool(
-                protection
+                protected_order is not None
+                and str(protected_order.broker_order_id or "").strip()
+                == broker_order_id
+                and protected_order.confirmed
+                and protection
                 and protection.get("protected")
                 and protection.get("stop_loss_present")
                 and protection.get("stop_loss_active")
@@ -321,7 +480,12 @@ async def reconcile_broker_state(
                         "partially_filled",
                     )
                 except ValueError as exc:
-                    if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+                    if (
+                        str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION"
+                        or _submission_intent_exists(
+                            str(local_order["local_order_id"])
+                        )
+                    ):
                         raise
                 _transition_local_order_if_present(
                     local_order,
@@ -808,6 +972,9 @@ def _record_review(
                 "Failed to persist critical LIVE protection alert "
                 "for broker order %s",
                 target_id,
+            )
+            summary["errors"].append(
+                f"{target_id}: critical LIVE protection alert persistence failed"
             )
 
 

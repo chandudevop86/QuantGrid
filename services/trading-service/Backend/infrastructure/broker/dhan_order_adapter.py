@@ -560,7 +560,9 @@ def _super_order_protection_state(
     target = legs.get("TARGET_LEG")
     exposed_quantity = int(parent.filled_quantity or 0)
     stop_status = str((stop or {}).get("status") or "")
-    stop_quantity = int((stop or {}).get("triggered_quantity") or (stop or {}).get("quantity") or 0)
+    # Only outstanding stop-loss quantity can cover current exposure.
+    # Missing or insufficient remaining coverage must fail closed.
+    stop_quantity = int((stop or {}).get("remaining_quantity") or 0)
     stop_active = bool(
         stop
         # Only a broker-confirmed active stop leg protects open exposure.
