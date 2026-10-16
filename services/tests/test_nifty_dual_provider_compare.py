@@ -95,6 +95,7 @@ def test_matching_40_bar_sample_reports_agreement_but_not_profit():
     assert result["result"] == "CLOSE_PRICE_AGREEMENT"
     assert result["matched_minutes"] == 40
     assert result["different_close_count"] == 0
+    assert result["per_ist_date"]["2026-10-01"]["matched_minutes"] == 40
 
 
 def test_mismatch_above_tolerance_is_flagged_with_absolute_price_diff():
