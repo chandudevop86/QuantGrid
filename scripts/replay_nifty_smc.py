@@ -37,7 +37,7 @@ SOURCE_COLUMNS = [*COLUMNS, "source"]
 # A provider label is not independent proof of market-data authenticity.
 ACCEPTED_PROVIDER_LABELS = frozenset({
     "yahoo", "yfinance", "dhan", "nse", "nseindia",
-    "fyers", "zerodha", "upstox", "angelone",
+    "fyers", "zerodha", "kite", "upstox", "angelone", "angel",
 })
 
 
