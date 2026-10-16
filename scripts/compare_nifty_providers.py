@@ -59,12 +59,17 @@ def fetch_dhan(start: str, end: str, *, security_id: str | None = None) -> pd.Da
     last = date.fromisoformat(end)
     if (last - first).days >= 90:
         raise ProviderComparisonError("Dhan intraday query must cover fewer than 90 calendar days.")
+    # Never request future API history when the requested end is today.
+    end_requested = datetime.combine(last + timedelta(days=1), time.min, IST)
+    end_available = min(end_requested, datetime.now(IST))
+    if end_available <= datetime.combine(first, time(9, 15), IST):
+        raise ProviderComparisonError("Requested Dhan interval is entirely in the future.")
     raw = sdk.intraday_minute_data(
         security_id=str(security_id),
         exchange_segment="IDX_I",
         instrument_type="INDEX",
         from_date=f"{first.isoformat()} 09:15:00",
-        to_date=f"{(last + timedelta(days=1)).isoformat()} 00:00:00",
+        to_date=end_available.strftime("%Y-%m-%d %H:%M:%S"),
         interval=1,
         oi=False,
     )
@@ -210,6 +215,17 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
         else "DISAGREEMENT" if mismatch.any()
         else "CLOSE_PRICE_AGREEMENT"
     )
+    date_labels = joined["timestamp"].dt.tz_convert(IST).dt.strftime("%Y-%m-%d")
+    per_day = {
+        str(day): {
+            "matched_minutes": int(len(group)),
+            "different_close_count": int((group["close_dhan"] - group["close_reference"]).abs().gt(tolerance).sum()),
+            "max_close_difference_points": round(
+                float((group["close_dhan"] - group["close_reference"]).abs().max()), 4
+            ),
+        }
+        for day, group in joined.groupby(date_labels)
+    }
     return {
         "pair": label,
         "result": result,
@@ -220,6 +236,7 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
         "different_close_count": int(mismatch.sum()),
         "mean_abs_close_difference_points": round(float(close_error.mean()), 4),
         "maximum_abs_close_difference_points": round(max_error, 4),
+        "per_ist_date": per_day,
         "worst_close_differences": [
             {
                 "timestamp_utc": row["timestamp"].isoformat(),
