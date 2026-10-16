@@ -244,3 +244,40 @@ def test_yahoo_stored_disagreement_uses_yahoo_labels_not_dhan_labels():
     assert r["worst_close_differences"][0].get("dhan") is None
     assert "yahoo" in r["worst_close_differences"][0]
     assert "dhan_minutes_not_in_reference" not in r
+
+
+def test_extreme_open_mismatch_reports_ist_time_and_full_ohlc():
+    first, _ = compare.audit_bars(
+        _bars("2026-10-15"), label="dhan",
+        start="2026-10-15", end="2026-10-15",
+    )
+    second = first.copy()
+    # Preserve valid OHLC while creating an opening price disagreement.
+    second.loc[20, "open"] -= 57.4
+    second.loc[20, "low"] -= 57.4
+    result = compare.compare_bars(
+        first, second, label="dhan_vs_yahoo", tolerance=1.0,
+    )
+    assert result["result"] == "DISAGREEMENT"
+    worst = result["worst_ohlc_discrepancies"][0]
+    assert worst["timestamp_ist"].startswith("2026-10-15T09:35:00+05:30")
+    assert worst["largest_mismatch_field"] in {"open", "low"}
+    assert worst["max_abs_difference_points"] == 57.4
+    assert worst["primary_ohlc"]["open"] != worst["reference_ohlc"]["open"]
+
+
+def test_exact_missing_minutes_displayed_without_synthesizing_bars():
+    primary, _ = compare.audit_bars(
+        _bars("2026-10-15", count=50), label="dhan",
+        start="2026-10-15", end="2026-10-15",
+    )
+    reference = primary.drop(index=range(10, 24)).copy()
+    extra = _bars("2026-10-15", count=1)
+    extra["timestamp"] = "2026-10-15T10:05:00+05:30"
+    reference = pd.concat([reference, extra], ignore_index=True)
+    result = compare.compare_bars(primary, reference, label="dhan_vs_yahoo")
+    assert result["matched_minutes"] == 36
+    assert len(result["only_in_primary_minutes_ist"]) == 14
+    assert result["only_in_primary_minutes_ist"][0].startswith("2026-10-15 09:25:00")
+    assert len(result["only_in_reference_minutes_ist"]) == 1
+    assert result["only_in_reference_minutes_ist"][0].startswith("2026-10-15 10:05:00")
