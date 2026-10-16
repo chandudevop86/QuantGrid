@@ -103,3 +103,14 @@ def test_auto_paper_skips_stale_and_future_candles(monkeypatch):
 
     assert calls == []
     assert worker._LAST_AUTO_PAPER_CANDLE == {}
+
+
+def test_candle_ingestion_provenance_uses_provider_not_paper_demo_label():
+    assert worker._candle_storage_source({
+        "provider": "yahoo", "source": "demo",
+    }) == "yahoo"
+    assert worker._candle_storage_source({
+        "provider_name": "dhan", "source": "live",
+    }) == "dhan"
+    assert worker._candle_storage_source({"source": "demo"}) == "demo"
+    assert worker._candle_storage_source({}) == "unknown"
