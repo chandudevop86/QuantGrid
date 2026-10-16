@@ -10,6 +10,7 @@ from scripts.replay_nifty_smc import (
     normalize_candles,
     replay,
     resample_complete,
+    validate_market_provenance,
 )
 
 
@@ -114,3 +115,36 @@ def test_missing_index_volume_is_not_mistaken_for_observed_volume():
     raw.loc[1, "volume"] = None
     normalized = normalize_candles(raw, source_minutes=5, timestamp_role="open")
     assert normalized["volume"].iloc[1] == 0.0
+
+
+def test_real_market_replay_blocks_demo_provenance():
+    raw = _bars("2026-10-12", 5)
+    raw["source"] = "demo"
+    with pytest.raises(ReplayDataError, match="demo"):
+        validate_market_provenance(raw)
+
+
+def test_real_market_replay_fails_closed_without_source_metadata():
+    raw = _bars("2026-10-12", 5)
+    with pytest.raises(ReplayDataError, match="Missing source column"):
+        validate_market_provenance(raw)
+
+
+def test_real_market_replay_blocks_mixed_demo_and_yahoo():
+    raw = _bars("2026-10-12", 5)
+    raw["source"] = ["yahoo", "demo", "yahoo", "demo", "yahoo"]
+    with pytest.raises(ReplayDataError, match="demo"):
+        validate_market_provenance(raw)
+
+
+def test_recognized_provider_labels_are_not_claimed_as_verified():
+    raw = _bars("2026-10-12", 5)
+    raw["source"] = "yahoo"
+    assert validate_market_provenance(raw) == {"yahoo": 5}
+
+
+def test_unknown_provider_label_is_rejected_pending_review():
+    raw = _bars("2026-10-12", 5)
+    raw["source"] = "some-unknown-provider"
+    with pytest.raises(ReplayDataError, match="Unverified"):
+        validate_market_provenance(raw)
