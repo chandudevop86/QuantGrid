@@ -39,7 +39,7 @@ def build_narrative_input(symbol: str = "NIFTY", *, overrides: dict[str, Any] | 
         "symbol": symbol,
         "timestamp": datetime.now(timezone.utc),
         "spot_price": spot,
-        "futures_price": _env_float(f"QUANTGRID_{symbol}_FUTURES_PRICE") or _env_float("QUANTGRID_FUTURES_PRICE") or spot,
+        "futures_price": _env_float(f"QUANTGRID_{symbol}_FUTURES_PRICE") or _env_float("QUANTGRID_FUTURES_PRICE"),
         "option_chain": rows,
         "option_chain_quality": option_chain_quality.model_dump(),
         "pcr": chain_payload.get("pcr") or chain_payload.get("PCR"),
