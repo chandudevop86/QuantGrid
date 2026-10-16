@@ -175,6 +175,39 @@ GLOBAL_INDICES_JSON='[{"label":"S&P 500","value":6200,"change_pct":0.4}]'
 Option-chain derived PCR, max pain, highest call OI, highest put OI, and OI
 change are shown only when live provider data is available.
 
+### NSE institutional EOD reports (opt-in)
+
+The Institutional Dashboard can automatically read the NSE-published FII/FPI
+and DII daily **cash** report, plus the NSE clearing participant-wise index
+futures **open interest** report. No values are generated or silently
+backfilled with unrelated dates. Each metric carries the report date, source
+and units. Participant futures open interest covers **all index futures**,
+not NIFTY alone; long-minus-short OI is **not** daily net futures buying.
+
+After validating NSE access and usage terms for your deployment, set
+`QUANTGRID_INSTITUTIONAL_AUTO_FETCH=true` on the **API service**.
+This feature is OFF by default. Dashboard reads are on demand, bounded to a
+five-second network timeout per request, cached for 15 minutes per process,
+and reject reports over five days old. Missing or blocked reports show
+unavailable warnings. This does not schedule background ingestion or place
+orders. NSE may block server requests; then use a licensed data provider.
+
+For an optional NIFTY futures-versus-spot basis, supply independent
+synchronized quotes with a timezone-aware ISO8601 observation timestamp:
+
+```bash
+QUANTGRID_NIFTY_SPOT_PRICE=23146.15
+QUANTGRID_NIFTY_FUTURES_PRICE=23113
+QUANTGRID_NIFTY_FUTURES_AS_OF=2026-10-16T10:07:00Z
+```
+
+These prices illustrate the screenshot, NOT a currently verified quote.
+After 15 minutes or if any required input is missing, basis is unavailable,
+never assumed zero. Automated live futures quote ingestion requires a
+separate verified broker/exchange contract-specific quote source, which is
+not included here. F&O trading narratives do not automatically consume
+the EOD institutional observations.
+
 ## Backtesting Engine
 
 Phase 2 adds a dedicated backtesting workspace at `/backtesting` backed by:
