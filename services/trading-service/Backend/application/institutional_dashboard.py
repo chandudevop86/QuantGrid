@@ -23,12 +23,19 @@ def build_institutional_dashboard(
     *,
     option_chain: dict[str, Any] | None = None,
     option_chain_error: str | None = None,
+    institutional_eod: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     symbol = symbol.upper()
     warnings: list[str] = []
     metrics = {key: _env_metric(label, env_name, unit) for key, (label, env_name, unit) in ENV_METRICS.items()}
+    published = institutional_eod or {}
+    for group in ("cash_flows", "futures"):
+        for key, item in (published.get(group) or {}).items():
+            if key in metrics and isinstance(item, dict):
+                metrics[key] = {**metrics[key], **item}
     global_indices = _global_indices()
     derivatives = _derivative_metrics(option_chain)
+    warnings.extend(published.get("warnings") or [])
 
     missing_env = [metric["label"] for metric in metrics.values() if metric["source"] == "unavailable"]
     if missing_env:
@@ -45,12 +52,23 @@ def build_institutional_dashboard(
         "module": "institutional_dashboard",
         "symbol": symbol,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "institutional_checked_at": published.get("checked_at"),
         "cash_flows": {
             "fii_cash": metrics["fii_cash"],
             "dii_cash": metrics["dii_cash"],
         },
         "futures": {
             "fii_index_futures": metrics["fii_index_futures"],
+            **{
+                key: {"label": label, **published["futures"][key]}
+                for key, label in (
+                    ("fii_index_long", "FII Index Long OI"),
+                    ("fii_index_short", "FII Index Short OI"),
+                    ("fii_index_long_pct", "FII Index Long %"),
+                )
+                if isinstance(published.get("futures"), dict) and key in published["futures"]
+            },
+            "basis": _validated_futures_basis(symbol),
         },
         "derivatives": derivatives,
         "macro": {
@@ -63,7 +81,7 @@ def build_institutional_dashboard(
         "global_indices": global_indices,
         "market_narrative": _market_narrative(metrics, derivatives, global_indices, warnings),
         "warnings": warnings,
-        "data_policy": "Configured values are shown only when provided; unavailable live feeds are never replaced with generated institutional data.",
+        "data_policy": "NSE-published EOD data is dated and separate from live prices. Manual env values are labelled. Unavailable feeds are not synthesized and are not proof of FII direction.",
     }
 
 
@@ -214,3 +232,32 @@ def _coerce_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _validated_futures_basis(symbol: str) -> dict[str, Any]:
+    """Never infer zero basis by substituting the spot when futures data is missing."""
+    from datetime import timedelta
+
+    future = _env_float(f"QUANTGRID_{symbol}_FUTURES_PRICE")
+    spot = _env_float(f"QUANTGRID_{symbol}_SPOT_PRICE")
+    raw_timestamp = os.getenv(f"QUANTGRID_{symbol}_FUTURES_AS_OF", "")
+    unavailable = {"value": None, "premium_pct": None, "unit": "points", "source": "unavailable"}
+    if future is None or spot is None or future <= 0 or spot <= 0 or not raw_timestamp:
+        return unavailable
+    try:
+        observed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return unavailable
+    if observed.tzinfo is None:
+        return unavailable
+    age = datetime.now(timezone.utc) - observed.astimezone(timezone.utc)
+    if not timedelta(0) <= age <= timedelta(minutes=15):
+        return unavailable
+    return {
+        "label": "NIFTY Futures Basis" if symbol == "NIFTY" else f"{symbol} Futures Basis",
+        "value": round(future - spot, 2),
+        "premium_pct": round((future - spot) / spot * 100, 4),
+        "unit": "points",
+        "source": "configured-quote-pair",
+        "as_of": observed.isoformat(),
+    }
