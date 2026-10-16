@@ -269,6 +269,16 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
     max_ohlc_error = pd.DataFrame(field_errors).max(axis=1)
     any_ohlc_mismatch = max_ohlc_error > tolerance
     worst = joined.assign(close_difference=close_error).sort_values("close_difference", ascending=False).head(12)
+    worst_ohlc = joined.assign(max_ohlc_difference=max_ohlc_error).sort_values(
+        "max_ohlc_difference", ascending=False
+    ).head(12)
+    primary_only = sorted(set(primary["timestamp"]) - set(comparison["timestamp"]))
+    reference_only = sorted(set(comparison["timestamp"]) - set(primary["timestamp"]))
+
+    def ist_minutes(values: list[pd.Timestamp]) -> list[str]:
+        return [value.tz_convert(IST).strftime("%Y-%m-%d %H:%M:%S%z")
+                for value in values[:50]]
+
     result = (
         "INSUFFICIENT_OVERLAP" if len(joined) < MIN_OVERLAP
         else "DISAGREEMENT" if any_ohlc_mismatch.any()
@@ -295,6 +305,8 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
         "matched_minutes": len(joined),
         "dhan_minutes_not_in_reference": len(primary) - len(joined),
         "reference_minutes_not_in_dhan": len(comparison) - len(joined),
+        "only_in_primary_minutes_ist": ist_minutes(primary_only),
+        "only_in_reference_minutes_ist": ist_minutes(reference_only),
         "close_price_tolerance_points": float(tolerance),
         "different_close_count": int(mismatch.sum()),
         "different_ohlc_count": int(any_ohlc_mismatch.sum()),
@@ -304,6 +316,28 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
         "mean_abs_close_difference_points": round(float(close_error.mean()), 4),
         "maximum_abs_close_difference_points": round(max_error, 4),
         "per_ist_date": per_day,
+        "worst_ohlc_discrepancies": [
+            {
+                "timestamp_utc": row["timestamp"].isoformat(),
+                "timestamp_ist": row["timestamp"].tz_convert(IST).isoformat(),
+                "largest_mismatch_field": max(
+                    OHLC,
+                    key=lambda field: abs(
+                        float(row[f"{field}_dhan"]) -
+                        float(row[f"{field}_reference"])
+                    ),
+                ),
+                "max_abs_difference_points": round(float(row["max_ohlc_difference"]), 4),
+                "primary_ohlc": {
+                    field: round(float(row[f"{field}_dhan"]), 4) for field in OHLC
+                },
+                "reference_ohlc": {
+                    field: round(float(row[f"{field}_reference"]), 4)
+                    for field in OHLC
+                },
+            }
+            for _, row in worst_ohlc.iterrows()
+        ],
         "worst_close_differences": [
             {
                 "timestamp_utc": row["timestamp"].isoformat(),
