@@ -209,20 +209,32 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
     joined = primary.merge(comparison, on="timestamp", how="inner", suffixes=("_dhan", "_reference"))
     if joined.empty:
         return {"pair": label, "result": "INSUFFICIENT_OVERLAP", "matched_minutes": 0}
-    close_error = (joined["close_dhan"] - joined["close_reference"]).abs()
+    # BOS, CHoCH and FVG also depend on high/low/open: close-only agreement
+    # is insufficient to validate smart-money structure.
+    field_errors = {
+        field: (joined[f"{field}_dhan"] - joined[f"{field}_reference"]).abs()
+        for field in OHLC
+    }
+    close_error = field_errors["close"]
     max_error = float(close_error.max())
     mismatch = close_error > tolerance
+    max_ohlc_error = pd.DataFrame(field_errors).max(axis=1)
+    any_ohlc_mismatch = max_ohlc_error > tolerance
     worst = joined.assign(close_difference=close_error).sort_values("close_difference", ascending=False).head(12)
     result = (
         "INSUFFICIENT_OVERLAP" if len(joined) < MIN_OVERLAP
-        else "DISAGREEMENT" if mismatch.any()
-        else "CLOSE_PRICE_AGREEMENT"
+        else "DISAGREEMENT" if any_ohlc_mismatch.any()
+        else "OHLC_AGREEMENT"
     )
     date_labels = joined["timestamp"].dt.tz_convert(IST).dt.strftime("%Y-%m-%d")
     per_day = {
         str(day): {
             "matched_minutes": int(len(group)),
             "different_close_count": int((group["close_dhan"] - group["close_reference"]).abs().gt(tolerance).sum()),
+            "different_ohlc_count": int(pd.DataFrame({
+                field: (group[f"{field}_dhan"] - group[f"{field}_reference"]).abs()
+                for field in OHLC
+            }).max(axis=1).gt(tolerance).sum()),
             "max_close_difference_points": round(
                 float((group["close_dhan"] - group["close_reference"]).abs().max()), 4
             ),
@@ -237,6 +249,10 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
         "reference_minutes_not_in_dhan": len(comparison) - len(joined),
         "close_price_tolerance_points": float(tolerance),
         "different_close_count": int(mismatch.sum()),
+        "different_ohlc_count": int(any_ohlc_mismatch.sum()),
+        "max_abs_difference_by_ohlc_field": {
+            field: round(float(values.max()), 4) for field, values in field_errors.items()
+        },
         "mean_abs_close_difference_points": round(float(close_error.mean()), 4),
         "maximum_abs_close_difference_points": round(max_error, 4),
         "per_ist_date": per_day,
