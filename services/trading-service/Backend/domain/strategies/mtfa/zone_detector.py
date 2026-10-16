@@ -90,6 +90,9 @@ class ZoneDetector:
                 body = abs(float(impulse["close"]) - float(impulse["open"]))
                 if body < min_body:
                     continue
+                impulse_bullish = float(impulse["close"]) > float(impulse["open"])
+                if impulse_bullish != (side == "BUY"):
+                    continue
                 if side == "BUY":
                     confirmed = float(impulse["close"]) > prior_high + atr * 0.05
                 else:
