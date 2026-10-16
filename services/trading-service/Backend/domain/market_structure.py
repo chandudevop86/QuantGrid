@@ -61,8 +61,13 @@ def _structure(frame: pd.DataFrame) -> tuple[str, list[str]]:
 def _liquidity(frame: pd.DataFrame, row: pd.Series, support: float, resistance: float) -> tuple[str, list[str]]:
     close = float(row["close"])
     atr = max(float(row.get("atr_14", 0.0) or 0.0), 0.01)
-    distance_to_high = abs(resistance - close)
-    distance_to_low = abs(close - support)
+    # Exclude the current candle: otherwise resistance includes its own wick
+    # and a high > resistance sweep is mathematically impossible.
+    reference = frame.iloc[max(0, len(frame) - 21):-1]
+    reference_high = float(reference["high"].max()) if not reference.empty else resistance
+    reference_low = float(reference["low"].min()) if not reference.empty else support
+    distance_to_high = abs(reference_high - close)
+    distance_to_low = abs(close - reference_low)
     reasons: list[str] = []
 
     if distance_to_high <= atr:
@@ -71,9 +76,9 @@ def _liquidity(frame: pd.DataFrame, row: pd.Series, support: float, resistance: 
         reasons.append("Price is trading near sell-side liquidity below recent lows.")
 
     previous = frame.iloc[-2] if len(frame) > 1 else row
-    if float(row["high"]) > resistance and close < resistance:
+    if float(row["high"]) > reference_high and close < reference_high:
         reasons.append("Potential buy-side stop hunt: high swept resistance but closed back below.")
-    if float(row["low"]) < support and close > support:
+    if float(row["low"]) < reference_low and close > reference_low:
         reasons.append("Potential sell-side stop hunt: low swept support but closed back above.")
 
     if float(row["bar_range"]) > float(previous.get("bar_range", row["bar_range"])) * 1.8:

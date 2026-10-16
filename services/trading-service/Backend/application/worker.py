@@ -247,6 +247,18 @@ def _candle_market_hours_only() -> bool:
 # =====================================================
 
 
+def _candle_storage_source(response: dict[str, Any]) -> str:
+    """Persist actual provider identity, not the paper/live suitability label.
+
+    market_data_service.source='demo' can mean genuine Yahoo observations
+    unsuitable for live execution. Without provider metadata, stay unknown.
+    """
+    provider = response.get("provider") or response.get("provider_name")
+    if provider:
+        return str(provider).strip().lower()
+    return str(response.get("source") or "unknown").strip().lower()
+
+
 def _run_candle_ingestion():
 
     if _candle_market_hours_only() and not is_market_hours_ist():
@@ -303,9 +315,7 @@ def _run_candle_ingestion():
                 "market_symbol"
             ),
             interval=interval,
-            source=response.get(
-                "source"
-            ),
+            source=_candle_storage_source(response),
             candles=candles,
         )
 
@@ -315,7 +325,7 @@ def _run_candle_ingestion():
             symbol,
             interval,
             len(candles),
-            response.get("source"),
+            _candle_storage_source(response),
         )
         
         

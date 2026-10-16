@@ -1,9 +1,11 @@
 import json
+import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 import sqlite3
 
 from Backend.core.timezone import utc_now
@@ -12,6 +14,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("MARKET_DATA_DB_FILE", DATA_DIR / "market_data.sqlite3"))
 _init_lock = threading.Lock()
 _initialized_store_key: tuple[str, object] | None = None
+logger = logging.getLogger(__name__)
 
 
 def _use_sqlite() -> bool:
@@ -169,6 +172,68 @@ def latest_price_tick(symbol: str) -> dict[str, Any] | None:
     return payload
 
 
+def _aligned_candles_for_storage(
+    candles: list[dict[str, Any]],
+    interval: str,
+    *,
+    symbol: str = "",
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Validate minute-bar boundaries before writing to either backend.
+
+    For regular NSE index 1m bars, exclude off-session markers and the
+    currently forming minute. An off-second quote is not a 1m candle.
+    No rounding, gap filling, or historical data deletion is performed.
+    """
+    if interval.lower() not in {"1", "1m", "5", "5m", "15", "15m", "60", "60m"}:
+        return candles
+    regular_index_1m = (
+        interval.lower() in {"1", "1m"}
+        and str(symbol).strip().upper() in {
+            "NIFTY", "NIFT", "BANKNIFTY", "FINNIFTY",
+        }
+    )
+    utc_now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    accepted = []
+    rejected_invalid = 0
+    rejected_offset = 0
+    rejected_session = 0
+    rejected_unfinished = 0
+    for candle in candles:
+        value = candle.get("timestamp")
+        try:
+            ts = value if isinstance(value, datetime) else datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            rejected_invalid += 1
+            continue
+        if ts.second or ts.microsecond:
+            rejected_offset += 1
+            continue
+        if regular_index_1m:
+            if ts.tzinfo is None or ts.utcoffset() is None:
+                rejected_invalid += 1
+                continue
+            ist = ts.astimezone(ZoneInfo("Asia/Kolkata"))
+            minute = ist.hour * 60 + ist.minute
+            if ist.weekday() >= 5 or not (555 <= minute < 930):
+                rejected_session += 1
+                continue
+            if ts.astimezone(timezone.utc) + timedelta(minutes=1) > utc_now:
+                rejected_unfinished += 1
+                continue
+        accepted.append(candle)
+    if any((rejected_invalid, rejected_offset, rejected_session, rejected_unfinished)):
+        logger.warning(
+            "candle_storage_rejected symbol=%s interval=%s invalid=%s "
+            "offset_seconds=%s out_of_regular_session=%s unfinished=%s",
+            symbol, interval, rejected_invalid, rejected_offset,
+            rejected_session, rejected_unfinished,
+        )
+    return accepted
+
+
 def store_candles(
     *,
     symbol: str,
@@ -177,6 +242,9 @@ def store_candles(
     source: str,
     candles: list[dict[str, Any]],
 ) -> None:
+    candles = _aligned_candles_for_storage(candles, interval, symbol=symbol)
+    if not candles:
+        return
     init_market_data_store()
     if not _use_sqlite():
         _db_store_candles(symbol=symbol, market_symbol=market_symbol, interval=interval, source=source, candles=candles)

@@ -364,7 +364,7 @@ class TradeQualificationEngine:
 
     @staticmethod
     def _position_size(signal: StrategySignal, capital: float, risk_pct: float) -> PositionSizing:
-        risk_fraction = float(risk_pct) / 100.0 if float(risk_pct) >= 1 else float(risk_pct)
+        risk_fraction = max(0.0, float(risk_pct)) / 100.0
         risk_amount = max(0.0, float(capital) * risk_fraction)
         per_unit = abs(float(signal.entry_price) - float(signal.stop_loss))
         size = int(risk_amount // per_unit) if per_unit > 0 else 0
