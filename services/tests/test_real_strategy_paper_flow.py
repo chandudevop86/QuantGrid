@@ -9,10 +9,10 @@ from datetime import datetime, timedelta, timezone
 START = datetime(2026, 5, 29, 9, 15, tzinfo=timezone.utc)
 
 
-def _candles(values: list[tuple[float, float, float, float, float]], minutes: int) -> list[dict]:
+def _candles(values: list[tuple[float, float, float, float, float]], minutes: int, *, start: datetime | None = None) -> list[dict]:
     return [
         {
-            "timestamp": (START + timedelta(minutes=index * minutes)).isoformat(),
+            "timestamp": ((start or START) + timedelta(minutes=index * minutes)).isoformat(),
             "open": open_price,
             "high": high,
             "low": low,
@@ -37,7 +37,7 @@ def _h4_uptrend() -> list[dict]:
                 1000 + index * 50,
             )
         )
-    return _candles(values, 240)
+    return _candles(values, 240, start=START - timedelta(minutes=16 * 240))
 
 
 def _h1_demand_pullback() -> list[dict]:
@@ -51,7 +51,7 @@ def _h1_demand_pullback() -> list[dict]:
             (102.5, 104.0, 101.8, 103.5, 1800),
         ]
     )
-    return _candles(values, 60)
+    return _candles(values, 60, start=START - timedelta(minutes=10 * 60))
 
 
 def _m15_bullish_trigger() -> list[dict]:
