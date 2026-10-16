@@ -171,3 +171,56 @@ def test_bos_high_disagreement_flagged_even_when_closes_match():
     assert result["different_ohlc_count"] == 1
     assert result["max_abs_difference_by_ohlc_field"]["high"] == 16.0
     assert result["per_ist_date"]["2026-10-01"]["different_ohlc_count"] == 1
+
+
+@pytest.mark.parametrize(("payload", "expected"), [
+    ({"status": "failure", "errorCode": "DH-901"}, "AUTHENTICATION (DH-901)"),
+    ({"status": "failure", "errorCode": "806"}, "DATA_API_SUBSCRIPTION (806)"),
+    ({"status": "failure", "data": {"errorCode": "DH-904"}}, "RATE_LIMIT (DH-904)"),
+    ({"status": "failure", "remarks": "Expecting value: line 1 column 1 (char 0)"}, "SDK_RESPONSE_JSON_PARSE_FAILURE"),
+    ({"status": "failure", "remarks": "private_token-DO_NOT_ECHO"}, "UNKNOWN_DHAN_PROVIDER_FAILURE"),
+])
+def test_safe_dhan_failure_classification_never_echoes_raw_response(payload, expected):
+    actual = compare.classify_dhan_failure(payload)
+    assert actual == expected
+    assert "private_token" not in actual
+
+
+def test_failed_dhan_keeps_yahoo_and_stored_audit_without_claiming_success(monkeypatch, tmp_path):
+    monkeypatch.setattr(compare, "fetch_dhan", lambda *args, **kwargs: (
+        (_ for _ in ()).throw(compare.ProviderComparisonError(
+            "Dhan request rejected: SDK_RESPONSE_JSON_PARSE_FAILURE"
+        ))
+    ))
+    monkeypatch.setattr(compare, "fetch_yahoo", lambda: _bars("2026-10-15"))
+    monkeypatch.setattr(compare, "fetch_stored", lambda *args, **kwargs: _bars("2026-10-15"))
+    report = tmp_path / "partial.json"
+    monkeypatch.setattr(sys, "argv", [
+        "compare_nifty_providers.py", "--start", "2026-10-15", "--end", "2026-10-15",
+        "--include-stored", "--output", str(report),
+    ])
+    assert compare.main() == 2  # Not a successful data comparison.
+    saved = json.loads(report.read_text())
+    assert saved["status"] == "PARTIAL_DHAN_UNAVAILABLE_NO_VALIDATION"
+    assert saved["provider_profiles"]["yahoo"]["eligible_bars"] == 40
+    assert saved["provider_profiles"]["stored_postgres"]["eligible_bars"] == 40
+    assert saved["comparisons"][0]["result"] == "INSUFFICIENT_OVERLAP"
+    assert saved["comparisons"][1]["result"] == "INSUFFICIENT_OVERLAP"
+    assert "SDK_RESPONSE_JSON_PARSE_FAILURE" in saved["dhan_error_category"]
+
+
+def test_failed_dhan_unknown_sdk_exception_is_not_leaked(monkeypatch, tmp_path):
+    def fail(*args, **kwargs):
+        raise RuntimeError("raw response contains TOP_SECRET_ACCESS_TOKEN")
+
+    monkeypatch.setattr(compare, "fetch_dhan", fail)
+    monkeypatch.setattr(compare, "fetch_yahoo", lambda: _bars("2026-10-15"))
+    report = tmp_path / "partial.json"
+    monkeypatch.setattr(sys, "argv", [
+        "compare_nifty_providers.py", "--start", "2026-10-15", "--end", "2026-10-15",
+        "--output", str(report),
+    ])
+    assert compare.main() == 2
+    saved = report.read_text()
+    assert "TOP_SECRET_ACCESS_TOKEN" not in saved
+    assert "RuntimeError" in saved
