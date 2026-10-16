@@ -15,6 +15,11 @@ def _test_files(pattern: str) -> list[Path]:
     return sorted((ROOT / "services" / "tests").glob(pattern))
 
 
+def _relative_test_arg(arg: str) -> str:
+    """Preserve nested test paths when pytest runs from services/tests."""
+    return arg.removeprefix("services/tests/")
+
+
 def _groups(files: list[Path], count: int) -> list[list[Path]]:
     count = max(1, min(count, len(files) or 1))
     size = math.ceil(len(files) / count)
@@ -44,7 +49,7 @@ def _run(command: list[str], timeout: int, *, verbose: bool = False) -> None:
 
     if command and command[0] == "pytest":
         command = [
-            Path(arg).name if arg.startswith("services/tests/") else arg
+            _relative_test_arg(arg)
             for arg in command
         ]
         command.extend(["-o", "pythonpath="])
@@ -80,7 +85,7 @@ def main() -> None:
     parser.add_argument("--groups", type=int, default=4, help="Number of pytest groups to run.")
     parser.add_argument("--group-timeout", type=int, default=180, help="Timeout per group in seconds.")
     parser.add_argument("--test-timeout", type=int, default=60, help="Timeout per pytest test in seconds.")
-    parser.add_argument("--pattern", default="test_*.py", help="Test file glob under services/tests/.")
+    parser.add_argument("--pattern", default="**/test_*.py", help="Test file glob under services/tests/, including subdirectories.")
     parser.add_argument("--coverage", action="store_true", help="Collect combined coverage across groups.")
     parser.add_argument("--cov-fail-under", type=int, default=45, help="Coverage threshold for --coverage.")
     parser.add_argument("--verbose", action="store_true", help="Print stdout for passing pytest groups.")
