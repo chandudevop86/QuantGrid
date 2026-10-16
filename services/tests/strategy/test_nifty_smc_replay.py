@@ -54,6 +54,7 @@ def test_replay_is_prefix_invariant_with_more_future_candles():
     assert report["prefix_invariance"] == "PASS"
     assert report["complete_5m_bars"] == 90
     assert report["complete_15m_bars"] == 30
+    assert report["candidate_event_count"] > 0
     earlier = replay(frame.iloc[:45])
     cutoff = frame["timestamp"].iloc[44] + pd.Timedelta(minutes=5)
     full_before_cutoff = [
