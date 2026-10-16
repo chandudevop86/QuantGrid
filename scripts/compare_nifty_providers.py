@@ -37,6 +37,51 @@ class ProviderComparisonError(ValueError):
     pass
 
 
+def classify_dhan_failure(payload: dict[str, Any]) -> str:
+    """Return non-sensitive error class; never disclose raw SDK/HTTP payloads."""
+    fields = [payload]
+    if isinstance(payload.get("data"), dict):
+        fields.append(payload["data"])
+    codes = [str(p.get(key) or "").upper().strip()
+             for p in fields for key in ("errorCode", "error_code", "code")]
+    code = next((x for x in codes if x in {
+        "DH-901", "DH-902", "DH-903", "DH-904", "DH-905", "DH-907",
+        "DH-908", "DH-909", "806", "807", "808", "809", "810",
+        "812", "813", "814", "800", "805",
+    }), None)
+    categories = {
+        "DH-901": "AUTHENTICATION", "807": "AUTHENTICATION",
+        "808": "AUTHENTICATION", "809": "AUTHENTICATION",
+        "810": "AUTHENTICATION", "DH-902": "DATA_API_SUBSCRIPTION",
+        "806": "DATA_API_SUBSCRIPTION",
+        "DH-904": "RATE_LIMIT", "805": "RATE_LIMIT",
+        "DH-905": "INVALID_REQUEST", "812": "INVALID_REQUEST",
+        "813": "INVALID_REQUEST", "814": "INVALID_REQUEST",
+        "DH-907": "NO_DATA_OR_PARAMETERS", "DH-908": "SERVER_ERROR",
+        "DH-909": "NETWORK_ERROR", "800": "SERVER_ERROR",
+    }
+    if code:
+        return f"{categories.get(code, 'DHAN_FAILURE')} ({code})"
+    # Recognize a previously reported DhanHQ SDK JSON-decoding issue.
+    # Do not include the original message; it can contain identifiers.
+    messages = " ".join(
+        str(p.get(key) or "") for p in fields
+        for key in ("remarks", "errorMessage", "message", "errorType")
+    ).lower()
+    if ("expecting value" in messages or "extra data: line" in messages
+            or "jsondecodeerror" in messages):
+        return "SDK_RESPONSE_JSON_PARSE_FAILURE"
+    if "not subscribed" in messages or "subscription" in messages:
+        return "DATA_API_SUBSCRIPTION"
+    if "token" in messages or "unauthoriz" in messages:
+        return "AUTHENTICATION"
+    if "rate limit" in messages or "too many requests" in messages:
+        return "RATE_LIMIT"
+    if "no data" in messages:
+        return "NO_DATA_OR_PARAMETERS"
+    return "UNKNOWN_DHAN_PROVIDER_FAILURE"
+
+
 def utc_window(start: str, end: str) -> tuple[pd.Timestamp, pd.Timestamp]:
     first, last = date.fromisoformat(start), date.fromisoformat(end)
     if first > last:
@@ -79,7 +124,8 @@ def fetch_dhan(start: str, end: str, *, security_id: str | None = None) -> pd.Da
     if not isinstance(raw, dict):
         raise ProviderComparisonError("Unexpected Dhan SDK response type.")
     if str(raw.get("status", "")).lower() in {"failed", "error", "failure"}:
-        raise ProviderComparisonError("Dhan returned a failed status (inspect provider access or range).")
+        category = classify_dhan_failure(raw)
+        raise ProviderComparisonError(f"Dhan request rejected: {category}")
     candles = _normalize_candles("NIFTY", raw)
     return pd.DataFrame(candles)
 
@@ -281,7 +327,16 @@ def main() -> int:
         parser.error("Tolerance must be nonnegative.")
     try:
         utc_window(args.start, args.end)
-        dhan_raw = fetch_dhan(args.start, args.end, security_id=args.dhan_security_id)
+        dhan_error = None
+        try:
+            dhan_raw = fetch_dhan(args.start, args.end, security_id=args.dhan_security_id)
+        except Exception as exc:
+            # Never print raw SDK errors: some SDKs include request metadata.
+            dhan_error = (
+                str(exc) if isinstance(exc, ProviderComparisonError)
+                else f"Dhan SDK/transport error ({type(exc).__name__})"
+            )
+            dhan_raw = pd.DataFrame()
         yahoo_error = None
         try:
             yahoo_raw = fetch_yahoo()
@@ -290,8 +345,6 @@ def main() -> int:
             yahoo_raw = pd.DataFrame()
         dhan, dhan_profile = audit_bars(dhan_raw, label="dhan", start=args.start, end=args.end)
         yahoo, yahoo_profile = audit_bars(yahoo_raw, label="yahoo", start=args.start, end=args.end)
-        if dhan.empty:
-            raise ProviderComparisonError("No eligible Dhan bars returned; no validation performed.")
         comparisons = [compare_bars(dhan, yahoo, label="dhan_vs_yahoo",
                                     tolerance=args.tolerance_points)]
         profiles = {"dhan": dhan_profile, "yahoo": yahoo_profile}
@@ -305,8 +358,13 @@ def main() -> int:
                 dhan, stored, label="dhan_vs_existing_postgres",
                 tolerance=args.tolerance_points,
             ))
+        # If Dhan fails, still report Yahoo/stored coverage but NEVER certify
+        # consistency or turn the comparison into a successful validation.
         report = {
-            "status": "RESEARCH_ONLY_NO_LIVE_OR_PROFIT_APPROVAL",
+            "status": (
+                "PARTIAL_DHAN_UNAVAILABLE_NO_VALIDATION"
+                if dhan.empty else "RESEARCH_ONLY_NO_LIVE_OR_PROFIT_APPROVAL"
+            ),
             "symbol": "NIFTY_SPOT",
             "date_range_ist": [args.start, args.end],
             "provider_profiles": profiles,
@@ -320,6 +378,12 @@ def main() -> int:
         }
         if yahoo_error:
             report["warnings"].append(yahoo_error)
+        if dhan_error:
+            report["dhan_error_category"] = dhan_error
+            report["warnings"].append(
+                "Dhan unavailable: Yahoo and stored data are descriptive only; "
+                "no cross-provider validation was performed."
+            )
     except ProviderComparisonError as exc:
         parser.exit(2, f"COMPARISON NOT COMPLETED: {exc}\n")
     except Exception as exc:
@@ -334,7 +398,7 @@ def main() -> int:
         "comparisons": comparisons,
         "report_path": str(args.output),
     }, indent=2))
-    return 0
+    return 2 if dhan.empty else 0
 
 
 if __name__ == "__main__":
