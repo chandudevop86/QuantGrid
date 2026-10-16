@@ -31,3 +31,14 @@ def test_dev_requirements_include_lint_and_timeout_tools():
 
     assert "ruff" in requirements
     assert "pytest-timeout" in requirements
+
+
+def test_runner_discovers_nested_strategy_regressions():
+    from scripts import run_test_groups
+
+    paths = run_test_groups._test_files("**/test_*.py")
+    assert any(path.name == "test_smc_safety_regressions.py" for path in paths)
+    assert any(path.name == "test_mtfa_strategy.py" for path in paths)
+    assert run_test_groups._relative_test_arg(
+        "services/tests/strategy/test_smc_safety_regressions.py"
+    ) == "strategy/test_smc_safety_regressions.py"
