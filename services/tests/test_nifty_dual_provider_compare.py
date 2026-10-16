@@ -206,6 +206,10 @@ def test_failed_dhan_keeps_yahoo_and_stored_audit_without_claiming_success(monke
     assert saved["provider_profiles"]["stored_postgres"]["eligible_bars"] == 40
     assert saved["comparisons"][0]["result"] == "INSUFFICIENT_OVERLAP"
     assert saved["comparisons"][1]["result"] == "INSUFFICIENT_OVERLAP"
+    assert saved["comparisons"][2]["pair"] == "yahoo_vs_existing_postgres"
+    assert saved["comparisons"][2]["result"] == "OHLC_AGREEMENT"
+    assert saved["comparisons"][2]["matched_minutes"] == 40
+    assert "independent validation" in saved["comparisons"][2]["evidence_note"]
     assert "SDK_RESPONSE_JSON_PARSE_FAILURE" in saved["dhan_error_category"]
 
 
@@ -224,3 +228,19 @@ def test_failed_dhan_unknown_sdk_exception_is_not_leaked(monkeypatch, tmp_path):
     saved = report.read_text()
     assert "TOP_SECRET_ACCESS_TOKEN" not in saved
     assert "RuntimeError" in saved
+
+
+def test_yahoo_stored_disagreement_uses_yahoo_labels_not_dhan_labels():
+    source, _ = compare.audit_bars(
+        _bars("2026-10-15"), label="yahoo", start="2026-10-15", end="2026-10-15"
+    )
+    stored = source.copy()
+    stored.loc[20, "low"] -= 12
+    r = compare.compare_yahoo_with_stored(source, stored)
+    assert r["pair"] == "yahoo_vs_existing_postgres"
+    assert r["result"] == "DISAGREEMENT"
+    assert r["different_close_count"] == 0
+    assert r["different_ohlc_count"] == 1
+    assert r["worst_close_differences"][0].get("dhan") is None
+    assert "yahoo" in r["worst_close_differences"][0]
+    assert "dhan_minutes_not_in_reference" not in r
