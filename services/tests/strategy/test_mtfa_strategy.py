@@ -19,10 +19,10 @@ from Backend.domain.strategies.mtfa.mtfa_validator import MTFAValidator
 START = datetime(2026, 5, 29, 9, 15, tzinfo=timezone.utc)
 
 
-def _candles(values: list[tuple[float, float, float, float, float]], minutes: int) -> list[dict]:
+def _candles(values: list[tuple[float, float, float, float, float]], minutes: int, *, start: datetime | None = None) -> list[dict]:
     return [
         {
-            "timestamp": (START + timedelta(minutes=index * minutes)).isoformat(),
+            "timestamp": ((start or START) + timedelta(minutes=index * minutes)).isoformat(),
             "open": open_price,
             "high": high,
             "low": low,
@@ -39,7 +39,7 @@ def _h4_uptrend() -> list[dict]:
         open_price = 100 + index * 2
         close = open_price + 1.2
         values.append((open_price, close + 1.0, open_price - 0.8 + index * 0.3, close, 1000 + index * 50))
-    return _candles(values, 240)
+    return _candles(values, 240, start=START - timedelta(minutes=16 * 240))
 
 
 def _h4_downtrend() -> list[dict]:
@@ -48,7 +48,7 @@ def _h4_downtrend() -> list[dict]:
         open_price = 132 - index * 2
         close = open_price - 1.2
         values.append((open_price, open_price + 0.8 - index * 0.2, close - 1.0, close, 1000 + index * 50))
-    return _candles(values, 240)
+    return _candles(values, 240, start=START - timedelta(minutes=16 * 240))
 
 
 def _h1_demand_pullback() -> list[dict]:
@@ -59,7 +59,7 @@ def _h1_demand_pullback() -> list[dict]:
             (102.5, 104.0, 101.8, 103.5, 1800),
         ]
     )
-    return _candles(values, 60)
+    return _candles(values, 60, start=START - timedelta(minutes=10 * 60))
 
 
 def _m15_bullish_trigger() -> list[dict]:
@@ -167,3 +167,29 @@ def test_strategy_engine_and_serializer_expose_mtfa_fields():
     assert payload["mtfa_4h_zone"]["zone_type"] in {"demand", "support"}
     assert payload["mtfa_1h_pullback"]["pullback_valid"] is True
     assert payload["mtfa_15m_trigger"]["valid"] is True
+
+def test_mtfa_higher_timeframe_history_excludes_future_bars():
+    import pandas as pd
+
+    strategy = MTFAStrategy()
+    frame = pd.DataFrame({
+        "timestamp": pd.to_datetime([
+            START - timedelta(minutes=240),
+            START - timedelta(minutes=60),
+            START + timedelta(minutes=60),
+        ], utc=True),
+        "close": [100, 101, 10000],
+    })
+    history = strategy._closed_asof(frame, pd.Timestamp(START), 60)
+    assert history["close"].tolist() == [100]
+    h4_history = strategy._closed_asof(frame, pd.Timestamp(START), 240)
+    assert h4_history.empty
+
+
+def test_mtfa_refuses_to_invent_missing_higher_timeframes():
+    strategy = MTFAStrategy()
+    m15 = _m15_bullish_trigger()
+    assert strategy.run(
+        m15,
+        StrategyContext(symbol="NIFTY", capital=100000, risk_pct=1),
+    ) == []
