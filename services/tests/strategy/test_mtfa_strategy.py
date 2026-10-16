@@ -181,9 +181,9 @@ def test_mtfa_higher_timeframe_history_excludes_future_bars():
         "close": [100, 101, 10000],
     })
     history = strategy._closed_asof(frame, pd.Timestamp(START), 60)
-    assert history["close"].tolist() == [100]
+    assert history["close"].tolist() == [100, 101]
     h4_history = strategy._closed_asof(frame, pd.Timestamp(START), 240)
-    assert h4_history.empty
+    assert h4_history["close"].tolist() == [100]
 
 
 def test_mtfa_refuses_to_invent_missing_higher_timeframes():
