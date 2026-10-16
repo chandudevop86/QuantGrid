@@ -67,3 +67,49 @@ def test_storage_rejects_unparseable_intraday_timestamps():
     assert market_data_store._aligned_candles_for_storage(
         [_bar("unknown")], "1m",
     ) == []
+
+
+
+def test_storage_rejects_1530_nse_marker_and_incomplete_1529_bar():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 16, 15, 29, 45, tzinfo=ZoneInfo("Asia/Kolkata"))
+    bar_1528 = _bar("2026-10-16T15:28:00+05:30")
+    bar_1529 = _bar("2026-10-16T15:29:00+05:30")
+    marker_1530 = _bar("2026-10-16T15:30:00+05:30")
+    accepted = market_data_store._aligned_candles_for_storage(
+        [bar_1528, bar_1529, marker_1530], "1m", symbol="NIFTY", now=now,
+    )
+    assert accepted == [bar_1528]
+
+
+def test_storage_accepts_closed_1529_bar_after_market_close():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 16, 15, 30, 2, tzinfo=ZoneInfo("Asia/Kolkata"))
+    last = _bar("2026-10-16T15:29:00+05:30")
+    assert market_data_store._aligned_candles_for_storage(
+        [last], "1m", symbol="NIFTY", now=now,
+    ) == [last]
+
+
+def test_storage_does_not_apply_nse_hours_to_non_index_symbols():
+    from datetime import datetime, timezone
+
+    after_hours = _bar("2026-10-15T16:30:00+05:30")
+    assert market_data_store._aligned_candles_for_storage(
+        [after_hours], "1m", symbol="NON_NSE_INDEX", now=datetime(
+            2026, 10, 16, 0, 0, tzinfo=timezone.utc
+        ),
+    ) == [after_hours]
+
+
+def test_storage_rejects_naive_nifty_minute_timestamp():
+    from datetime import datetime, timezone
+
+    assert market_data_store._aligned_candles_for_storage(
+        [_bar("2026-10-15T09:15:00")], "1m", symbol="NIFTY",
+        now=datetime(2026, 10, 16, tzinfo=timezone.utc),
+    ) == []
