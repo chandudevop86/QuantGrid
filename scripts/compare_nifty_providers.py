@@ -316,6 +316,34 @@ def compare_bars(primary: pd.DataFrame, comparison: pd.DataFrame, *,
     }
 
 
+def compare_yahoo_with_stored(
+    yahoo: pd.DataFrame, stored: pd.DataFrame, *, tolerance: float = 1.0,
+) -> dict[str, Any]:
+    """Descriptive agreement only; database candles may originate from Yahoo.
+
+    Transform common compare_bars field names to keep provenance accurate.
+    This can inspect missing candles even when the Dhan API is unavailable.
+    """
+    result = compare_bars(
+        yahoo, stored, label="yahoo_vs_existing_postgres",
+        tolerance=tolerance,
+    )
+    if "dhan_minutes_not_in_reference" in result:
+        result["yahoo_minutes_not_in_reference"] = result.pop(
+            "dhan_minutes_not_in_reference"
+        )
+        result["reference_minutes_not_in_yahoo"] = result.pop(
+            "reference_minutes_not_in_dhan"
+        )
+    for item in result.get("worst_close_differences", []):
+        item["yahoo"] = item.pop("dhan")
+    result["evidence_note"] = (
+        "DESCRIPTIVE_ONLY: Yahoo and stored candles may share a common upstream "
+        "provider. Agreement is not independent validation of authenticity."
+    )
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--start", required=True, help="First IST date, YYYY-MM-DD")
@@ -360,6 +388,9 @@ def main() -> int:
                 dhan, stored, label="dhan_vs_existing_postgres",
                 tolerance=args.tolerance_points,
             ))
+            comparisons.append(compare_yahoo_with_stored(
+                yahoo, stored, tolerance=args.tolerance_points,
+            ))
         # If Dhan fails, still report Yahoo/stored coverage but NEVER certify
         # consistency or turn the comparison into a successful validation.
         report = {
@@ -376,6 +407,7 @@ def main() -> int:
                 "Yahoo 1m retrieval uses the last 7 days and may not cover October 1.",
                 "No database writes, order placement, automatic repair or provider relabeling.",
                 "Source agreement and data completeness do not establish trading profitability.",
+                "Yahoo vs stored is descriptive only; both may originate from Yahoo.",
             ],
         }
         if yahoo_error:
