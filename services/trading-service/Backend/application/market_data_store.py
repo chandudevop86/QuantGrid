@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import threading
 from datetime import datetime
@@ -12,6 +13,7 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_FILE = Path(os.getenv("MARKET_DATA_DB_FILE", DATA_DIR / "market_data.sqlite3"))
 _init_lock = threading.Lock()
 _initialized_store_key: tuple[str, object] | None = None
+logger = logging.getLogger(__name__)
 
 
 def _use_sqlite() -> bool:
@@ -169,6 +171,37 @@ def latest_price_tick(symbol: str) -> dict[str, Any] | None:
     return payload
 
 
+def _aligned_candles_for_storage(
+    candles: list[dict[str, Any]], interval: str
+) -> list[dict[str, Any]]:
+    """Do not store intraminute tick snapshots as completed minute OHLC bars.
+
+    Preserve the supplied timestamps. Never round, synthesize or overwrite a
+    candle. End-of-minute timestamps need a separately validated feed contract.
+    Daily/other bar formats are not handled by this minute-specific guard.
+    """
+    if interval.lower() not in {"1", "1m", "5", "5m", "15", "15m", "60", "60m"}:
+        return candles
+    accepted = []
+    for candle in candles:
+        value = candle.get("timestamp")
+        try:
+            ts = value if isinstance(value, datetime) else datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            logger.warning("candle_storage_rejected reason=invalid_timestamp interval=%s", interval)
+            continue
+        if ts.second or ts.microsecond:
+            logger.warning(
+                "candle_storage_rejected reason=offset_seconds interval=%s timestamp=%s",
+                interval, ts.isoformat(),
+            )
+            continue
+        accepted.append(candle)
+    return accepted
+
+
 def store_candles(
     *,
     symbol: str,
@@ -177,6 +210,9 @@ def store_candles(
     source: str,
     candles: list[dict[str, Any]],
 ) -> None:
+    candles = _aligned_candles_for_storage(candles, interval)
+    if not candles:
+        return
     init_market_data_store()
     if not _use_sqlite():
         _db_store_candles(symbol=symbol, market_symbol=market_symbol, interval=interval, source=source, candles=candles)
