@@ -23,6 +23,18 @@ PYTHONPATH=services/trading-service python /tmp/compare_nifty_providers.py \
   --output /tmp/quantgrid-nifty-provider-compare.json
 ```
 
+If Dhan's `Data APIs` subscription is inactive (`DH-902` or `806`),
+profile authentication may still succeed: trading API authentication and paid
+historical-data access are separate. Check My Profile → DhanHQ Trading APIs →
+Data APIs and its validity before considering a paid subscription. Never
+enable trading permissions just to run historical-data comparisons.
+
+When Dhan is blocked, the script now also reports
+`yahoo_vs_existing_postgres` and the two providers' `days` /
+`missing_sample` for each IST session. **This is descriptive:** the stored
+data may itself have come from Yahoo, so agreement is not an independent
+confirmation of authentic prices.
+
 If Dhan returns a failed status, the script now writes a **partial report** with
 `status=PARTIAL_DHAN_UNAVAILABLE_NO_VALIDATION` and a sanitized
 `dhan_error_category`, while still auditing Yahoo and stored candles. It
