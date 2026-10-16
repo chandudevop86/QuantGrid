@@ -393,6 +393,7 @@ def main() -> int:
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({
         "status": report["status"],
+        "dhan_error_category": report.get("dhan_error_category"),
         "dhan_eligible": profiles["dhan"]["eligible_bars"],
         "yahoo_eligible": profiles["yahoo"]["eligible_bars"],
         "comparisons": comparisons,
