@@ -101,8 +101,9 @@ def parse_participant_oi(text: str, *, report_date: date, today: date) -> dict[s
     )
     if header_at is None:
         raise ValueError("participant report has no expected column headers")
-    reader = csv.DictReader(lines[header_at:])
-    for row in reader:
+    reader = csv.DictReader(lines[header_at:], skipinitialspace=True)
+    for raw_row in reader:
+        row = {str(k).strip(): v for k, v in raw_row.items() if k is not None}
         category = str(row.get("Client Type") or "").strip().upper()
         if category not in {"FII", "FPI", "FII/FPI"}:
             continue
