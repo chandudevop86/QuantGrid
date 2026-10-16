@@ -107,3 +107,10 @@ def test_missing_intraday_bar_fails_closed():
     raw = _bars("2026-10-12", 7).drop(index=3).reset_index(drop=True)
     with pytest.raises(ReplayDataError, match="Missing or irregular"):
         normalize_candles(raw, source_minutes=5, timestamp_role="open")
+
+
+def test_missing_index_volume_is_not_mistaken_for_observed_volume():
+    raw = _bars("2026-10-12", 5)
+    raw.loc[1, "volume"] = None
+    normalized = normalize_candles(raw, source_minutes=5, timestamp_role="open")
+    assert normalized["volume"].iloc[1] == 0.0
