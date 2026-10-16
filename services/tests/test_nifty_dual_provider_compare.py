@@ -275,6 +275,7 @@ def test_exact_missing_minutes_displayed_without_synthesizing_bars():
     extra = _bars("2026-10-15", count=1)
     extra["timestamp"] = "2026-10-15T10:05:00+05:30"
     reference = pd.concat([reference, extra], ignore_index=True)
+    reference["timestamp"] = pd.to_datetime(reference["timestamp"], utc=True)
     result = compare.compare_bars(primary, reference, label="dhan_vs_yahoo")
     assert result["matched_minutes"] == 36
     assert len(result["only_in_primary_minutes_ist"]) == 14
