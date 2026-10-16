@@ -148,3 +148,23 @@ def test_unknown_provider_label_is_rejected_pending_review():
     raw["source"] = "some-unknown-provider"
     with pytest.raises(ReplayDataError, match="Unverified"):
         validate_market_provenance(raw)
+
+
+def test_october_first_style_second_offset_overlaps_are_rejected():
+    """Nonzero-second bars cannot be averaged/rounded into one-minute OHLC."""
+    raw = _bars("2026-10-12", 5)
+    competing = raw.iloc[[0]].copy()
+    competing.loc[competing.index[0], "timestamp"] = "2026-10-12T09:15:14+05:30"
+    competing.loc[competing.index[0], "close"] += 34.05
+    competing.loc[competing.index[0], "high"] += 40.00
+    contaminated = pd.concat([raw, competing], ignore_index=True)
+    with pytest.raises(ReplayDataError, match="Missing or irregular|outside aligned NSE"):
+        normalize_candles(contaminated, source_minutes=1, timestamp_role="open")
+
+
+def test_october_fifteenth_style_fourteen_minute_hole_is_rejected():
+    raw = _bars("2026-10-12", 30, minutes=1)
+    # Missing minutes must fail, not be silently interpolated into an FVG.
+    raw = raw.drop(index=range(13, 27)).reset_index(drop=True)
+    with pytest.raises(ReplayDataError, match="Missing or irregular"):
+        normalize_candles(raw, source_minutes=1, timestamp_role="open")
