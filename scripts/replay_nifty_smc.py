@@ -11,7 +11,7 @@ Example (server with existing market_candles data):
 
 Example (5-minute CSV with tz-aware ISO timestamps):
  PYTHONPATH=services/trading-service python scripts/replay_nifty_smc.py \
-   --csv /tmp/NIFTY_5m.csv --source-minutes 5 \
+   --csv /tmp/NIFTY_5m_with_source.csv --source-minutes 5 \
    --timestamp-role open --output /tmp/nifty-smc-audit.json
 """
 from __future__ import annotations
@@ -33,10 +33,43 @@ IST = ZoneInfo("Asia/Kolkata")
 SESSION_OPEN_MINUTE = 9 * 60 + 15
 SESSION_CLOSE_MINUTE = 15 * 60 + 30
 COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
+SOURCE_COLUMNS = [*COLUMNS, "source"]
+# A provider label is not independent proof of market-data authenticity.
+ACCEPTED_PROVIDER_LABELS = frozenset({
+    "yahoo", "yfinance", "dhan", "nse", "nseindia",
+    "fyers", "zerodha", "upstox", "angelone",
+})
 
 
 class ReplayDataError(ValueError):
     """The dataset cannot support a trustworthy closed-candle replay."""
+
+
+def validate_market_provenance(source: pd.DataFrame) -> dict[str, int]:
+    """Reject synthetic, demo, missing and unrecognized provider labels.
+
+    Unit tests may still use generated fixtures directly with normalize_candles.
+    A recognized label does not independently certify price authenticity.
+    """
+    frame = source.copy()
+    frame.columns = [str(col).strip().lower() for col in frame.columns]
+    if "source" not in frame.columns:
+        raise ReplayDataError(
+            "Missing source column. Export timestamp, OHLCV AND source; "
+            "cannot verify market-data provenance."
+        )
+    if frame.empty:
+        raise ReplayDataError("No candles available for source validation.")
+    labels = frame["source"].fillna("").astype(str).str.strip().str.lower()
+    counts = {str(label): int(count) for label, count in labels.value_counts().items()}
+    rejected = sorted(set(labels) - ACCEPTED_PROVIDER_LABELS)
+    if rejected:
+        raise ReplayDataError(
+            "Unverified or demo market-data source(s) rejected: "
+            + ", ".join(repr(label or "<missing>") for label in rejected)
+            + ". Use documented real-provider candles; never relabel demo rows."
+        )
+    return counts
 
 
 def normalize_candles(
@@ -170,12 +203,12 @@ def load_db_candles(start: str, end: str) -> pd.DataFrame:
     session = SessionLocal()
     try:
         result = session.execute(text(
-            "SELECT timestamp, open, high, low, close, volume FROM market_candles "
+            "SELECT timestamp, open, high, low, close, volume, source FROM market_candles "
             "WHERE symbol = :symbol AND interval IN ('1', '1m') "
             "AND timestamp >= :start AND timestamp < :end "
             "ORDER BY timestamp ASC"
         ), {"symbol": "NIFTY", "start": start_ist, "end": end_ist})
-        return pd.DataFrame(result.fetchall(), columns=COLUMNS)
+        return pd.DataFrame(result.fetchall(), columns=SOURCE_COLUMNS)
     finally:
         session.close()
 
@@ -282,6 +315,7 @@ def main() -> int:
             source = pd.read_csv(args.csv)
             src_minutes = args.source_minutes
             descriptor = str(args.csv)
+        provenance = validate_market_provenance(source)
         normalized = normalize_candles(
             source, source_minutes=src_minutes,
             timestamp_role=args.timestamp_role,
@@ -292,6 +326,8 @@ def main() -> int:
             if src_minutes == 1 else normalized
         )
         report = make_report(fivemin, source=descriptor)
+        report["provider_label_counts"] = provenance
+        report["provenance_note"] = "Source labels alone do not certify quote authenticity."
     except (ReplayDataError, FileNotFoundError) as exc:
         parser.exit(2, f"REPLAY NOT EXECUTED: {exc}\n")
     args.output.parent.mkdir(parents=True, exist_ok=True)
