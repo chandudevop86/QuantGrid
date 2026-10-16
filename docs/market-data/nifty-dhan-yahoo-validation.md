@@ -4,7 +4,7 @@
 
 The 1 October 2026 PostgreSQL ingestion audit found 334 NIFTY rows with off-minute timestamps, all flat OHLC, alongside later minute-aligned bars. An additional 14-minute block is missing on 15 October. Do not delete, round, or overwrite these historical rows.
 
-Use `scripts/compare_nifty_providers.py` to retrieve **separately fetched Dhan INDEX/IDX_I (NIFTY index ID 13)** and **Yahoo ^NSEI** 1-minute candles. It reports timestamp alignment, full-session missing-minute counts, pairwise close differences, and the original PostgreSQL rows **without any database mutation or order placement**.
+Use `scripts/compare_nifty_providers.py` to retrieve **separately fetched Dhan INDEX/IDX_I (NIFTY index ID 13)** and **Yahoo ^NSEI** 1-minute candles. It reports timestamp alignment, full-session missing-minute counts, pairwise OHLC differences, and the original PostgreSQL rows **without any database mutation or order placement**.
 
 Dhan v2 reference: https://dhanhq.co/docs/v2/historical-data/ (1/5/15/25/60-minute candles; at most 90 days per request).
 
@@ -31,9 +31,9 @@ Yahoo: direct 7-day 1m chart request through the project's YahooProvider. The de
 
 ## Interpretation
 
-- `DISAGREEMENT`: at least one overlapping close exceeds the configured comparison tolerance (default 1.0 index point). Inspect `per_ist_date` and `worst_close_differences`.
-- `CLOSE_PRICE_AGREEMENT`: at least 30 overlapping minutes and all close differences within tolerance. This is **only** an agreement check; examine 1m bars' open/high/low and coverage before trading research.
+- `DISAGREEMENT`: at least one overlapping OHLC field exceeds the configured comparison tolerance (default 1.0 index point). Inspect `per_ist_date` and `worst_close_differences`.
+- `OHLC_AGREEMENT`: at least 30 overlapping minutes and all open/high/low/close differences within tolerance. This is **only** a consistency check; inspect day-level coverage, timestamp conventions and market conditions before trading research.
 - `INSUFFICIENT_OVERLAP`: no defensible agreement claim is possible.
 - The `provider_profiles` entries show excluded unaligned, incomplete, non-session and out-of-range observations. Compare the original `stored_postgres` record quality separately from Dhan and Yahoo.
 
-The data are NIFTY **spot index** candles, not option premiums. They cannot establish NIFTY CE/PE strategy P&L, lots, slippage, spreads or live execution readiness. Keep the original PostgreSQL data untouched. Treat PR #80 as draft until real-data and other infrastructure checks are reviewed.
+The output contains daily OHLC discrepancy counts as `per_ist_date`. Never interpret an empty or unavailable Yahoo comparison as an agreement.\n\nThe data are NIFTY **spot index** candles, not option premiums. They cannot establish NIFTY CE/PE strategy P&L, lots, slippage, spreads or live execution readiness. Keep the original PostgreSQL data untouched. Treat PR #80 as draft until real-data and other infrastructure checks are reviewed.
