@@ -152,7 +152,7 @@ def test_unknown_provider_label_is_rejected_pending_review():
 
 def test_october_first_style_second_offset_overlaps_are_rejected():
     """Nonzero-second bars cannot be averaged/rounded into one-minute OHLC."""
-    raw = _bars("2026-10-12", 5)
+    raw = _bars("2026-10-12", 5, minutes=1)
     competing = raw.iloc[[0]].copy()
     competing.loc[competing.index[0], "timestamp"] = "2026-10-12T09:15:14+05:30"
     competing.loc[competing.index[0], "close"] += 34.05
