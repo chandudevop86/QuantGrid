@@ -81,8 +81,11 @@ def normalize_candles(
         raise ReplayDataError("Duplicate candle timestamps must be resolved at the source.")
     for col in COLUMNS[1:]:
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
-    if frame[COLUMNS[1:]].isna().any().any():
-        raise ReplayDataError("At least one OHLCV value is missing or not numeric.")
+    if frame[["open", "high", "low", "close"]].isna().any().any():
+        raise ReplayDataError("At least one OHLC value is missing or not numeric.")
+    # NSE cash index candles may not include true exchange volume. Zero is an
+    # explicit unavailable-volume sentinel, never affirmative volume evidence.
+    frame["volume"] = frame["volume"].fillna(0.0)
     if not (
         (frame["open"] > 0) & (frame["close"] > 0) &
         (frame["low"] > 0) & (frame["high"] >= frame["low"]) &
