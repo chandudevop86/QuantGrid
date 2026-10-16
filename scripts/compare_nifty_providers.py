@@ -48,9 +48,12 @@ def utc_window(start: str, end: str) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 def fetch_dhan(start: str, end: str, *, security_id: str | None = None) -> pd.DataFrame:
     """Market-data SDK only. No orders, token printing, writes or trading."""
+    from Backend.core.config import ensure_env_loaded
     from Backend.infrastructure.market_data.dhan_sdk import dhan_sdk_client
     from Backend.infrastructure.market_data.dhan_provider import _normalize_candles
 
+    # Respect QuantGrid's existing secure environment-file policy.
+    ensure_env_loaded()
     security_id = security_id or os.getenv("DHAN_SECURITY_ID_NIFTY") or NIFTY_DHAN_SECURITY_ID
     if not str(security_id).isdigit():
         raise ProviderComparisonError("Dhan NIFTY index security ID must be numeric.")
