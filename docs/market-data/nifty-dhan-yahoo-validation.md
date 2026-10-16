@@ -23,6 +23,30 @@ PYTHONPATH=services/trading-service python /tmp/compare_nifty_providers.py \
   --output /tmp/quantgrid-nifty-provider-compare.json
 ```
 
+If Dhan returns a failed status, the script now writes a **partial report** with
+`status=PARTIAL_DHAN_UNAVAILABLE_NO_VALIDATION` and a sanitized
+`dhan_error_category`, while still auditing Yahoo and stored candles. It
+exits with code 2 to avoid false success. Never describe this partial output
+as a successful Dhan comparison.
+
+Check Dhan profile authentication without displaying account identifiers or credentials:
+
+```bash
+PYTHONPATH=services/trading-service python - <<'PY'
+from Backend.core.config import ensure_env_loaded
+from Backend.infrastructure.broker.dhan_status import check_dhan_profile
+
+ensure_env_loaded()
+status = check_dhan_profile()
+print({key: status.get(key) for key in ("connected", "authenticated", "error")})
+PY
+```
+
+If profile authentication succeeds but Dhan intraday still fails, try a
+single closed day using `--start 2026-10-15 --end 2026-10-15`. Dhan SDK
+historical `IDX_I` errors have previously been reported upstream; inspect
+`dhan_error_category` rather than sharing raw SDK response bodies.
+
 Existing Dhan SDK credentials are loaded through QuantGrid's configured credential loader. **Never paste tokens, API keys, `.env` files, or raw authorized API responses** in GitHub issues or ChatGPT. Only share the resulting comparison JSON summary.
 
 Dhan API: `intraday_minute_data(security_id="13", exchange_segment="IDX_I", instrument_type="INDEX", interval=1, oi=False)`. The security ID can be overridden with `--dhan-security-id`, or `DHAN_SECURITY_ID_NIFTY`. A missing SDK/token, expired token or insufficient historical-data entitlement is an execution blocker, not a validation pass.
