@@ -100,3 +100,9 @@ def test_insufficient_history_aborts_instead_of_claiming_success():
     frame = _prepared(("2026-10-12",), count=15)
     with pytest.raises(ReplayDataError, match="Insufficient"):
         make_report(frame, source="fixture")
+
+
+def test_missing_intraday_bar_fails_closed():
+    raw = _bars("2026-10-12", 7).drop(index=3).reset_index(drop=True)
+    with pytest.raises(ReplayDataError, match="Missing or irregular"):
+        normalize_candles(raw, source_minutes=5, timestamp_role="open")
