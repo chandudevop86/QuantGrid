@@ -63,7 +63,7 @@ def _h1_demand_pullback() -> list[dict]:
 
 
 def _m15_bullish_trigger() -> list[dict]:
-    values = [(102 + index * 0.1, 103 + index * 0.1, 101.5 + index * 0.1, 102.4 + index * 0.1, 1000 + index * 20) for index in range(10)]
+    values = [(102 + index * 0.1, 103 + index * 0.1, 101.5 + index * 0.1, 102.4 + index * 0.1, 1000 + index * 20) for index in range(30)]
     values.extend(
         [
             (103.0, 103.4, 100.8, 101.2, 1300),
