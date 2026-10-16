@@ -942,12 +942,24 @@ def analyze_market_structure(candles: list[dict[str, Any]], volume: VolumeAnalys
     structure_bias = "Bullish" if bullish else "Bearish" if bearish else "Neutral"
     volume_confirmed = bool(volume and volume.supports_trade)
     latest_close = _num(candles[-1].get("close")) if candles else 0.0
-    previous_high = swing_highs[-2]["price"] if len(swing_highs) >= 2 else None
-    previous_low = swing_lows[-2]["price"] if len(swing_lows) >= 2 else None
-    bos = bool((bullish and previous_high is not None and latest_close > previous_high) or (bearish and previous_low is not None and latest_close < previous_low))
-    reversal_warning = bool((trend.trend_direction == "UPTREND" and has_ll) or (trend.trend_direction == "DOWNTREND" and has_hh))
+    # Use the last confirmed pivot (not the older of the last two),
+    # and only report a fresh close-through of that protected level.
+    confirmed_highs = [s for s in swing_highs if s.get("confirmed")]
+    confirmed_lows = [s for s in swing_lows if s.get("confirmed")]
+    previous_high = confirmed_highs[-1]["price"] if confirmed_highs else None
+    previous_low = confirmed_lows[-1]["price"] if confirmed_lows else None
+    prior_close = _num(candles[-2].get("close")) if len(candles) >= 2 else latest_close
+    bos = bool(
+        (bullish and previous_high is not None and prior_close <= previous_high < latest_close)
+        or (bearish and previous_low is not None and latest_close < previous_low <= prior_close)
+    )
+    prior_direction = analyze_trend(candles[:-1]).trend_direction if len(candles) >= 6 else "SIDEWAYS"
+    reversal_warning = bool(
+        (prior_direction == "UPTREND" and previous_low is not None and latest_close < previous_low <= prior_close)
+        or (prior_direction == "DOWNTREND" and previous_high is not None and prior_close <= previous_high < latest_close)
+    )
     latest_event = "Sideways"
-    if bos and volume_confirmed:
+    if bos:
         latest_event = "BOS"
     elif reversal_warning:
         latest_event = "CHoCH" if volume_confirmed else "MSS"
@@ -992,22 +1004,22 @@ def _swing_points(candles: list[dict[str, Any]]) -> dict[str, list[dict[str, Any
         return {"swing_highs": [], "swing_lows": []}
     swing_highs: list[dict[str, Any]] = []
     swing_lows: list[dict[str, Any]] = []
-    for index in range(1, len(candles) - 1):
-        prev = candles[index - 1]
+    # A two-left/two-right pivot is only confirmed after both right bars close.
+    for index in range(2, len(candles) - 2):
         cur = candles[index]
-        nxt = candles[index + 1]
         high = _num(cur.get("high", cur.get("close")))
         low = _num(cur.get("low", cur.get("close")))
-        if high >= _num(prev.get("high", prev.get("close"))) and high >= _num(nxt.get("high", nxt.get("close"))):
-            swing_highs.append({"index": index, "price": round(high, 2)})
-        if low <= _num(prev.get("low", prev.get("close"))) and low <= _num(nxt.get("low", nxt.get("close"))):
-            swing_lows.append({"index": index, "price": round(low, 2)})
+        neighbors = [candles[j] for j in (index - 2, index - 1, index + 1, index + 2)]
+        if all(high > _num(other.get("high", other.get("close"))) for other in neighbors):
+            swing_highs.append({"index": index, "price": round(high, 2), "confirmed": True})
+        if all(low < _num(other.get("low", other.get("close"))) for other in neighbors):
+            swing_lows.append({"index": index, "price": round(low, 2), "confirmed": True})
     if not swing_highs and candles:
         highs = [_num(candle.get("high", candle.get("close"))) for candle in candles]
-        swing_highs = [{"index": highs.index(max(highs)), "price": round(max(highs), 2)}]
+        swing_highs = [{"index": highs.index(max(highs)), "price": round(max(highs), 2), "confirmed": False}]
     if not swing_lows and candles:
         lows = [_num(candle.get("low", candle.get("close"))) for candle in candles]
-        swing_lows = [{"index": lows.index(min(lows)), "price": round(min(lows), 2)}]
+        swing_lows = [{"index": lows.index(min(lows)), "price": round(min(lows), 2), "confirmed": False}]
     return {"swing_highs": swing_highs, "swing_lows": swing_lows}
 
 
