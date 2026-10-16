@@ -24,7 +24,7 @@ def _csv():
         "Participant wise Open Interest\n"
         "Client Type,Future Index Long,Future Index Short,Future Stock Long\n"
         "Client,100,150,20\n"
-        "FII,1,200,1,600,200\n"
+        'FII,"1,200","1,600",200\n'
         "DII,300,400,500\n"
     )
 
