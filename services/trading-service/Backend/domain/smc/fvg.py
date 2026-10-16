@@ -16,6 +16,13 @@ class FVGDetector:
             zone = self.detect_at(candles, created_index, side)
             if zone is None:
                 continue
+            # An earlier full fill invalidates the gap for a later return.
+            # Do not treat an already-consumed imbalance as fresh liquidity.
+            intervening = candles.iloc[created_index + 1:index]
+            if side == "BUY" and (intervening["low"] <= zone.low).any():
+                continue
+            if side == "SELL" and (intervening["high"] >= zone.high).any():
+                continue
             if self._price_returns_to_zone(candles.iloc[index], zone):
                 zone.mitigated_index = index
                 return zone
