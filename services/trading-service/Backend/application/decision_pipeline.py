@@ -1087,11 +1087,19 @@ def analyze_liquidity(candles: list[dict[str, Any]], sr: SupportResistanceAnalys
     close = _num(latest.get("close"))
     low = _num(latest.get("low", close))
     high = _num(latest.get("high", close))
-    support = float(sr.support)
-    resistance = float(sr.resistance)
-    if low < support and close > support:
+    # Use pre-event range boundaries; current-bar highs/lows cannot
+    # serve as their own swept level.
+    previous = candles[-31:-1]
+    support = min(_num(c.get("low", c.get("close"))) for c in previous)
+    resistance = max(_num(c.get("high", c.get("close"))) for c in previous)
+    avg_range = sum(
+        max(0.0, _num(c.get("high")) - _num(c.get("low")))
+        for c in previous[-14:]
+    ) / max(len(previous[-14:]), 1)
+    extension = max(avg_range * 0.05, 0.01)
+    if low < support - extension and close > support:
         return {"liquidity_event": "LIQUIDITY_SWEEP_BELOW_SUPPORT", "liquidity_bias": "BULLISH", "confirmation_status": "CONFIRMED", "reason": "Bullish liquidity sweep below support recovered.", "warning": None, "passed": True}
-    if high > resistance and close < resistance:
+    if high > resistance + extension and close < resistance:
         return {"liquidity_event": "LIQUIDITY_SWEEP_ABOVE_RESISTANCE", "liquidity_bias": "BEARISH", "confirmation_status": "CONFIRMED", "reason": "Bearish liquidity sweep above resistance rejected.", "warning": None, "passed": True}
     return {"liquidity_event": "NONE", "liquidity_bias": "NEUTRAL", "confirmation_status": "WAIT", "reason": "No confirmed liquidity sweep.", "warning": "Fresh sweep absent; wait for confirmation.", "passed": True}
 
