@@ -241,8 +241,9 @@ def _validated_futures_basis(symbol: str) -> dict[str, Any]:
     future = _env_float(f"QUANTGRID_{symbol}_FUTURES_PRICE")
     spot = _env_float(f"QUANTGRID_{symbol}_SPOT_PRICE")
     raw_timestamp = os.getenv(f"QUANTGRID_{symbol}_FUTURES_AS_OF", "")
-    unavailable = {"value": None, "premium_pct": None, "unit": "points", "source": "unavailable"}
-    if future is None or spot is None or future <= 0 or spot <= 0 or not raw_timestamp:
+    unavailable = {"label": f"{symbol} Futures Basis", "value": None, "premium_pct": None, "unit": "points", "source": "unavailable"}
+    import math
+    if future is None or spot is None or not math.isfinite(future) or not math.isfinite(spot) or future <= 0 or spot <= 0 or not raw_timestamp:
         return unavailable
     try:
         observed = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
