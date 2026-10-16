@@ -78,7 +78,7 @@ function MetricCard({ item }: { item: Metric }) {
     <article className={`metric-card${unavailable ? " metric-card-warn" : " metric-card-good"}`}>
       <span className="metric-label">{item.label}</span>
       <strong className="metric-value">{formatNumber(item.value, item.unit)}</strong>
-      <span className="metric-helper">{unavailable ? `Waiting for verified data; ${item.env_name ?? "provider missing"}` : `Source: ${item.source ?? "configured"}${item.as_of ? ` | As of ${item.as_of}` : " | Undated manual input"}${item.scope === "all_index_futures" ? " | All index futures (not NIFTY-only)" : ""}`}</span>
+      <span className="metric-helper">{unavailable ? `Set ${item.env_name ?? "env input"}` : `Source: ${item.source ?? "configured"}${item.as_of ? ` | As of ${item.as_of}` : " | Undated manual input"}${item.scope === "all_index_futures" ? " | All index futures (not NIFTY-only)" : ""}`}</span>
       {item.premium_pct != null && <span className="metric-helper">Premium/discount {formatNumber(item.premium_pct)}%</span>}
     </article>
   );
