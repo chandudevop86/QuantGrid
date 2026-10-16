@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from Backend.application.institutional_dashboard import build_institutional_dashboard
+from Backend.application.institutional_feeds import get_institutional_eod
 from Backend.presentation.api.roles import require_roles
 from Backend.application.subscriptions import require_entitlement
 
@@ -29,4 +30,5 @@ def institutional_dashboard(
         symbol,
         option_chain=option_chain,
         option_chain_error=option_chain_error,
+        institutional_eod=get_institutional_eod(),
     )
