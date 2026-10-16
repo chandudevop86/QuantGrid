@@ -92,7 +92,7 @@ def test_matching_40_bar_sample_reports_agreement_but_not_profit():
     other = dhan.copy()
     other["close"] = other["close"] + 0.25
     result = compare.compare_bars(dhan, other, label="dhan_vs_yahoo", tolerance=0.5)
-    assert result["result"] == "CLOSE_PRICE_AGREEMENT"
+    assert result["result"] == "OHLC_AGREEMENT"
     assert result["matched_minutes"] == 40
     assert result["different_close_count"] == 0
     assert result["per_ist_date"]["2026-10-01"]["matched_minutes"] == 40
@@ -157,3 +157,17 @@ def test_no_credential_exposure_and_no_database_write(monkeypatch, tmp_path):
 def test_date_range_and_access_inputs_validate():
     with pytest.raises(compare.ProviderComparisonError, match="End date"):
         compare.utc_window("2026-10-16", "2026-10-01")
+
+
+def test_bos_high_disagreement_flagged_even_when_closes_match():
+    dhan, _ = compare.audit_bars(
+        _bars("2026-10-01"), label="dhan", start="2026-10-01", end="2026-10-01",
+    )
+    other = dhan.copy()
+    other.loc[20, "high"] = other.loc[20, "high"] + 16
+    result = compare.compare_bars(dhan, other, label="dhan_vs_yahoo")
+    assert result["result"] == "DISAGREEMENT"
+    assert result["different_close_count"] == 0
+    assert result["different_ohlc_count"] == 1
+    assert result["max_abs_difference_by_ohlc_field"]["high"] == 16.0
+    assert result["per_ist_date"]["2026-10-01"]["different_ohlc_count"] == 1
