@@ -183,6 +183,8 @@ def _aligned_candles_for_storage(
     if interval.lower() not in {"1", "1m", "5", "5m", "15", "15m", "60", "60m"}:
         return candles
     accepted = []
+    rejected_invalid = 0
+    rejected_offset = 0
     for candle in candles:
         value = candle.get("timestamp")
         try:
@@ -190,15 +192,17 @@ def _aligned_candles_for_storage(
                 str(value).replace("Z", "+00:00")
             )
         except (TypeError, ValueError):
-            logger.warning("candle_storage_rejected reason=invalid_timestamp interval=%s", interval)
+            rejected_invalid += 1
             continue
         if ts.second or ts.microsecond:
-            logger.warning(
-                "candle_storage_rejected reason=offset_seconds interval=%s timestamp=%s",
-                interval, ts.isoformat(),
-            )
+            rejected_offset += 1
             continue
         accepted.append(candle)
+    if rejected_invalid or rejected_offset:
+        logger.warning(
+            "candle_storage_rejected interval=%s invalid_timestamps=%s offset_seconds=%s",
+            interval, rejected_invalid, rejected_offset,
+        )
     return accepted
 
 
