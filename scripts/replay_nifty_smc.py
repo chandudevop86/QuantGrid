@@ -94,6 +94,10 @@ def normalize_candles(
 
     frame = frame[COLUMNS].sort_values("timestamp").reset_index(drop=True)
     local = frame["timestamp"].dt.tz_convert(IST)
+    within_session = local.dt.date.eq(local.dt.date.shift(1))
+    gaps = within_session & frame["timestamp"].diff().ne(pd.Timedelta(minutes=source_minutes))
+    if gaps.any():
+        raise ReplayDataError("Missing or irregular intraday candle intervals; no interpolation allowed.")
     minute = local.dt.hour * 60 + local.dt.minute
     offset = minute - SESSION_OPEN_MINUTE
     valid = (
