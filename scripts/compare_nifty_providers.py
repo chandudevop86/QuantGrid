@@ -73,7 +73,9 @@ def classify_dhan_failure(payload: dict[str, Any]) -> str:
         return "SDK_RESPONSE_JSON_PARSE_FAILURE"
     if "not subscribed" in messages or "subscription" in messages:
         return "DATA_API_SUBSCRIPTION"
-    if "token" in messages or "unauthoriz" in messages:
+    if ("unauthoriz" in messages or "invalid token" in messages
+            or "expired token" in messages or "token expired" in messages
+            or "token is invalid" in messages or "authentication failed" in messages):
         return "AUTHENTICATION"
     if "rate limit" in messages or "too many requests" in messages:
         return "RATE_LIMIT"
