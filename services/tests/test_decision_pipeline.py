@@ -639,11 +639,14 @@ def test_supply_demand_and_fvg_and_liquidity_detection():
     bullish_levels = analyze_support_resistance(bullish)
     liquidity_candles = _bullish_candles()
     liquidity_levels = analyze_support_resistance(liquidity_candles[:-1])
+    # A genuine sweep must breach the PRECEDING range low, not merely the
+    # closest support beneath the last price.
+    previous_low = min(float(bar["low"]) for bar in liquidity_candles[-31:-1])
     liquidity_candles[-1] = {
-        "open": float(liquidity_levels.support or 120) + 1,
-        "high": float(liquidity_levels.support or 120) + 5,
-        "low": float(liquidity_levels.support or 120) - 1,
-        "close": float(liquidity_levels.support or 120) + 2,
+        "open": previous_low + 1,
+        "high": previous_low + 5,
+        "low": previous_low - 1,
+        "close": previous_low + 2,
         "volume": 3000,
     }
 
