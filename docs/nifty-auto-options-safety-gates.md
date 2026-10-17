@@ -11,7 +11,7 @@
 
 ## Important limitation
 
-The current option-chain `updated_at` field indicates when QuantGrid assembled the response, **not necessarily the exchange timestamp of an option quote**. This first gate is **not sufficient for live execution**. Real fill simulation or order submission must use a verified per-contract quote timestamp and executable bid/ask.
+The current option-chain `updated_at` field indicates when QuantGrid assembled the response, **not necessarily the exchange timestamp of an option quote**. Candidate output uses `chain_assembled_at` and explicitly sets `exchange_quote_timestamp_verified=false` so downstream code cannot mistake it for certified market-data freshness. This first gate is **not sufficient for live execution**. Real fill simulation or order submission must use a verified per-contract quote timestamp and executable bid/ask.
 
 ## Remaining acceptance gates before implementing live auto-trading
 
