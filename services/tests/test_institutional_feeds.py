@@ -135,3 +135,29 @@ def test_futures_basis_requires_a_fresh_timestamp(monkeypatch):
     basis = build_institutional_dashboard("NIFTY")["futures"]["basis"]
     assert basis["value"] == -33.15
     assert basis["premium_pct"] < 0
+
+@pytest.mark.parametrize("redirect", [
+    "http://127.0.0.1/internal",
+    "https://www.nseindia.com.attacker.invalid/fake.csv",
+    "http://www.nseindia.com/api/fiidiiTradeReact",
+    "https://169.254.169.254/latest/meta-data",
+])
+def test_nse_reader_rejects_unsafe_redirect_before_request(redirect):
+    from urllib.request import Request
+
+    handler = feeds._NSEOnlyRedirects()
+    with pytest.raises(ValueError, match="untrusted NSE host"):
+        handler.redirect_request(
+            Request(feeds.CASH_URL), None, 302, "Found", {}, redirect
+        )
+
+
+def test_nse_reader_allows_only_approved_https_redirect():
+    from urllib.request import Request
+
+    destination = "https://nsearchives.nseindia.com/content/nsccl/report.csv"
+    handler = feeds._NSEOnlyRedirects()
+    redirected = handler.redirect_request(
+        Request(feeds.CASH_URL), None, 302, "Found", {}, destination
+    )
+    assert redirected.full_url == destination
