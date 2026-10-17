@@ -11,7 +11,7 @@ from math import isfinite
 from typing import Any
 
 IST = timezone(timedelta(hours=5, minutes=30))
-MAX_CHAIN_AGE_SECONDS = 120
+MAX_CHAIN_ASSEMBLY_AGE_SECONDS = 120
 MAX_SPREAD_FRACTION = 0.03
 
 
@@ -72,7 +72,7 @@ class OptionContractResolver:
         if observed_at.tzinfo is None:
             raise OptionSelectionError("chain_timestamp_without_timezone")
         age_seconds = (clock - observed_at).total_seconds()
-        if not (0 <= age_seconds <= MAX_CHAIN_AGE_SECONDS):
+        if not (0 <= age_seconds <= MAX_CHAIN_ASSEMBLY_AGE_SECONDS):
             raise OptionSelectionError("stale_or_future_option_chain")
 
         try:
@@ -118,7 +118,10 @@ class OptionContractResolver:
             "volume": int(volume),
             "spread_fraction": round((ask - bid) / ask, 6),
             "quote_source": "dhan-option-chain",
-            "quote_time": observed_at.isoformat(),
+            # Dhan option-chain response has no per-leg exchange quote timestamp.
+            # This is API assembly time only and NEVER execution freshness proof.
+            "chain_assembled_at": observed_at.isoformat(),
+            "exchange_quote_timestamp_verified": False,
             "execution_approved": False,
             "execution_blocker": "lot_size_risk_and_protected_exit_not_yet_verified",
         }
