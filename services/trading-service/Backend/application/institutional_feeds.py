@@ -15,7 +15,7 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from zoneinfo import ZoneInfo
 
 CASH_URL = "https://www.nseindia.com/api/fiidiiTradeReact"
@@ -128,9 +128,25 @@ def parse_participant_oi(text: str, *, report_date: date, today: date) -> dict[s
     raise ValueError("participant report has no FII row")
 
 
-def _fetch_text(url: str) -> str:
-    if urlsplit(url).scheme != "https" or urlsplit(url).hostname not in {"www.nseindia.com", "nsearchives.nseindia.com"}:
+_ALLOWED_NSE_HOSTS = frozenset({"www.nseindia.com", "nsearchives.nseindia.com"})
+
+
+def _validate_nse_url(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_NSE_HOSTS:
         raise ValueError("untrusted NSE host")
+
+
+class _NSEOnlyRedirects(HTTPRedirectHandler):
+    """Never contact non-NSE redirect destinations, even temporarily."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_nse_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _fetch_text(url: str) -> str:
+    _validate_nse_url(url)
     req = Request(
         url,
         headers={
@@ -139,10 +155,9 @@ def _fetch_text(url: str) -> str:
             "Referer": "https://www.nseindia.com/",
         },
     )
-    with urlopen(req, timeout=5) as response:
-        final = urlsplit(response.geturl())
-        if final.scheme != "https" or final.hostname not in {"www.nseindia.com", "nsearchives.nseindia.com"}:
-            raise ValueError("unexpected report redirect")
+    with build_opener(_NSEOnlyRedirects()).open(req, timeout=5) as response:
+        # Defensive final check in addition to pre-request redirect checking.
+        _validate_nse_url(response.geturl())
         content = response.read(_MAX_BYTES + 1)
         if len(content) > _MAX_BYTES:
             raise ValueError("NSE report exceeds size limit")
