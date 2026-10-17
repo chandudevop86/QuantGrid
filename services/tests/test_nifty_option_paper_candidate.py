@@ -37,6 +37,7 @@ def test_candidate_resolves_ce_or_pe_from_verified_dhan_chain(monkeypatch):
     assert put["security_id"] == "22345"
     assert call["execution_approved"] is False
     assert put["execution_approved"] is False
+    assert call["exchange_quote_timestamp_verified"] is False
 
 
 def test_opt_in_option_paper_analysis_never_places_spot_simulated_trade(monkeypatch):
