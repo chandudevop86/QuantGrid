@@ -33,6 +33,9 @@ def test_selects_atm_leg_as_candidate_not_order(side, security_id):
     assert result["exchange_segment"] == "NSE_FNO"
     assert result["execution_approved"] is False
     assert result["status"] == "candidate_only"
+    assert result["chain_assembled_at"] == chain()["updated_at"]
+    assert result["exchange_quote_timestamp_verified"] is False
+    assert "quote_time" not in result
 
 
 @pytest.mark.parametrize("field,value,reason", [
