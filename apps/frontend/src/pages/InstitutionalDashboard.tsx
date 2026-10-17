@@ -7,6 +7,9 @@ type Metric = {
   unit?: string | null;
   source?: string;
   env_name?: string;
+  as_of?: string;
+  premium_pct?: number | null;
+  scope?: string;
 };
 
 type OiLeader = {
@@ -58,7 +61,10 @@ function metricItems(payload: InstitutionalPayload | null) {
     cash.fii_cash,
     cash.dii_cash,
     futures.fii_index_futures,
-    macro.gift_nifty,
+    futures.fii_index_long,
+    futures.fii_index_short,
+    futures.fii_index_long_pct,
+    futures.basis,    macro.gift_nifty,
     macro.india_vix,
     macro.usd_inr,
     macro.crude_oil,
@@ -72,7 +78,8 @@ function MetricCard({ item }: { item: Metric }) {
     <article className={`metric-card${unavailable ? " metric-card-warn" : " metric-card-good"}`}>
       <span className="metric-label">{item.label}</span>
       <strong className="metric-value">{formatNumber(item.value, item.unit)}</strong>
-      <span className="metric-helper">{unavailable ? `Set ${item.env_name ?? "env input"}` : `Source: ${item.source ?? "configured"}`}</span>
+      <span className="metric-helper">{unavailable ? `Set ${item.env_name ?? "env input"}` : `Source: ${item.source ?? "configured"}${item.as_of ? ` | As of ${item.as_of}` : " | Undated manual input"}${item.scope === "all_index_futures" ? " | All index futures (not NIFTY-only)" : ""}`}</span>
+      {item.premium_pct != null && <span className="metric-helper">Premium/discount {formatNumber(item.premium_pct)}%</span>}
     </article>
   );
 }

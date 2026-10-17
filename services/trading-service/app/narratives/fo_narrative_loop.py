@@ -172,7 +172,7 @@ def generate_narrative_signal(payload: NarrativeInput) -> NarrativeSignal:
             "pcr": round(pcr, 3),
             "india_vix": payload.india_vix,
             "india_vix_change_pct": payload.india_vix_change_pct,
-            "futures_premium_pct": round(futures_premium, 3),
+            "futures_premium_pct": round(futures_premium, 3) if payload.futures_price is not None else None,
             "fii_cash": payload.fii_cash,
             "dii_cash": payload.dii_cash,
             "fii_index_futures": payload.fii_index_futures,
