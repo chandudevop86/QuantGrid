@@ -2,7 +2,6 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis, _paper_option_candidate
 from Backend.domain.models.signal import StrategySignal
 
 
@@ -16,6 +15,7 @@ def signal(side="BUY"):
 
 def test_candidate_resolves_ce_or_pe_from_verified_dhan_chain(monkeypatch):
     from Backend.presentation.api import market_api
+    import Backend.application.live_analysis_worker as worker
     now = datetime.now(timezone.utc)
     chain = {
         "symbol": "NIFTY", "source": "dhan-option-chain",
@@ -31,8 +31,8 @@ def test_candidate_resolves_ce_or_pe_from_verified_dhan_chain(monkeypatch):
         }],
     }
     monkeypatch.setattr(market_api, "get_option_chain", lambda *a, **kw: chain)
-    call = _paper_option_candidate([signal("BUY")])
-    put = _paper_option_candidate([signal("SELL")])
+    call = worker._paper_option_candidate([signal("BUY")])
+    put = worker._paper_option_candidate([signal("SELL")])
     assert call["security_id"] == "12345"
     assert put["security_id"] == "22345"
     assert call["execution_approved"] is False
@@ -67,7 +67,9 @@ def test_opt_in_option_paper_analysis_never_places_spot_simulated_trade(monkeypa
         raise AssertionError("spot order must not be simulated as an option")
 
     monkeypatch.setattr(worker, "_generate_paper_trades", cannot_simulate_spot)
-    result = run_live_analysis(LiveAnalysisPayload(symbol="NIFTY", auto_trade=True, execution_mode="paper"))
+    # Import through the patched worker module, not an early collection-time
+    # function reference that can survive test-suite module reloading.
+    result = worker.run_live_analysis(worker.LiveAnalysisPayload(symbol="NIFTY", auto_trade=True, execution_mode="paper"))
     assert result["trades"] == []
     assert result["option_candidate"]["security_id"] == "12345"
     assert result["auto_trade_blocked_reason"] == "NIFTY_OPTION_CANDIDATE_ONLY_NO_EXECUTION"
