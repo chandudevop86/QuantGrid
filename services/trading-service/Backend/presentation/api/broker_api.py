@@ -169,6 +169,7 @@ def _dhan_option_chain_readiness(symbol: str = "NIFTY") -> dict[str, object]:
             "suggested_actions": ["Open Dhan Login and save a valid access token.", "Confirm QUANTGRID_BROKER_CLIENT_ID matches the token account."],
         }
 
+    market_api = None
     try:
         from Backend.presentation.api import market_api
 
@@ -196,14 +197,16 @@ def _dhan_option_chain_readiness(symbol: str = "NIFTY") -> dict[str, object]:
             "suggested_actions": [],
         }
     except Exception as exc:
+        diagnostics = (
+            market_api._option_chain_diagnostics(str(exc))
+            if market_api is not None else {}
+        )
         return base | {
             "profile_connected": True,
             "message": str(exc),
-            "suggested_actions": [
-                "Verify Dhan Data APIs / Option Chain are enabled for this account.",
-                "Verify this server's outbound static IP is whitelisted with Dhan.",
-                "Confirm QUANTGRID_BROKER_CLIENT_ID matches the profile dhanClientId.",
-                "Refresh the Dhan access token after entitlement or IP whitelist changes.",
+            "diagnostics_code": diagnostics.get("code", "provider_unavailable"),
+            "suggested_actions": diagnostics.get("suggested_actions") or [
+                "Check the Dhan error code and verify API service credentials.",
             ],
         }
 
