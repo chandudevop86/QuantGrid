@@ -448,8 +448,8 @@ def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
     assert captured["payload"] == {
         "UnderlyingScrip": 13,
         "UnderlyingSeg": "IDX_I",
-        "dhanClientId": "client-123",
     }
+    assert "dhanClientId" not in captured["payload"]
     assert captured["headers"]["Access-token"] == "token-456"
     assert captured["headers"]["Client-id"] == "client-123"
 
@@ -1008,3 +1008,76 @@ def test_yahoo_one_minute_candles_drop_unaligned_current_bar_and_preserve_decima
     assert candles[0]["high"] == 22560.50
     assert candles[0]["low"] == 22550.10
     assert candles[0]["close"] == 22558.35
+
+
+
+@pytest.mark.parametrize(
+    "dhan_code, expected_diagnostic",
+    [
+        ("806", "dhan_data_api_entitlement_rejected"),
+        ("807", "dhan_token_expired"),
+        ("808", "dhan_invalid_client_or_token"),
+        ("809", "dhan_token_invalid"),
+        ("810", "dhan_client_id_invalid"),
+    ],
+)
+def test_dhan_data_api_error_codes_are_not_misclassified(dhan_code, expected_diagnostic):
+    from Backend.presentation.api import market_api
+
+    response = f"Dhan option-chain API rejected the request ({dhan_code}): authentication failed"
+    assert market_api._dhan_data_error_code(response) == dhan_code
+    diagnostic = market_api._option_chain_diagnostics(response)
+    assert diagnostic["code"] == expected_diagnostic
+    assert diagnostic["status"] == "BLOCKED"
+    assert diagnostic["live_rows_available"] is False
+
+
+def test_dhan_error_808_prioritizes_credentials_even_when_profile_matches(monkeypatch):
+    from Backend.presentation.api import market_api
+
+    monkeypatch.setattr(market_api, "dhan_credentials", lambda: {
+        "client_id": "test-client-not-real",
+        "access_token": "private-placeholder-not-real",
+    })
+    monkeypatch.setattr(
+        market_api, "_dhan_profile_client_id", lambda access_token: "test-client-not-real"
+    )
+
+    def rejected(request, timeout=0):
+        raise HTTPError(
+            "https://api.dhan.co/v2/optionchain/expirylist",
+            401,
+            "Unauthorized",
+            {},
+            BytesIO(
+                b'{"status":"failure","remarks":{"error_code":"808",'
+                b'"error_message":"Authentication Failed - Client ID or Token invalid"}}'
+            ),
+        )
+
+    monkeypatch.setattr(market_api, "urlopen", rejected)
+    with pytest.raises(RuntimeError) as exc_info:
+        market_api._dhan_option_payload(
+            "optionchain/expirylist", {"UnderlyingScrip": 13, "UnderlyingSeg": "IDX_I"}
+        )
+    message = str(exc_info.value)
+    assert "808" in message
+    assert "invalid client ID or access token" in message
+    assert "profile success does not prove" in message
+    assert "not have an active Data API subscription" not in message
+    assert "IP is not whitelisted" not in message
+    assert "private-placeholder-not-real" not in message
+    assert "test-client-not-real" not in message
+
+
+def test_dhan_error_806_refers_to_entitlement_not_invalid_token():
+    from Backend.presentation.api import market_api
+
+    message = market_api._dhan_option_auth_guidance(
+        403,
+        "Dhan option-chain API rejected the request (806): Data APIs not subscribed",
+        profile_confirmed=False,
+    )
+    assert "do not buy the plan again" in message
+    assert "profile identity could not be confirmed" in message
+    assert "invalid credential pair" not in message

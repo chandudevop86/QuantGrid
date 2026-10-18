@@ -260,7 +260,7 @@ export default function OptionChain() {
             </ul>
             <strong>Next actions</strong>
             <ul>
-              {(suggestedActions.length ? suggestedActions : ["Check Dhan entitlement, IP whitelist, client ID, and token."]).map((item: string) => (
+              {(suggestedActions.length ? suggestedActions : ["Check Dhan's response code, client ID, access token, and Data API entitlement."]).map((item: string) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
@@ -345,7 +345,7 @@ export default function OptionChain() {
                     {usingSynthetic
                       ? "Synthetic option-chain rows hidden. Configure Dhan/live provider for real chain data."
                       : chainUnavailable
-                        ? "Live option-chain rows unavailable. Check Dhan Data API access, IP whitelist, client ID, and token."
+                        ? "Live option-chain rows unavailable. Check Dhan's error code, client ID, access token, and active Data API entitlement."
                         : "Option chain data is not available yet."}
                   </td>
                 </tr>
