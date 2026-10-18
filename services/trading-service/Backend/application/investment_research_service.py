@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from Backend.core.database import SessionLocal, init_database
 from Backend.domain.trading_store_models import InvestmentResearchRecord
-from app.investing.investment_research_loop import (
+from Backend.domain.investing.research import (
     DISCLAIMER,
     MultibaggerPrediction,
     MutualFundInput,
