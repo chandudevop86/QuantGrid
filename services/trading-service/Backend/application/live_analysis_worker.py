@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import asdict
 from typing import Any
@@ -15,6 +16,7 @@ from Backend.application.kill_switch import kill_switch_status
 from Backend.application.job_store import claim_job, claim_next_queued_job, update_job, utc_now
 from Backend.application.notifications import alert_job_finished
 from Backend.application.paper_trade_store import create_paper_trade
+from Backend.application.option_contract_resolver import OptionContractResolver, OptionSelectionError
 from Backend.application.signal_validation import validate_signals
 from Backend.application.signal_quality import split_signals
 from Backend.domain.engine.order_factory import ExecutionEngine
@@ -108,6 +110,28 @@ def _prepare_strategy_candles(candles_response: dict[str, Any]) -> list[dict[str
     return candles
 
 
+def _paper_option_candidate(signals: list[StrategySignal]) -> dict[str, Any]:
+    """Inspect a verified CE/PE contract, without placing or simulating fills."""
+    if not signals:
+        return {"status": "no_trade", "reason": "no_validated_signal"}
+    signal = signals[0]
+    if signal.symbol.upper() != "NIFTY" or signal.side.upper() not in {"BUY", "SELL"}:
+        return {"status": "no_trade", "reason": "unsupported_option_signal"}
+    option_type = "CE" if signal.side.upper() == "BUY" else "PE"
+    try:
+        from Backend.presentation.api.market_api import get_option_chain
+
+        chain = get_option_chain("NIFTY", _role="trader")
+        return OptionContractResolver().resolve(
+            symbol="NIFTY", option_type=option_type, chain=chain
+        )
+    except OptionSelectionError as exc:
+        return {"status": "no_trade", "reason": str(exc)}
+    except Exception:
+        logger.exception("Paper NIFTY option-chain inspection failed")
+        return {"status": "no_trade", "reason": "option_chain_unavailable"}
+
+
 def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     execution_mode = payload.execution_mode.strip().lower()
     if execution_mode != "paper":
@@ -167,11 +191,25 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         elif market_status.upper() != "LIVE MARKET":
             auto_trade_blocked_reason = f"MARKET_NOT_LIVE_FOR_EXECUTION: {market_status}"
 
+    # An explicit PAPER-ONLY option pilot must never treat underlying NIFTY
+    # spot signals as filled CE/PE contracts. Select a verified candidate
+    # instead; option order sizing, fill simulation and exits remain blocked.
+    option_candidate = None
+    option_paper_pilot = (
+        payload.auto_trade
+        and payload.symbol.upper() == "NIFTY"
+        and os.getenv("QUANTGRID_AUTO_OPTION_PAPER_CANDIDATES", "").strip().lower()
+        in {"1", "true", "yes"}
+    )
+    if option_paper_pilot and auto_trade_blocked_reason is None:
+        option_candidate = _paper_option_candidate(signals)
     auto_trades = (
         _generate_paper_trades(signals)
-        if payload.auto_trade and auto_trade_blocked_reason is None
+        if payload.auto_trade and auto_trade_blocked_reason is None and not option_paper_pilot
         else []
     )
+    if option_paper_pilot and auto_trade_blocked_reason is None:
+        auto_trade_blocked_reason = "NIFTY_OPTION_CANDIDATE_ONLY_NO_EXECUTION"
     logger.info(
         "Live analysis generated %s signals and %s trades for %s/%s",
         len(serialized_signals),
@@ -205,6 +243,7 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
             for item in stale_signals
         ],
         "trades": auto_trades,
+        "option_candidate": option_candidate,
     }
 
 

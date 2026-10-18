@@ -16,6 +16,11 @@ def test_durable_claim_and_ambiguous_boundary(tmp_path, monkeypatch):
     monkeypatch.setattr(intent, 'SessionLocal', sessionmaker(bind=engine))
     claim = intent.claim_submission('a', 'NIFTY:BUY:TEST')
     assert claim['status'] == 'claimed'
+    # Dhan Super Order API limits correlationId to 30 safe characters.
+    assert claim['correlation_id'].startswith('QG-')
+    assert len(claim['correlation_id']) <= 30
+    assert claim['correlation_id'].isascii()
+    assert claim['correlation_id'].replace('-', '').isalnum()
     with pytest.raises(ValueError, match='DUPLICATE'):
         intent.claim_submission('b', 'nifty:buy:test')
     intent.mark_submission_started('a')

@@ -18,7 +18,9 @@ from Backend.core.database import SessionLocal
 def claim_submission(local_order_id: str, logical_key: str) -> dict:
     if not local_order_id or not logical_key:
         raise ValueError("local_order_id and logical_key are required")
-    correlation_id = f"QG-{uuid4().hex}"
+    # Dhan Super Orders accept at most 30 correlation-ID characters.
+    # Keep 104 random bits for collision resistance while fitting the limit.
+    correlation_id = f"QG-{uuid4().hex[:26]}"
     now = datetime.now(timezone.utc).isoformat()
     try:
         with SessionLocal.begin() as db:
