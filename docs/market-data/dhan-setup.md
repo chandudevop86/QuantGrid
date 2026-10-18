@@ -19,7 +19,7 @@ The Dhan provider is fail-closed: if credentials, SDK import, quote data, or can
 
 ## Option-Chain/Data API Preflight
 
-Profile login and option-chain access are separate checks. `/v2/profile` can pass while option-chain still fails because Dhan Data APIs / Option Chain are not enabled for the account, the server outbound IP is not whitelisted, or the configured client ID does not match the token account.
+Profile login and option-chain access are separate checks. `/v2/profile` may pass while Option Chain rejects the supplied credential pair. Follow Dhan's Data API response codes: `806` not subscribed, `807` expired token, `808` invalid client ID or access token, `809` invalid token, and `810` invalid client ID. Dhan documents static IP whitelisting for order placement APIs, not ordinary market-data requests.
 
 Use the broker diagnostic endpoint after saving credentials:
 
@@ -35,4 +35,4 @@ Expected healthy fields:
 - `data_api_connected=true`
 - `expiry_available=true`
 
-If `profile_connected=true` but `option_chain_access=false`, verify Dhan Data APIs / Option Chain entitlement, static outbound IP whitelisting, client ID/token account match, and then refresh the Dhan access token.
+If `profile_connected=true` but `option_chain_access=false`, follow the error code: for `808`, verify the current client ID and access token used by the **running QuantGrid API service** (profile success alone does not prove Data API authentication). For `806` with an active plan, ask Dhan support to check entitlement instead of buying another subscription. Refresh credentials only through authenticated Broker setup or the secret manager, without printing tokens. Keep live-money trading disabled. See [Dhan error codes](https://dhanhq.co/docs/v2/annexure/).
