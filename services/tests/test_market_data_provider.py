@@ -448,8 +448,8 @@ def test_dhan_option_payload_matches_dhanhq_client_payload(monkeypatch):
     assert captured["payload"] == {
         "UnderlyingScrip": 13,
         "UnderlyingSeg": "IDX_I",
-        "dhanClientId": "client-123",
     }
+    assert "dhanClientId" not in captured["payload"]
     assert captured["headers"]["Access-token"] == "token-456"
     assert captured["headers"]["Client-id"] == "client-123"
 
