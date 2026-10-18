@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
 
-from app.investing.investment_research_loop import (
+from Backend.domain.investing.research import (
     InvestmentRecommendation,
     MutualFundInput,
     StockResearchInput,
