@@ -322,28 +322,74 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
     except HTTPError as exc:
         detail = _dhan_http_error_detail(exc)
         if exc.code in {401, 403}:
-            # A valid, non-expired access token can still get 401/403 specifically on Option
-            # Chain: Dhan splits "Trading APIs" (free, what /v2/profile uses) from "Data APIs"
-            # (paid add-on subscription, required for Option Chain) -- so "profile works but
-            # option-chain doesn't" is consistent with the account simply not having an
-            # active Data API subscription, not necessarily a bad/expired token. A newer,
-            # separate cause (SEBI-mandated static IP whitelisting, enforced from April 2026)
-            # can also 401 requests from an unregistered server IP. The client-id mismatch
-            # check above already ruled out the third common cause. Surface all of them
-            # rather than just telling the operator to regenerate a token that may be fine.
-            hint = (
-                "Dhan rejected this request (HTTP {code}). The configured client ID matches "
-                "this token's account (ruled out via profile cross-check), so if your Dhan "
-                "login/profile check succeeds but this still fails, the most likely causes "
-                "are: (a) your account does not have an active Data API subscription (Option "
-                "Chain is a paid Data API, separate from free Trading APIs -- check "
-                "web.dhan.co > Profile > DhanHQ Trading APIs > Data APIs tab, and note a "
-                "just-activated subscription can take a short time to propagate), or "
-                "(b) this server's outbound IP is not whitelisted with Dhan (required since "
-                "the SEBI static-IP mandate). Dhan's response: {detail}"
-            ).format(code=exc.code, detail=detail or "(no additional detail returned)")
-            raise RuntimeError(hint) from exc
+            # Interpret Dhan's *specific* Data API code before generic 401.
+            # A valid subscription or successful /profile request does not
+            # override an explicit invalid token/client-ID response (808).
+            raise RuntimeError(
+                _dhan_option_auth_guidance(
+                    exc.code,
+                    detail,
+                    profile_confirmed=bool(profile_client_id),
+                )
+            ) from exc
         raise RuntimeError(detail or f"Dhan option-chain API failed with HTTP {exc.code}.") from exc
+
+
+def _dhan_data_error_code(detail: str | None) -> str | None:
+    """Recognize Dhan's documented Data API codes; never infer entitlement."""
+    match = re.search(r"\b(806|807|808|809|810)\b", str(detail or ""))
+    return match.group(1) if match else None
+
+
+def _dhan_option_auth_guidance(
+    http_status: int, detail: str | None, *, profile_confirmed: bool
+) -> str:
+    """Give code-specific operator advice without returning stored secrets."""
+    error_code = _dhan_data_error_code(detail)
+    advice = {
+        "806": (
+            "Dhan reports that Data APIs are not subscribed (806). If the Dhan "
+            "dashboard already shows an active subscription, contact Dhan support "
+            "to check account entitlement; do not buy the plan again."
+        ),
+        "807": (
+            "Dhan reports an expired access token (807). Generate a new token "
+            "through the authorized Dhan login and securely replace the token "
+            "used by the QuantGrid API service."
+        ),
+        "808": (
+            "Dhan reports an invalid client ID or access token (808). Check "
+            "the exact Dhan account and freshly generated access token selected "
+            "by the running QuantGrid API service. An active Data API "
+            "subscription does not fix an invalid credential pair."
+        ),
+        "809": (
+            "Dhan reports an invalid access token (809). Generate a new token "
+            "and securely update the running QuantGrid API service."
+        ),
+        "810": (
+            "Dhan reports an invalid client ID (810). Check the saved Dhan "
+            "client ID against the account used to generate the access token."
+        ),
+    }.get(error_code)
+    if advice is None:
+        advice = (
+            "Dhan returned an authentication/authorization error without a "
+            "recognized Data API code. Check the exact client ID, token expiry "
+            "and active Data API entitlement; preserve Dhan's error for support."
+        )
+    profile_note = (
+        "Dhan profile client ID matched, but profile success does not prove "
+        "Option Chain authentication is accepted."
+        if profile_confirmed else
+        "Dhan profile identity could not be confirmed; do not assume the client "
+        "ID matches the token's account."
+    )
+    return (
+        f"Dhan Option Chain request rejected (HTTP {http_status}). "
+        f"{advice} {profile_note} "
+        f"Provider response: {detail or '(no further detail)'}"
+    )
 
 
 def _dhan_http_error_detail(exc: HTTPError) -> str | None:
@@ -426,7 +472,42 @@ def _option_chain_diagnostics(message: str | None, *, provider: str = Provider.D
     retry_match = re.search(r"retry after (\d+) seconds", lower)
     retry_after_seconds = int(retry_match.group(1)) if retry_match else None
 
-    if "429" in lower or "too many requests" in lower or "cooldown" in lower:
+    provider_error_code = _dhan_data_error_code(text)
+    if provider_error_code == "808":
+        code = "dhan_invalid_client_or_token"
+        likely_causes = [
+            "Dhan rejected the client ID or access token for the Data API.",
+            "The QuantGrid API process may be using outdated or mismatched credentials.",
+        ]
+        suggested_actions = [
+            "Confirm the Dhan client ID and fresh access token selected by the running API service.",
+            "A profile success and active subscription do not verify the Option Chain credential pair.",
+            "Never paste tokens or credentials into logs or support tickets.",
+        ]
+    elif provider_error_code == "806":
+        code = "dhan_data_api_entitlement_rejected"
+        likely_causes = [
+            "Dhan reports Data APIs are not subscribed for the credentialed account.",
+        ]
+        suggested_actions = [
+            "If your Dhan Data API subscription is active, ask Dhan to confirm entitlement for the same account.",
+            "Do not purchase a duplicate Data API subscription.",
+        ]
+    elif provider_error_code in {"807", "809", "810"}:
+        code = {
+            "807": "dhan_token_expired",
+            "809": "dhan_token_invalid",
+            "810": "dhan_client_id_invalid",
+        }[provider_error_code]
+        likely_causes = [{
+            "807": "Dhan access token expired.",
+            "809": "Dhan access token is invalid.",
+            "810": "Dhan client ID is invalid.",
+        }[provider_error_code]]
+        suggested_actions = [
+            "Verify or securely refresh the affected credential used by the QuantGrid API service."
+        ]
+    elif "429" in lower or "too many requests" in lower or "cooldown" in lower:
         code = "dhan_rate_limited"
         likely_causes = ["Dhan Option Chain request frequency exceeded the provider limit."]
         suggested_actions = [
