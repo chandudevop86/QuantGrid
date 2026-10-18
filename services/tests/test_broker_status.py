@@ -176,6 +176,33 @@ def test_dhan_option_chain_status_reports_data_api_failure(monkeypatch):
     assert "without an error message" in status["message"]
 
 
+
+def test_dhan_option_chain_preflight_808_requires_credentials_not_subscription(monkeypatch):
+    from Backend.presentation.api import broker_api, market_api
+
+    monkeypatch.setattr(
+        broker_api, "check_dhan_profile", lambda: {"connected": True, "error": None}
+    )
+    monkeypatch.setattr(market_api, "_dhan_underlying", lambda symbol: (13, "IDX_I"))
+    monkeypatch.setattr(
+        market_api,
+        "_dhan_option_provider_payload",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError(
+            "Dhan Option Chain request rejected (HTTP 401). "
+            "Dhan reports an invalid client ID or access token (808). "
+            "Provider response: (808): Authentication Failed"
+        )),
+    )
+
+    status = broker_api._dhan_option_chain_readiness("NIFTY")
+
+    assert status["profile_connected"] is True
+    assert status["data_api_connected"] is False
+    assert status["option_chain_access"] is False
+    assert status["diagnostics_code"] == "dhan_invalid_client_or_token"
+    assert any("token" in x.lower() for x in status["suggested_actions"])
+    assert not any("whitelist" in x.lower() for x in status["suggested_actions"])
+
 def test_dhan_option_chain_status_reports_expiry_success(monkeypatch):
     from Backend.presentation.api import broker_api, market_api
 
