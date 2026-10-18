@@ -15,11 +15,15 @@ class MTFAZone:
     high: float
     low: float
     strength: float
+    direction: Literal["BUY", "SELL"] | None = None
 
     def aligns(self, side: str) -> bool:
-        if side.upper() == "BUY":
-            return self.zone_type in {"support", "demand", "order_block", "fair_value_gap"}
-        return self.zone_type in {"resistance", "supply", "order_block", "fair_value_gap"}
+        side = side.upper()
+        if self.zone_type in {"order_block", "fair_value_gap"}:
+            return self.direction == side
+        if side == "BUY":
+            return self.zone_type in {"support", "demand"}
+        return self.zone_type in {"resistance", "supply"}
 
     def contains(self, price: float, buffer: float = 0.0) -> bool:
         return float(self.low) - buffer <= float(price) <= float(self.high) + buffer
@@ -46,12 +50,13 @@ class ZoneDetector:
             MTFAZone("demand", support + atr, support, 2.5),
             MTFAZone("supply", resistance, resistance - atr, 2.5),
         ]
-        order_block = self._order_block(recent, atr)
-        if order_block is not None:
-            zones.append(order_block)
-        fvg = self._fair_value_gap(recent)
-        if fvg is not None:
-            zones.append(fvg)
+        for side in ("BUY", "SELL"):
+            block = self._order_block(recent, atr, side)
+            if block is not None:
+                zones.append(block)
+            gap = self._fair_value_gap(recent, atr, side)
+            if gap is not None:
+                zones.append(gap)
         return zones
 
     def best_for_side(self, candles: pd.DataFrame, side: str) -> MTFAZone | None:
@@ -61,23 +66,62 @@ class ZoneDetector:
         return max(aligned, key=lambda zone: zone.strength)
 
     @staticmethod
-    def _order_block(candles: pd.DataFrame, atr: float) -> MTFAZone | None:
-        body = (candles["close"] - candles["open"]).abs()
-        candidates = candles[body >= max(atr * 0.6, 0.01)]
-        if candidates.empty:
+    def _order_block(candles: pd.DataFrame, atr: float, side: str) -> MTFAZone | None:
+        """Last opposite candle preceding displacement through prior structure."""
+        if len(candles) < 10:
             return None
-        row = candidates.iloc[-1]
-        return MTFAZone("order_block", float(row["high"]), float(row["low"]), 2.0)
+        bodies = (candles["close"] - candles["open"]).abs()
+        min_body = max(float(bodies.tail(20).median()) * 1.2, atr * 0.6, 0.01)
+        for i in range(len(candles) - 2, 7, -1):
+            origin = candles.iloc[i]
+            opposite = (
+                float(origin["close"]) < float(origin["open"])
+                if side == "BUY" else float(origin["close"]) > float(origin["open"])
+            )
+            if not opposite:
+                continue
+            preceding = candles.iloc[max(0, i - 8):i]
+            if len(preceding) < 5:
+                continue
+            prior_high = float(preceding["high"].max())
+            prior_low = float(preceding["low"].min())
+            for j in range(i + 1, min(i + 4, len(candles))):
+                impulse = candles.iloc[j]
+                body = abs(float(impulse["close"]) - float(impulse["open"]))
+                if body < min_body:
+                    continue
+                impulse_bullish = float(impulse["close"]) > float(impulse["open"])
+                if impulse_bullish != (side == "BUY"):
+                    continue
+                if side == "BUY":
+                    confirmed = float(impulse["close"]) > prior_high + atr * 0.05
+                else:
+                    confirmed = float(impulse["close"]) < prior_low - atr * 0.05
+                if confirmed:
+                    return MTFAZone("order_block", float(origin["high"]), float(origin["low"]), 2.0, side)
+        return None
 
     @staticmethod
-    def _fair_value_gap(candles: pd.DataFrame) -> MTFAZone | None:
+    def _fair_value_gap(candles: pd.DataFrame, atr: float, side: str) -> MTFAZone | None:
+        """Three-candle gap large enough to matter and not fully filled."""
         if len(candles) < 3:
             return None
-        for index in range(len(candles) - 1, 1, -1):
-            row = candles.iloc[index]
-            two_back = candles.iloc[index - 2]
-            if float(row["low"]) > float(two_back["high"]):
-                return MTFAZone("fair_value_gap", float(row["low"]), float(two_back["high"]), 1.5)
-            if float(row["high"]) < float(two_back["low"]):
-                return MTFAZone("fair_value_gap", float(two_back["low"]), float(row["high"]), 1.5)
+        for i in range(len(candles) - 1, 1, -1):
+            first = candles.iloc[i - 2]
+            third = candles.iloc[i]
+            if side == "BUY":
+                low, high = float(first["high"]), float(third["low"])
+            else:
+                low, high = float(third["high"]), float(first["low"])
+            if high - low < max(atr * 0.10, 0.01):
+                continue
+            later = candles.iloc[i + 1:]
+            if not later.empty:
+                filled = (
+                    (later["low"].astype(float) <= low).any()
+                    if side == "BUY" else (later["high"].astype(float) >= high).any()
+                )
+                if filled:
+                    continue
+            return MTFAZone("fair_value_gap", high, low, 1.5, side)
         return None

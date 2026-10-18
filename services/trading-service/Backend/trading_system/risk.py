@@ -87,7 +87,7 @@ class GlobalRiskManager:
             return self._reject("signal_score_below_threshold")
         requested_risk_pct = self._risk_pct(signal)
         risk_pct = requested_risk_pct if requested_risk_pct is not None else min(1.0, float(self.config.max_risk_per_trade_pct))
-        if risk_pct > float(self.config.max_risk_per_trade_pct):
+        if not (0 < risk_pct <= float(self.config.max_risk_per_trade_pct)):
             return self._reject("max_risk_per_trade_exceeded", risk_pct=risk_pct)
         age = (now.replace(tzinfo=None) - signal.signal_time.replace(tzinfo=None)).total_seconds()
         if age > int(self.config.max_stale_seconds):
@@ -220,7 +220,7 @@ class GlobalRiskManager:
     @staticmethod
     def _risk_fraction(risk_pct: float) -> float:
         value = float(risk_pct or 0.0)
-        return value / 100.0 if value >= 1 else value
+        return max(0.0, value) / 100.0
 
     @staticmethod
     def _reject(reason: str, **metadata: Any) -> RiskDecision:

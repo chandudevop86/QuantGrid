@@ -41,7 +41,7 @@ class MTFARiskManager:
             target = min(structure_target, entry - abs(entry - stop) * min_rr)
         stop_distance = abs(entry - stop)
         rr = abs(target - entry) / stop_distance if stop_distance > 0 else 0.0
-        risk_fraction = float(risk_pct) / 100.0 if float(risk_pct) >= 1 else float(risk_pct)
+        risk_fraction = max(0.0, float(risk_pct)) / 100.0
         risk_amount = max(0.0, float(capital) * risk_fraction)
         size = int(risk_amount // stop_distance) if stop_distance > 0 else 0
         return MTFARiskPlan(entry, stop, target, rr, float(capital), risk_amount, stop_distance, max(0, size))

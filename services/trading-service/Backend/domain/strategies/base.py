@@ -109,7 +109,7 @@ def normalize_mode(mode: str) -> str:
 
 def risk_fraction(risk_pct: float) -> float:
     value = float(risk_pct or 0.0)
-    return value / 100.0 if value >= 1 else value
+    return max(0.0, value) / 100.0
 
 
 def recent_true(series: pd.Series, index: int, lookback: int) -> int | None:
