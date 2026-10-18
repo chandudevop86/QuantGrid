@@ -17,6 +17,18 @@ ENV_METRICS: dict[str, tuple[str, str, str | None]] = {
     "gold": ("Gold", "GOLD", None),
 }
 
+JSON_METRIC_KEYS = {
+    "FII_CASH": "fii_cash",
+    "DII_CASH": "dii_cash",
+    "FII_INDEX_FUTURES": "fii_index_futures",
+    "GIFT_NIFTY": "gift_nifty",
+    "INDIA_VIX": "india_vix",
+    "USDINR": "usd_inr",
+    "USD_INR": "usd_inr",
+    "CRUDE_OIL": "crude_oil",
+    "GOLD": "gold",
+}
+
 
 def build_institutional_dashboard(
     symbol: str = "NIFTY",
@@ -28,6 +40,9 @@ def build_institutional_dashboard(
     symbol = symbol.upper()
     warnings: list[str] = []
     metrics = {key: _env_metric(label, env_name, unit) for key, (label, env_name, unit) in ENV_METRICS.items()}
+    for key, item in _json_metric_overrides().items():
+        if key in metrics:
+            metrics[key] = {**metrics[key], **item}
     published = institutional_eod or {}
     for group in ("cash_flows", "futures"):
         for key, item in (published.get(group) or {}).items():
@@ -91,28 +106,82 @@ def _env_metric(label: str, env_name: str, unit: str | None) -> dict[str, Any]:
     if value is None:
         value = _env_float(f"QUANTGRID_{env_name}")
         configured_env = f"QUANTGRID_{env_name}"
+    as_of = os.getenv(f"{configured_env}_AS_OF") if value is not None else None
     return {
         "label": label,
         "value": value,
         "unit": unit,
-        "source": "env" if value is not None else "unavailable",
+        "source": "manual-env" if value is not None else "unavailable",
+        "mode": "manual" if value is not None else "unavailable",
+        "as_of": as_of,
         "env_name": configured_env if value is not None else f"{env_name} or QUANTGRID_{env_name}",
     }
 
 
-def _global_indices() -> list[dict[str, Any]]:
+def _configured_json() -> Any:
     raw = os.getenv("GLOBAL_INDICES_JSON") or os.getenv("QUANTGRID_GLOBAL_INDICES_JSON")
     if not raw:
-        return []
+        return None
     try:
-        payload = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError:
+        return "__invalid_json__"
+
+
+def _json_metric_overrides() -> dict[str, dict[str, Any]]:
+    payload = _configured_json()
+    if not isinstance(payload, dict):
+        return {}
+
+    overrides: dict[str, dict[str, Any]] = {}
+    for raw_key, raw_item in payload.items():
+        key = JSON_METRIC_KEYS.get(str(raw_key).strip().upper())
+        if key is None or not isinstance(raw_item, dict):
+            continue
+
+        label, _env_name, default_unit = ENV_METRICS[key]
+        mode = str(raw_item.get("mode") or "").strip().lower()
+        value = _coerce_float(raw_item.get("value"))
+        if mode == "unavailable":
+            value = None
+        if not mode:
+            mode = "manual" if value is not None else "unavailable"
+
+        source = str(raw_item.get("source") or "").strip()
+        if mode == "unavailable":
+            source = "unavailable"
+        elif not source:
+            source = "manual-json" if mode == "manual" else mode
+
+        overrides[key] = {
+            "label": str(raw_item.get("label") or label),
+            "value": value,
+            "unit": raw_item.get("unit") if raw_item.get("unit") is not None else default_unit,
+            "source": source,
+            "mode": mode,
+            "as_of": raw_item.get("as_of"),
+            "env_name": "GLOBAL_INDICES_JSON",
+        }
+    return overrides
+
+
+def _global_indices() -> list[dict[str, Any]]:
+    payload = _configured_json()
+    if payload is None:
+        return []
+    if payload == "__invalid_json__":
         return [{
             "label": "Global Indices",
             "value": None,
             "change_pct": None,
             "source": "invalid-env",
         }]
+    if isinstance(payload, dict):
+        payload = [
+            item
+            for key, item in payload.items()
+            if str(key).strip().upper() not in JSON_METRIC_KEYS and isinstance(item, dict)
+        ]
     if not isinstance(payload, list):
         return []
 
@@ -126,8 +195,14 @@ def _global_indices() -> list[dict[str, Any]]:
         indices.append({
             "label": label,
             "value": _coerce_float(item.get("value")),
-            "change_pct": _coerce_float(item.get("change_pct") or item.get("changePct")),
-            "source": "env",
+            "change_pct": _coerce_float(
+                item.get("change_pct")
+                if item.get("change_pct") is not None
+                else item.get("changePct")
+            ),
+            "source": str(item.get("source") or "manual-json"),
+            "mode": str(item.get("mode") or "manual"),
+            "as_of": item.get("as_of"),
         })
     return indices
 
