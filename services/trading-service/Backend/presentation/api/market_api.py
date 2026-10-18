@@ -300,8 +300,10 @@ def _dhan_option_payload(path: str, body: dict[str, Any]) -> dict[str, Any]:
             f"{profile_client_id} and retry."
         )
 
+    # Dhan v2 Option Chain accepts the account ID via the required client-id
+    # header. The documented JSON body contains only instrument/expiry fields;
+    # do not inject an undocumented dhanClientId body field.
     payload = dict(body)
-    payload.setdefault("dhanClientId", client_id)
     option_url = require_https_url(f"https://api.dhan.co/v2/{path}", allowed_hosts={"api.dhan.co"})
     request = Request(
         option_url,
