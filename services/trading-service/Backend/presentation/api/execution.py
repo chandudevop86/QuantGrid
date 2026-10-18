@@ -13,7 +13,7 @@ from Backend.application.execution.execution_service import (
     _audit_execution_result,
     _execution_qualification,
 )
-from Backend.application.execution.execution_response import _paper_response
+from Backend.application.execution.execution_response import _paper_response, _risk_response_fields
 from Backend.application.execution import execution_pipeline as _execution_pipeline
 from Backend.application.execution import execution_guardrails as _execution_guardrails
 from Backend.application.execution.execution_guardrails import (
@@ -93,7 +93,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from Backend.application.execution.execution_utils import (
     _trade_shape_reason,
     _tqe_response_fields,
-    _risk_response_fields,
 )
 import logging
 
@@ -793,7 +792,33 @@ async def place_order(
             )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Live trading requires broker credentials.")
         order = engine.order_from_signal(signal)
-        lifecycle_order = _create_lifecycle_order(order, execution_mode=execution_mode, db=db, request=request, actor=actor)
+        try:
+            lifecycle_order = _create_lifecycle_order(
+                order,
+                signal=signal,
+                execution_mode=execution_mode,
+                db=db,
+                request=request,
+                actor=actor,
+            )
+        except ValueError as exc:
+            if not str(exc).startswith('DUPLICATE_ACTIVE_ORDER'):
+                raise
+            observe_rejected_order('duplicate_active_order', execution_mode)
+            result = _paper_response(
+                status_value='rejected',
+                symbol=signal.symbol,
+                strategy=signal.strategy_name,
+                signal=signal,
+                reason="DUPLICATE_ACTIVE_ORDER",
+                execution_mode=execution_mode,
+                extra={
+                    **_risk_response_fields(risk_decision),
+                    'broker_confirmed': False,
+                },
+            )
+            _audit_execution_result(db, request, actor, result)
+            return result
         lifecycle_order = _transition_lifecycle_order(
             lifecycle_order,
             "risk_approved",
@@ -802,18 +827,39 @@ async def place_order(
             actor=actor,
             reason="Risk engine and live guardrails approved order.",
         )
+        # Refuse unprotected LIVE routing before claiming a durable submission
+        # intent or crossing the broker I/O boundary.
+        broker_client = broker_client_for_mode(execution_mode)
+        if not callable(getattr(broker_client, "place_protected_order", None)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_ORDER_ADAPTER_REQUIRED")
+        if not bool(getattr(broker_client, "supports_protected_order_submission", False)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_ORDER_SUBMISSION_UNSUPPORTED")
+        if not bool(getattr(broker_client, "supports_broker_native_protective_stop", False)):
+            raise HTTPException(status_code=403, detail="LIVE_PROTECTED_LIFECYCLE_NOT_CERTIFIED")
+        if not order.stop_loss or not order.target_price:
+            raise HTTPException(status_code=403, detail="LIVE_BROKER_NATIVE_STOP_AND_TARGET_REQUIRED")
         try:
             submission_intent = claim_submission(
                 lifecycle_order["local_order_id"],
                 lifecycle_order["order_key"],
             )
         except ValueError as exc:
+            if str(exc) != "DUPLICATE_OR_UNRESOLVED_BROKER_INTENT":
+                raise
+            lifecycle_order = _transition_lifecycle_order(
+                lifecycle_order,
+                "rejected",
+                db=db,
+                request=request,
+                actor=actor,
+                reason="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
+            )
             result = _paper_response(
                 status_value="rejected",
                 symbol=signal.symbol,
                 strategy=signal.strategy_name,
                 signal=signal,
-                reason=str(exc),
+                reason="DUPLICATE_OR_UNRESOLVED_BROKER_INTENT",
                 execution_mode=execution_mode,
                 extra={"broker_confirmed": False},
             )
@@ -826,7 +872,6 @@ async def place_order(
         order.metadata["correlation_id"] = submission_intent["correlation_id"]
 
         try:
-            broker_client = broker_client_for_mode(execution_mode)
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "broker_submitted",
@@ -835,7 +880,7 @@ async def place_order(
                 actor=actor,
                 reason="Submitted to broker adapter.",
             )
-            broker_order = await broker_client.place_order(order)
+            broker_order = await broker_client.place_protected_order(order)
             if not broker_order.broker_order_id:
                 raise RuntimeError("BROKER_ACCEPTED_WITHOUT_AUTHORITATIVE_ID")
             record_broker_evidence(
@@ -857,13 +902,18 @@ async def place_order(
             )
             broker_status = await broker_client.get_order_status(broker_order.broker_order_id)
         except Exception as exc:
-            record_broker_failure(
-                reason=str(exc),
-                db=db,
-                actor=actor,
-                request=request,
-                metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
-            )
+            try:
+                record_broker_failure(
+                    reason=str(exc),
+                    db=db,
+                    actor=actor,
+                    request=request,
+                    metadata={"symbol": signal.symbol, "side": signal.side, "phase": "broker_submit"},
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Broker failure recording failed; preserving reconciliation-required handling"
+                )
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,
                 "reconciliation_required",
@@ -914,19 +964,87 @@ async def place_order(
             return result
 
         if broker_status.status == "rejected":
-            record_broker_failure(
-                reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
-                db=db,
-                actor=actor,
-                request=request,
-                metadata={
-                    "symbol": signal.symbol,
-                    "side": signal.side,
-                    "phase": "broker_confirm",
-                    "broker_order_id": broker_status.broker_order_id,
-                    "broker_status": broker_status.status,
-                },
-            )
+            # Preserve the durable intent unless rejection is authoritative.
+            if (
+                not broker_status.confirmed
+                or not broker_status.broker_order_id
+                or str(broker_status.broker_order_id)
+                   != str(broker_order.broker_order_id)
+            ):
+                lifecycle_order = _transition_lifecycle_order(
+                    lifecycle_order,
+                    "reconciliation_required",
+                    db=db,
+                    request=request,
+                    actor=actor,
+                    reason="BROKER_REJECTION_IDENTITY_NOT_VERIFIED",
+                    broker_order_id=broker_order.broker_order_id,
+                    broker_status=broker_status.status,
+                    broker_response=broker_status.to_dict(),
+                )
+                result = _paper_response(
+                    status_value="reconciliation_required",
+                    symbol=signal.symbol,
+                    strategy=signal.strategy_name,
+                    signal=signal,
+                    reason="BROKER_REJECTION_IDENTITY_NOT_VERIFIED",
+                    execution_mode=execution_mode,
+                    extra={"broker_confirmed": False},
+                )
+                _audit_execution_result(db, request, actor, result)
+                alert_execution_event(result)
+                return result
+
+            try:
+                record_broker_evidence(
+                    lifecycle_order["local_order_id"],
+                    str(broker_status.broker_order_id),
+                    "rejected",
+                )
+            except Exception:
+                lifecycle_order = _transition_lifecycle_order(
+                    lifecycle_order,
+                    "reconciliation_required",
+                    db=db,
+                    request=request,
+                    actor=actor,
+                    reason="BROKER_REJECTION_INTENT_PERSISTENCE_FAILED",
+                    broker_order_id=broker_status.broker_order_id,
+                    broker_status=broker_status.status,
+                    broker_response=broker_status.to_dict(),
+                )
+                result = _paper_response(
+                    status_value="reconciliation_required",
+                    symbol=signal.symbol,
+                    strategy=signal.strategy_name,
+                    signal=signal,
+                    reason="BROKER_REJECTION_INTENT_PERSISTENCE_FAILED",
+                    execution_mode=execution_mode,
+                    extra={"broker_confirmed": False},
+                )
+                _audit_execution_result(db, request, actor, result)
+                alert_execution_event(result)
+                return result
+
+            try:
+                record_broker_failure(
+                    reason=f"BROKER_NOT_CONFIRMED: {broker_status.status}",
+                    db=db,
+                    actor=actor,
+                    request=request,
+                    metadata={
+                        "symbol": signal.symbol,
+                        "side": signal.side,
+                        "phase": "broker_confirm",
+                        "broker_order_id": broker_status.broker_order_id,
+                        "broker_status": broker_status.status,
+                    },
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Broker rejection failure logging failed; "
+                    "continuing terminal order transition"
+                )
             mapped_status = broker_status_to_order_status(broker_status.status, confirmed=broker_status.confirmed)
             lifecycle_order = _transition_lifecycle_order(
                 lifecycle_order,

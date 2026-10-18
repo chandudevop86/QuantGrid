@@ -57,9 +57,18 @@ def record_broker_evidence(local_order_id: str, broker_order_id: str, status: st
         result = db.execute(text(
             "UPDATE broker_submission_intents SET broker_order_id = :broker, "
             "status = :status, updated_at = :now "
-            "WHERE local_order_id = :id AND (status = 'reconciliation_required' "
-            "OR (broker_order_id = :broker AND status IN "
-            "('submitted', 'open', 'partially_filled')))"
+            "WHERE local_order_id = :id "
+            "AND (broker_order_id IS NULL OR broker_order_id = :broker) "
+            "AND (status = 'reconciliation_required' "
+            "OR (broker_order_id = :broker AND ("
+            "(status = 'submitted' AND :status IN "
+            "('submitted', 'open', 'partially_filled', 'filled', 'cancelled', 'rejected')) "
+            "OR (status = 'open' AND :status IN "
+            "('open', 'partially_filled', 'filled', 'cancelled', 'rejected')) "
+            "OR (status = 'partially_filled' AND :status IN "
+            "('partially_filled', 'filled', 'cancelled')) "
+            "OR (status IN ('filled', 'cancelled', 'rejected') "
+            "AND status = :status))))"
         ), {"broker": broker_order_id, "status": status,
             "now": datetime.now(timezone.utc).isoformat(), "id": local_order_id})
         if result.rowcount != 1:

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from Backend.application.paper_trade_store import DATA_DIR, list_paper_trades, update_paper_trade_status
@@ -19,19 +20,42 @@ from Backend.application.position_store import (
     list_open_positions,
     update_open_position,
 )
+from Backend.application.notifications import get_notification_settings
+from Backend.application.notification_store import enqueue_notifications_atomic
+from Backend.application.protection_alert_episodes import (
+    close_protection_failure_episode,
+    open_protection_failure_episode,
+)
+from Backend.core.database import SessionLocal
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import AuditLog, User
 from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrderResult
 
 
+logger = logging.getLogger(__name__)
+
 STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
 SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
 REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
-FILLED_STATUSES = {"filled", "traded", "complete", "completed", "confirmed"}
+FILLED_STATUSES = {"filled", "traded", "complete", "completed"}
 OPEN_STATUSES = {"open", "pending", "transit", "confirmed"}
 PRE_BROKER_STALE_STATUSES = {"requested", "risk_approved"}
 AMBIGUOUS_NO_BROKER_ID_STATUSES = {"reconciliation_required", "broker_submitted", "pending", "open", "partially_filled"}
 STALE_LOCAL_ORDER_MINUTES = 30
+
+
+
+
+def _submission_intent_exists(local_order_id: str) -> bool:
+    """Check whether rejection belongs to an existing durable intent."""
+    with SessionLocal() as intent_db:
+        return intent_db.execute(
+            text(
+                "SELECT 1 FROM broker_submission_intents "
+                "WHERE local_order_id = :id"
+            ),
+            {"id": local_order_id},
+        ).first() is not None
 
 
 def _record_terminal_submission_intent(
@@ -61,10 +85,13 @@ def _record_terminal_submission_intent(
             terminal_status,
         )
     except ValueError as exc:
-        # Reconciliation also processes legacy orders created before durable
-        # submission intents existed. Absence of an applicable intent must not
-        # prevent those orders from reconciling.
-        if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+        # Only a genuinely missing legacy intent may bypass this rejection.
+        # An existing intent rejecting conflicting/stale evidence is a
+        # safety failure and must stop this reconciliation path.
+        if (
+            str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION"
+            or _submission_intent_exists(local_order_id)
+        ):
             raise
 
 
@@ -116,14 +143,160 @@ async def reconcile_broker_state(
             summary["errors"].append(f"{broker_order_id}: broker order unavailable: {exc}")
             continue
 
+        # A broker lookup must identify the exact order requested.
+        # Never apply another order's status to local or durable state.
+        returned_broker_order_id = str(
+            broker_order.broker_order_id or ""
+        ).strip()
+
+        if returned_broker_order_id != broker_order_id:
+            summary["errors"].append(
+                f"{broker_order_id}: broker lookup identity mismatch"
+            )
+            _record_review(
+                summary,
+                db,
+                actor,
+                request,
+                "broker_lookup_identity_mismatch",
+                broker_order_id,
+                {
+                    "local_order": local_order,
+                    "broker_status": broker_order.to_dict(),
+                },
+            )
+            continue
+
         order_status = _normal_status(broker_order.status)
+
+        # Validate durable broker identity before any local order or position
+        # changes. An existing intent with a different broker ID is unsafe.
+        local_order_id = local_order.get("local_order_id")
+        if local_order_id:
+            with SessionLocal() as intent_db:
+                intent_row = intent_db.execute(
+                    text(
+                        "SELECT broker_order_id, status "
+                        "FROM broker_submission_intents "
+                        "WHERE local_order_id = :id"
+                    ),
+                    {"id": str(local_order_id)},
+                ).first()
+
+            if (
+                intent_row is not None
+                and intent_row[0] is not None
+                and str(intent_row[0]) != broker_order_id
+            ):
+                summary["errors"].append(
+                    f"{broker_order_id}: durable broker submission identity conflict"
+                )
+                _record_review(
+                    summary,
+                    db,
+                    actor,
+                    request,
+                    "broker_submission_identity_conflict",
+                    broker_order_id,
+                    {
+                        "local_order": local_order,
+                        "broker_status": broker_order.to_dict(),
+                    },
+                )
+                continue
+
+            if intent_row is not None:
+                durable_status = str(intent_row[1] or "").lower()
+                observed_status = (
+                    "filled" if order_status in FILLED_STATUSES
+                    else "open" if order_status in OPEN_STATUSES
+                    else order_status
+                )
+                allowed_transitions = {
+                    "submitted": {
+                        "submitted", "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    },
+                    "open": {
+                        "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    },
+                    "partially_filled": {
+                        "partially_filled", "filled", "cancelled",
+                    },
+                    "filled": {"filled"},
+                    "cancelled": {"cancelled"},
+                    "rejected": {"rejected"},
+                }
+
+                if (
+                    durable_status in allowed_transitions
+                    and observed_status in {
+                        "submitted", "open", "partially_filled",
+                        "filled", "cancelled", "rejected",
+                    }
+                    and observed_status not in allowed_transitions[durable_status]
+                ):
+                    summary["errors"].append(
+                        f"{broker_order_id}: stale or conflicting durable "
+                        "broker submission state"
+                    )
+                    _record_review(
+                        summary,
+                        db,
+                        actor,
+                        request,
+                        "broker_submission_state_regression",
+                        broker_order_id,
+                        {
+                            "local_order": local_order,
+                            "durable_status": durable_status,
+                            "broker_status": broker_order.to_dict(),
+                        },
+                    )
+                    continue
+
+        # Terminal broker evidence must be explicitly confirmed.
+        # An unconfirmed terminal status cannot release a durable intent,
+        # close a local order, or establish that exposure has exited.
+        if (
+            order_status in {"rejected", "cancelled", "failed", "expired", "filled"}
+            and not broker_order.confirmed
+        ):
+            summary["errors"].append(
+                f"{broker_order_id}: unconfirmed terminal broker status"
+            )
+            _record_review(
+                summary,
+                db,
+                actor,
+                request,
+                "unconfirmed_terminal_broker_status",
+                broker_order_id,
+                {
+                    "local_order": local_order,
+                    "broker_status": broker_order.to_dict(),
+                },
+            )
+            continue
+
         position = find_position_by_broker_order_id(
             broker_order_id,
             execution_mode=execution_mode,
         )
 
-        if execution_mode == "live" and int(broker_order.filled_quantity or 0) > 0:
+        # A stale/zero broker fill count must not bypass protection checks when
+        # a durable LIVE position already shows open exposure after restart.
+        local_exposure = (
+            int(position.get("quantity") or 0)
+            if isinstance(position, dict) and str(position.get("status") or "").lower() == "open"
+            else 0
+        )
+        if execution_mode == "live" and (
+            int(broker_order.filled_quantity or 0) > 0 or local_exposure > 0
+        ):
             super_status_getter = getattr(broker_client, "get_super_order_status", None)
+            protected_order = None
             if callable(super_status_getter):
                 try:
                     protected_order = await super_status_getter(broker_order_id)
@@ -132,36 +305,84 @@ async def reconcile_broker_state(
                     summary["errors"].append(
                         f"{broker_order_id}: Super Order protection unavailable: {exc}"
                     )
-                protection = (
-                    ((protected_order.metadata or {}).get("super_order") or {}).get("protection")
-                    if protected_order is not None
-                    else None
+            protection = (
+                ((protected_order.metadata or {}).get("super_order") or {}).get("protection")
+                if protected_order is not None
+                else None
+            )
+            # The broker parent may report a stale zero fill after restart.
+            # Never accept a "protected" flag unless authoritative stop-leg
+            # coverage also meets the larger persisted/broker exposure.
+            required_exposure = max(
+                int(broker_order.filled_quantity or 0), local_exposure
+            )
+            stop_leg = (
+                ((protected_order.metadata or {}).get("super_order") or {})
+                .get("legs", {}).get("STOP_LOSS_LEG", {})
+                if protected_order is not None
+                else {}
+            )
+            # Verify outstanding stop coverage, not original order size.
+            # Missing or insufficient remaining quantity fails closed.
+            stop_quantity = int(
+                (stop_leg or {}).get("remaining_quantity") or 0
+            )
+            protection_verified = bool(
+                protected_order is not None
+                and str(protected_order.broker_order_id or "").strip()
+                == broker_order_id
+                and protected_order.confirmed
+                and protection
+                and protection.get("protected")
+                and protection.get("stop_loss_present")
+                and protection.get("stop_loss_active")
+                and str((stop_leg or {}).get("status") or "").lower()
+                in {"open", "partially_filled"}
+                and stop_quantity >= required_exposure
+            )
+            if not protection_verified:
+                _record_review(
+                    summary,
+                    db,
+                    actor,
+                    request,
+                    "live_filled_exposure_not_broker_protected",
+                    broker_order_id,
+                    {
+                        "local_order": local_order,
+                        "broker_status": broker_order.to_dict(),
+                        "protection": protection,
+                    },
                 )
-                if not protection or not bool(protection.get("protected")):
-                    _record_review(
-                        summary,
-                        db,
-                        actor,
-                        request,
-                        "live_filled_exposure_not_broker_protected",
-                        broker_order_id,
-                        {
-                            "local_order": local_order,
-                            "broker_status": broker_order.to_dict(),
-                            "protection": protection,
-                        },
+                _transition_local_order_if_present(
+                    local_order,
+                    "reconciliation_required",
+                    status_reason=(
+                        "LIVE filled exposure does not have authoritative broker-native "
+                        "stop-loss protection covering the filled quantity."
+                    ),
+                    broker_status=broker_order.status,
+                    entry_price=broker_order.price,
+                )
+                continue
+
+            # Close only after authoritative broker-native protection
+            # has been positively verified for the required exposure.
+            local_order_id = local_order.get("local_order_id")
+            if local_order_id:
+                try:
+                    with SessionLocal() as episode_db:
+                        close_protection_failure_episode(
+                            episode_db,
+                            local_order_id=str(local_order_id),
+                        )
+                        episode_db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to close verified LIVE protection episode "
+                        "for local order %s",
+                        local_order_id,
                     )
-                    _transition_local_order_if_present(
-                        local_order,
-                        "reconciliation_required",
-                        status_reason=(
-                            "LIVE filled exposure does not have authoritative broker-native "
-                            "stop-loss protection covering the filled quantity."
-                        ),
-                        broker_status=broker_order.status,
-                        entry_price=broker_order.price,
-                    )
-                    continue
 
         if order_status == "not_found":
             # A missing lookup is ambiguous, not authoritative terminal broker
@@ -226,7 +447,28 @@ async def reconcile_broker_state(
                 entry_price=broker_order.price,
             )
             if position and position.get("status") == "open":
-                close_open_position(int(position["id"]), current_price=broker_order.price, reason=f"broker_{order_status}")
+                if execution_mode == "live":
+                    # A rejected/cancelled entry lookup cannot prove that a
+                    # previously persisted LIVE position has exited. Never
+                    # delete exposure without authoritative exit-leg and
+                    # broker-position evidence.
+                    _record_review(
+                        summary, db, actor, request,
+                        "live_open_exposure_after_entry_terminal_status",
+                        broker_order_id,
+                        {"local_order": local_order, "broker_status": broker_order.to_dict(),
+                         "position": position},
+                    )
+                    _transition_local_order_if_present(
+                        local_order, "reconciliation_required",
+                        status_reason="LIVE open exposure requires authoritative exit reconciliation.",
+                        broker_status=broker_order.status,
+                    )
+                else:
+                    close_open_position(
+                        int(position["id"]), current_price=broker_order.price,
+                        reason=f"broker_{order_status}",
+                    )
             continue
 
         if order_status == "partially_filled":
@@ -238,7 +480,12 @@ async def reconcile_broker_state(
                         "partially_filled",
                     )
                 except ValueError as exc:
-                    if str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION":
+                    if (
+                        str(exc) != "BROKER_INTENT_NOT_AWAITING_RECONCILIATION"
+                        or _submission_intent_exists(
+                            str(local_order["local_order_id"])
+                        )
+                    ):
                         raise
                 _transition_local_order_if_present(
                     local_order,
@@ -662,6 +909,73 @@ def _record_review(
             **metadata,
         },
     )
+
+
+    if mismatch_type == "live_filled_exposure_not_broker_protected":
+        subject = "CRITICAL: QuantGrid LIVE position protection failure"
+        message = (
+            "LIVE filled exposure lacks verified broker-native "
+            "stop-loss protection. "
+            f"Broker order ID: {target_id}. "
+            "Immediate operator review required. "
+            "Automated broker order resubmission is prohibited."
+        )
+        try:
+            settings = get_notification_settings()
+            destinations = []
+            if settings.telegram_bot_token and settings.telegram_chat_id:
+                destinations.append(("telegram", settings.telegram_chat_id))
+            if settings.slack_webhook_url:
+                destinations.append(("slack", "configured"))
+            if settings.smtp_host and len(settings.smtp_to) == 1:
+                destinations.append(("email", settings.smtp_to[0]))
+
+            if not destinations:
+                logger.critical(
+                    "Critical LIVE protection alert has no configured "
+                    "notification destination for broker order %s",
+                    target_id,
+                )
+
+            local_order = metadata.get("local_order")
+            local_order_id = (
+                local_order.get("local_order_id")
+                if isinstance(local_order, dict)
+                else None
+            )
+
+            if not local_order_id:
+                # Compatibility for isolated review tests without
+                # a persisted local order.
+                local_order_id = f"broker:{target_id}"
+
+            with SessionLocal() as alert_db:
+                try:
+                    episode_id = open_protection_failure_episode(
+                        alert_db,
+                        local_order_id=str(local_order_id),
+                    )
+                    if destinations:
+                        enqueue_notifications_atomic(
+                            alert_db,
+                            destinations=destinations,
+                            subject=subject,
+                            message=message,
+                            incident_key=episode_id,
+                        )
+                    alert_db.commit()
+                except Exception:
+                    alert_db.rollback()
+                    raise
+        except Exception:
+            logger.exception(
+                "Failed to persist critical LIVE protection alert "
+                "for broker order %s",
+                target_id,
+            )
+            summary["errors"].append(
+                f"{target_id}: critical LIVE protection alert persistence failed"
+            )
 
 
 def _record_fix(
