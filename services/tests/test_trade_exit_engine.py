@@ -289,6 +289,7 @@ def test_live_exit_requires_broker_confirmation(monkeypatch):
                 symbol="NIFTY",
                 side="SELL",
                 quantity=2,
+                filled_quantity=2,
                 price=104,
                 confirmed=True,
                 metadata={"raw_safe": {"orderStatus": "TRADED"}},
@@ -480,3 +481,45 @@ def test_paper_monitor_never_exits_live_position(monkeypatch):
     assert result["checked"] == 1
     assert position_store.get_position(paper["id"])["status"] == "closed"
     assert position_store.get_position(live["id"])["status"] == "open"
+
+
+def test_live_exit_rejects_partial_or_wrong_instrument_fill(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import position_store, trade_exit_engine
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    opened = position_store.create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 2,
+        "entry_price": 100, "execution_mode": "live",
+    })
+
+    class MismatchedBroker:
+        calls = 0
+
+        async def place_order(self, order):
+            self.calls += 1
+            return BrokerOrderResult(
+                broker_order_id="EXIT-PARTIAL", status="open", symbol="NIFTY",
+                side="SELL", quantity=2, confirmed=False,
+            )
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id, status="filled", symbol="BANKNIFTY",
+                side="SELL", quantity=2, filled_quantity=1, price=104,
+                confirmed=True,
+            )
+
+    broker = MismatchedBroker()
+    with SessionLocal() as db:
+        actor = _actor(db)
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="EXIT_FILL_MISMATCH_RECONCILIATION_REQUIRED"):
+                asyncio.run(trade_exit_engine.exit_position(
+                    opened["id"], db=db, actor=actor, execution_mode="live",
+                    exit_price=104, broker_client=broker,
+                ))
+    assert broker.calls == 1
+    assert position_store.get_position(opened["id"])["status"] == "open"
