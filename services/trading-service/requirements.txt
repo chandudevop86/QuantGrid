@@ -12,6 +12,5 @@ psycopg[binary]
 prometheus_client
 pytest
 pytest-asyncio==1.4.0
-httpx
-httpx2
+httpx2==2.14.0
 dhanhq>=2.2.0,<3
