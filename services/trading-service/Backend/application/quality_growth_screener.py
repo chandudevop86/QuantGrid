@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from zoneinfo import ZoneInfo
 
 from Backend.infrastructure.http_safety import require_https_url
 
@@ -190,10 +191,11 @@ def evaluate_stock(item: dict[str, Any], *, today: date) -> dict[str, Any]:
     if segment not in {"MAINBOARD", "SME"}:
         result["reasons"] = ["Exchange segment unverified"]
         return result
-    if sector.casefold() in {"financials", "bank", "banking", "nbfc", "insurance"}:
+    if any(tag in sector.casefold() for tag in ("bank", "nbfc", "insur", "financ", "lending")):
         result["reasons"] = ["Financial businesses require sector-specific ratios"]
         return result
-    if (v["pe"] <= 0 or v["current_price"] <= 0 or v["dma200"] <= 0 or
+    if ((values["dma50"] is not None and v["dma50"] <= 0) or
+            v["pe"] <= 0 or v["current_price"] <= 0 or v["dma200"] <= 0 or
             v["avg_daily_volume_1m"] < 0 or v["debt_to_equity"] < 0 or
             not 0 <= v["pledged_percentage"] <= 100):
         result["reasons"] = ["One or more monetary/ratio fields are out of range"]
@@ -240,7 +242,7 @@ def build_screen_snapshot(payload: dict[str, Any], *, now: datetime | None = Non
     current = now or datetime.now(timezone.utc)
     if current.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    today = current.astimezone(timezone.utc).date()
+    today = current.astimezone(ZoneInfo("Asia/Kolkata")).date()
     source = str(payload.get("source") or "").strip()
     if not source or len(source) > 100:
         raise ValueError("Feed must identify its data provider")
