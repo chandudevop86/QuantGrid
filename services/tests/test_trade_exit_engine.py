@@ -266,7 +266,7 @@ def test_live_exit_requires_broker_confirmation(monkeypatch):
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 
     init_database()
-    opened = position_store.create_open_position({"symbol": "NIFTY", "side": "BUY", "quantity": 2, "entry_price": 100})
+    opened = position_store.create_open_position({"symbol": "NIFTY", "side": "BUY", "quantity": 2, "entry_price": 100, "execution_mode": "live"})
     monkeypatch.setattr(trade_exit_engine, "latest_candles", lambda *_args, **_kwargs: [{"close": 104}])
 
     class ConfirmingBroker:
@@ -317,7 +317,7 @@ def test_live_exit_does_not_close_when_broker_rejects(monkeypatch):
     from Backend.infrastructure.broker.broker_client import BrokerOrderResult
 
     init_database()
-    opened = position_store.create_open_position({"symbol": "NIFTY", "side": "BUY", "quantity": 2, "entry_price": 100})
+    opened = position_store.create_open_position({"symbol": "NIFTY", "side": "BUY", "quantity": 2, "entry_price": 100, "execution_mode": "live"})
     monkeypatch.setattr(trade_exit_engine, "latest_candles", lambda *_args, **_kwargs: [{"close": 104}])
 
     class RejectingBroker:
@@ -354,3 +354,129 @@ def test_live_exit_does_not_close_when_broker_rejects(monkeypatch):
             )
 
     assert position_store.get_position(opened["id"])["status"] == "open"
+
+
+def test_claim_exit_intent_is_atomic_and_persistent(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application.position_store import claim_exit_intent, create_open_position, get_position
+    from Backend.core.database import init_database
+
+    init_database()
+    position = create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 2,
+        "entry_price": 100, "execution_mode": "live",
+    })
+    assert claim_exit_intent(position["id"], "EXIT-TEST") is True
+    assert claim_exit_intent(position["id"], "EXIT-SECOND") is False
+    stored = get_position(position["id"])
+    assert stored["pending_exit_correlation_id"] == "EXIT-TEST"
+    assert stored["pending_exit_broker_order_id"] is None
+
+
+def test_live_exit_timeout_never_resubmits(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import position_store, trade_exit_engine
+    from Backend.core.database import SessionLocal, init_database
+
+    init_database()
+    opened = position_store.create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 2,
+        "entry_price": 100, "execution_mode": "live",
+    })
+
+    class AcceptedThenTimeout:
+        calls = 0
+
+        async def place_order(self, order):
+            self.calls += 1
+            saved = position_store.get_position(opened["id"])
+            assert saved["pending_exit_correlation_id"] == order.metadata["correlation_id"]
+            assert saved["pending_exit_broker_order_id"] is None
+            raise TimeoutError("simulated broker acceptance with lost response")
+
+    broker = AcceptedThenTimeout()
+    with SessionLocal() as db:
+        actor = _actor(db)
+        with pytest.raises(TimeoutError):
+            asyncio.run(trade_exit_engine.exit_position(
+                opened["id"], db=db, actor=actor, execution_mode="live",
+                exit_price=104, broker_client=broker,
+            ))
+        with pytest.raises(RuntimeError, match="EXIT_BROKER_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED"):
+            asyncio.run(trade_exit_engine.exit_position(
+                opened["id"], db=db, actor=actor, execution_mode="live",
+                exit_price=104, broker_client=broker,
+            ))
+
+    assert broker.calls == 1
+    assert position_store.get_position(opened["id"])["status"] == "open"
+
+
+def test_live_exit_unconfirmed_fill_does_not_close_or_resend(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import position_store, trade_exit_engine
+    from Backend.core.database import SessionLocal, init_database
+    from Backend.infrastructure.broker.broker_client import BrokerOrderResult
+
+    init_database()
+    opened = position_store.create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 2,
+        "entry_price": 100, "execution_mode": "live",
+    })
+
+    class UnconfirmedBroker:
+        calls = 0
+
+        async def place_order(self, order):
+            self.calls += 1
+            return BrokerOrderResult(
+                broker_order_id="EXIT-SUBMITTED", status="open",
+                symbol="NIFTY", side="SELL", quantity=2,
+                confirmed=False,
+            )
+
+        async def get_order_status(self, broker_order_id):
+            return BrokerOrderResult(
+                broker_order_id=broker_order_id, status="filled",
+                symbol="NIFTY", side="SELL", quantity=2,
+                price=104, confirmed=False,
+            )
+
+    broker = UnconfirmedBroker()
+    with SessionLocal() as db:
+        actor = _actor(db)
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="broker exit not confirmed"):
+                asyncio.run(trade_exit_engine.exit_position(
+                    opened["id"], db=db, actor=actor, execution_mode="live",
+                    exit_price=104, broker_client=broker,
+                ))
+    assert broker.calls == 1
+    saved = position_store.get_position(opened["id"])
+    assert saved["pending_exit_broker_order_id"] == "EXIT-SUBMITTED"
+    assert saved["status"] == "open"
+
+
+def test_paper_monitor_never_exits_live_position(monkeypatch):
+    configure_sqlalchemy_store(monkeypatch)
+    from Backend.application import position_store, trade_exit_engine
+    from Backend.core.database import SessionLocal, init_database
+
+    init_database()
+    paper = position_store.create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 1,
+        "entry_price": 100, "target": 105, "execution_mode": "paper",
+    })
+    live = position_store.create_open_position({
+        "symbol": "NIFTY", "side": "BUY", "quantity": 1,
+        "entry_price": 100, "target": 105, "execution_mode": "live",
+    })
+    monkeypatch.setattr(trade_exit_engine, "latest_candles", lambda *_args, **_kwargs: [{"close": 106}])
+    monkeypatch.setattr(position_store, "latest_candles", lambda *_args, **_kwargs: [{"close": 106}])
+    with SessionLocal() as db:
+        result = asyncio.run(trade_exit_engine.monitor_open_positions(
+            db=db, actor=_actor(db), execution_mode="paper",
+        ))
+    assert result["checked"] == 1
+    assert position_store.get_position(paper["id"])["status"] == "closed"
+    assert position_store.get_position(live["id"])["status"] == "open"
