@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import importlib
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from Backend.application import paper_trade_store, position_store
-from Backend.core import config
+from Backend.application import paper_trade_store
 
 
 def _fixed_session_time():
@@ -18,16 +18,22 @@ def _fixed_session_time():
 
 
 def _mock_risk_sources(monkeypatch, trades, open_positions, closed_positions):
+    # Other API tests deliberately reset Backend.* modules between fixtures.
+    # Resolve the modules that risk_status() will import at call time instead
+    # of patching a potentially stale module object captured during collection.
+    resolved_position_store = importlib.import_module("Backend.application.position_store")
+    resolved_config = importlib.import_module("Backend.core.config")
+
     monkeypatch.setattr(paper_trade_store, "init_paper_trade_store", lambda: None)
     monkeypatch.setattr(paper_trade_store, "list_paper_trades", lambda limit: trades)
-    monkeypatch.setattr(position_store, "list_open_positions", lambda **kwargs: open_positions)
-    monkeypatch.setattr(position_store, "list_closed_positions", lambda limit: closed_positions)
-    monkeypatch.setattr(position_store, "position_summary", lambda: {
+    monkeypatch.setattr(resolved_position_store, "list_open_positions", lambda **kwargs: open_positions)
+    monkeypatch.setattr(resolved_position_store, "list_closed_positions", lambda limit: closed_positions)
+    monkeypatch.setattr(resolved_position_store, "position_summary", lambda: {
         "open_positions": len(open_positions),
         "current_exposure": 200,
         "realized_pnl": -100,
     })
-    monkeypatch.setattr(config, "get_settings", lambda: SimpleNamespace(
+    monkeypatch.setattr(resolved_config, "get_settings", lambda: SimpleNamespace(
         capital=100000, risk_per_trade_pct=1, max_daily_loss=3000,
         risk_configured=True,
     ))
