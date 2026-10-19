@@ -91,11 +91,18 @@ def test_screener_v2_thresholds_fail_closed(field, value):
     {"price_as_of": "2026-10-21"},
     {"market_segment": "UNKNOWN"},
     {"sector": "Banking"},
+    {"sector": "Financial Services"},
 ])
 def test_missing_stale_or_incompatible_data_is_unverified(changes):
     result = screen.evaluate_stock(good_stock(**changes), today=TODAY)
     assert result["status"] == "UNVERIFIED"
     assert result["score"] is None
+
+
+def test_invalid_50dma_does_not_score_as_valid_momentum():
+    stock = screen.evaluate_stock(good_stock(dma50=-1), today=TODAY)
+    assert stock["status"] == "UNVERIFIED"
+    assert stock["score"] is None
 
 
 def test_sme_requires_manual_review_even_when_financials_pass():
