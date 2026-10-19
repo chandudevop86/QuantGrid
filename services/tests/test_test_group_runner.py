@@ -42,3 +42,12 @@ def test_runner_discovers_nested_strategy_regressions():
     assert run_test_groups._relative_test_arg(
         "services/tests/strategy/test_smc_safety_regressions.py"
     ) == "strategy/test_smc_safety_regressions.py"
+
+
+def test_conftest_prioritizes_trading_service_and_resets_app_modules():
+    conftest = (ROOT / "services" / "tests" / "conftest.py").read_text(encoding="utf-8")
+
+    assert "while service_root in sys.path:" in conftest
+    assert "sys.path.insert(0, service_root)" in conftest
+    assert 'or name == "app"' in conftest
+    assert 'or name.startswith("app.")' in conftest

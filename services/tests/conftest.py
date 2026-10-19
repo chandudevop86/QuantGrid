@@ -10,8 +10,13 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
-if str(SERVICE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SERVICE_ROOT))
+# Keep the trading-service package ahead of the repository root. Otherwise the
+# repository's top-level `app` package can shadow `services/trading-service/app`
+# when pytest is invoked with `python -m pytest` or from another working dir.
+service_root = str(SERVICE_ROOT)
+while service_root in sys.path:
+    sys.path.remove(service_root)
+sys.path.insert(0, service_root)
 
 TEST_SECRET = "test-secret-value-that-is-long-enough-12345"
 TEST_ADMIN_PASSWORD = "AdminPass1!"
@@ -19,7 +24,12 @@ TEST_ADMIN_PASSWORD = "AdminPass1!"
 
 def reset_backend_modules() -> None:
     for name in list(sys.modules):
-        if name == "Backend" or name.startswith("Backend."):
+        if (
+            name == "Backend"
+            or name.startswith("Backend.")
+            or name == "app"
+            or name.startswith("app.")
+        ):
             del sys.modules[name]
 
 
