@@ -278,14 +278,14 @@ export default function Investing() {
       {loading && <div className="alert" role="status">Loading investment research...</div>}
       {error && <div className="alert alert-error" role="alert">{error}</div>}
 
+      <QualityGrowthWatchlist />
+
       {!loading && !error && (
         <>
           <div className="quality-banner quality-watchlist">
             <strong>Research Mode</strong>
             <span>{payload?.disclaimer ?? "Educational research, not financial advice."}</span>
           </div>
-
-          <QualityGrowthWatchlist />
 
           {cardOrder.map((key) => (
             <ResearchSection key={key} title={cardTitles[key]} items={cards[key] ?? []} />
