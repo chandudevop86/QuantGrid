@@ -20,6 +20,102 @@ type DashboardPayload = {
   cards?: Record<string, DashboardCard[]>;
 };
 
+type QualityGrowthItem = {
+  symbol: string;
+  name: string;
+  market_cap_bucket?: string | null;
+  score: number;
+  fundamentals_as_of: string;
+  price_as_of: string;
+  reasons: string[];
+  research_priority?: string;
+};
+type QualityGrowthPayload = {
+  status: "READY" | "UNAVAILABLE" | "UNCONFIGURED";
+  source: string;
+  as_of?: string;
+  refreshed_at?: string;
+  qualified_count: number;
+  items: QualityGrowthItem[];
+  excluded: Array<{ symbol: string; reasons: string[]; status: string }>;
+  reason?: string;
+  disclaimer: string;
+};
+
+function QualityGrowthWatchlist() {
+  const [snapshot, setSnapshot] = useState<QualityGrowthPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const update = () => {
+      api.qualityGrowthScreen()
+        .then((data: QualityGrowthPayload) => {
+          if (!mounted) return;
+          if (!data || !Array.isArray(data.items) || !Array.isArray(data.excluded)) {
+            throw new Error("Invalid quality-growth response");
+          }
+          setSnapshot(data);
+          setFeedError(null);
+        })
+        .catch((error: unknown) => {
+          if (mounted) setFeedError(error instanceof Error ? error.message : "Screen feed unavailable");
+        })
+        .finally(() => { if (mounted) setLoading(false); });
+    };
+    update();
+    const timer = window.setInterval(update, 300000);
+    return () => { mounted = false; window.clearInterval(timer); };
+  }, []);
+
+  return (
+    <section className="dashboard-section investment-section" aria-label="Quality Growth V2">
+      <div className="form-panel-header">
+        <div>
+          <h2>Quality Growth V2 — Research Watchlist</h2>
+          <p>30 quality · 25 growth · 20 valuation · 15 momentum · 10 risk.
+            Auto-checks the verified source every 5 minutes while this page is open.</p>
+        </div>
+      </div>
+      {loading && <p>Checking licensed screening feed...</p>}
+      {feedError && <div className="alert alert-error" role="alert">{feedError}</div>}
+      {snapshot && (
+        <>
+          <p><strong>{snapshot.status}</strong> · {snapshot.qualified_count} qualified ·
+            Source: {snapshot.source} · Data as of: {snapshot.as_of ?? "unavailable"}</p>
+          {snapshot.status !== "READY" && (
+            <div className="alert alert-warning" role="status">
+              {snapshot.reason ?? "Verified screening data is unavailable."}
+              {" "}No fabricated stocks or buy signals are shown.
+            </div>
+          )}
+          <p className="metric-helper">{snapshot.disclaimer}</p>
+          {snapshot.items.length > 0 && (
+            <div className="investment-grid">
+              {snapshot.items.map((item) => (
+                <article className="investment-card" key={item.symbol}>
+                  <div className="investment-card-header">
+                    <div><h3>{item.symbol} — {item.name}</h3>
+                      <p>{item.market_cap_bucket ?? "Unclassified"} · {item.research_priority ?? "RESEARCH"}</p></div>
+                    <span className="status-pill">{item.score.toFixed(1)} / 100</span>
+                  </div>
+                  <p>Financials: {item.fundamentals_as_of} · Price: {item.price_as_of}</p>
+                  {item.reasons.length > 0 && <p>{item.reasons.join("; ")}</p>}
+                </article>
+              ))}
+            </div>
+          )}
+          {snapshot.status === "READY" && (
+            <p className="metric-helper">{snapshot.excluded.length} stocks did not pass or could not be verified.
+              This screen is for research, not trade execution.</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 const cardTitles: Record<string, string> = {
   multibagger_candidates: "Multibagger Candidates",
   top_stock_picks: "Top Stock Picks",
@@ -188,6 +284,8 @@ export default function Investing() {
             <strong>Research Mode</strong>
             <span>{payload?.disclaimer ?? "Educational research, not financial advice."}</span>
           </div>
+
+          <QualityGrowthWatchlist />
 
           {cardOrder.map((key) => (
             <ResearchSection key={key} title={cardTitles[key]} items={cards[key] ?? []} />
