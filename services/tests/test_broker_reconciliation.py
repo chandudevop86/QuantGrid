@@ -2315,3 +2315,27 @@ def test_live_unconfirmed_terminal_status_preserves_durable_intent(
         "unconfirmed terminal broker status" in error
         for error in summary["errors"]
     )
+
+
+def test_reconciliation_status_default_path_is_outside_repository():
+    from Backend.application import broker_reconciliation
+
+    path = broker_reconciliation.STATUS_FILE
+    repo_root = Path(__file__).resolve().parents[2]
+
+    assert path == Path("/var/lib/quantgrid/broker_reconciliation_status.json")
+    assert repo_root not in path.parents
+
+
+def test_reconciliation_status_path_can_be_overridden(monkeypatch):
+    import importlib
+    from Backend.application import broker_reconciliation
+
+    custom = "/tmp/quantgrid-test/reconciliation.json"
+    monkeypatch.setenv("QUANTGRID_RECONCILIATION_STATUS_FILE", custom)
+    reloaded = importlib.reload(broker_reconciliation)
+    try:
+        assert reloaded.STATUS_FILE == Path(custom)
+    finally:
+        monkeypatch.delenv("QUANTGRID_RECONCILIATION_STATUS_FILE", raising=False)
+        importlib.reload(reloaded)
