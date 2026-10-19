@@ -16,6 +16,7 @@ from Backend.application.position_store import (
     close_open_position,
     get_position,
     list_open_positions,
+    claim_exit_intent,
     update_open_position,
 )
 from Backend.domain.models.order import Order
@@ -98,7 +99,7 @@ async def monitor_open_positions(
     execution_mode: str = "paper",
     broker_client: BrokerClient | None = None,
 ) -> dict[str, Any]:
-    positions = list_open_positions()
+    positions = list_open_positions(execution_mode=execution_mode)
     exited: list[dict[str, Any]] = []
     errors: list[str] = []
     for position in positions:
@@ -140,6 +141,8 @@ async def exit_position(
         raise ValueError("position not found")
     if position.get("status") != "open":
         raise ValueError("position is not open")
+    if str(position.get("execution_mode") or "paper").lower() != execution_mode:
+        raise ValueError("POSITION_EXECUTION_MODE_MISMATCH")
 
     price = float(exit_price if exit_price is not None else _latest_price(str(position.get("symbol") or "")) or position.get("current_price") or position.get("entry_price") or 0.0)
     if price <= 0:
@@ -155,31 +158,42 @@ async def exit_position(
         # blindly submitting a brand-new one. Without this, every retry/re-check of a still-
         # open position places another real exit order at the broker.
         pending_broker_order_id = position.get("pending_exit_broker_order_id")
+        pending_correlation_id = position.get("pending_exit_correlation_id")
         if pending_broker_order_id:
             confirmed = await client.get_order_status(str(pending_broker_order_id))
+        elif pending_correlation_id:
+            # A broker may have accepted the order before timing out. Neither a
+            # process restart nor a second exit request may create another exit.
+            raise RuntimeError("EXIT_BROKER_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED")
         else:
             order = _exit_order(position, price)
             correlation_id = str(order.metadata["correlation_id"])
+            if not claim_exit_intent(position_id, correlation_id):
+                raise RuntimeError("EXIT_ALREADY_CLAIMED_RECONCILIATION_REQUIRED")
+            # This database claim commits BEFORE the broker network boundary.
+            # If the broker accepts and the response is lost, we fail closed.
             placed = await client.place_order(order)
-            # Persist the broker order id immediately, before we know the fill outcome, so a
-            # crash/timeout right after this point still leaves a durable trail: the next
-            # attempt will find `pending_exit_broker_order_id` and poll it above rather than
-            # placing a second order.
-            update_open_position(
+            if not getattr(placed, "broker_order_id", None):
+                raise RuntimeError("EXIT_BROKER_OUTCOME_UNKNOWN_RECONCILIATION_REQUIRED")
+            stored = update_open_position(
                 position_id,
-                {
-                    "pending_exit_correlation_id": correlation_id,
-                    "pending_exit_broker_order_id": placed.broker_order_id,
-                },
+                {"pending_exit_broker_order_id": str(placed.broker_order_id)},
             )
-            confirmed = await client.get_order_status(placed.broker_order_id)
+            if not stored or str(stored.get("pending_exit_broker_order_id")) != str(placed.broker_order_id):
+                raise RuntimeError("EXIT_ORDER_ID_PERSISTENCE_FAILED_RECONCILIATION_REQUIRED")
+            confirmed = await client.get_order_status(str(placed.broker_order_id))
+            pending_broker_order_id = str(placed.broker_order_id)
+
+        if confirmed is None or not bool(getattr(confirmed, "confirmed", False)):
+            raise RuntimeError("broker exit not confirmed: authoritative broker status required")
+        if str(confirmed.broker_order_id) != str(pending_broker_order_id):
+            raise RuntimeError("EXIT_BROKER_ID_MISMATCH_RECONCILIATION_REQUIRED")
 
         if confirmed.status in EXIT_REJECTED_STATUSES:
-            # The exit attempt did not go through. Clear the pending markers so the position
-            # is eligible for a fresh exit attempt (a new broker order) on the next
-            # evaluation, instead of getting stuck forever polling a dead order id.
-            update_open_position(position_id, {"pending_exit_correlation_id": None, "pending_exit_broker_order_id": None})
-            raise RuntimeError(f"broker exit not confirmed: {confirmed.status}")
+            # Preserve the claim even on an authoritative rejection: an
+            # operator must reconcile quantities, other exit legs and positions
+            # before explicitly permitting another broker order.
+            raise RuntimeError(f"broker exit not confirmed: {confirmed.status}; reconciliation required")
 
         if confirmed.status not in EXIT_FILLED_STATUSES:
             # Order is accepted but not yet filled (pending/open/transit). This is NOT an
@@ -194,6 +208,20 @@ async def exit_position(
                 "broker": confirmed.to_dict(),
                 "status": "exit_pending",
             }
+
+        # An authoritative filled status alone is not proof that the whole
+        # local position was exited. Prevent phantom full closes on partial,
+        # mismatched, or incorrectly correlated broker fills.
+        expected_quantity = int(position.get("quantity") or 0)
+        expected_side = "SELL" if str(position.get("side") or "").upper() == "BUY" else "BUY"
+        if (
+            expected_quantity <= 0
+            or int(confirmed.quantity or 0) != expected_quantity
+            or int(confirmed.filled_quantity or 0) != expected_quantity
+            or str(confirmed.symbol or "").upper() != str(position.get("symbol") or "").upper()
+            or str(confirmed.side or "").upper() != expected_side
+        ):
+            raise RuntimeError("EXIT_FILL_MISMATCH_RECONCILIATION_REQUIRED")
 
         price = float(confirmed.price or price)
         broker_payload = confirmed.to_dict()
@@ -252,7 +280,7 @@ async def exit_all_positions(
     reason: str = "manual_exit",
     broker_client: BrokerClient | None = None,
 ) -> dict[str, Any]:
-    positions = list_open_positions()
+    positions = list_open_positions(execution_mode=execution_mode)
     exited: list[dict[str, Any]] = []
     errors: list[str] = []
     for position in positions:
