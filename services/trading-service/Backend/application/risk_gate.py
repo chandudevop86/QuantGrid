@@ -59,9 +59,14 @@ def validate_order_risk(
 ) -> OrderRiskDecision:
     status = risk_status()
     kill_switch = kill_switch_status()
+    capital = float(status.get("capital") or 0.0)
+    max_daily_loss = float(status["max_daily_loss"])
+    if capital <= 0:
+        raise ValueError("RISK_CAPITAL_MUST_BE_POSITIVE")
     central_manager = GlobalRiskManager(
         GlobalRiskConfig(
-            max_daily_loss_pct=float(status["max_daily_loss"]) / 100_000.0 * 100.0,
+            starting_equity=capital,
+            max_daily_loss_pct=max_daily_loss / capital * 100.0,
             max_trades_per_day=int(status["max_trades_per_day"]),
             min_signal_score=0.0,
             max_stale_seconds=10**9,
