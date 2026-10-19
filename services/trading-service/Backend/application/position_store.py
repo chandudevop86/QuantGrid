@@ -225,6 +225,53 @@ def get_position(position_id: int) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def claim_exit_intent(position_id: int, correlation_id: str) -> bool:
+    """Atomically reserve a live exit BEFORE network I/O.
+
+    A pending correlation without an order ID is an ambiguous broker outcome,
+    not permission to resend. This compare-and-set works across workers.
+    """
+    if not correlation_id or len(correlation_id) > 120:
+        raise ValueError("valid exit correlation ID required")
+    init_position_store()
+    now = utc_now()
+    if _use_sqlite():
+        with _connect() as connection:
+            result = connection.execute(
+                """
+                UPDATE positions SET pending_exit_correlation_id = ?, updated_at = ?
+                WHERE id = ? AND status = 'open'
+                  AND pending_exit_correlation_id IS NULL
+                  AND pending_exit_broker_order_id IS NULL
+                """,
+                (correlation_id, now, position_id),
+            )
+            return result.rowcount == 1
+
+    from Backend.core.database import SessionLocal
+    from Backend.domain.trading_store_models import PositionRecord
+
+    with SessionLocal() as db:
+        count = (
+            db.query(PositionRecord)
+            .filter(
+                PositionRecord.id == position_id,
+                PositionRecord.status == "open",
+                PositionRecord.pending_exit_correlation_id.is_(None),
+                PositionRecord.pending_exit_broker_order_id.is_(None),
+            )
+            .update(
+                {
+                    PositionRecord.pending_exit_correlation_id: correlation_id,
+                    PositionRecord.updated_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+        return count == 1
+
+
 def update_open_position(position_id: int, payload: dict[str, Any]) -> dict[str, Any] | None:
     init_position_store()
     if not _use_sqlite():
