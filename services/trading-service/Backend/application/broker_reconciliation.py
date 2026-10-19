@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,7 @@ from fastapi import Request
 from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
-from Backend.application.paper_trade_store import DATA_DIR, list_paper_trades, update_paper_trade_status
+from Backend.application.paper_trade_store import list_paper_trades, update_paper_trade_status
 from Backend.application.order_store import broker_status_to_order_status, list_orders, transition_order
 from Backend.application.broker_submission_intent import record_broker_evidence
 from Backend.application.position_store import (
@@ -34,7 +35,7 @@ from Backend.infrastructure.broker.broker_client import BrokerClient, BrokerOrde
 
 logger = logging.getLogger(__name__)
 
-STATUS_FILE = DATA_DIR / "broker_reconciliation_status.json"
+STATUS_FILE = Path(os.getenv("QUANTGRID_RECONCILIATION_STATUS_FILE", "/var/lib/quantgrid/broker_reconciliation_status.json"))
 SUBMITTED_STATUSES = {"paper_order_submitted", "live_order_submitted", "submitted", "broker_submitted", "pending", "confirmed", "open", "filled"}
 REJECTED_STATUSES = {"rejected", "failed", "cancelled", "expired", "not_found"}
 FILLED_STATUSES = {"filled", "traded", "complete", "completed"}
