@@ -855,40 +855,91 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def risk_status() -> dict[str, Any]:
+    """Consolidate each closure once, preferring cost-adjusted paper evidence.
+
+    Position records represent broker/position state; paper-trade records may
+    mirror the SAME fill and are not an independent addition to realized P&L.
+    Correlate them by broker order id. Unmatched records remain independent.
+    """
     init_paper_trade_store()
     from Backend.core.config import get_settings
-    from Backend.application.position_store import position_summary
+    from Backend.application.position_store import (
+        list_closed_positions,
+        list_open_positions,
+        position_summary,
+    )
+    from zoneinfo import ZoneInfo
 
     settings = get_settings()
     positions = position_summary()
-    now = datetime.now(timezone.utc)
-    today = now.date().isoformat()
-    week_start = now - timedelta(days=7)
+    open_positions = list_open_positions()
+    closed_positions = list_closed_positions(500)
     trades = list_paper_trades(500)
-    today_trades = [trade for trade in trades if str(trade.get("created_at", "")).startswith(today)]
+    now = datetime.now(timezone.utc)
+    ist = ZoneInfo("Asia/Kolkata")
+    today = now.astimezone(ist).date()
+    week_start = now - timedelta(days=7)
     closed_statuses = {"closed", "exited", "completed"}
-    closed_trade_pnl = sum(
-        float(trade.get("pnl") or 0.0)
-        for trade in today_trades
+
+    def timestamp(value: Any) -> datetime | None:
+        if value in (None, ""):
+            return None
+        try:
+            parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+    paper_closes_by_broker: dict[str, dict[str, Any]] = {
+        str(trade["broker_order_id"]): trade
+        for trade in trades
         if str(trade.get("status") or "").lower() in closed_statuses
-    )
-    daily_pnl = round(float(positions["todays_pnl"]) + closed_trade_pnl, 2)
-    weekly_closed_pnl = 0.0
+        and trade.get("broker_order_id")
+    }
+    matched_paper_ids: set[str] = set()
+    closed_events: list[tuple[datetime, float]] = []
+    for position in closed_positions:
+        closed_at = timestamp(position.get("closed_at"))
+        if closed_at is None:
+            continue
+        broker_id = str(position.get("broker_order_id") or "")
+        paper = paper_closes_by_broker.get(broker_id) if broker_id else None
+        if paper is not None:
+            matched_paper_ids.add(broker_id)
+        # The paper mirror has net P&L after fees. A position-only record
+        # retains gross P&L and must not be treated as cost-adjusted.
+        pnl = float(paper.get("pnl") or 0.0) if paper is not None else float(position.get("closed_pnl") or 0.0)
+        closed_events.append((closed_at, pnl))
 
     for trade in trades:
-            if str(trade.get("status") or "").lower() not in closed_statuses:
-                continue
+        if str(trade.get("status") or "").lower() not in closed_statuses:
+            continue
+        broker_id = str(trade.get("broker_order_id") or "")
+        if broker_id and broker_id in matched_paper_ids:
+            continue
+        # Standalone paper fills do not have an associated position ledger
+        # entry; the legacy paper record carries only creation time.
+        time = timestamp(trade.get("created_at"))
+        if time is not None:
+            closed_events.append((time, float(trade.get("pnl") or 0.0)))
 
-            trade_created_at = _trade_created_at(trade)
-        
-            if trade_created_at is None:
-                continue
-
-            if trade_created_at < week_start:
-                continue
-
-            weekly_closed_pnl += float(trade.get("pnl") or 0.0)
-    weekly_pnl = round(float(positions["unrealized_pnl"]) + weekly_closed_pnl, 2)
+    realized_today = sum(pnl for time, pnl in closed_events if time.astimezone(ist).date() == today)
+    weekly_closed = sum(pnl for time, pnl in closed_events if time >= week_start)
+    unrealized = sum(float(position.get("open_pnl") or 0.0) for position in open_positions)
+    daily_pnl = round(realized_today + unrealized, 2)
+    weekly_pnl = round(weekly_closed + unrealized, 2)
+    today_trades = [
+        trade for trade in trades
+        if (created := timestamp(trade.get("created_at"))) is not None
+        and created.astimezone(ist).date() == today
+    ]
+    # Live executions are never added to the PAPER trade ledger.
+    live_entries_today = sum(
+        1 for position in [*open_positions, *closed_positions]
+        if str(position.get("execution_mode") or "").lower() == "live"
+        and (opened := timestamp(position.get("opened_at"))) is not None
+        and opened.astimezone(ist).date() == today
+    )
     consecutive_losses = 0
     for trade in trades:
         if float(trade.get("pnl") or 0.0) < 0:
@@ -899,14 +950,14 @@ def risk_status() -> dict[str, Any]:
     return {
         "daily_pnl": daily_pnl,
         "weekly_pnl": weekly_pnl,
-        "trades_today": len(today_trades),
+        "trades_today": len(today_trades) + live_entries_today,
         "capital": settings.capital,
         "risk_per_trade_pct": settings.risk_per_trade_pct,
         "risk_per_trade_amount": round(settings.capital * settings.risk_per_trade_pct / 100, 2),
         "open_positions": positions["open_positions"],
         "current_exposure": positions["current_exposure"],
         "realized_pnl": positions["realized_pnl"],
-        "unrealized_pnl": positions["unrealized_pnl"],
+        "unrealized_pnl": round(unrealized, 2),
         "consecutive_losses": consecutive_losses,
         "max_daily_loss": settings.max_daily_loss,
         "max_weekly_loss": float(os.getenv("QUANTGRID_MAX_WEEKLY_LOSS", str(settings.max_daily_loss * 3))),
