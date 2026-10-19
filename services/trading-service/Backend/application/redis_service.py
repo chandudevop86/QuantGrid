@@ -261,7 +261,7 @@ class RedisService:
             finally:
                 try:
                     await pubsub.unsubscribe(channel)
-                    await pubsub.close()
+                    await pubsub.aclose()
                 except Exception:
                     logger.warning(
                         "redis_subscriber_cleanup_failed",
