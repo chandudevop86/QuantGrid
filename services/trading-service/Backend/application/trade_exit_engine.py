@@ -209,6 +209,20 @@ async def exit_position(
                 "status": "exit_pending",
             }
 
+        # An authoritative filled status alone is not proof that the whole
+        # local position was exited. Prevent phantom full closes on partial,
+        # mismatched, or incorrectly correlated broker fills.
+        expected_quantity = int(position.get("quantity") or 0)
+        expected_side = "SELL" if str(position.get("side") or "").upper() == "BUY" else "BUY"
+        if (
+            expected_quantity <= 0
+            or int(confirmed.quantity or 0) != expected_quantity
+            or int(confirmed.filled_quantity or 0) != expected_quantity
+            or str(confirmed.symbol or "").upper() != str(position.get("symbol") or "").upper()
+            or str(confirmed.side or "").upper() != expected_side
+        ):
+            raise RuntimeError("EXIT_FILL_MISMATCH_RECONCILIATION_REQUIRED")
+
         price = float(confirmed.price or price)
         broker_payload = confirmed.to_dict()
 
