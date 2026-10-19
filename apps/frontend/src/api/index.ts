@@ -206,6 +206,7 @@ export const api = {
   investingDashboard: () => API.get("/investing/dashboard").then((res) => res.data),
   institutionalDashboard: () => API.get("/institutional/dashboard").then((res) => res.data),
   stockResearch: () => API.get("/investing/stocks/research").then((res) => res.data),
+  qualityGrowthScreen: () => API.get("/investing/stocks/quality-growth").then((res) => res.data),
   stockTopPicks: () => API.get("/investing/stocks/top-picks").then((res) => res.data),
   multibaggerPredictor: () => API.get("/investing/stocks/multibagger-predictor").then((res) => res.data),
   mutualFundResearch: () => API.get("/investing/mutual-funds/research").then((res) => res.data),
