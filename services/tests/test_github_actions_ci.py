@@ -51,3 +51,17 @@ def test_frontend_ci_runs_tests_before_build():
 
     assert workflow.index("run: npm test") < workflow.index("run: npm run build")
     assert workflow.index("run: npm run test:a11y") < workflow.index("run: npm run build")
+
+
+def test_canonical_trading_api_entrypoint_is_unambiguous():
+    root = ROOT
+    assert not (root / "services" / "trading-service" / "main.py").exists()
+
+    systemd = (
+        root / "deploy" / "systemd" / "quantgrid-backend.service"
+    ).read_text(encoding="utf-8")
+    dockerfile = (root / "docker" / "backend.Dockerfile").read_text(encoding="utf-8")
+
+    canonical = "Backend.presentation.api.main:app"
+    assert canonical in systemd
+    assert canonical in dockerfile
