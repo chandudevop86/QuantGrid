@@ -287,6 +287,13 @@ def evaluate_stock(item: dict[str, Any], *, today: date) -> dict[str, Any]:
         "fundamentals_as_of": item.get("fundamentals_as_of"),
         "price_as_of": item.get("price_as_of"), "source": "verified-feed",
         "research_priority": "MANUAL_REVIEW", "sme_checks": None,
+        "financial_metrics": ({
+            field: values.get(field)
+            for field in ("roe", "roa_pct", "capital_adequacy_pct",
+                          "gross_npa_pct", "net_npa_pct", "gross_stage3_pct",
+                          "net_stage3_pct", "nim_pct", "price_to_book",
+                          "pledged_percentage")
+        } if kind in {"BANK", "NBFC"} else None),
     }
     # A provider must explicitly identify financial businesses. Unclassified
     # financial/insurance issuers cannot leak into the corporate rulebook.
