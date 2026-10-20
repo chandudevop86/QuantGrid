@@ -199,12 +199,17 @@ def test_risk_gate_rejects_non_positive_capital(monkeypatch):
     monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status(capital=0.0))
     monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
 
-    with pytest.raises(ValueError, match="RISK_CAPITAL_MUST_BE_POSITIVE"):
-        risk_gate.validate_order_risk(
-            _signal(),
-            execution_mode="paper",
-            candles_1m=_fresh_candle(),
-        )
+    decision = risk_gate.validate_order_risk(
+        _signal(),
+        execution_mode="paper",
+        candles_1m=_fresh_candle(),
+    )
+
+    assert decision.allowed is False
+    assert decision.reason == "RISK_CAPITAL_MUST_BE_POSITIVE"
+    assert decision.risk_amount == 0.0
+    assert decision.max_allowed_risk >= 0.0
+    assert decision.details["capital"] == 0.0
 
 
 def test_risk_engine_rejects_missing_stop_loss(monkeypatch):

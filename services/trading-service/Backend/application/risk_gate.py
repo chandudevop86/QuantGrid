@@ -62,7 +62,18 @@ def validate_order_risk(
     capital = float(status.get("capital") or 0.0)
     max_daily_loss = float(status["max_daily_loss"])
     if capital <= 0:
-        raise ValueError("RISK_CAPITAL_MUST_BE_POSITIVE")
+        return OrderRiskDecision(
+            allowed=False,
+            reason="RISK_CAPITAL_MUST_BE_POSITIVE",
+            risk_amount=0.0,
+            max_allowed_risk=max(0.0, round(float(status.get("risk_per_trade_amount") or 0.0), 2)),
+            details={
+                "execution_mode": execution_mode,
+                "capital": capital,
+                "risk_configured": bool(status.get("risk_configured")),
+                "kill_switch_active": bool(kill_switch.get("active")),
+            },
+        )
     central_manager = GlobalRiskManager(
         GlobalRiskConfig(
             starting_equity=capital,
