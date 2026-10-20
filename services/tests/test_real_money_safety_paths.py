@@ -47,6 +47,7 @@ def _fresh_candle(close: float = 100.0) -> list[dict[str, Any]]:
 def _risk_status(**overrides: Any) -> dict[str, Any]:
     values = {
         "daily_pnl": 0.0,
+        "capital": 100000.0,
         "max_daily_loss": 1000.0,
         "trades_today": 0,
         "max_trades_per_day": 10,
@@ -120,6 +121,60 @@ def _role_headers(client, admin: dict[str, str], username: str, role: str) -> di
     login = client.post("/auth/login", json={"username": username, "password": password})
     assert login.status_code == 200, login.text
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+def test_risk_gate_uses_configured_capital_for_daily_loss_percent(monkeypatch):
+    from Backend.application import risk_gate
+
+    captured = {}
+
+    class CapturingManager:
+        def __init__(self, config):
+            captured["config"] = config
+            self.daily_pnl = {}
+            self.daily_trades = {}
+            self.kill_switch_active = False
+
+        def validate_order(self, signal, now=None):
+            return SimpleNamespace(
+                accepted=True,
+                reason="OK",
+                quantity=1,
+                to_dict=lambda: {"accepted": True, "reason": "OK", "quantity": 1},
+            )
+
+    monkeypatch.setattr(risk_gate, "GlobalRiskManager", CapturingManager)
+    monkeypatch.setattr(
+        risk_gate,
+        "risk_status",
+        lambda: _risk_status(capital=250000.0, max_daily_loss=5000.0),
+    )
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(risk_gate, "validate_live_candle", lambda *args, **kwargs: _valid_candle_result())
+
+    result = risk_gate.validate_order_risk(
+        _signal(),
+        execution_mode="paper",
+        candles_1m=_fresh_candle(),
+    )
+
+    assert result.allowed is True
+    assert captured["config"].starting_equity == 250000.0
+    assert captured["config"].max_daily_loss_pct == 2.0
+
+
+def test_risk_gate_rejects_non_positive_capital(monkeypatch):
+    from Backend.application import risk_gate
+
+    monkeypatch.setattr(risk_gate, "risk_status", lambda: _risk_status(capital=0.0))
+    monkeypatch.setattr(risk_gate, "kill_switch_status", lambda: {"active": False})
+
+    with pytest.raises(ValueError, match="RISK_CAPITAL_MUST_BE_POSITIVE"):
+        risk_gate.validate_order_risk(
+            _signal(),
+            execution_mode="paper",
+            candles_1m=_fresh_candle(),
+        )
 
 
 def test_risk_engine_rejects_missing_stop_loss(monkeypatch):

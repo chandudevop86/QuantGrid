@@ -11,5 +11,6 @@ bcrypt==4.0.1
 psycopg[binary]
 prometheus_client
 pytest
-httpx
+pytest-asyncio==1.4.0
+httpx2==2.14.0
 dhanhq>=2.2.0,<3
