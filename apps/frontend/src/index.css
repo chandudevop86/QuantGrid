@@ -4472,3 +4472,42 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     gap:8px;
   }
 
+
+/* Research-only quality-growth screener categories and SME disclosures. */
+.quality-growth-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.quality-growth-tab[aria-pressed="true"] {
+  border-color: rgba(45, 212, 191, .9) !important;
+  background: rgba(20, 184, 166, .2) !important;
+  color: #ccfbf1 !important;
+}
+.quality-growth-tab:focus-visible {
+  outline: 2px solid #2dd4bf;
+  outline-offset: 2px;
+}
+.investment-card .quality-banner.quality-watchlist {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.investment-card .quality-banner.quality-watchlist span {
+  display: block;
+  margin-top: 6px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+.investment-card .quality-banner.quality-medium {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.investment-card .quality-banner.quality-medium span {
+  display: block;
+  margin-top: 6px;
+  font-weight: 500;
+  line-height: 1.6;
+}

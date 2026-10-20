@@ -9,6 +9,7 @@ from Backend.application.investment_research_service import (
     latest_stock_research,
     run_multibagger_predictor,
 )
+from Backend.application.quality_growth_screener import latest_quality_growth_screen
 from Backend.core.database import get_db
 from Backend.presentation.api.roles import require_roles
 
@@ -24,6 +25,14 @@ def stocks_research(
         "items": latest_stock_research(db=db),
         "disclaimer": "Educational research, not financial advice.",
     }
+
+
+@router.get("/stocks/quality-growth")
+def stock_quality_growth(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "analyst", "viewer")),
+):
+    """Read-only auto-refreshed V2 watchlist. No sample or order data."""
+    return latest_quality_growth_screen()
 
 
 @router.get("/stocks/top-picks")
