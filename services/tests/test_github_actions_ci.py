@@ -76,3 +76,23 @@ def test_ci_runs_frontend_playwright_smoke_tests():
     browser_index = workflow.index("npx playwright install --with-deps chromium")
     e2e_index = workflow.index("npm run test:e2e")
     assert build_index < browser_index < e2e_index
+
+
+def test_github_actions_use_node24_capable_first_party_actions():
+    workflows = [
+        ROOT / ".github" / "workflows" / "ci.yml",
+        ROOT / ".github" / "workflows" / "security.yml",
+        ROOT / ".github" / "workflows" / "codeql.yml",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in workflows)
+
+    assert "actions/checkout@v4" not in combined
+    assert "actions/setup-python@v5" not in combined
+    assert "actions/setup-node@v4" not in combined
+
+    assert "actions/checkout@v7" in combined
+    assert "actions/setup-python@v7" in combined
+    assert "actions/setup-node@v7" in combined
+
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert 'node-version: "24"' in ci
