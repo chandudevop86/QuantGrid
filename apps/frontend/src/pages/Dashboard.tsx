@@ -8,6 +8,7 @@ import MarketChart from "../components/MarketChart";
 import RecentSignals from "../components/RecentSignals";
 import TradingChecklist, { type ChecklistItem } from "../components/TradingChecklist";
 import { useOperationsStatus } from "../context/OperationsStatusContext";
+import { useMarketSelection } from "../context/MarketSelectionContext";
 import { hasAuthToken } from "../roles";
 import FeatureGate from "../components/FeatureGate";
 import { useCanAccess, useFeatureLimit } from "../context/SubscriptionContext";
@@ -32,6 +33,7 @@ function reasonText(value: unknown) {
 }
 
 export default function Dashboard() {
+  const { label: marketLabel } = useMarketSelection();
   const canSeeFullLevels = useCanAccess("levels.full");
   const canSeeVolume = useCanAccess("volume.basic");
   const signalLimit = useFeatureLimit("signals_history_limit") ?? 5;
@@ -87,11 +89,12 @@ export default function Dashboard() {
   const actionLabel = normalizeDecision(recommendation);
   const marketState = String(regime).replace(/_/g, " ");
   const updated = operations.updated_at ? new Date(operations.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Awaiting update";
+  const sessionIsOpen = String(operations?.market_status?.session_state ?? "").toLowerCase() === "open";
 
   return <section className="qg-market-dashboard" aria-label="Market decision dashboard">
     <header className="sahi-command-header">
-      <div className="sahi-instrument"><span className="terminal-kicker">Market command center</span><strong>NIFTY 50</strong><span>Cash · NSE</span></div>
-      <div className="sahi-market-state"><span className="market-live-dot" aria-hidden="true" /><div><small>Decision engine</small><b>{actionLabel}</b></div></div>
+      <div className="sahi-instrument"><span className="terminal-kicker">Market command center</span><strong>{marketLabel}</strong><span>Selected market · NSE · Confirm quote source separately</span></div>
+      <div className="sahi-market-state"><span className={`market-live-dot${sessionIsOpen ? "" : " is-closed"}`} aria-hidden="true" /><div><small>Decision engine</small><b>{actionLabel}</b></div></div>
       <div className="sahi-market-state"><div><small>Last evaluation</small><b>{updated}</b></div></div>
       <Link className="sahi-execute-link" to="/trade">Open terminal <span aria-hidden="true">↗</span></Link>
     </header>
