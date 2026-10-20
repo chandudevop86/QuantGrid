@@ -8,9 +8,10 @@ import AlertPopover from "./AlertPopover";
 import StatusBadge from "./StatusBadge";
 import { marketInstruments, useMarketSelection, type MarketSymbol } from "../context/MarketSelectionContext";
 import SubscriptionBadge from "./SubscriptionBadge";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
-export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }) {
+export default function AppHeader({ onMenuToggle, onSearch }: { onMenuToggle: () => void; onSearch?: () => void }) {
+  const location = useLocation();
   const { operations } = useOperationsStatus();
   const { symbol, selectSymbol } = useMarketSelection();
   const [role, setRole] = useState<Role>(getCurrentRole());
@@ -62,6 +63,14 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
       setCurrentAuth(response.role as Role, response.access_token); setRole(response.role); setAuthenticated(true); setPassword("");
     } catch (error: any) { clearCurrentAuth(); setAuthError(error?.response?.data?.detail ?? error?.message ?? "Login failed."); }
   };
+  const pageTitles: Record<string, string> = {
+    "/": "Overview", "/market": "Markets", "/trade": "Order terminal",
+    "/paper-trades": "Positions", "/institutional": "Institutional flow",
+    "/investing": "Investment research", "/settings": "Risk controls",
+    "/signals": "Analysis", "/strategies": "Strategies", "/security": "Security",
+    "/operations": "System operations", "/history": "Backtesting",
+  };
+  const pageTitle = pageTitles[location.pathname] ?? location.pathname.split("/").filter(Boolean).join(" / ").replace(/-/g, " ") || "Workspace";
   const marketStatus = getMarketStatusLabel(operations?.market_status);
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
   const alerts = [brokerConnected === false ? brokerMessage : null, marketStatus !== "LIVE" ? `Market is ${marketStatus.toLowerCase()}.` : null, !systemReady ? "System health requires review." : null, mode === "live" ? "Live trading mode is enabled." : null].filter(Boolean) as string[];
@@ -71,7 +80,8 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
   return (
     <header className="qg-app-header">
       <button type="button" className="qg-menu-button" onClick={onMenuToggle} aria-label="Toggle navigation">☰</button>
-      <div className="qg-header-brand"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></div>
+      <Link to="/" className="qg-header-brand" aria-label="QuantGrid home"><img src="/quantgrid-logo.svg" alt="" /><strong>QuantGrid</strong></Link>
+      <div className="qg-header-page"><small>WORKSPACE / {pageTitle.toUpperCase()}</small><strong>{pageTitle}</strong></div>
       <label className="qg-header-market">
         <span>Selected market</span>
         <select aria-label="Selected market or instrument" value={symbol} onChange={(event) => selectSymbol(event.target.value as MarketSymbol)}>
@@ -79,8 +89,9 @@ export default function AppHeader({ onMenuToggle }: { onMenuToggle: () => void }
         </select>
       </label>
       <div className="qg-header-actions">
+        {onSearch && <button type="button" className="qg-header-search" onClick={onSearch} aria-label="Search workspace navigation"><span aria-hidden="true">⌕</span><span>Search</span><kbd>⌘ K</kbd></button>}
         <span className="qg-plan-status"><SubscriptionBadge /></span>
-        <span className="qg-header-status qg-market-status"><StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}><span className="qg-status-prefix">Market </span>{marketStatus === "LIVE" ? "Open" : "Closed"}</StatusBadge></span>
+        <span className="qg-header-status qg-market-status"><StatusBadge tone={marketStatus === "LIVE" ? "positive" : "neutral"}><span className="qg-status-prefix">Market </span>{marketStatus === "LIVE" ? "Open" : marketStatus === "CLOSED" ? "Closed" : marketStatus}</StatusBadge></span>
         <span className="qg-header-status qg-broker-status"><StatusBadge tone={brokerConnected === true ? "positive" : brokerConnected === false ? "danger" : "neutral"}><span className="qg-status-prefix">Broker </span>{brokerConnected === true ? "Connected" : brokerConnected === false ? "Disconnected" : "Restricted"}</StatusBadge></span>
         <div className="qg-mode-control" role="group" aria-label="Trading mode"><button type="button" className={mode === "paper" ? "active" : ""} onClick={() => setCurrentMode("paper")}>Paper</button><button type="button" className={mode === "live" ? "active live" : ""} onClick={() => setCurrentMode("live")}>Live</button></div>
         <AlertPopover alerts={alerts} open={alertsOpen} onToggle={() => setAlertsOpen((value) => !value)} />
