@@ -27,7 +27,7 @@ def test_legacy_notification_prototype_is_removed():
 def test_active_notification_pipeline_remains_versioned_and_worker_backed():
     required = [
         "Backend/application/notification_store.py",
-        "Backend/application/notification_worker.py",
+        "Backend/application/worker.py",
         "Backend/presentation/api/notifications_api.py",
         "Backend/core/schema_migrations.py",
     ]
@@ -39,3 +39,7 @@ def test_active_notification_pipeline_remains_versioned_and_worker_backed():
     assert "NOTIFICATION_DELIVERY_LEASES_VERSION" in migrations
     assert "NOTIFICATION_DEDUPLICATION_VERSION" in migrations
     assert "CREATE TABLE IF NOT EXISTS notifications (" in migrations
+
+    worker = (SERVICE / "Backend/application/worker.py").read_text(encoding="utf-8")
+    assert '"notification"' in worker
+    assert '"notification-retry"' in worker
