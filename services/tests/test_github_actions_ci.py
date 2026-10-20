@@ -96,3 +96,19 @@ def test_github_actions_use_node24_capable_first_party_actions():
 
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert 'node-version: "24"' in ci
+
+
+def test_backend_ci_enforces_risk_critical_module_coverage():
+    runner = (ROOT / "scripts" / "run_test_groups.py").read_text(encoding="utf-8")
+    checker = (ROOT / "scripts" / "check_critical_coverage.py").read_text(encoding="utf-8")
+
+    assert "check_critical_coverage.py" in runner
+    assert '"80"' in runner
+
+    for module in (
+        "broker_reconciliation.py",
+        "execution_guardrails.py",
+        "risk_gate.py",
+        "trade_exit_engine.py",
+    ):
+        assert module in checker
