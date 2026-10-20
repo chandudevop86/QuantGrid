@@ -369,6 +369,7 @@ def create_app():
     app.include_router(broker_router, prefix="/broker")
 
     @app.get("/api/readiness/trading")
+    @app.get("/readiness/trading")
     def unified_trading_readiness(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
         from Backend.presentation.api.broker_api import _trading_readiness
 
