@@ -115,6 +115,7 @@ def valid_sme(**changes):
         circuit_limit_pct=5,
         promoter_holding_pct=62,
         promoter_disclosure_as_of="2026-09-30",
+        sme_microstructure_as_of="2026-10-19",
     )
     data.update(changes)
     return data
@@ -173,6 +174,8 @@ def test_sme_requires_manual_review_even_after_verification():
     ({"exchange_lot_size": None}, "UNVERIFIED"),
     ({"exchange_lot_size": 1.5}, "UNVERIFIED"),
     ({"promoter_disclosure_as_of": "2026-01-01"}, "UNVERIFIED"),
+    ({"sme_microstructure_as_of": None}, "UNVERIFIED"),
+    ({"sme_microstructure_as_of": "2026-10-09"}, "UNVERIFIED"),
     ({"circuit_limit_pct": 0}, "UNVERIFIED"),
 ])
 def test_sme_risk_checks_fail_closed(changes, expected):
@@ -208,6 +211,7 @@ def test_financials_dont_pass_with_missing_or_weak_ratios(kind, changes):
 def test_explicit_financial_type_required_and_must_match_sector():
     missing = screen.evaluate_stock(good_stock(sector="Banking"), today=TODAY)
     assert missing["status"] == "UNVERIFIED"
+    assert missing["screen_type"] == "FINANCIAL_UNCLASSIFIED"
     mismatch = screen.evaluate_stock(financial_stock("BANK", sector="Industrials"), today=TODAY)
     assert mismatch["status"] == "UNVERIFIED"
     unsupported = screen.evaluate_stock(good_stock(financial_type="INSURANCE"), today=TODAY)
