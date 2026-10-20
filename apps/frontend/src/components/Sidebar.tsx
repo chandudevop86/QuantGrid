@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
-import { canAccessRoute, getCurrentRole, hasAuthToken, type Role } from "../roles";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { canAccessRoute, getCurrentRole, hasAuthToken, roleLabels, type Role } from "../roles";
 import { useSubscription } from "../context/SubscriptionContext";
 
 type SidebarProps = { collapsed: boolean; onNavigate: () => void };
@@ -39,6 +39,7 @@ const adminItems: NavItem[] = [
 
 export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
   const { canAccess, isLoading } = useSubscription();
+  const location = useLocation();
   const [role, setRole] = useState<Role>(getCurrentRole());
   const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -51,6 +52,11 @@ export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener("quantgrid-role-change", sync); window.removeEventListener("storage", sync); };
   }, []);
+  useEffect(() => {
+    if (advancedItems.some((item) => item.to === location.pathname)) setAdvancedOpen(true);
+    if (adminItems.some((item) => item.to === location.pathname)) setAdminOpen(true);
+  }, [location.pathname]);
+
   if (!authenticated) return null;
 
   const allowed = (item: NavItem) => canAccessRoute(role, item.to) && (!item.entitlement || canAccess(item.entitlement));
@@ -65,12 +71,21 @@ export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
   );
 
   return <aside className={`sidebar qg-sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Application navigation" aria-busy={isLoading}>
+    <Link className="qg-sidebar-brand" to="/" onClick={navigate} aria-label="QuantGrid dashboard">
+      <span className="qg-sidebar-monogram" aria-hidden="true">Q<span>G</span></span>
+      <span><strong>QuantGrid</strong><small>TRADING INTELLIGENCE</small></span>
+    </Link>
+    <div className="qg-sidebar-section-caption">WORKSPACE</div>
     <nav className="sidebar-nav" aria-label="Primary navigation">
       {allowedPrimary.map((item) => renderLink(item))}
       {allowedAdvanced.length > 0 && <div className="qg-admin-nav qg-advanced-nav"><button type="button" className="qg-admin-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((value) => !value)}><span>Advanced</span><span aria-hidden="true">{advancedOpen ? "−" : "+"}</span></button>{advancedOpen && <div>{allowedAdvanced.map((item) => renderLink(item))}</div>}</div>}
       {allowedAdmin.length > 0 && <div className="qg-admin-nav"><button type="button" className="qg-admin-toggle" aria-expanded={adminOpen} onClick={() => setAdminOpen((value) => !value)}><span>Admin</span><span aria-hidden="true">{adminOpen ? "−" : "+"}</span></button>{adminOpen && <div>{allowedAdmin.map((item) => renderLink(item))}</div>}</div>}
       <button type="button" className="qg-mobile-more" aria-expanded={mobileMoreOpen} aria-controls="qg-mobile-navigation" onClick={() => setMobileMoreOpen((value) => !value)}><span className="nav-icon nav-icon-settings" aria-hidden="true" /><span>More</span></button>
     </nav>
+    <footer className="qg-sidebar-footnote">
+      <span className="qg-sidebar-footnote-dot" aria-hidden="true" />
+      <span><strong>{roleLabels[role]} workspace</strong><small>Data-aware · Research-first</small></span>
+    </footer>
     {mobileMoreOpen && <div className="qg-mobile-nav-panel" id="qg-mobile-navigation"><div className="qg-mobile-nav-header"><strong>Navigation</strong><button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation">×</button></div><nav aria-label="More navigation">{allowedPrimary.filter((item) => !item.mobile).map((item) => renderLink(item, true))}{allowedAdvanced.map((item) => renderLink(item, true))}{allowedAdmin.map((item) => renderLink(item, true))}</nav></div>}
   </aside>;
 }
