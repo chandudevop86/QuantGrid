@@ -105,12 +105,130 @@ def test_invalid_50dma_does_not_score_as_valid_momentum():
     assert stock["score"] is None
 
 
-def test_sme_requires_manual_review_even_when_financials_pass():
+def valid_sme(**changes):
+    data = good_stock(
+        market_segment="SME",
+        traded_sessions_20=19,
+        median_bid_ask_spread_pct=0.8,
+        exchange_lot_size=1000,
+        circuit_hit_sessions_20=1,
+        circuit_limit_pct=5,
+        promoter_holding_pct=62,
+        promoter_disclosure_as_of="2026-09-30",
+    )
+    data.update(changes)
+    return data
+
+
+def financial_stock(kind, **changes):
+    stock = {
+        "symbol": "QGBANK" if kind == "BANK" else "QGNBFC",
+        "name": "Synthetic Finance Test (not a live stock)",
+        "sector": "Banking" if kind == "BANK" else "NBFC",
+        "financial_type": kind,
+        "market_segment": "MAINBOARD",
+        "market_cap_cr": 25000,
+        "roe": 19,
+        "roa_pct": 1.8,
+        "capital_adequacy_pct": 19,
+        "net_profit_growth_3y_pct": 18,
+        "nim_pct": 3.6,
+        "price_to_book": 2.2,
+        "pledged_percentage": 0,
+        "current_price": 200,
+        "dma200": 160,
+        "dma50": 180,
+        "avg_daily_volume_1m": 50000,
+        "fundamentals_as_of": "2026-09-30",
+        "price_as_of": "2026-10-19",
+    }
+    if kind == "BANK":
+        stock.update(gross_npa_pct=2, net_npa_pct=0.7, credit_growth_3y_pct=19)
+    else:
+        stock.update(gross_stage3_pct=2, net_stage3_pct=0.7, loan_book_growth_3y_pct=19)
+    stock.update(changes)
+    return stock
+
+
+def test_sme_missing_risk_fields_are_unverified():
     stock = screen.evaluate_stock(good_stock(market_segment="SME"), today=TODAY)
+    assert stock["status"] == "UNVERIFIED"
+    assert stock["score"] is None
+    assert "traded_sessions_20" in stock["reasons"][0]
+
+
+def test_sme_requires_manual_review_even_after_verification():
+    stock = screen.evaluate_stock(valid_sme(), today=TODAY)
     assert stock["status"] == "QUALIFIED"
     assert stock["market_cap_bucket"] == "SME"
     assert stock["research_priority"] == "MANUAL_REVIEW"
+    assert stock["sme_checks"]["exchange_lot_size"] == 1000
     assert any("SME" in note for note in stock["reasons"])
+
+
+@pytest.mark.parametrize("changes, expected", [
+    ({"traded_sessions_20": 12}, "REJECTED"),
+    ({"median_bid_ask_spread_pct": 2.4}, "REJECTED"),
+    ({"circuit_hit_sessions_20": 5}, "REJECTED"),
+    ({"exchange_lot_size": None}, "UNVERIFIED"),
+    ({"exchange_lot_size": 1.5}, "UNVERIFIED"),
+    ({"promoter_disclosure_as_of": "2026-01-01"}, "UNVERIFIED"),
+    ({"circuit_limit_pct": 0}, "UNVERIFIED"),
+])
+def test_sme_risk_checks_fail_closed(changes, expected):
+    stock = screen.evaluate_stock(valid_sme(**changes), today=TODAY)
+    assert stock["status"] == expected
+    assert stock["score"] is None
+
+
+@pytest.mark.parametrize("kind", ["BANK", "NBFC"])
+def test_financials_have_separate_score_without_corporate_ratios(kind):
+    stock = screen.evaluate_stock(financial_stock(kind), today=TODAY)
+    assert stock["status"] == "QUALIFIED"
+    assert stock["screen_type"] == kind
+    assert stock["component_scores"]["quality"] > 0
+    assert stock["research_priority"] != "HIGH" or stock["score"] >= 80
+    assert all("ROCE" not in msg and "OPM" not in msg for msg in stock["reasons"])
+
+
+@pytest.mark.parametrize("kind, changes", [
+    ("BANK", {"gross_npa_pct": None}),
+    ("BANK", {"capital_adequacy_pct": 8}),
+    ("BANK", {"net_npa_pct": 4}),
+    ("NBFC", {"gross_stage3_pct": None}),
+    ("NBFC", {"capital_adequacy_pct": 9}),
+    ("NBFC", {"loan_book_growth_3y_pct": 3}),
+])
+def test_financials_dont_pass_with_missing_or_weak_ratios(kind, changes):
+    stock = screen.evaluate_stock(financial_stock(kind, **changes), today=TODAY)
+    assert stock["status"] in {"UNVERIFIED", "REJECTED"}
+    assert stock["score"] is None
+
+
+def test_explicit_financial_type_required_and_must_match_sector():
+    missing = screen.evaluate_stock(good_stock(sector="Banking"), today=TODAY)
+    assert missing["status"] == "UNVERIFIED"
+    mismatch = screen.evaluate_stock(financial_stock("BANK", sector="Industrials"), today=TODAY)
+    assert mismatch["status"] == "UNVERIFIED"
+    unsupported = screen.evaluate_stock(good_stock(financial_type="INSURANCE"), today=TODAY)
+    assert unsupported["status"] == "UNVERIFIED"
+
+
+def test_mixed_screen_sorts_and_retains_excluded_financial_and_sme_details():
+    payload = data_feed(stocks=[
+        good_stock(),
+        financial_stock("BANK"),
+        financial_stock("NBFC"),
+        valid_sme(symbol="QGSME", circuit_hit_sessions_20=5),
+    ])
+    snapshot = screen.build_screen_snapshot(
+        payload, now=datetime(2026, 10, 19, 12, tzinfo=timezone.utc)
+    )
+    assert snapshot["qualified_count"] == 3
+    assert {item["screen_type"] for item in snapshot["items"]} == {"NON_FINANCIAL", "BANK", "NBFC"}
+    assert snapshot["execution_enabled"] is False
+    assert snapshot["excluded"][0]["market_cap_bucket"] == "SME"
+    assert snapshot["excluded"][0]["status"] == "REJECTED"
 
 
 def test_missing_dma50_is_not_optimistically_filled():
