@@ -211,6 +211,7 @@ def test_production_investment_research_never_returns_sample_advice(app_client, 
     assert response["cards"]
     assert all(not bucket for bucket in response["cards"].values())
     assert "sample" in response["disclaimer"].lower()
+    assert "Educational research" in response["disclaimer"]
     for route in (
         "/investing/stocks/research",
         "/investing/stocks/top-picks",
@@ -230,3 +231,4 @@ def test_local_legacy_research_explicitly_discloses_demo_data(app_client):
     payload = response.json()
     assert payload["data_status"] == "DEMO_ONLY"
     assert "sample" in payload["disclaimer"].lower()
+    assert "Educational research" in payload["disclaimer"]
