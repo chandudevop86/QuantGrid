@@ -1,10 +1,16 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 from agents.audit_agent import run_audit
 from agents.trading_agent import analyze_trading
 from reporting.report_generator import generate_report
+from audit_security import AuditPathError, resolve_audit_path
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -20,12 +26,12 @@ class AuditRequest(BaseModel):
 
     include_llm: bool = True
 
-    agents: list[str] = [
+    agents: list[str] = Field(default_factory=lambda: [
         "architecture",
         "security",
         "devops",
-        "trading"
-    ]
+        "trading",
+    ])
 
 
 
@@ -63,7 +69,7 @@ def health_check():
 def audit(request: AuditRequest):
 
     try:
-
+        audit_path = str(resolve_audit_path(request.path))
         result = {}
 
 
@@ -72,7 +78,7 @@ def audit(request: AuditRequest):
         if "architecture" in request.agents:
 
             result["architecture"] = run_audit(
-                request.path
+                audit_path
             )
 
 
@@ -81,7 +87,7 @@ def audit(request: AuditRequest):
         if "trading" in request.agents:
 
             result["trading"] = analyze_trading(
-                request.path
+                audit_path
             )
 
 
@@ -110,12 +116,18 @@ def audit(request: AuditRequest):
         }
 
 
-    except Exception as e:
+    except AuditPathError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": str(exc)}
+        ) from exc
 
+    except Exception as exc:
+        logger.exception("ai_audit_failed", extra={"error_type": exc.__class__.__name__})
         raise HTTPException(
             status_code=500,
-            detail=str(e)
-        )
+            detail={"code": "audit_failed"}
+        ) from exc
 
 
 
