@@ -66,13 +66,18 @@ fi
 current_branch="$(git branch --show-current)"
 current_commit="$(git rev-parse HEAD)"
 dirty=0
-if [[ -n "$(git status --porcelain)" ]]; then
+untracked=0
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   dirty=1
-  echo "WARNING: uncommitted changes are present. They will not be deleted." >&2
+  echo "WARNING: tracked uncommitted changes are present. They will not be deleted." >&2
+fi
+if [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+  untracked=1
+  log "Untracked files are present; tracked worktree is clean."
 fi
 
 if [[ -n "${ROLLBACK_REF}" ]]; then
-  [[ "${dirty}" == "0" ]] || { echo "Rollback refused while uncommitted changes exist." >&2; exit 1; }
+  [[ "${dirty}" == "0" && "${untracked}" == "0" ]] || { echo "Rollback refused while tracked or untracked worktree changes exist." >&2; exit 1; }
   rollback_commit="$(git rev-parse --verify "${ROLLBACK_REF}^{commit}")" || { echo "Unknown rollback ref: ${ROLLBACK_REF}" >&2; exit 1; }
   log "Rolling back from ${current_commit} to ${rollback_commit}"
   run git checkout --detach "${rollback_commit}"
