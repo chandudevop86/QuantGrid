@@ -163,10 +163,10 @@ function QualityGrowthWatchlist() {
             5 minutes while this page is open.</p>
         </div>
       </div>
-      <div className="dashboard-actions" role="group" aria-label="Stock screening category">
+      <div className="dashboard-actions quality-growth-tabs" role="group" aria-label="Stock screening category">
         {screenTabs.map((item) => (
           <button key={item.key} type="button"
-            className="refresh-button" aria-pressed={tab === item.key}
+            className="refresh-button quality-growth-tab" aria-pressed={tab === item.key}
             onClick={() => setTab(item.key)}>
             {item.label}
           </button>
