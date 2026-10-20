@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { canAccessRoute, getCurrentRole, hasAuthToken, roleLabels, type Role } from "../roles";
+import { canAccessRoute, getCurrentRole, hasAuthToken, type Role } from "../roles";
 import { useSubscription } from "../context/SubscriptionContext";
 
 type SidebarProps = { collapsed: boolean; onNavigate: () => void };
@@ -84,7 +84,7 @@ export default function Sidebar({ collapsed, onNavigate }: SidebarProps) {
     </nav>
     <footer className="qg-sidebar-footnote">
       <span className="qg-sidebar-footnote-dot" aria-hidden="true" />
-      <span><strong>{roleLabels[role]} workspace</strong><small>Data-aware · Research-first</small></span>
+      <span><strong>{role.charAt(0).toUpperCase() + role.slice(1)} workspace</strong><small>Data-aware · Research-first</small></span>
     </footer>
     {mobileMoreOpen && <div className="qg-mobile-nav-panel" id="qg-mobile-navigation"><div className="qg-mobile-nav-header"><strong>Navigation</strong><button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation">×</button></div><nav aria-label="More navigation">{allowedPrimary.filter((item) => !item.mobile).map((item) => renderLink(item, true))}{allowedAdvanced.map((item) => renderLink(item, true))}{allowedAdmin.map((item) => renderLink(item, true))}</nav></div>}
   </aside>;
