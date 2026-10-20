@@ -69,6 +69,16 @@ def _fresh_worker_readiness(monkeypatch):
 
     monkeypatch.setattr(
         broker_api,
+        "market_data_summary",
+        lambda symbol, interval: {"candles": 1, "latest_candle_at": datetime.now(timezone.utc).isoformat()},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "stored_market_data_readiness",
+        lambda latest: {"healthy": True, "execution_fresh": True, "market_live": True, "market_status": "LIVE MARKET"},
+    )
+    monkeypatch.setattr(
+        broker_api,
         "_worker_readiness",
         lambda: {
             "healthy": True,
