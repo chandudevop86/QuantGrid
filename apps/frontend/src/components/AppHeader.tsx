@@ -70,7 +70,7 @@ export default function AppHeader({ onMenuToggle, onSearch }: { onMenuToggle: ()
     "/signals": "Analysis", "/strategies": "Strategies", "/security": "Security",
     "/operations": "System operations", "/history": "Backtesting",
   };
-  const pageTitle = pageTitles[location.pathname] ?? location.pathname.split("/").filter(Boolean).join(" / ").replace(/-/g, " ") || "Workspace";
+  const pageTitle = pageTitles[location.pathname] ?? (location.pathname.split("/").filter(Boolean).join(" / ").replace(/-/g, " ") || "Workspace");
   const marketStatus = getMarketStatusLabel(operations?.market_status);
   const systemReady = Boolean(operations?.system_health?.api?.healthy && operations?.system_health?.db?.healthy);
   const alerts = [brokerConnected === false ? brokerMessage : null, marketStatus !== "LIVE" ? `Market is ${marketStatus.toLowerCase()}.` : null, !systemReady ? "System health requires review." : null, mode === "live" ? "Live trading mode is enabled." : null].filter(Boolean) as string[];
