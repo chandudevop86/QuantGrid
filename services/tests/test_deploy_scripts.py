@@ -277,3 +277,13 @@ def test_production_health_checks_mark_local_request_as_https_proxied():
 
     assert 'curl -fsS -H "X-Forwarded-Proto: https"' in common
     assert 'headers={"X-Forwarded-Proto": "https"}' in script
+
+
+def test_production_deploy_distinguishes_tracked_changes_from_untracked_files():
+    script = _text("deploy-production.sh")
+
+    assert 'git status --porcelain --untracked-files=no' in script
+    assert 'git ls-files --others --exclude-standard' in script
+    assert "WARNING: tracked uncommitted changes are present." in script
+    assert "Untracked files are present; tracked worktree is clean." in script
+    assert '[[ "${dirty}" == "0" && "${untracked}" == "0" ]]' in script

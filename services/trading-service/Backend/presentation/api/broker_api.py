@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -11,6 +12,7 @@ from Backend.core.database import get_db
 from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
 from Backend.application.broker_circuit_breaker import broker_circuit_status, reset_broker_circuit
 from Backend.application.job_queue import enqueue_job
+from Backend.application.redis_service import redis_service
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_capabilities, broker_client_for_mode
@@ -76,12 +78,51 @@ def _live_readiness(settings) -> dict[str, object]:
     }
 
 
+def _worker_readiness() -> dict[str, object]:
+    max_age_seconds = max(5.0, _float_env("QUANTGRID_WORKER_HEARTBEAT_MAX_AGE_SECONDS", 15.0))
+    heartbeat = redis_service.read_worker_heartbeat()
+    if not heartbeat:
+        return {
+            "healthy": False,
+            "fresh": False,
+            "age_seconds": None,
+            "max_age_seconds": max_age_seconds,
+            "worker_id": None,
+            "status": None,
+            "last_seen": None,
+            "reason": "worker heartbeat missing",
+        }
+
+    last_seen_raw = heartbeat.get("last_seen")
+    try:
+        last_seen = datetime.fromisoformat(str(last_seen_raw).replace("Z", "+00:00"))
+        if last_seen.tzinfo is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - last_seen.astimezone(timezone.utc)).total_seconds()
+    except (TypeError, ValueError):
+        age_seconds = None
+
+    status = str(heartbeat.get("status") or "").upper()
+    fresh = bool(age_seconds is not None and 0 <= age_seconds <= max_age_seconds and status == "RUNNING")
+    return {
+        "healthy": fresh,
+        "fresh": fresh,
+        "age_seconds": round(age_seconds, 3) if age_seconds is not None else None,
+        "max_age_seconds": max_age_seconds,
+        "worker_id": heartbeat.get("worker_id"),
+        "status": status or None,
+        "last_seen": last_seen_raw,
+        "reason": "ok" if fresh else "worker heartbeat stale or invalid",
+    }
+
+
 def _trading_readiness(settings) -> dict[str, object]:
     """Separate technical capability from authorization to risk real money."""
     live = _live_readiness(settings)
     provider = str(getattr(settings, "market_data_provider", "") or "").strip().lower()
     trading_grade_market_data = bool(provider and (provider != "yahoo" or getattr(settings, "allow_yahoo_for_live", False)))
     reconciliation = reconciliation_status()
+    worker = _worker_readiness()
     reconciliation_clean = bool(
         reconciliation.get("last_run_at")
         and not reconciliation.get("errors")
@@ -112,6 +153,7 @@ def _trading_readiness(settings) -> dict[str, object]:
         "broker_capability_ready": broker_capability_ready,
         "reconciliation_clean": reconciliation_clean,
         "broker_circuit_clear": not bool(live["broker_circuit_breaker_active"]),
+        "worker_heartbeat_fresh": bool(worker["fresh"]),
     }
     technical_live_ready = all(technical_checks.values())
     authorization_checks = {
@@ -139,6 +181,7 @@ def _trading_readiness(settings) -> dict[str, object]:
                 "needs_review": int(reconciliation.get("needs_review") or 0),
                 "errors": list(reconciliation.get("errors") or []),
             },
+            "worker": worker,
         },
         "safety": {
             "paper_live_state_isolated": True,
