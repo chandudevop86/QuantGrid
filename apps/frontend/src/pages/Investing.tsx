@@ -41,6 +41,7 @@ type QualityGrowthItem = {
     circuit_limit_pct?: number | null;
     promoter_holding_pct?: number | null;
     promoter_disclosure_as_of?: string | null;
+    sme_microstructure_as_of?: string | null;
   } | null;
 };
 type QualityGrowthPayload = {
@@ -71,7 +72,7 @@ function StockResearchScreenCard({ item }: { item: QualityGrowthItem }) {
       <div className="investment-card-header">
         <div>
           <h3>{item.symbol} — {item.name}</h3>
-          <p>{item.screen_type === "BANK" ? "Banking" : item.screen_type === "NBFC" ? "NBFC" : "Non-financial"}
+          <p>{item.screen_type === "BANK" ? "Banking" : item.screen_type === "NBFC" ? "NBFC" : item.screen_type === "FINANCIAL_UNCLASSIFIED" ? "Financial classification needed" : "Non-financial"}
             {" "}· {item.market_cap_bucket ?? item.market_segment ?? "Unclassified"}</p>
         </div>
         <span className={`status-pill ${rejected ? "stale" : ""}`}>
@@ -98,6 +99,7 @@ function StockResearchScreenCard({ item }: { item: QualityGrowthItem }) {
             {" "}· Circuit band {risk?.circuit_limit_pct ?? "N/A"}%
             {" "}· Promoter holding {risk?.promoter_holding_pct ?? "N/A"}%
             {" "}· Disclosure date {risk?.promoter_disclosure_as_of ?? "unavailable"}
+            {" "}· Market-risk data date {risk?.sme_microstructure_as_of ?? "unavailable"}
           </span>
         </div>
       )}
@@ -146,7 +148,7 @@ function QualityGrowthWatchlist() {
     if (tab === "EXCLUSIONS") return snapshot.excluded;
     if (tab === "SME") return all.filter((item) => item.market_segment === "SME");
     if (tab === "FINANCIALS") return all.filter(
-      (item) => item.market_segment !== "SME" && ["BANK", "NBFC"].includes(item.screen_type ?? "")
+      (item) => item.market_segment !== "SME" && ["BANK", "NBFC", "FINANCIAL_UNCLASSIFIED"].includes(item.screen_type ?? "")
     );
     return all.filter(
       (item) => item.market_segment !== "SME" && item.screen_type === "NON_FINANCIAL"
