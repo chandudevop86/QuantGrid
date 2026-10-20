@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = ROOT / "services" / "trading-service"
 sys.path.insert(0, str(SERVICE_ROOT))
@@ -184,3 +186,47 @@ def test_multibagger_predictor_endpoint_returns_ranked_items(app_client):
     assert payload["items"]
     assert "potential_score" in payload["items"][0]
     assert "Educational research" in payload["disclaimer"]
+
+
+@pytest.mark.parametrize("environment", ["prod", "production"])
+def test_production_investment_research_never_returns_sample_advice(app_client, monkeypatch, environment):
+    """Legacy seed records must not masquerade as current investable products."""
+    from Backend.presentation.api import investing_api
+
+    headers = make_admin_headers(app_client)
+    monkeypatch.setenv("QUANTGRID_ENV", environment)
+
+    def should_not_use_samples(**_kwargs):
+        raise AssertionError("Production path attempted to generate sample investment results")
+
+    monkeypatch.setattr(investing_api, "latest_stock_research", should_not_use_samples)
+    monkeypatch.setattr(investing_api, "latest_mutual_fund_research", should_not_use_samples)
+    monkeypatch.setattr(investing_api, "latest_investment_dashboard", should_not_use_samples)
+    monkeypatch.setattr(investing_api, "run_multibagger_predictor", should_not_use_samples)
+    dashboard = app_client.get("/investing/dashboard", headers=headers)
+    assert dashboard.status_code == 200, dashboard.text
+    response = dashboard.json()
+    assert response["data_status"] == "UNVERIFIED"
+    assert response["generated_at"] is None
+    assert response["cards"]
+    assert all(not bucket for bucket in response["cards"].values())
+    assert "sample" in response["disclaimer"].lower()
+    for route in (
+        "/investing/stocks/research",
+        "/investing/stocks/top-picks",
+        "/investing/stocks/multibagger-predictor",
+        "/investing/mutual-funds/research",
+        "/investing/mutual-funds/top-picks",
+    ):
+        payload = app_client.get(route, headers=headers)
+        assert payload.status_code == 200, (route, payload.text)
+        assert payload.json()["items"] == []
+        assert payload.json()["data_status"] == "UNVERIFIED"
+
+
+def test_local_legacy_research_explicitly_discloses_demo_data(app_client):
+    response = app_client.get("/investing/dashboard", headers=make_admin_headers(app_client))
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_status"] == "DEMO_ONLY"
+    assert "sample" in payload["disclaimer"].lower()
