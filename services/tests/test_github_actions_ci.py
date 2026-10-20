@@ -65,3 +65,14 @@ def test_canonical_trading_api_entrypoint_is_unambiguous():
     canonical = "Backend.presentation.api.main:app"
     assert canonical in systemd
     assert canonical in dockerfile
+
+
+def test_ci_runs_frontend_playwright_smoke_tests():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "npx playwright install --with-deps chromium" in workflow
+    assert "npm run test:e2e" in workflow
+
+    build_index = workflow.index("npm run build")
+    browser_index = workflow.index("npx playwright install --with-deps chromium")
+    e2e_index = workflow.index("npm run test:e2e")
+    assert build_index < browser_index < e2e_index
