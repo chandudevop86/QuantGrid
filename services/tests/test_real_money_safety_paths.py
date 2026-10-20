@@ -931,6 +931,44 @@ def test_worker_readiness_reports_fresh_heartbeat(monkeypatch):
     assert result["age_seconds"] <= 15.0
 
 
+def test_trading_readiness_blocks_stale_active_session_market_data(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-20T03:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "stored_market_data_readiness",
+        lambda latest: {
+            "healthy": False,
+            "execution_fresh": False,
+            "market_live": True,
+            "market_status": "LIVE MARKET",
+            "reason": "live_feed_stale",
+        },
+    )
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(_live_settings())
+
+    assert result["live"]["technical_ready"] is False
+    assert result["live"]["technical_checks"]["market_data_execution_fresh"] is False
+    assert "market_data_execution_fresh" in result["live"]["blockers"]
+    assert result["live"]["market_data"]["reason"] == "live_feed_stale"
+
+
 def test_trading_readiness_requires_broker_native_protection(monkeypatch):
     from Backend.presentation.api import broker_api
 
