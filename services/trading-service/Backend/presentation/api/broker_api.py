@@ -13,6 +13,8 @@ from Backend.application.broker_reconciliation import reconcile_broker_state, re
 from Backend.application.broker_circuit_breaker import broker_circuit_status, reset_broker_circuit
 from Backend.application.job_queue import enqueue_job
 from Backend.application.redis_service import redis_service
+from Backend.application.market_data_readiness import stored_market_data_readiness
+from Backend.application.market_data_store import market_data_summary
 from Backend.domain.security.audit import write_audit_log
 from Backend.domain.security.models import User
 from Backend.infrastructure.broker.broker_client import broker_capabilities, broker_client_for_mode
@@ -121,6 +123,8 @@ def _trading_readiness(settings) -> dict[str, object]:
     live = _live_readiness(settings)
     provider = str(getattr(settings, "market_data_provider", "") or "").strip().lower()
     trading_grade_market_data = bool(provider and (provider != "yahoo" or getattr(settings, "allow_yahoo_for_live", False)))
+    market_store = market_data_summary("NIFTY", "1m")
+    market_readiness = stored_market_data_readiness(market_store.get("latest_candle_at"))
     reconciliation = reconciliation_status()
     worker = _worker_readiness()
     reconciliation_clean = bool(
@@ -148,6 +152,7 @@ def _trading_readiness(settings) -> dict[str, object]:
         "risk_engine_enabled": bool(settings.risk_engine_enabled),
         "audit_logging_enabled": bool(settings.audit_logging_enabled),
         "trading_grade_market_data": trading_grade_market_data,
+        "market_data_execution_fresh": bool(market_readiness["execution_fresh"]),
         "stop_protection_ready": bool(live["stop_protection_ready"]),
         "broker_native_protection": broker_native_protection,
         "broker_capability_ready": broker_capability_ready,
@@ -182,6 +187,7 @@ def _trading_readiness(settings) -> dict[str, object]:
                 "errors": list(reconciliation.get("errors") or []),
             },
             "worker": worker,
+            "market_data": market_readiness,
         },
         "safety": {
             "paper_live_state_isolated": True,

@@ -208,6 +208,7 @@ def create_app():
         from sqlalchemy import text
 
         from Backend.application.market_data_store import market_data_summary
+        from Backend.application.market_data_readiness import stored_market_data_readiness
         from Backend.domain.engine.strategy_engine import StrategyEngine
 
         db_status = {"healthy": True, "message": "Database query ok."}
@@ -222,13 +223,15 @@ def create_app():
 
         strategies = StrategyEngine().available()
         market_store = market_data_summary("NIFTY", "1m")
+        market_readiness = stored_market_data_readiness(market_store.get("latest_candle_at"))
         services = {
             "db": db_status,
             "redis": redis_status,
             "market_data": {
-                "healthy": int(market_store.get("candles") or 0) > 0,
+                "healthy": bool(int(market_store.get("candles") or 0) > 0 and market_readiness["healthy"]),
                 "candles": market_store.get("candles"),
                 "latest_timestamp": market_store.get("latest_candle_at"),
+                "session": market_readiness,
             },
             "strategy_engine": {
                 "healthy": {"breakout", "mean_reversion", "supply_demand", "mtf", "btst", "cbt", "crt_tbs", "mtfa"}.issubset(set(strategies)),
