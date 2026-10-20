@@ -63,6 +63,26 @@ def _risk_status(**overrides: Any) -> dict[str, Any]:
     return values
 
 
+@pytest.fixture(autouse=True)
+def _fresh_worker_readiness(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    monkeypatch.setattr(
+        broker_api,
+        "_worker_readiness",
+        lambda: {
+            "healthy": True,
+            "fresh": True,
+            "age_seconds": 1.0,
+            "max_age_seconds": 15.0,
+            "worker_id": "test-worker",
+            "status": "RUNNING",
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "reason": "ok",
+        },
+    )
+
+
 def _valid_candle_result() -> SimpleNamespace:
     return SimpleNamespace(valid=True, valid_for_analysis=True, valid_for_execution=True, market_status="LIVE MARKET", model_dump=lambda: {})
 
@@ -838,6 +858,67 @@ def test_trading_readiness_fails_closed_when_reconciliation_needs_review(monkeyp
     assert result["live"]["technical_ready"] is False
     assert result["live"]["technical_checks"]["reconciliation_clean"] is False
     assert "reconciliation_clean" in result["live"]["blockers"]
+
+
+def test_trading_readiness_blocks_stale_worker_heartbeat(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-20T03:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "_worker_readiness",
+        lambda: {
+            "healthy": False,
+            "fresh": False,
+            "age_seconds": 60.0,
+            "max_age_seconds": 15.0,
+            "worker_id": "worker-stale",
+            "status": "RUNNING",
+            "last_seen": "2026-10-20T03:00:00+00:00",
+            "reason": "worker heartbeat stale or invalid",
+        },
+    )
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(_live_settings())
+
+    assert result["live"]["technical_ready"] is False
+    assert result["live"]["technical_checks"]["worker_heartbeat_fresh"] is False
+    assert "worker_heartbeat_fresh" in result["live"]["blockers"]
+    assert result["live"]["worker"]["age_seconds"] == 60.0
+
+
+def test_worker_readiness_reports_fresh_heartbeat(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    now = datetime.now(timezone.utc)
+    monkeypatch.setenv("QUANTGRID_WORKER_HEARTBEAT_MAX_AGE_SECONDS", "15")
+    monkeypatch.setattr(
+        broker_api.redis_service,
+        "read_worker_heartbeat",
+        lambda: {"worker_id": "worker-1", "status": "RUNNING", "last_seen": now.isoformat()},
+    )
+
+    result = broker_api._worker_readiness()
+
+    assert result["healthy"] is True
+    assert result["fresh"] is True
+    assert result["status"] == "RUNNING"
+    assert result["age_seconds"] is not None
+    assert result["age_seconds"] <= 15.0
 
 
 def test_trading_readiness_requires_broker_native_protection(monkeypatch):
