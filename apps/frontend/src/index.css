@@ -4501,3 +4501,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-weight: 500;
   line-height: 1.6;
 }
+.investment-card .quality-banner.quality-medium {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.investment-card .quality-banner.quality-medium span {
+  display: block;
+  margin-top: 6px;
+  font-weight: 500;
+  line-height: 1.6;
+}
