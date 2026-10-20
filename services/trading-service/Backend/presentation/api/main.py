@@ -368,6 +368,12 @@ def create_app():
     from Backend.presentation.api.broker_api import router as broker_router
     app.include_router(broker_router, prefix="/broker")
 
+    @app.get("/api/readiness/trading")
+    def unified_trading_readiness(_role: str = Depends(require_roles("admin", "developer", "trader", "ops"))):
+        from Backend.presentation.api.broker_api import _trading_readiness
+
+        return _trading_readiness(get_settings())
+
     from Backend.presentation.api.orders_api import router as orders_router
     app.include_router(orders_router)
 
