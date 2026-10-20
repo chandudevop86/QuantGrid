@@ -128,6 +128,11 @@ def main() -> None:
             timeout=60,
             verbose=True,
         )
+        _run(
+            [sys.executable, "scripts/check_critical_coverage.py", "--fail-under", "80"],
+            timeout=60,
+            verbose=True,
+        )
 
 
 if __name__ == "__main__":
