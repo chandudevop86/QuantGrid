@@ -72,6 +72,7 @@ jobs:
       - name: Terraform security scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
+          version: v0.74.0
           scan-type: config
           scan-ref: infra/terraform
           scanners: misconfig
@@ -83,6 +84,7 @@ jobs:
       - name: Kubernetes manifest scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
+          version: v0.74.0
           scan-type: config
           scan-ref: deploy/kubernetes
           scanners: misconfig
@@ -93,6 +95,7 @@ jobs:
       - name: Docker image vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
+          version: v0.74.0
           scan-type: fs
           scan-ref: .
           scanners: vuln,misconfig
