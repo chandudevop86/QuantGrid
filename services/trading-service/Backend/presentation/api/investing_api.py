@@ -18,6 +18,7 @@ from Backend.presentation.api.roles import require_roles
 router = APIRouter(prefix="/investing", tags=["investing"])
 
 _LEGACY_NOTICE = (
+    "Educational research, not financial advice. "
     "Legacy investment research uses illustrative/sample inputs without verified data "
     "provenance. Rankings, fund names and allocations are disabled in production. "
     "Use the separate licensed Quality Growth V2 read-only screen."
