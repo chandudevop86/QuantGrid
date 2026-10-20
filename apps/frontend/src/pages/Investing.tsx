@@ -14,7 +14,8 @@ type DashboardCard = {
 };
 
 type DashboardPayload = {
-  generated_at?: string;
+  data_status?: "DEMO_ONLY" | "UNVERIFIED";
+  generated_at?: string | null;
   summary?: string;
   disclaimer?: string;
   cards?: Record<string, DashboardCard[]>;
@@ -258,7 +259,7 @@ function formatScore(value: unknown) {
   return Number.isFinite(parsed) ? parsed.toFixed(1) : "-";
 }
 
-function formatUpdated(value?: string) {
+function formatUpdated(value?: string | null) {
   if (!value) return "Waiting for first research run";
   return new Date(value).toLocaleString();
 }
@@ -379,7 +380,7 @@ export default function Investing() {
           <p>{payload?.summary ?? "Daily stock research and weekly mutual fund rankings."}</p>
         </div>
         <div className="dashboard-actions">
-          <span className="status-pill">Updated {formatUpdated(payload?.generated_at)}</span>
+          <span className="status-pill">{payload?.data_status === "UNVERIFIED" ? "Legacy data unverified" : `Updated ${formatUpdated(payload?.generated_at)}`}</span>
         </div>
       </div>
 
@@ -390,14 +391,27 @@ export default function Investing() {
 
       {!loading && !error && (
         <>
-          <div className="quality-banner quality-watchlist">
-            <strong>Research Mode</strong>
-            <span>{payload?.disclaimer ?? "Educational research, not financial advice."}</span>
+          <div className="quality-banner quality-watchlist" role="status">
+            <strong>{payload?.data_status === "UNVERIFIED" ? "Legacy research unavailable" : "Illustrative research only"}</strong>
+            <span>{payload?.disclaimer ?? "Research requires verified dated fundamentals and prices."}</span>
           </div>
-
-          {cardOrder.map((key) => (
-            <ResearchSection key={key} title={cardTitles[key]} items={cards[key] ?? []} />
-          ))}
+          {payload?.data_status === "DEMO_ONLY" && (
+            <div className="alert alert-warning" role="status">
+              DEMO DATA — simulated funds, stock metrics, BUY/HOLD labels and
+              allocation suggestions are not verified investment advice.
+            </div>
+          )}
+          {payload?.data_status === "UNVERIFIED" ? (
+            <div className="alert alert-warning" role="status">
+              No verified legacy research results. Use Quality Growth V2 above with an
+              authorized, dated data feed. No sample scores or sample mutual funds
+              are shown in production.
+            </div>
+          ) : (
+            cardOrder.map((key) => (
+              <ResearchSection key={key} title={cardTitles[key]} items={cards[key] ?? []} />
+            ))
+          )}
         </>
       )}
     </section>
