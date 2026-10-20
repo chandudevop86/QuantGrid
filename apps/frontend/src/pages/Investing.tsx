@@ -24,11 +24,24 @@ type QualityGrowthItem = {
   symbol: string;
   name: string;
   market_cap_bucket?: string | null;
-  score: number;
-  fundamentals_as_of: string;
-  price_as_of: string;
+  market_segment?: string;
+  screen_type?: string;
+  sector?: string;
+  score: number | null;
+  status: string;
+  fundamentals_as_of?: string;
+  price_as_of?: string;
   reasons: string[];
   research_priority?: string;
+  sme_checks?: {
+    traded_sessions_20?: number | null;
+    median_bid_ask_spread_pct?: number | null;
+    exchange_lot_size?: number | null;
+    circuit_hit_sessions_20?: number | null;
+    circuit_limit_pct?: number | null;
+    promoter_holding_pct?: number | null;
+    promoter_disclosure_as_of?: string | null;
+  } | null;
 };
 type QualityGrowthPayload = {
   status: "READY" | "UNAVAILABLE" | "UNCONFIGURED";
@@ -37,15 +50,71 @@ type QualityGrowthPayload = {
   refreshed_at?: string;
   qualified_count: number;
   items: QualityGrowthItem[];
-  excluded: Array<{ symbol: string; reasons: string[]; status: string }>;
+  excluded: QualityGrowthItem[];
   reason?: string;
   disclaimer: string;
 };
+type ScreenTab = "COMPANIES" | "FINANCIALS" | "SME" | "EXCLUSIONS";
+const screenTabs: { key: ScreenTab; label: string }[] = [
+  { key: "COMPANIES", label: "Companies" },
+  { key: "FINANCIALS", label: "Banks & NBFCs" },
+  { key: "SME", label: "SME risk review" },
+  { key: "EXCLUSIONS", label: "Rejected / unverified" },
+];
+
+function StockResearchScreenCard({ item }: { item: QualityGrowthItem }) {
+  const sme = item.market_segment === "SME";
+  const rejected = item.status !== "QUALIFIED";
+  const risk = item.sme_checks;
+  return (
+    <article className="investment-card">
+      <div className="investment-card-header">
+        <div>
+          <h3>{item.symbol} — {item.name}</h3>
+          <p>{item.screen_type === "BANK" ? "Banking" : item.screen_type === "NBFC" ? "NBFC" : "Non-financial"}
+            {" "}· {item.market_cap_bucket ?? item.market_segment ?? "Unclassified"}</p>
+        </div>
+        <span className={`status-pill ${rejected ? "stale" : ""}`}>
+          {rejected ? item.status : `${item.score?.toFixed(1) ?? "N/A"} / 100`}
+        </span>
+      </div>
+      <p><strong>Research priority:</strong> {item.research_priority ?? "MANUAL_REVIEW"}</p>
+      <p className="metric-helper">Financials: {item.fundamentals_as_of ?? "missing"}
+        {" "}· Price: {item.price_as_of ?? "missing"}</p>
+      {(item.screen_type === "BANK" || item.screen_type === "NBFC") && (
+        <p className="metric-helper">
+          Financial-sector scoring uses capital adequacy, asset quality, ROA, NIM,
+          loan or credit growth and P/B. No industrial debt/OPM rules.
+          Capital-adequacy screening is not regulatory approval.
+        </p>
+      )}
+      {sme && (
+        <div className="quality-banner quality-watchlist">
+          <strong>SME — manual verification required</strong>
+          <span>Trade frequency {risk?.traded_sessions_20 ?? "N/A"}/20 sessions
+            {" "}· Median spread {risk?.median_bid_ask_spread_pct ?? "N/A"}%
+            {" "}· Exchange lot {risk?.exchange_lot_size ?? "N/A"}
+            {" "}· Circuits {risk?.circuit_hit_sessions_20 ?? "N/A"}/20
+            {" "}· Circuit band {risk?.circuit_limit_pct ?? "N/A"}%
+            {" "}· Promoter holding {risk?.promoter_holding_pct ?? "N/A"}%
+            {" "}· Disclosure date {risk?.promoter_disclosure_as_of ?? "unavailable"}
+          </span>
+        </div>
+      )}
+      {item.reasons.length > 0 && (
+        <p className="investment-reason">
+          {rejected ? "Blocked: " : "Review: "}{item.reasons.join("; ")}
+        </p>
+      )}
+    </article>
+  );
+}
 
 function QualityGrowthWatchlist() {
   const [snapshot, setSnapshot] = useState<QualityGrowthPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [tab, setTab] = useState<ScreenTab>("COMPANIES");
 
   useEffect(() => {
     let mounted = true;
@@ -60,7 +129,9 @@ function QualityGrowthWatchlist() {
           setFeedError(null);
         })
         .catch((error: unknown) => {
-          if (mounted) setFeedError(error instanceof Error ? error.message : "Screen feed unavailable");
+          if (!mounted) return;
+          setSnapshot(null);
+          setFeedError(error instanceof Error ? error.message : "Screen feed unavailable");
         })
         .finally(() => { if (mounted) setLoading(false); });
     };
@@ -69,21 +140,44 @@ function QualityGrowthWatchlist() {
     return () => { mounted = false; window.clearInterval(timer); };
   }, []);
 
+  const displayed = useMemo(() => {
+    if (!snapshot) return [];
+    const all = [...snapshot.items, ...snapshot.excluded];
+    if (tab === "EXCLUSIONS") return snapshot.excluded;
+    if (tab === "SME") return all.filter((item) => item.market_segment === "SME");
+    if (tab === "FINANCIALS") return all.filter(
+      (item) => item.market_segment !== "SME" && ["BANK", "NBFC"].includes(item.screen_type ?? "")
+    );
+    return all.filter(
+      (item) => item.market_segment !== "SME" && item.screen_type === "NON_FINANCIAL"
+    );
+  }, [snapshot, tab]);
+
   return (
     <section className="dashboard-section investment-section" aria-label="Quality Growth V2">
       <div className="form-panel-header">
         <div>
           <h2>Quality Growth V2 — Research Watchlist</h2>
-          <p>30 quality · 25 growth · 20 valuation · 15 momentum · 10 risk.
-            Auto-checks the verified source every 5 minutes while this page is open.</p>
+          <p>Separate company, bank/NBFC and SME screens. Quality 30 · Growth 25 ·
+            Valuation 20 · Momentum 15 · Risk 10. Checks for updated source data every
+            5 minutes while this page is open.</p>
         </div>
+      </div>
+      <div className="dashboard-actions" role="group" aria-label="Stock screening category">
+        {screenTabs.map((item) => (
+          <button key={item.key} type="button"
+            className="refresh-button" aria-pressed={tab === item.key}
+            onClick={() => setTab(item.key)}>
+            {item.label}
+          </button>
+        ))}
       </div>
       {loading && <p>Checking licensed screening feed...</p>}
       {feedError && <div className="alert alert-error" role="alert">{feedError}</div>}
       {snapshot && (
         <>
-          <p><strong>{snapshot.status}</strong> · {snapshot.qualified_count} qualified ·
-            Source: {snapshot.source} · Data as of: {snapshot.as_of ?? "unavailable"}</p>
+          <p><strong>{snapshot.status}</strong> · {snapshot.qualified_count} qualified overall
+            {" "}· Source: {snapshot.source} · Data as of: {snapshot.as_of ?? "unavailable"}</p>
           {snapshot.status !== "READY" && (
             <div className="alert alert-warning" role="status">
               {snapshot.reason ?? "Verified screening data is unavailable."}
@@ -91,24 +185,22 @@ function QualityGrowthWatchlist() {
             </div>
           )}
           <p className="metric-helper">{snapshot.disclaimer}</p>
-          {snapshot.items.length > 0 && (
-            <div className="investment-grid">
-              {snapshot.items.map((item) => (
-                <article className="investment-card" key={item.symbol}>
-                  <div className="investment-card-header">
-                    <div><h3>{item.symbol} — {item.name}</h3>
-                      <p>{item.market_cap_bucket ?? "Unclassified"} · {item.research_priority ?? "RESEARCH"}</p></div>
-                    <span className="status-pill">{item.score.toFixed(1)} / 100</span>
-                  </div>
-                  <p>Financials: {item.fundamentals_as_of} · Price: {item.price_as_of}</p>
-                  {item.reasons.length > 0 && <p>{item.reasons.join("; ")}</p>}
-                </article>
-              ))}
-            </div>
-          )}
           {snapshot.status === "READY" && (
-            <p className="metric-helper">{snapshot.excluded.length} stocks did not pass or could not be verified.
-              This screen is for research, not trade execution.</p>
+            <>
+              <p><strong>{screenTabs.find((x) => x.key === tab)?.label}:</strong>
+                {" "}{displayed.length} entries. No automatic trades or recommendations.</p>
+              {displayed.length > 0 ? (
+                <div className="investment-grid">
+                  {displayed.map((item) => <StockResearchScreenCard key={item.symbol} item={item} />)}
+                </div>
+              ) : (
+                <div className="alert alert-warning" role="status">
+                  No verified candidates or review records in this category.
+                </div>
+              )}
+              <p className="metric-helper">{snapshot.excluded.length} rejected or unverified
+                records. Check the Exclusions tab for missing data and failed criteria.</p>
+            </>
           )}
         </>
       )}
