@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from Backend.core.config import get_settings, reload_settings
-from Backend.core.database import get_db
+from Backend.core.database import SessionLocal, get_db
 from Backend.application.broker_reconciliation import reconcile_broker_state, reconciliation_status
 from Backend.application.broker_circuit_breaker import broker_circuit_status, reset_broker_circuit
 from Backend.application.job_queue import enqueue_job
+from Backend.application.job_store import count_jobs
+from Backend.application.kill_switch import kill_switch_status
 from Backend.application.redis_service import redis_service
 from Backend.application.market_data_readiness import stored_market_data_readiness
 from Backend.application.market_data_store import market_data_summary
@@ -21,8 +23,23 @@ from Backend.infrastructure.broker.broker_client import broker_capabilities, bro
 from Backend.infrastructure.broker.dhan_status import cached_dhan_profile, check_dhan_profile
 from Backend.presentation.api.roles import current_user, require_roles
 from Backend.presentation.api.upstream_errors import upstream_service_error
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from Backend.config.constants import Provider
+from Backend.core.schema_migrations import (
+    BASELINE_VERSION,
+    BROKER_SUBMISSION_INTENTS_VERSION,
+    COMPATIBILITY_VERSION,
+    INSTITUTIONAL_METRICS_VERSION,
+    MIGRATION_TABLE,
+    NOTIFICATION_DEDUPLICATION_VERSION,
+    NOTIFICATION_DELIVERY_LEASES_VERSION,
+    PAPER_TRADE_COST_EVIDENCE_VERSION,
+    PAPER_TRADE_IDEMPOTENCY_VERSION,
+    POSITION_EXECUTION_MODE_VERSION,
+    PROTECTION_ALERT_EPISODES_VERSION,
+    SUBSCRIPTION_ENTITLEMENTS_VERSION,
+)
 
 router = APIRouter(tags=["broker"])
 
@@ -118,6 +135,88 @@ def _worker_readiness() -> dict[str, object]:
     }
 
 
+def _operational_readiness() -> dict[str, object]:
+    required_versions = {
+        BASELINE_VERSION,
+        COMPATIBILITY_VERSION,
+        SUBSCRIPTION_ENTITLEMENTS_VERSION,
+        INSTITUTIONAL_METRICS_VERSION,
+        PAPER_TRADE_COST_EVIDENCE_VERSION,
+        PAPER_TRADE_IDEMPOTENCY_VERSION,
+        BROKER_SUBMISSION_INTENTS_VERSION,
+        POSITION_EXECUTION_MODE_VERSION,
+        NOTIFICATION_DELIVERY_LEASES_VERSION,
+        NOTIFICATION_DEDUPLICATION_VERSION,
+        PROTECTION_ALERT_EPISODES_VERSION,
+    }
+    database_healthy = False
+    schema_current = False
+    applied_versions: set[str] = set()
+    notification_failed = None
+    notification_due = None
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+            database_healthy = True
+            applied_versions = {
+                str(row[0])
+                for row in db.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))
+            }
+            schema_current = required_versions.issubset(applied_versions)
+            notification_failed = int(db.execute(text(
+                "SELECT COUNT(*) FROM notifications WHERE status = 'FAILED'"
+            )).scalar() or 0)
+            notification_due = int(db.execute(text(
+                "SELECT COUNT(*) FROM notifications "
+                "WHERE status = 'PENDING' OR "
+                "(status = 'RETRY' AND next_retry_at <= CURRENT_TIMESTAMP) OR "
+                "(status = 'PROCESSING' AND lease_expires_at <= CURRENT_TIMESTAMP)"
+            )).scalar() or 0)
+    except Exception:
+        database_healthy = False
+        schema_current = False
+
+    redis = redis_service.status()
+    kill_switch = kill_switch_status()
+    try:
+        queued_jobs = count_jobs("queued")
+    except Exception:
+        queued_jobs = None
+    max_queued_jobs = max(1, int(_float_env("QUANTGRID_READINESS_MAX_QUEUED_JOBS", 100)))
+    queue_healthy = queued_jobs is not None and queued_jobs <= max_queued_jobs
+
+    return {
+        "database": {"healthy": database_healthy},
+        "redis": {
+            "healthy": bool(redis.get("healthy")),
+            "mode": redis.get("mode"),
+            "url_configured": bool(redis.get("url_configured")),
+        },
+        "schema": {
+            "healthy": schema_current,
+            "current": schema_current,
+            "applied_count": len(applied_versions),
+            "required_count": len(required_versions),
+            "missing_versions": sorted(required_versions - applied_versions),
+        },
+        "kill_switch": {
+            "healthy": not bool(kill_switch.get("active")),
+            "active": bool(kill_switch.get("active")),
+            "reason": kill_switch.get("reason"),
+        },
+        "job_queue": {
+            "healthy": queue_healthy,
+            "queued": queued_jobs,
+            "max_queued": max_queued_jobs,
+        },
+        "notifications": {
+            "healthy": database_healthy and notification_due is not None,
+            "failed": notification_failed,
+            "due_or_expired": notification_due,
+        },
+    }
+
+
 def _trading_readiness(settings) -> dict[str, object]:
     """Separate technical capability from authorization to risk real money."""
     live = _live_readiness(settings)
@@ -127,6 +226,7 @@ def _trading_readiness(settings) -> dict[str, object]:
     market_readiness = stored_market_data_readiness(market_store.get("latest_candle_at"))
     reconciliation = reconciliation_status()
     worker = _worker_readiness()
+    operational = _operational_readiness()
     reconciliation_clean = bool(
         reconciliation.get("last_run_at")
         and not reconciliation.get("errors")
@@ -159,6 +259,11 @@ def _trading_readiness(settings) -> dict[str, object]:
         "reconciliation_clean": reconciliation_clean,
         "broker_circuit_clear": not bool(live["broker_circuit_breaker_active"]),
         "worker_heartbeat_fresh": bool(worker["fresh"]),
+        "database_healthy": bool(operational["database"]["healthy"]),
+        "redis_healthy": bool(operational["redis"]["healthy"]),
+        "schema_current": bool(operational["schema"]["current"]),
+        "kill_switch_clear": bool(operational["kill_switch"]["healthy"]),
+        "job_queue_healthy": bool(operational["job_queue"]["healthy"]),
     }
     technical_live_ready = all(technical_checks.values())
     authorization_checks = {
@@ -188,6 +293,7 @@ def _trading_readiness(settings) -> dict[str, object]:
             },
             "worker": worker,
             "market_data": market_readiness,
+            "operational": operational,
         },
         "safety": {
             "paper_live_state_isolated": True,

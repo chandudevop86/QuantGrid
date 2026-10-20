@@ -784,6 +784,18 @@ def test_trading_readiness_separates_technical_live_capability_from_money_author
     monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
     monkeypatch.setattr(
         broker_api,
+        "_operational_readiness",
+        lambda: {
+            "database": {"healthy": True},
+            "redis": {"healthy": True},
+            "schema": {"current": True},
+            "kill_switch": {"healthy": True},
+            "job_queue": {"healthy": True},
+            "notifications": {"healthy": True},
+        },
+    )
+    monkeypatch.setattr(
+        broker_api,
         "reconciliation_status",
         lambda: {"last_run_at": "2026-10-07T12:00:00+00:00", "needs_review": 0, "errors": []},
     )
@@ -1019,3 +1031,63 @@ def test_trading_readiness_accepts_clean_reconciliation_and_protected_broker(mon
     assert result["live"]["technical_checks"]["reconciliation_clean"] is True
     assert result["live"]["technical_checks"]["broker_native_protection"] is True
     assert result["live"]["technical_checks"]["broker_capability_ready"] is True
+
+
+def test_trading_readiness_blocks_when_operational_dependency_is_unhealthy(monkeypatch):
+    from Backend.presentation.api import broker_api
+
+    monkeypatch.setattr(
+        broker_api,
+        "_operational_readiness",
+        lambda: {
+            "database": {"healthy": True},
+            "redis": {"healthy": False},
+            "schema": {"current": True},
+            "kill_switch": {"healthy": True},
+            "job_queue": {"healthy": True},
+            "notifications": {"healthy": True},
+        },
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "reconciliation_status",
+        lambda: {"last_run_at": "2026-10-20T03:00:00+00:00", "needs_review": 0, "errors": []},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "_worker_readiness",
+        lambda: {"fresh": True, "healthy": True},
+    )
+    monkeypatch.setattr(
+        broker_api,
+        "stored_market_data_readiness",
+        lambda latest: {"execution_fresh": True, "healthy": True},
+    )
+    monkeypatch.setattr(broker_api, "market_data_summary", lambda *_args: {"latest_candle_at": "2026-10-20T03:00:00+00:00"})
+    monkeypatch.setattr(broker_api, "broker_circuit_status", lambda: {"active": False})
+
+    class Capabilities:
+        broker_native_protective_stop = True
+        live_execution_ready = True
+
+    monkeypatch.setattr(
+        "Backend.infrastructure.broker.registry.create_broker_adapter",
+        lambda provider: object(),
+    )
+    monkeypatch.setattr(broker_api, "broker_capabilities", lambda client: Capabilities())
+
+    result = broker_api._trading_readiness(
+        _live_settings(
+            broker_configured=True,
+            market_data_provider="broker",
+            risk_configured=True,
+            risk_engine_enabled=True,
+            audit_logging_enabled=True,
+        )
+    )
+
+    assert result["paper"]["available"] is True
+    assert result["live"]["technical_checks"]["redis_healthy"] is False
+    assert result["live"]["technical_ready"] is False
+    assert "redis_healthy" in result["live"]["blockers"]
+    assert result["live"]["operational"]["redis"]["healthy"] is False
