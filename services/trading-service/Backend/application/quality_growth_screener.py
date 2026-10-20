@@ -219,6 +219,7 @@ def _sme_checks(item: dict[str, Any], today: date) -> tuple[str, list[str], dict
     evidence = {
         **values,
         "promoter_disclosure_as_of": item.get("promoter_disclosure_as_of"),
+        "sme_microstructure_as_of": item.get("sme_microstructure_as_of"),
     }
     missing = [key for key in _SME_REQUIRED if values[key] is None]
     if missing:
@@ -229,6 +230,12 @@ def _sme_checks(item: dict[str, Any], today: date) -> tuple[str, list[str], dict
         return "UNVERIFIED", ["SME promoter disclosure date is missing or invalid"], evidence
     if not 0 <= age <= 120:
         return "UNVERIFIED", ["SME promoter disclosure is stale or future-dated"], evidence
+    try:
+        observation_age = _age_days(_date(item.get("sme_microstructure_as_of")), today)
+    except ValueError:
+        return "UNVERIFIED", ["SME liquidity/circuit observation date missing or invalid"], evidence
+    if not 0 <= observation_age <= 7:
+        return "UNVERIFIED", ["SME liquidity/circuit observations are stale or future-dated"], evidence
     v = {key: float(value) for key, value in values.items() if value is not None}
     if (
         any(v[key] != int(v[key]) for key in (
@@ -273,7 +280,9 @@ def evaluate_stock(item: dict[str, Any], *, today: date) -> dict[str, Any]:
     missing = [field for field in required if values[field] is None]
     result: dict[str, Any] = {
         "symbol": symbol, "name": name, "sector": sector, "market_segment": segment,
-        "screen_type": kind, "status": "UNVERIFIED", "reasons": [], "score": None,
+        "screen_type": ("FINANCIAL_UNCLASSIFIED" if is_financial_sector and
+                        kind == "NON_FINANCIAL" else kind),
+        "status": "UNVERIFIED", "reasons": [], "score": None,
         "component_scores": {}, "market_cap_bucket": None,
         "fundamentals_as_of": item.get("fundamentals_as_of"),
         "price_as_of": item.get("price_as_of"), "source": "verified-feed",
