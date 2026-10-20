@@ -224,3 +224,22 @@ def test_notification_migration_upgrades_existing_table():
 
     finally:
         engine.dispose()
+
+
+def test_legacy_notification_event_sql_migrations_are_removed():
+    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    migrations = root / "services" / "trading-service" / "database" / "migrations"
+
+    assert not (migrations / "005_create_notification_events.sql").exists()
+    assert not (migrations / "xxx_create_notification_events.sql").exists()
+
+    schema_text = (
+        root
+        / "services"
+        / "trading-service"
+        / "Backend"
+        / "core"
+        / "schema_migrations.py"
+    ).read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS notifications (" in schema_text
+    assert "0009_notification_delivery_leases" in schema_text
