@@ -287,3 +287,13 @@ def test_production_deploy_distinguishes_tracked_changes_from_untracked_files():
     assert "WARNING: tracked uncommitted changes are present." in script
     assert "Untracked files are present; tracked worktree is clean." in script
     assert '[[ "${dirty}" == "0" && "${untracked}" == "0" ]]' in script
+
+
+def test_nginx_api_prefix_maps_unified_readiness_to_backend_route():
+    nginx = (ROOT / "deploy" / "nginx" / "quantgrid.conf").read_text(encoding="utf-8")
+    main = (ROOT / "services" / "trading-service" / "Backend" / "presentation" / "api" / "main.py").read_text(encoding="utf-8")
+
+    assert "location /api/" in nginx
+    assert "proxy_pass http://127.0.0.1:8000/;" in nginx
+    assert '@app.get("/readiness/trading")' in main
+    assert '@app.get("/api/readiness/trading")' in main
