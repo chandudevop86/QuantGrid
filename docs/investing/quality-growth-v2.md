@@ -32,8 +32,9 @@ For **any** `market_segment: "SME"`, a stock cannot qualify unless the licensed 
 - `circuit_limit_pct`: actual positive observed circuit band of the instrument, for display and due diligence
 - `promoter_holding_pct`: published promoter shareholding percentage
 - `promoter_disclosure_as_of`: dated exchange/promoter disclosure, no older than 120 calendar days
+- `sme_microstructure_as_of`: actual venue-level trade/spread/circuit observations, no older than 7 calendar days
 
-A missing/invalid field or stale promoter disclosure yields `UNVERIFIED`; liquidity or circuit risk over the screening thresholds yields `REJECTED`. Even when all screens pass, SMEs show `MANUAL_REVIEW` with the actual evidence: pass is **not** a confirmation that an order of any size can safely be filled. Also independently review lot cost, float, exchange notices, price bands, settlement and promoter governance before any decision. No orders are ever submitted.
+A missing/invalid field, stale promoter disclosure or stale microstructure observations yields `UNVERIFIED`; liquidity or circuit risk over the screening thresholds yields `REJECTED`. Even when all screens pass, SMEs show `MANUAL_REVIEW` with the actual evidence: pass is **not** a confirmation that an order of any size can safely be filled. Also independently review lot cost, float, exchange notices, price bands, settlement and promoter governance before any decision. No orders are ever submitted.
 
 ### Research-only frontend
 
@@ -141,7 +142,8 @@ For SME issuers, supplement the appropriate normal-business or financial-busines
   "circuit_hit_sessions_20": 1,
   "circuit_limit_pct": 5,
   "promoter_holding_pct": 62,
-  "promoter_disclosure_as_of": "2026-09-30"
+  "promoter_disclosure_as_of": "2026-09-30",
+  "sme_microstructure_as_of": "2026-10-19"
 }
 ```
 
