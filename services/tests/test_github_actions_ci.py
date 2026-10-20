@@ -112,3 +112,12 @@ def test_backend_ci_enforces_risk_critical_module_coverage():
         "trade_exit_engine.py",
     ):
         assert module in checker
+
+
+def test_production_deploy_pins_node24_aws_credentials_action():
+    workflow = (ROOT / ".github" / "workflows" / "production-deploy.yml").read_text(encoding="utf-8")
+    assert "aws-actions/configure-aws-credentials@v4" not in workflow
+    assert (
+        "aws-actions/configure-aws-credentials@"
+        "e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0"
+    ) in workflow
