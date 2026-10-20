@@ -33,6 +33,7 @@ type QualityGrowthItem = {
   price_as_of?: string;
   reasons: string[];
   research_priority?: string;
+  financial_metrics?: Record<string, number | null> | null;
   sme_checks?: {
     traded_sessions_20?: number | null;
     median_bid_ask_spread_pct?: number | null;
@@ -83,11 +84,24 @@ function StockResearchScreenCard({ item }: { item: QualityGrowthItem }) {
       <p className="metric-helper">Financials: {item.fundamentals_as_of ?? "missing"}
         {" "}· Price: {item.price_as_of ?? "missing"}</p>
       {(item.screen_type === "BANK" || item.screen_type === "NBFC") && (
-        <p className="metric-helper">
-          Financial-sector scoring uses capital adequacy, asset quality, ROA, NIM,
-          loan or credit growth and P/B. No industrial debt/OPM rules.
-          Capital-adequacy screening is not regulatory approval.
-        </p>
+        <div className="quality-banner quality-medium">
+          <strong>Financial-sector checks — {item.screen_type}</strong>
+          <span>
+            ROE {item.financial_metrics?.roe ?? "N/A"}%
+            {" "}· ROA {item.financial_metrics?.roa_pct ?? "N/A"}%
+            {" "}· Capital adequacy {item.financial_metrics?.capital_adequacy_pct ?? "N/A"}%
+            {" "}· Gross impaired {item.financial_metrics?.[
+              item.screen_type === "BANK" ? "gross_npa_pct" : "gross_stage3_pct"
+            ] ?? "N/A"}%
+            {" "}· Net impaired {item.financial_metrics?.[
+              item.screen_type === "BANK" ? "net_npa_pct" : "net_stage3_pct"
+            ] ?? "N/A"}%
+            {" "}· NIM {item.financial_metrics?.nim_pct ?? "N/A"}%
+            {" "}· P/B {item.financial_metrics?.price_to_book ?? "N/A"}
+            {" "}· Pledge {item.financial_metrics?.pledged_percentage ?? "N/A"}%
+          </span>
+          <span>Not evaluated with industrial OPM/debt rules. This is not a regulatory approval.</span>
+        </div>
       )}
       {sme && (
         <div className="quality-banner quality-watchlist">
