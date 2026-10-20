@@ -190,6 +190,8 @@ def test_financials_have_separate_score_without_corporate_ratios(kind):
     assert stock["status"] == "QUALIFIED"
     assert stock["screen_type"] == kind
     assert stock["component_scores"]["quality"] > 0
+    assert stock["financial_metrics"]["roa_pct"] == 1.8
+    assert stock["financial_metrics"]["capital_adequacy_pct"] == 19
     assert stock["research_priority"] != "HIGH" or stock["score"] >= 80
     assert all("ROCE" not in msg and "OPM" not in msg for msg in stock["reasons"])
 
