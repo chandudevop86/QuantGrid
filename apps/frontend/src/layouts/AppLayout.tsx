@@ -11,10 +11,21 @@ import { canAccessRoute, getCurrentRole, hasAuthToken } from "../roles";
 type AppLayoutProps = { children: React.ReactNode };
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  const [authenticated, setAuthenticated] = useState(hasAuthToken());
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
   const isTerminal = location.pathname === "/trade";
+
+  useEffect(() => {
+    const onAuthChange = () => setAuthenticated(hasAuthToken());
+    window.addEventListener("quantgrid-role-change", onAuthChange);
+    window.addEventListener("storage", onAuthChange);
+    return () => {
+      window.removeEventListener("quantgrid-role-change", onAuthChange);
+      window.removeEventListener("storage", onAuthChange);
+    };
+  }, []);
 
   useEffect(() => {
     setNavigationOpen(false);
@@ -41,7 +52,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <MarketSelectionProvider>
       <SubscriptionProvider>
         <OperationsStatusProvider>
-          <div className={`app-shell qg-workspace-v3${isTerminal ? " app-shell-terminal" : ""}`}>
+          <div className={`app-shell qg-workspace-v3${isTerminal ? " app-shell-terminal" : ""}${authenticated ? "" : " qg-workspace-guest"}`}>
             <Sidebar collapsed={!navigationOpen} onNavigate={() => setNavigationOpen(false)} />
             {navigationOpen && (
               <button
@@ -58,7 +69,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               />
               <div className="app-content">{children}</div>
             </main>
-            {!isTerminal && <WorkspaceContext />}
+            {authenticated && !isTerminal && <WorkspaceContext />}
             {searchOpen && <WorkspaceCommandPalette onClose={() => setSearchOpen(false)} />}
           </div>
         </OperationsStatusProvider>
