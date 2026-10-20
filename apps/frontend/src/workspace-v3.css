@@ -197,6 +197,7 @@ body, button, input, select, textarea { -webkit-font-smoothing: antialiased; }
 .qg-workspace-v3 .qg-market-dashboard {gap:14px;}
 .qg-workspace-v3 .sahi-command-header {border:1px solid #2d5260;border-radius:14px;background:linear-gradient(115deg,#13323b,#0d1e30);padding:18px 20px;}
 .qg-workspace-v3 .sahi-instrument strong {font-size:21px;}
+.qg-workspace-v3 .market-live-dot.is-closed {background:#91a4b8;box-shadow:0 0 0 4px rgba(145,164,184,.11);}
 .qg-workspace-v3 .sahi-risk-strip {border-radius:12px;background:#0e1b2a;}
 .qg-workspace-v3 .sahi-risk-strip > span {padding:14px 18px;min-height:76px;}
 .qg-workspace-v3 .sahi-risk-strip b {font-size:17px;}
