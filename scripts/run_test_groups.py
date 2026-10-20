@@ -94,7 +94,7 @@ def main() -> None:
     parser.add_argument("--test-timeout", type=int, default=60, help="Timeout per pytest test in seconds.")
     parser.add_argument("--pattern", default="test_*.py", help="Test file glob under services/tests/. Default also includes strategy/ unit tests.")
     parser.add_argument("--coverage", action="store_true", help="Collect combined coverage across groups.")
-    parser.add_argument("--cov-fail-under", type=int, default=45, help="Coverage threshold for --coverage.")
+    parser.add_argument("--cov-fail-under", type=int, default=70, help="Coverage threshold for --coverage.")
     parser.add_argument("--verbose", action="store_true", help="Print stdout for passing pytest groups.")
     args = parser.parse_args()
 
