@@ -43,13 +43,17 @@ def _websocket_dashboard_payload(user_id: int | None = None) -> dict:
             if user is None:
                 raise PermissionError("User no longer exists")
             snapshot = subscription_for_user(db, user)
+            role = user.role
             access = SubscriptionAccess(user=user, snapshot=snapshot)
-            return operations(user.role, access)
-        free = PLANS["free"]
-        access = SubscriptionAccess(user=None, snapshot={
-            "plan_code": "free", "effective_status": "active", "entitlements": sorted(free["entitlements"]), "limits": dict(free["limits"]),
-        })
-        return operations("viewer", access)
+        else:
+            free = PLANS["free"]
+            role = "viewer"
+            access = SubscriptionAccess(user=None, snapshot={
+                "plan_code": "free", "effective_status": "active", "entitlements": sorted(free["entitlements"]), "limits": dict(free["limits"]),
+            })
+    # Dashboard computation may perform other database and network operations.
+    # Release the authentication/subscription transaction before starting it.
+    return operations(role, access)
 
 
 def _allowed_origins() -> list[str]:
