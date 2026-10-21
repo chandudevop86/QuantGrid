@@ -442,6 +442,28 @@ def _run_auto_paper_job(
                 )
             )
 
+            analysis = results[strategy_name]
+            logger.info(
+                "auto_paper_signal_diagnostics "
+                "strategy=%s active=%s rejected=%s stale=%s "
+                "trades=%s blocked_reason=%s "
+                "rejected_reasons=%s stale_reasons=%s",
+                strategy_name,
+                len(analysis.get("signals", [])),
+                len(analysis.get("rejected_signals", [])),
+                len(analysis.get("stale_signals", [])),
+                len(analysis.get("trades", [])),
+                analysis.get("auto_trade_blocked_reason"),
+                [
+                    item.get("decision", {}).get("reason")
+                    for item in analysis.get("rejected_signals", [])
+                ],
+                [
+                    item.get("decision", {}).get("reason")
+                    for item in analysis.get("stale_signals", [])
+                ],
+            )
+
 
         except Exception as exc:
 
