@@ -44,7 +44,7 @@ def _websocket_dashboard_payload(user_id: int | None = None) -> dict:
                 raise PermissionError("User no longer exists")
             snapshot = subscription_for_user(db, user)
             role = user.role
-            access = SubscriptionAccess(user=user, snapshot=snapshot)
+            access = SubscriptionAccess(user=None, snapshot=snapshot)
         else:
             free = PLANS["free"]
             role = "viewer"
