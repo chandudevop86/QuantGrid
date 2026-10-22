@@ -21,6 +21,7 @@ from Backend.application.candle_validation import validate_live_candle
 from Backend.application.monitoring import observe_rejected_signal
 from Backend.application.signal_audit import AUDIT_STRATEGIES, StrategyAuditInput, audit_strategy
 from Backend.application.signal_quality import split_signals
+from Backend.application.signal_evaluation_id import signal_evaluation_id
 from Backend.application.signal_validation import validate_signals
 from Backend.application.real_money_readiness import evaluate_real_money_evidence
 from Backend.application.trading_service import TradingService
@@ -462,18 +463,27 @@ def latest_signals(
         )
         for signal_obj in active_signals:
             serialized_signal = serialize_signal(signal_obj)
+            decision = signal_obj.metadata
+            serialized_signal["evaluation_id"] = signal_evaluation_id(
+                serialized_signal, decision, one_minute[-1].get("timestamp") if one_minute else None
+            )
             active.append(serialized_signal)
             # Reading the latest signal snapshot must not mutate trade history.
             # Persistent signal audit events belong to the scanner/event pipeline,
             # with unique evaluation identifiers and idempotent persistence.
         for entry in rejected_signals:
             serialized = {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
+            serialized["evaluation_id"] = signal_evaluation_id(
+                serialized["signal"], serialized["decision"], one_minute[-1].get("timestamp") if one_minute else None
+            )
             rejected.append(serialized)
             observe_rejected_signal(serialized["signal"].get("strategy_name"), serialized["decision"].get("reason"))
-        stale.extend(
-            {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
-            for entry in stale_signals
-        )
+        for entry in stale_signals:
+            serialized = {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
+            serialized["evaluation_id"] = signal_evaluation_id(
+                serialized["signal"], serialized["decision"], one_minute[-1].get("timestamp") if one_minute else None
+            )
+            stale.append(serialized)
 
     limit = access.limit("signals_history_limit") or 5
     remaining = limit
