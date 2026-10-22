@@ -54,6 +54,7 @@ def _rebuild_engine(database_url: str) -> None:
 def init_database() -> None:
     import Backend.domain.security.models  # noqa: F401
     import Backend.domain.trading_store_models  # noqa: F401
+    import Backend.domain.signal_event_models  # noqa: F401
     import Backend.domain.governance_models  # noqa: F401
     import Backend.application.notification_entity  # noqa: F401
     import Backend.application.protection_alert_episodes  # noqa: F401
