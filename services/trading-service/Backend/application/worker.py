@@ -259,9 +259,34 @@ def _candle_storage_source(response: dict[str, Any]) -> str:
     return str(response.get("source") or "unknown").strip().lower()
 
 
+def _candle_ingestion_session_allowed(now: datetime | None = None) -> bool:
+    """Permit final-bar collection for five minutes after NSE session close.
+
+    This gate is exclusively for candle ingestion; strategy/order gates remain
+    unchanged. The calendar and timezone come from the candle validator.
+    """
+    settings = validation_settings()
+    current = normalize_timestamp(now or datetime.now(timezone.utc))
+    if current is None:
+        return False
+    if current.weekday() >= 5 or current.date().isoformat() in settings.holidays:
+        return False
+    from datetime import timedelta
+
+    session_open = current.replace(
+        hour=settings.market_open.hour, minute=settings.market_open.minute,
+        second=0, microsecond=0,
+    )
+    session_close = current.replace(
+        hour=settings.market_close.hour, minute=settings.market_close.minute,
+        second=0, microsecond=0,
+    )
+    return session_open <= current <= session_close + timedelta(minutes=5)
+
+
 def _run_candle_ingestion():
 
-    if _candle_market_hours_only() and not is_market_hours_ist():
+    if _candle_market_hours_only() and not _candle_ingestion_session_allowed():
         logger.debug("candle_ingestion_skipped reason=outside_market_hours")
         return
 
