@@ -65,6 +65,7 @@ POSITION_EXECUTION_MODE_VERSION = "0008_position_execution_mode"
 NOTIFICATION_DELIVERY_LEASES_VERSION = "0009_notification_delivery_leases"
 NOTIFICATION_DEDUPLICATION_VERSION = "0010_notification_deduplication"
 PROTECTION_ALERT_EPISODES_VERSION = "0011_protection_alert_episodes"
+SIGNAL_EVALUATION_EVENTS_VERSION = "0012_signal_evaluation_events"
 
 def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     """Own schema initialization and legacy upgrades behind a durable version ledger."""
@@ -231,6 +232,7 @@ def apply_versioned_migrations(engine: Engine, metadata: MetaData) -> None:
     apply_notification_delivery_leases_migration(engine)
     apply_notification_deduplication_migration(engine)
     apply_protection_alert_episodes_migration(engine)
+    apply_signal_evaluation_events_migration(engine)
 
 def apply_notification_delivery_leases_migration(engine: Engine) -> None:
     """Create or upgrade persistent notification delivery storage."""
@@ -408,6 +410,34 @@ def apply_protection_alert_episodes_migration(
             ),
             {"version": PROTECTION_ALERT_EPISODES_VERSION},
         )
+
+
+
+def apply_signal_evaluation_events_migration(engine: Engine) -> None:
+    """Create an append-only, uniquely keyed audit event table for existing installs."""
+    with engine.begin() as connection:
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                {"lock_id": POSTGRES_MIGRATION_LOCK_ID},
+            )
+        applied = {row[0] for row in connection.execute(text(f"SELECT version FROM {MIGRATION_TABLE}"))}
+        if SIGNAL_EVALUATION_EVENTS_VERSION in applied:
+            return
+        pk = "BIGSERIAL PRIMARY KEY" if engine.dialect.name == "postgresql" else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        connection.execute(text(
+            "CREATE TABLE IF NOT EXISTS signal_evaluation_events ("
+            f"id {pk}, evaluation_id VARCHAR(64) NOT NULL, "
+            "event_type VARCHAR(40) NOT NULL, signal_id VARCHAR(64) NOT NULL, "
+            "strategy VARCHAR(80) NOT NULL, symbol VARCHAR(32) NOT NULL, "
+            "side VARCHAR(20) NOT NULL, signal_time VARCHAR(64) NOT NULL, "
+            "snapshot_time VARCHAR(64) NOT NULL, status VARCHAR(40) NOT NULL, "
+            "reason VARCHAR(80) NOT NULL, mtf_bias VARCHAR(40) NOT NULL, "
+            "evidence_json TEXT NOT NULL, evaluated_at TIMESTAMP NOT NULL, "
+            "CONSTRAINT uq_signal_eval_event UNIQUE (evaluation_id, event_type))"
+        ))
+        connection.execute(text(f"INSERT INTO {MIGRATION_TABLE} (version) VALUES (:version)"),
+                           {"version": SIGNAL_EVALUATION_EVENTS_VERSION})
 
 
 def apply_compatibility_migrations(engine: Engine, tables: Iterable[str]) -> None:
