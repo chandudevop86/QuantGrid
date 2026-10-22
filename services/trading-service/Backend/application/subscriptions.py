@@ -7,7 +7,7 @@ from typing import Any, Iterable
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from Backend.core.database import get_db
+from Backend.core.database import SessionLocal
 from Backend.domain.security.models import (
     User,
     UserEntitlementOverride,
@@ -880,16 +880,15 @@ def _denied(
 
 def subscription_access(
     user: User = Depends(current_user),
-    db: Session = Depends(get_db),
 ) -> SubscriptionAccess:
+    """Release entitlement lookup connections before long-running endpoints.
 
-    return SubscriptionAccess(
-        user=user,
-        snapshot=subscription_for_user(
-            db,
-            user,
-        ),
-    )
+    Holding a request-scoped read-only transaction while computing dashboards
+    or strategy signals can exhaust the shared database pool.
+    """
+    with SessionLocal() as db:
+        snapshot = subscription_for_user(db, user)
+    return SubscriptionAccess(user=user, snapshot=snapshot)
 
 
 # ============================================================
