@@ -57,8 +57,10 @@ def test_versioned_migrations_record_baseline_and_compatibility():
         schema_migrations.NOTIFICATION_DELIVERY_LEASES_VERSION,
         schema_migrations.NOTIFICATION_DEDUPLICATION_VERSION,
         schema_migrations.PROTECTION_ALERT_EPISODES_VERSION,
+        schema_migrations.SIGNAL_EVALUATION_EVENTS_VERSION,
     ]
     inspector = inspect(engine)
+    assert "signal_evaluation_events" in inspector.get_table_names()
     assert "execution_mode" in {column["name"] for column in inspector.get_columns("orders")}
 
     assert "broker_submission_intents" in inspector.get_table_names()
