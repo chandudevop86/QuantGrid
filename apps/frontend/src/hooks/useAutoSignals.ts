@@ -151,8 +151,11 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
     }
 
     let isMounted = true;
+    let inFlight = false;
 
     const fetchSignal = async () => {
+      if (!isMounted || inFlight) return;
+      inFlight = true;
       try {
         setLoading(true);
 
@@ -207,6 +210,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
       } catch (error) {
         if (isMounted) setSignal({ error: "Signal API unavailable" });
       } finally {
+        inFlight = false;
         if (isMounted) setLoading(false);
       }
     };
@@ -216,7 +220,7 @@ export function useAutoSignals(strategy: string | null, interval = 5000) {
     socket.onopen = () => {
       if (isMounted) setSocketConnected(true);
     };
-    socket.onmessage = () => fetchSignal();
+    socket.onmessage = () => { void fetchSignal(); };
     socket.onclose = () => {
       if (isMounted) setSocketConnected(false);
     };
@@ -249,8 +253,11 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
     }
 
     let isMounted = true;
+    let inFlight = false;
 
     const fetchSignals = async () => {
+      if (!isMounted || inFlight) return;
+      inFlight = true;
       try {
         setLoading(true);
 
@@ -325,6 +332,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
           );
         }
       } finally {
+        inFlight = false;
         if (isMounted) setLoading(false);
       }
     };
@@ -334,7 +342,7 @@ export function useStrategySignals(strategies: string[], interval = 5000) {
     socket.onopen = () => {
       if (isMounted) setSocketConnected(true);
     };
-    socket.onmessage = () => fetchSignals();
+    socket.onmessage = () => { void fetchSignals(); };
     socket.onclose = () => {
       if (isMounted) setSocketConnected(false);
     };
