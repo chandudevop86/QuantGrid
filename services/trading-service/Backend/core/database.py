@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import os
+import threading
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import NoInspectionAvailable, OperationalError
@@ -31,6 +33,11 @@ def build_engine():
 engine = build_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+# Runtime stores may call init_database() on every request. Schema migrations
+# must run once per process/engine, not once per store operation.
+_init_lock = threading.Lock()
+_initialized_engine_key: tuple[int, object] | None = None
+
 
 def _localhost_database_url(database_url: str) -> str | None:
     url = make_url(database_url)
@@ -52,6 +59,21 @@ def _rebuild_engine(database_url: str) -> None:
 
 
 def init_database() -> None:
+    global _initialized_engine_key
+    key = (os.getpid(), engine)
+    if _initialized_engine_key == key:
+        return
+    with _init_lock:
+        key = (os.getpid(), engine)
+        if _initialized_engine_key == key:
+            return
+        _initialize_database()
+        # _initialize_database may rebind engine after a hostname fallback.
+        # Failed initialization must remain retryable on the next invocation.
+        _initialized_engine_key = (os.getpid(), engine)
+
+
+def _initialize_database() -> None:
     import Backend.domain.security.models  # noqa: F401
     import Backend.domain.trading_store_models  # noqa: F401
     import Backend.domain.signal_event_models  # noqa: F401
