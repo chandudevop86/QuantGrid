@@ -13,7 +13,7 @@ from Backend.infrastructure.market_data.dhan_sdk import dhan_market_feed_class, 
 
 SECURITY_MASTER = None
 
-INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
+INDEX_SPOT_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNEXT50", "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG", "NIFTYMETAL", "NIFTYREALTY"}
 
 # Set up module logger instance for tracking resolution failures
 logger = logging.getLogger(__name__)
