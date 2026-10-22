@@ -463,40 +463,13 @@ def latest_signals(
         for signal_obj in active_signals:
             serialized_signal = serialize_signal(signal_obj)
             active.append(serialized_signal)
-            create_trade_journal_entry(
-                {
-                    "strategy": serialized_signal.get("strategy_name"),
-                    "signal": serialized_signal.get("signal"),
-                    "symbol": serialized_signal.get("symbol"),
-                    "status": "accepted_signal",
-                    "entry": serialized_signal.get("entry_price") or serialized_signal.get("entry"),
-                    "stop_loss": serialized_signal.get("stop_loss"),
-                    "target": serialized_signal.get("target_price") or serialized_signal.get("target"),
-                    "quantity": serialized_signal.get("quantity"),
-                    "reason": serialized_signal.get("reason"),
-                    "source": "signal_scan",
-                    "created_at": serialized_signal.get("timestamp"),
-                }
-            )
+            # Reading the latest signal snapshot must not mutate trade history.
+            # Persistent signal audit events belong to the scanner/event pipeline,
+            # with unique evaluation identifiers and idempotent persistence.
         for entry in rejected_signals:
             serialized = {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
             rejected.append(serialized)
             observe_rejected_signal(serialized["signal"].get("strategy_name"), serialized["decision"].get("reason"))
-            create_trade_journal_entry(
-                {
-                    "strategy": serialized["signal"].get("strategy_name"),
-                    "signal": serialized["signal"].get("signal"),
-                    "symbol": serialized["signal"].get("symbol"),
-                    "status": "rejected_signal",
-                    "entry": serialized["signal"].get("entry_price") or serialized["signal"].get("entry"),
-                    "stop_loss": serialized["signal"].get("stop_loss"),
-                    "target": serialized["signal"].get("target_price") or serialized["signal"].get("target"),
-                    "quantity": serialized["signal"].get("quantity"),
-                    "reason": serialized["decision"].get("reason"),
-                    "source": "signal_scan",
-                    "created_at": serialized["signal"].get("timestamp"),
-                }
-            )
         stale.extend(
             {"signal": serialize_signal(entry["signal"]), "decision": entry["decision"]}
             for entry in stale_signals
