@@ -171,6 +171,19 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
         "1h": hourly_candles,
     },
     )
+    # Optional audit ingestion occurs before any paper-trade generation.
+    # Ingestion errors deliberately abort the scan instead of allowing unaudited execution.
+    from Backend.application.signal_event_ingestion import (
+        scanner_event_ingestion_enabled,
+        record_scanner_decisions,
+    )
+    if scanner_event_ingestion_enabled():
+        record_scanner_decisions(
+            gate_active_signals,
+            rejected_signals,
+            stale_signals,
+            snapshot_time=candles[-1]["timestamp"] if candles else "NO_CANDLE",
+        )
     signals, data_source = validate_signals(
         gate_active_signals,
         symbol=payload.symbol,
