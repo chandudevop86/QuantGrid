@@ -17,7 +17,6 @@ from urllib.request import Request, urlopen
 from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from Backend.application.options.paper_order_validation import validate_option_paper_order
 from Backend.application.kill_switch import kill_switch_status
 
 from Backend.infrastructure.http_safety import require_https_url
