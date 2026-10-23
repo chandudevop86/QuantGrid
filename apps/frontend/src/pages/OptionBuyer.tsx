@@ -61,12 +61,12 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
   return <section className="dashboard-section" aria-label="NIFTY option buyer">
     <div className="section-header"><div><span className="page-eyebrow">Research / paper-only</span><h2>NIFTY Option Buyer</h2><p>Choose a contract and inspect risk. No broker order is sent from this panel.</p></div></div>
     <div role="group" aria-label="Option direction">
-      <button type="button" aria-pressed={side==="CE"} onClick={()=>setSide("CE")}>Buy CE</button>{" "}
-      <button type="button" aria-pressed={side==="PE"} onClick={()=>setSide("PE")}>Buy PE</button>
+      <button type="button" aria-pressed={side==="CE"} onClick={()=>{setSide("CE");setPreview(null);}}>Buy CE</button>{" "}
+      <button type="button" aria-pressed={side==="PE"} onClick={()=>{setSide("PE");setPreview(null);}}>Buy PE</button>
     </div>
     <p>Spot: {Number.isFinite(spot) && spot>0 ? spot.toLocaleString("en-IN") : "Unavailable"} · Expiry: {expiry || "Unavailable"}</p>
     <label htmlFor="buyer-strike">Strike</label>{" "}
-    <select id="buyer-strike" value={strike || ""} onChange={event=>setChosen(Number(event.target.value))}>
+    <select id="buyer-strike" value={strike || ""} onChange={event=>{setChosen(Number(event.target.value));setPreview(null);}}>
       {!selected && <option value="">No verified contracts</option>}
       {ordered.map(row=><option key={row.strike} value={row.strike}>{row.strike} · {classifyOption(spot,row.strike,side)}</option>)}
     </select>
