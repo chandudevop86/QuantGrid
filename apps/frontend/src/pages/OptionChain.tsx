@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
+import OptionBuyer from "./OptionBuyer";
 
 const refreshMs = 60000;
 
@@ -287,6 +288,8 @@ export default function OptionChain() {
         </dl>
         <div className="option-chain-source"><span className={isProviderBacked ? "status-dot is-live" : "status-dot"} />{isProviderBacked ? "Live provider" : "Provider unavailable"}<small>{refreshLabel}</small></div>
       </div>
+
+      <OptionBuyer spot={Number(chain?.spot ?? chain?.underlying_price ?? 0)} rows={providerRows} expiry={chain?.expiry} providerReady={isProviderBacked && !usingSynthetic && !chainUnavailable} refreshedAt={chain?.quote_timestamp ? new Date(chain.quote_timestamp) : null} />
 
       {derivatives && <section className="option-derivatives-grid" aria-label="Open interest and implied volatility analysis">
         <article><span>Call OI wall</span><strong>{formatNumber(derivatives.callWall?.strike)}</strong><small>{formatNumber(derivatives.callWall?.ce?.oi)} contracts · potential resistance</small></article>
