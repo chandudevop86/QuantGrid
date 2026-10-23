@@ -39,7 +39,11 @@ export function screenBuyerContract(spot: number, strike: number, side: "CE" | "
   else if ((ask - bid) / ((ask + bid) / 2) * 100 > 5) reasons.push("Bid/ask spread above 5%");
   if (oi === null || oi < 1000) reasons.push("Open interest below 1,000 or missing");
   if (delta === null || Math.abs(delta) < 0.25 || Math.abs(delta) > 0.85 || (side === "PE" ? delta >= 0 : delta <= 0)) reasons.push("Delta unavailable or outside configured limits");
-  // HTTP refresh time is not an exchange quote timestamp. Never substitute it.\n  const rawTimestamp = leg?.quote_timestamp;\n  const quoteTime = typeof rawTimestamp === "string" && /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(rawTimestamp) ? Date.parse(rawTimestamp) : NaN;\n  const quoteAge = Date.now() - quoteTime;\n  if (!Number.isFinite(quoteTime) || quoteAge < 0 || quoteAge > 30000) reasons.push("Exchange quote timestamp missing, future or older than 30 seconds");
+  // HTTP refresh time is not an exchange quote timestamp. Never substitute it.
+  const rawTimestamp = leg?.quote_timestamp;
+  const quoteTime = typeof rawTimestamp === "string" && /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(rawTimestamp) ? Date.parse(rawTimestamp) : NaN;
+  const quoteAge = Date.now() - quoteTime;
+  if (!Number.isFinite(quoteTime) || quoteAge < 0 || quoteAge > 30000) reasons.push("Exchange quote timestamp missing, future or older than 30 seconds");
   if (!id) reasons.push("Contract security ID missing");
   return { category, reasons, eligible: reasons.length === 0, bid, ask, delta, oi, id };
 }
@@ -93,6 +97,7 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
     {previewError && <p role="alert">{previewError}</p>}
     {preview && <p role="status">Provider contract ID (not exchange-master verified): {preview.security_id}. Quote timestamp: {preview.quote_timestamp || "Unavailable"}. {preview.reason}</p>}
     <p>Expiry break-even: {price===null ? "Unavailable" : (side==="CE" ? strike+price : strike-price).toFixed(2)}</p>
-    <p role="status">Execution status: Disabled — exchange contract-master verification and authenticated paper-order persistence are not connected.</p>\n    <button type="button" disabled title="Paper order submission requires a separately verified server-side paper-only endpoint">Paper order disabled pending backend validation</button>
+    <p role="status">Execution status: Disabled — exchange contract-master verification and authenticated paper-order persistence are not connected.</p>
+    <button type="button" disabled title="Paper order submission requires a separately verified server-side paper-only endpoint">Paper order disabled pending backend validation</button>
   </section>;
 }
