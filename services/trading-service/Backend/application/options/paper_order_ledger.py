@@ -11,7 +11,7 @@ class IdempotencyConflict(ValueError):
     pass
 
 
-def record_verified_paper_buy(db_path, actor_id, key, verified):
+def record_verified_paper_buy(db_path, actor_id, key, verified, *, max_open_premium_rupees=100000):
     """Persist a prevalidated paper order, position and audit atomically.
 
     Caller must verify contract master, market quote and risk independently.
@@ -33,6 +33,9 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
             or type(verified["ask"]) not in (int, float)
             or not math.isfinite(verified["ask"]) or verified["ask"] <= 0):
         raise ValueError("invalid quantities or price")
+    if (type(max_open_premium_rupees) not in (int, float)
+            or not math.isfinite(max_open_premium_rupees) or max_open_premium_rupees <= 0):
+        raise ValueError("invalid paper premium limit")
     payload = {k: verified[k] for k in required}
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, allow_nan=False).encode()).hexdigest()
     path = Path(db_path)
@@ -71,6 +74,20 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
                         or audit != (actor_id, "paper_option_buy_recorded")):
                     raise RuntimeError("paper ledger replay integrity check failed")
             else:
+                # BEGIN IMMEDIATE serializes writers: the cap check and order
+                # insert must occur in the same transaction, including across
+                # workers sharing this ledger file.
+                open_premium = db.execute("""
+                    SELECT COALESCE(SUM(p.quantity * p.entry_price), 0)
+                    FROM option_paper_positions p
+                    JOIN option_paper_orders o ON o.id = p.order_id
+                    WHERE o.actor_id = ? AND p.status = 'open'
+                """, (actor_id,)).fetchone()[0]
+                proposed = lot_size * lots * verified["ask"]
+                if (not math.isfinite(open_premium) or open_premium < 0
+                        or not math.isfinite(proposed)
+                        or open_premium + proposed > max_open_premium_rupees):
+                    raise ValueError("paper premium exposure limit exceeded")
                 cur = db.execute("INSERT INTO option_paper_orders(actor_id,idem_key,fingerprint,payload,created_at) VALUES(?,?,?,?,?)",
                                  (actor_id,key,fingerprint,json.dumps(payload,sort_keys=True),now))
                 order_id, replayed = cur.lastrowid, False
