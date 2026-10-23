@@ -1144,8 +1144,13 @@ def submit_option_buyer_paper_order(
         raise HTTPException(status_code=403, detail="Trading role required.")
     if payload.symbol != "NIFTY" or payload.execution_mode != "paper":
         raise HTTPException(status_code=422, detail="Only NIFTY paper trading is allowed.")
-    if kill_switch_status().get("active"):
-        raise HTTPException(status_code=423, detail="Trading kill switch is active.")
+    try:
+        switch = kill_switch_status(fresh=True)
+    except Exception as exc:
+        logger.error("option_buyer_kill_switch_unavailable", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Trading safety state unavailable.") from exc
+    if not isinstance(switch, dict) or switch.get("active") is not False:
+        raise HTTPException(status_code=423, detail="Trading kill switch active or unverified.")
     # A client may never supply contract identity, lot size, pricing or Greeks.
     # A verified contract-master and provider per-quote timestamp are not yet
     # exposed by _dhan_option_rows, so no safe persistence is possible.
