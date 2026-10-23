@@ -302,8 +302,18 @@ def operations(
     access: SubscriptionAccess = Depends(subscription_access),
 ):
     started_at = perf_counter()
+    stage_start = started_at
+    stage_seconds: dict[str, float] = {}
+
+    def mark_stage(name: str) -> None:
+        nonlocal stage_start
+        current = perf_counter()
+        stage_seconds[name] = round(current - stage_start, 4)
+        stage_start = current
+
     settings = get_settings()
     candles_by_interval = _dashboard_candles_by_interval("NIFTY")
+    mark_stage("stored_candles")
     candles = candles_by_interval["1m"]
     from Backend.presentation.api.market_api import latest_verified_option_context
 
@@ -315,6 +325,7 @@ def operations(
     daily_loss_remaining = max(0.0, float(risk["max_daily_loss"]) + float(risk["daily_pnl"]))
     redis = _redis_status()
     strategies = StrategyEngine().available()
+    mark_stage("context_risk_redis_strategies")
 
     db = None
     try:
@@ -332,6 +343,7 @@ def operations(
         if db is not None:
             db.close()
 
+    mark_stage("db_health")
     execution_mode = "LIVE" if settings.live_trading_enabled else "PAPER"
     if settings.broker_provider == Provider.DHAN:
         broker_health = cached_dhan_profile()
@@ -368,6 +380,7 @@ def operations(
         risk_blocked=risk_blocked,
         confidence_threshold=_int_env("CONFIDENCE_THRESHOLD", 70),
     )
+    mark_stage("broker_and_decision_pipeline")
     decision = pipeline_result.decision
     latency_ms = round((perf_counter() - started_at) * 1000, 2)
     observe_api_request("GET", "/dashboard/operations", 200, latency_ms / 1000)
@@ -472,6 +485,8 @@ def operations(
             "message": "Run a backtest or replay to attach historical confidence to this strategy.",
         },
     }
+    mark_stage("payload_build")
+    logger.info("dashboard_stage_timings", extra={"stage_seconds": stage_seconds, "total_seconds": round(perf_counter() - started_at, 4)})
     return _filter_operations(payload, access)
 
 
