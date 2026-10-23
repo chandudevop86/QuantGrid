@@ -28,9 +28,13 @@ def verify_lot_size(*, contract_lot_size, exchange_lot_size):
 def verify_premium_exposure(*, ask, lot_size, lots, existing, pending, limit):
     """Pure preflight; caller must atomically reserve capital before any order."""
     values = (ask, existing, pending, limit)
+    try:
+        valid_values = all(type(x) in (int, float) and isfinite(x) and x >= 0 for x in values)
+    except (TypeError, ValueError, OverflowError):
+        valid_values = False
     if (type(lot_size) is not int or type(lots) is not int
             or lot_size <= 0 or lots <= 0
-            or not all(isfinite(float(x)) and float(x) >= 0 for x in values)
+            or not valid_values
             or ask <= 0 or limit <= 0):
         return False
     return ask * lot_size * lots + existing + pending <= limit
