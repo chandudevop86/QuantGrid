@@ -64,6 +64,12 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
                 if row[1] != fingerprint:
                     raise IdempotencyConflict("key already used for another contract")
                 order_id, replayed = row[0], True
+                position = db.execute("SELECT quantity,entry_price,security_id,execution_mode FROM option_paper_positions WHERE order_id=?", (order_id,)).fetchone()
+                audit = db.execute("SELECT actor_id,event FROM option_paper_audit WHERE order_id=?", (order_id,)).fetchone()
+                if (position is None or audit is None
+                        or position != (lot_size * lots, float(verified["ask"]), str(verified["security_id"]), "paper")
+                        or audit != (actor_id, "paper_option_buy_recorded")):
+                    raise RuntimeError("paper ledger replay integrity check failed")
             else:
                 cur = db.execute("INSERT INTO option_paper_orders(actor_id,idem_key,fingerprint,payload,created_at) VALUES(?,?,?,?,?)",
                                  (actor_id,key,fingerprint,json.dumps(payload,sort_keys=True),now))
