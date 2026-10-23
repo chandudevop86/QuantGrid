@@ -43,3 +43,11 @@ def test_invalid_price_and_identity_rejected(tmp_path):
         record_verified_paper_buy(tmp_path / "paper.sqlite", "trader-1",
                                   "request-key-000001",
                                   {**verified(), "ask": float("nan")})
+
+
+@pytest.mark.parametrize("bad_price", [None, "50", True, float("inf"), float("nan")])
+def test_invalid_paper_price_fails_closed(tmp_path, bad_price):
+    with pytest.raises(ValueError):
+        record_verified_paper_buy(tmp_path / "paper.sqlite", "trader-1",
+                                  "request-key-000001",
+                                  {**verified(), "ask": bad_price})
