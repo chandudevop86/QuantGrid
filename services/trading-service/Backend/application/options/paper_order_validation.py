@@ -47,11 +47,17 @@ def validate_option_paper_order(*, symbol, side, spot, strike, expiry,
         reasons.extend(check["reasons"])
     except (TypeError, ValueError, OverflowError):
         reasons.append("invalid_contract_data")
-    if ask is None or not isfinite(float(ask)) or float(ask) <= 0:
+    try:
+        premium = float(ask)
+        valid_premium = isfinite(premium) and premium > 0
+    except (TypeError, ValueError, OverflowError):
+        premium = 0.0
+        valid_premium = False
+    if not valid_premium:
         reasons.append("invalid_premium")
         estimated_cost = None
     elif isinstance(lot_size, int) and isinstance(lots, int) and lot_size > 0 and lots > 0:
-        estimated_cost = float(ask) * lot_size * lots
+        estimated_cost = premium * lot_size * lots
         if estimated_cost > max_premium_rupees:
             reasons.append("premium_risk_limit_exceeded")
     else:
