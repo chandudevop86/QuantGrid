@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { api } from "../api";
 
 export type OptionBuyerRow = { strike: number; ce?: any; pe?: any };
 export type OptionBuyerProps = {
@@ -47,6 +48,9 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
   const [side, setSide] = useState<"CE" | "PE">("PE");
   const [chosen, setChosen] = useState<number | null>(null);
   const [lots, setLots] = useState(1);
+  const [preview, setPreview] = useState<any>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const ordered = useMemo(() => [...rows].filter(row => Number.isFinite(row.strike)).sort((a,b) => a.strike-b.strike), [rows]);
   const selected = ordered.find(row => row.strike === chosen) ?? ordered.reduce<OptionBuyerRow | null>((best, row) => !best || Math.abs(row.strike-spot) < Math.abs(best.strike-spot) ? row : best, null);
   const strike = selected?.strike ?? 0;
@@ -79,6 +83,15 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
     <label htmlFor="buyer-lots">Paper lots (preview)</label>{" "}
     <input id="buyer-lots" type="number" min={1} max={10} step={1} value={lots} onChange={e=>setLots(Math.max(1,Math.min(10,Math.trunc(Number(e.target.value)||1))))}/>
     <p>Maximum option premium loss: {price===null ? "Unavailable" : `₹${(price*lots).toFixed(2)} × exchange lot size`} plus costs.</p>
+    <button type="button" disabled={!providerReady || !selected || previewBusy} onClick={() => {
+      setPreview(null); setPreviewError(null); setPreviewBusy(true);
+      api.optionBuyerPreview(strike, side)
+        .then(setPreview)
+        .catch((err: any) => setPreviewError(err?.response?.data?.detail ?? "Provider preview unavailable"))
+        .finally(() => setPreviewBusy(false));
+    }}>{previewBusy ? "Verifying…" : "Verify contract with server"}</button>
+    {previewError && <p role="alert">{previewError}</p>}
+    {preview && <p role="status">Provider verified contract ID: {preview.security_id}. {preview.reason}</p>}
     <p>Expiry break-even: {price===null ? "Unavailable" : (side==="CE" ? strike+price : strike-price).toFixed(2)}</p>
     <button type="button" disabled title="Paper order submission requires a separately verified server-side paper-only endpoint">Paper order disabled pending backend validation</button>
   </section>;
