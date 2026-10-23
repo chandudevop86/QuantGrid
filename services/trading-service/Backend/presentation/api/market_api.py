@@ -1121,6 +1121,39 @@ def post_volume_analysis(
     return result.to_dict()
 
 
+
+@router.get("/option-buyer/preview")
+def preview_option_buyer(
+    strike: int,
+    side: str = "PE",
+    _access=Depends(require_entitlement("options.basic")),
+):
+    """Read-only provider-backed preview; never creates orders."""
+    normalized_side = side.upper()
+    if normalized_side not in {"CE", "PE"} or strike <= 0:
+        raise HTTPException(status_code=422, detail="Valid CE/PE side and positive strike required.")
+    try:
+        rows, expiry = _dhan_option_rows("NIFTY", [strike])
+    except Exception as exc:
+        logger.warning("option_buyer_preview_provider_error", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Verified option provider quote unavailable.") from exc
+    leg = (rows[0].get(normalized_side.lower()) if rows else None) or {}
+    security_id = str(leg.get("security_id") or "")
+    if not security_id.isdigit():
+        raise HTTPException(status_code=503, detail="Provider did not supply a valid option contract security ID.")
+    return {
+        "symbol": "NIFTY",
+        "strike": strike,
+        "side": normalized_side,
+        "expiry": expiry,
+        "security_id": security_id,
+        "source": "dhan-option-chain",
+        "quote": leg,
+        "paper_order_enabled": False,
+        "reason": "Read-only preview: authoritative exchange lot size, per-quote timestamp, and execution controls are not yet verified.",
+    }
+
+
 @router.get("/option-candles/{security_id}")
 def get_option_candles(
     security_id: str,
