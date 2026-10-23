@@ -51,3 +51,10 @@ def test_invalid_paper_price_fails_closed(tmp_path, bad_price):
         record_verified_paper_buy(tmp_path / "paper.sqlite", "trader-1",
                                   "request-key-000001",
                                   {**verified(), "ask": bad_price})
+
+
+def test_unprovisioned_storage_directory_rejected(tmp_path):
+    missing = tmp_path / "unmounted" / "paper.sqlite"
+    with pytest.raises(FileNotFoundError):
+        record_verified_paper_buy(missing, "trader-1", "request-key-000001", verified())
+    assert not missing.parent.exists()
