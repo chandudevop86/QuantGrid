@@ -1191,7 +1191,10 @@ def preview_option_buyer(
         "source": "dhan-option-chain",
         "quote": leg,
         "paper_order_enabled": False,
-        "reason": "Read-only preview: authoritative exchange lot size, per-quote timestamp, and execution controls are not yet verified.",
+        "quote_timestamp": leg.get("quote_timestamp"),
+        "quote_freshness_verified": False,
+        "exchange_lot_size_verified": False,
+        "reason": "Read-only preview: authoritative exchange lot size and quote freshness are not verified for execution.",
     }
 
 
