@@ -16,6 +16,8 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from Backend.application.kill_switch import kill_switch_status
 
 from Backend.infrastructure.http_safety import require_https_url
 
@@ -1119,6 +1121,75 @@ def post_volume_analysis(
         delivery_data=payload.get("delivery_data") if isinstance(payload.get("delivery_data"), list) else None,
     )
     return result.to_dict()
+
+
+
+class OptionBuyerPaperRequest(BaseModel):
+    symbol: str = "NIFTY"
+    side: Literal["CE", "PE"]
+    strike: int = Field(gt=0)
+    lots: int = Field(ge=1, le=10)
+    execution_mode: Literal["paper"] = "paper"
+    idempotency_key: str = Field(min_length=16, max_length=128)
+
+
+@router.post("/option-buyer/paper-order")
+def submit_option_buyer_paper_order(
+    payload: OptionBuyerPaperRequest,
+    _access=Depends(require_entitlement("options.basic")),
+):
+    """Fail-closed option order gate. Never route to brokers or paper ledger."""
+    actor = getattr(_access, "user", None)
+    if actor is None or getattr(actor, "role", None) not in {"admin", "trader", "quant"}:
+        raise HTTPException(status_code=403, detail="Trading role required.")
+    if payload.symbol != "NIFTY" or payload.execution_mode != "paper":
+        raise HTTPException(status_code=422, detail="Only NIFTY paper trading is allowed.")
+    try:
+        switch = kill_switch_status(fresh=True)
+    except Exception as exc:
+        logger.error("option_buyer_kill_switch_unavailable", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Trading safety state unavailable.") from exc
+    if not isinstance(switch, dict) or switch.get("active") is not False:
+        raise HTTPException(status_code=423, detail="Trading kill switch active or unverified.")
+    # A client may never supply contract identity, lot size, pricing or Greeks.
+    # A verified contract-master and provider per-quote timestamp are not yet
+    # exposed by _dhan_option_rows, so no safe persistence is possible.
+    raise HTTPException(
+        status_code=503,
+        detail="Paper orders disabled until independently verified exchange lot size, quote timestamp and atomic idempotent persistence are available.",
+    )
+
+
+@router.get("/option-buyer/preview")
+def preview_option_buyer(
+    strike: int,
+    side: str = "PE",
+    _access=Depends(require_entitlement("options.basic")),
+):
+    """Read-only provider-backed preview; never creates orders."""
+    normalized_side = side.upper()
+    if normalized_side not in {"CE", "PE"} or strike <= 0:
+        raise HTTPException(status_code=422, detail="Valid CE/PE side and positive strike required.")
+    try:
+        rows, expiry = _dhan_option_rows("NIFTY", [strike])
+    except Exception as exc:
+        logger.warning("option_buyer_preview_provider_error", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Verified option provider quote unavailable.") from exc
+    leg = (rows[0].get(normalized_side.lower()) if rows else None) or {}
+    security_id = str(leg.get("security_id") or "")
+    if not security_id.isdigit():
+        raise HTTPException(status_code=503, detail="Provider did not supply a valid option contract security ID.")
+    return {
+        "symbol": "NIFTY",
+        "strike": strike,
+        "side": normalized_side,
+        "expiry": expiry,
+        "security_id": security_id,
+        "source": "dhan-option-chain",
+        "quote": leg,
+        "paper_order_enabled": False,
+        "reason": "Read-only preview: authoritative exchange lot size, per-quote timestamp, and execution controls are not yet verified.",
+    }
 
 
 @router.get("/option-candles/{security_id}")
