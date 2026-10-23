@@ -486,7 +486,7 @@ def operations(
         },
     }
     mark_stage("payload_build")
-    logger.info("dashboard_stage_timings", extra={"stage_seconds": stage_seconds, "total_seconds": round(perf_counter() - started_at, 4)})
+    logger.info("dashboard_stage_timings total_seconds=%.4f stages=%s", perf_counter() - started_at, stage_seconds)
     return _filter_operations(payload, access)
 
 
