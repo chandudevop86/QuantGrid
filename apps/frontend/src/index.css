@@ -4511,3 +4511,19 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   font-weight: 500;
   line-height: 1.6;
 }
+
+
+/* Option Buyer: scoped dark dashboard controls and fail-closed status. */
+.option-buyer-panel { min-width: 0; }
+.option-buyer-panel .option-buyer-direction { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.option-buyer-panel .option-buyer-side { border: 1px solid #334155; border-radius: 10px; background: #172338; color: #e2e8f0; padding: 10px 20px; font: inherit; font-weight: 700; cursor: pointer; }
+.option-buyer-panel .option-buyer-side[aria-pressed="true"] { border-color: #38bdf8; background: #123a57; color: #e0f2fe; }
+.option-buyer-panel .option-buyer-side:focus-visible, .option-buyer-panel select:focus-visible, .option-buyer-panel input:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+.option-buyer-panel .option-buyer-field { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; margin: 16px 0; }
+.option-buyer-panel .option-buyer-field label { color: #cbd5e1; font-weight: 600; }
+.option-buyer-panel .option-buyer-field select, .option-buyer-panel .option-buyer-field input { box-sizing: border-box; width: min(100%, 340px); min-height: 42px; padding: 8px 12px; border: 1px solid #475569; border-radius: 9px; background: #0f172a; color: #f8fafc; font: inherit; }
+.option-buyer-panel .metric-grid { min-width: 0; }
+.option-buyer-panel .metric-card { min-width: 0; overflow-wrap: anywhere; }
+.option-buyer-panel .option-buyer-screening { font-weight: 700; }
+.option-buyer-panel .option-buyer-execution { border-left: 3px solid #f59e0b; padding: 10px 12px; background: rgba(245,158,11,.08); border-radius: 4px; }
+.option-buyer-panel button:disabled { cursor: not-allowed; opacity: .65; }
