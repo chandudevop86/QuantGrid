@@ -16,6 +16,9 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from Backend.application.options.paper_order_validation import validate_option_paper_order
+from Backend.application.kill_switch import kill_switch_status
 
 from Backend.infrastructure.http_safety import require_https_url
 
@@ -1120,6 +1123,37 @@ def post_volume_analysis(
     )
     return result.to_dict()
 
+
+
+class OptionBuyerPaperRequest(BaseModel):
+    symbol: str = "NIFTY"
+    side: Literal["CE", "PE"]
+    strike: int = Field(gt=0)
+    lots: int = Field(ge=1, le=10)
+    execution_mode: Literal["paper"] = "paper"
+    idempotency_key: str = Field(min_length=16, max_length=128)
+
+
+@router.post("/option-buyer/paper-order")
+def submit_option_buyer_paper_order(
+    payload: OptionBuyerPaperRequest,
+    _access=Depends(require_entitlement("options.basic")),
+):
+    """Fail-closed option order gate. Never route to brokers or paper ledger."""
+    actor = getattr(_access, "user", None)
+    if actor is None or getattr(actor, "role", None) not in {"admin", "trader", "quant"}:
+        raise HTTPException(status_code=403, detail="Trading role required.")
+    if payload.symbol != "NIFTY" or payload.execution_mode != "paper":
+        raise HTTPException(status_code=422, detail="Only NIFTY paper trading is allowed.")
+    if kill_switch_status().get("active"):
+        raise HTTPException(status_code=423, detail="Trading kill switch is active.")
+    # A client may never supply contract identity, lot size, pricing or Greeks.
+    # A verified contract-master and provider per-quote timestamp are not yet
+    # exposed by _dhan_option_rows, so no safe persistence is possible.
+    raise HTTPException(
+        status_code=503,
+        detail="Paper orders disabled until independently verified exchange lot size, quote timestamp and atomic idempotent persistence are available.",
+    )
 
 
 @router.get("/option-buyer/preview")
