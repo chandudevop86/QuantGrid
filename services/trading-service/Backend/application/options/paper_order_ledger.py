@@ -36,7 +36,10 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
     payload = {k: verified[k] for k in required}
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, allow_nan=False).encode()).hexdigest()
     path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # The configured storage directory must already exist. Do not silently
+    # create a new ledger on an unexpected filesystem or ephemeral mount.
+    if not path.parent.is_dir():
+        raise FileNotFoundError("paper ledger directory is not provisioned")
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
         db.execute("PRAGMA busy_timeout=30000")
