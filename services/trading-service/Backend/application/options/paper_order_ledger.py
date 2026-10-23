@@ -30,7 +30,8 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
     if (not str(verified["security_id"]).isdigit()
             or type(lot_size) is not int or type(lots) is not int
             or lot_size <= 0 or not 1 <= lots <= 10
-            or not math.isfinite(float(verified["ask"])) or float(verified["ask"]) <= 0):
+            or type(verified["ask"]) not in (int, float)
+            or not math.isfinite(verified["ask"]) or verified["ask"] <= 0):
         raise ValueError("invalid quantities or price")
     payload = {k: verified[k] for k in required}
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, allow_nan=False).encode()).hexdigest()
