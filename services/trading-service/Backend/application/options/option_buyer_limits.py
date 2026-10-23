@@ -18,7 +18,7 @@ def check_live_budget(*, ask: float, lot_size: int, lots: int,
     """Preflight only; real orders also require atomic reservation and broker checks."""
     reasons = []
     values = (ask, existing_open_premium_rupees, pending_reserved_premium_rupees)
-    if not all(isfinite(float(v)) and float(v) >= 0 for v in values):
+    if not all(type(v) in (int, float) and isfinite(v) and v >= 0 for v in values):
         reasons.append("invalid_exposure_or_quote")
     if type(lot_size) is not int or lot_size <= 0 or type(lots) is not int or not 1 <= lots <= limits.live_max_lots_per_order:
         reasons.append("invalid_lot_size_or_count")

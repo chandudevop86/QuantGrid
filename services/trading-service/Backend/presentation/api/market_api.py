@@ -713,6 +713,9 @@ def _dhan_leg_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "greeks": greeks,
         "bid": bid if bid["price"] is not None or bid["quantity"] is not None else None,
         "ask": ask if ask["price"] is not None or ask["quantity"] is not None else None,
+        # Never substitute the time the HTTP response was fetched for the
+        # actual exchange quote timestamp. Missing timestamps block orders.
+        "quote_timestamp": _first_present(payload, "quote_timestamp", "quoteTimestamp", "exchange_timestamp", "exchangeTimestamp", "timestamp"),
     }
 
 
