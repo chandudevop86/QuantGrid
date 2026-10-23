@@ -16,8 +16,16 @@ describe("NIFTY option buyer", () => {
     expect(screenBuyerContract(22455,21600,"PE",leg,true,new Date()).reasons).toContain("Strike category excluded by default policy");
   });
   it("passes complete fresh eligible paper research data", () => {
-    const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5} };
+    const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5},quote_timestamp:new Date().toISOString() };
     expect(screenBuyerContract(22455,22450,"PE",leg,true,new Date()).eligible).toBe(true);
+  });
+  it("blocks missing exchange quote timestamps even after a fresh UI refresh", () => {
+    const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5} };
+    expect(screenBuyerContract(22455,22450,"PE",leg,true,new Date()).reasons).toContain("Exchange quote timestamp missing, future or older than 30 seconds");
+  });
+  it("blocks stale exchange quotes even with valid contract fields", () => {
+    const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5},quote_timestamp:new Date(Date.now()-60000).toISOString() };
+    expect(screenBuyerContract(22455,22450,"PE",leg,true,new Date()).reasons).toContain("Exchange quote timestamp missing, future or older than 30 seconds");
   });
   it("blocks stale and unverified data", () => {
     const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5} };
