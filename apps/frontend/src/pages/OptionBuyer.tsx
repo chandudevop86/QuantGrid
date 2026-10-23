@@ -62,18 +62,18 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
   const check = screenBuyerContract(spot, strike, side, leg, providerReady, refreshedAt);
   const price = check.ask;
   const intrinsic = Math.max(0, side === "CE" ? spot-strike : strike-spot);
-  return <section className="dashboard-section" aria-label="NIFTY option buyer">
+  return <section className="dashboard-section option-buyer-panel" aria-label="NIFTY option buyer">
     <div className="section-header"><div><span className="page-eyebrow">Research / paper-only</span><h2>NIFTY Option Buyer</h2><p>Choose a contract and inspect risk. No broker order is sent from this panel.</p></div></div>
-    <div role="group" aria-label="Option direction">
-      <button type="button" aria-pressed={side==="CE"} onClick={()=>{setSide("CE");setPreview(null);}}>Buy CE</button>{" "}
-      <button type="button" aria-pressed={side==="PE"} onClick={()=>{setSide("PE");setPreview(null);}}>Buy PE</button>
+    <div className="option-buyer-direction" role="group" aria-label="Option direction">
+      <button className="option-buyer-side" type="button" aria-pressed={side==="CE"} onClick={()=>{setSide("CE");setPreview(null);}}>Buy CE</button>{" "}
+      <button className="option-buyer-side" type="button" aria-pressed={side==="PE"} onClick={()=>{setSide("PE");setPreview(null);}}>Buy PE</button>
     </div>
     <p>Spot: {Number.isFinite(spot) && spot>0 ? spot.toLocaleString("en-IN") : "Unavailable"} · Expiry: {expiry || "Unavailable"}</p>
-    <label htmlFor="buyer-strike">Strike</label>{" "}
+    <div className="option-buyer-field"><label htmlFor="buyer-strike">Strike</label>
     <select id="buyer-strike" value={strike || ""} onChange={event=>{setChosen(Number(event.target.value));setPreview(null);}}>
       {!selected && <option value="">No verified contracts</option>}
       {ordered.map(row=><option key={row.strike} value={row.strike}>{row.strike} · {classifyOption(spot,row.strike,side)}</option>)}
-    </select>
+    </select></div>
     <div className="metric-grid" aria-label="Buyer contract details">
       <div className="metric-card"><span className="metric-label">Moneyness</span><strong>{check.category}</strong></div>
       <div className="metric-card"><span className="metric-label">Ask / Bid</span><strong>{price ?? "-"} / {check.bid ?? "-"}</strong></div>
@@ -82,10 +82,10 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
       <div className="metric-card"><span className="metric-label">Theta / Vega</span><strong>{numeric(leg?.greeks?.theta ?? leg?.theta) ?? "-"} / {numeric(leg?.greeks?.vega ?? leg?.vega) ?? "-"}</strong></div>
       <div className="metric-card"><span className="metric-label">IV / OI</span><strong>{numeric(leg?.iv ?? leg?.implied_volatility) ?? "-"} / {check.oi ?? "-"}</strong></div>
     </div>
-    <p role="status">{check.eligible ? "Screening passed (not a trade recommendation)" : "Screening blocked"}</p>
+    <p className="option-buyer-screening" role="status">{check.eligible ? "Screening passed (not a trade recommendation)" : "Screening blocked"}</p>
     {check.reasons.length>0 && <ul aria-label="Contract rejection reasons">{check.reasons.map(reason=><li key={reason}>{reason}</li>)}</ul>}
-    <label htmlFor="buyer-lots">Paper lots (preview)</label>{" "}
-    <input id="buyer-lots" type="number" min={1} max={10} step={1} value={lots} onChange={e=>setLots(Math.max(1,Math.min(10,Math.trunc(Number(e.target.value)||1))))}/>
+    <div className="option-buyer-field"><label htmlFor="buyer-lots">Paper lots (preview)</label>
+    <input id="buyer-lots" type="number" min={1} max={10} step={1} value={lots} onChange={e=>setLots(Math.max(1,Math.min(10,Math.trunc(Number(e.target.value)||1))))}/></div>
     <p>Maximum option premium loss: {price===null ? "Unavailable" : `₹${(price*lots).toFixed(2)} × exchange lot size`} plus costs.</p>
     <button type="button" disabled={!providerReady || !selected || previewBusy} onClick={() => {
       setPreview(null); setPreviewError(null); setPreviewBusy(true);
@@ -97,7 +97,7 @@ export default function OptionBuyer({ spot, rows, expiry, providerReady, refresh
     {previewError && <p role="alert">{previewError}</p>}
     {preview && <p role="status">Provider contract ID (not exchange-master verified): {preview.security_id}. Quote timestamp: {preview.quote_timestamp || "Unavailable"}. {preview.reason}</p>}
     <p>Expiry break-even: {price===null ? "Unavailable" : (side==="CE" ? strike+price : strike-price).toFixed(2)}</p>
-    <p role="status">Execution status: Disabled — exchange contract-master verification and authenticated paper-order persistence are not connected.</p>
+    <p className="option-buyer-execution" role="status">Execution status: Disabled — exchange contract-master verification and authenticated paper-order persistence are not connected.</p>
     <button type="button" disabled title="Paper order submission requires a separately verified server-side paper-only endpoint">Paper order disabled pending backend validation</button>
   </section>;
 }
