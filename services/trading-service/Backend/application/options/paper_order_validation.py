@@ -10,7 +10,7 @@ from Backend.application.options.strike_selection import evaluate_contract
 def validate_option_paper_order(*, symbol, side, spot, strike, expiry,
                                 security_id, bid, ask, open_interest, delta,
                                 quote_timestamp, lot_size, lots,
-                                execution_mode="paper", max_premium_rupees=10000):
+                                execution_mode="paper", max_premium_rupees=5000):
     reasons = []
     if execution_mode != "paper":
         reasons.append("live_execution_forbidden")
