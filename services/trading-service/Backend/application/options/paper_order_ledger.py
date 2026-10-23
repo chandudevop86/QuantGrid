@@ -43,6 +43,7 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
         db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA foreign_keys=ON")
         db.execute("BEGIN IMMEDIATE")
         try:
             db.execute("""CREATE TABLE IF NOT EXISTS option_paper_orders (
@@ -50,12 +51,12 @@ def record_verified_paper_buy(db_path, actor_id, key, verified):
                 fingerprint TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL,
                 UNIQUE(actor_id, idem_key))""")
             db.execute("""CREATE TABLE IF NOT EXISTS option_paper_positions (
-                id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE,
+                id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES option_paper_orders(id),
                 security_id TEXT NOT NULL, quantity INTEGER NOT NULL,
                 entry_price REAL NOT NULL, status TEXT NOT NULL CHECK(status='open'),
                 execution_mode TEXT NOT NULL CHECK(execution_mode='paper'))""")
             db.execute("""CREATE TABLE IF NOT EXISTS option_paper_audit (
-                id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE,
+                id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL UNIQUE REFERENCES option_paper_orders(id),
                 actor_id TEXT NOT NULL, event TEXT NOT NULL, created_at TEXT NOT NULL)""")
             row = db.execute("SELECT id,fingerprint FROM option_paper_orders WHERE actor_id=? AND idem_key=?",
                              (actor_id,key)).fetchone()
