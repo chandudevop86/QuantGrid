@@ -111,6 +111,8 @@ export const api = {
     API.get("/market/feed/health", { params: { symbol, interval } }).then((res) => res.data),
   ltp: (symbol = "NIFTY") => API.get(`/market/ltp/${symbol}`).then((res) => res.data),
   getPrice: () => API.get("/market/price").then((res) => res.data),
+  optionBuyerPreview: (strike: number, side: "CE" | "PE") =>
+    API.get("/market/option-buyer/preview", { params: { strike, side } }).then((res) => res.data),
   optionChain: (symbol = "NIFTY") =>
     API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
   optionCandles: (securityId: string, interval = "1m", contract?: { symbol?: string; strike?: number; side?: "CE" | "PE" }) =>
