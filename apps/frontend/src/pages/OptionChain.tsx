@@ -13,7 +13,7 @@ type SelectedContract = {
 };
 
 function formatNumber(value: unknown) {
-  const numeric = Number(value);
+  const numeric = value === null || value === undefined || value === "" ? NaN : Number(value);
   return Number.isFinite(numeric) ? numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "-";
 }
 
@@ -26,7 +26,7 @@ function optionValue(option: any, ...keys: string[]) {
 }
 
 function changeTone(value: unknown) {
-  const numeric = Number(value);
+  const numeric = value === null || value === undefined || value === "" ? NaN : Number(value);
   return Number.isFinite(numeric) && numeric !== 0 ? (numeric > 0 ? "is-positive" : "is-negative") : "";
 }
 
@@ -147,7 +147,7 @@ export default function OptionChain() {
   };
 
   const refreshLabel = lastRefreshed
-    ? `Updated ${lastRefreshed.toLocaleTimeString()}`
+    ? `Dashboard refreshed ${lastRefreshed.toLocaleTimeString()}`
     : "Auto refresh every 60s";
   const usingSynthetic = String(chain?.source ?? "").includes("synthetic") || Boolean(chain?.synthetic);
   const isProviderBacked = ["dhan-option-chain", "yahoo-finance-options", "live", "live-nse-chain"].includes(String(chain?.source ?? ""));
@@ -178,13 +178,13 @@ export default function OptionChain() {
   const visibleHistory = historyIsSynthetic ? [] : history?.snapshots ?? [];
   const derivatives = useMemo(() => {
     if (!providerRows.length) return null;
-    const aggregate = providerRows.reduce((totals: { callOi: number; putOi: number; callChange: number; putChange: number; iv: number[]; callWall: any; putWall: any }, row: any) => {
+    const aggregate = providerRows.reduce((totals: { callOi: number; putOi: number; callChange: number; putChange: number; callChangeComplete: boolean; putChangeComplete: boolean; iv: number[]; callWall: any; putWall: any }, row: any) => {
       const callOi = Number(row.ce?.oi ?? 0), putOi = Number(row.pe?.oi ?? 0);
       const callWall = callOi > Number(totals.callWall?.ce?.oi ?? 0) ? row : totals.callWall;
       const putWall = putOi > Number(totals.putWall?.pe?.oi ?? 0) ? row : totals.putWall;
       const ivs = [optionValue(row.ce, "iv", "implied_volatility"), optionValue(row.pe, "iv", "implied_volatility")].map(Number).filter(Number.isFinite);
-      return { callOi: totals.callOi + callOi, putOi: totals.putOi + putOi, callChange: totals.callChange + Number(optionValue(row.ce, "change_oi", "chg_oi", "oi_change") ?? 0), putChange: totals.putChange + Number(optionValue(row.pe, "change_oi", "chg_oi", "oi_change") ?? 0), iv: [...totals.iv, ...ivs], callWall, putWall };
-    }, { callOi: 0, putOi: 0, callChange: 0, putChange: 0, iv: [] as number[], callWall: null, putWall: null });
+      return { callOi: totals.callOi + callOi, putOi: totals.putOi + putOi, callChange: totals.callChange + Number(optionValue(row.ce, "change_oi", "chg_oi", "oi_change") ?? 0), putChange: totals.putChange + Number(optionValue(row.pe, "change_oi", "chg_oi", "oi_change") ?? 0), callChangeComplete: totals.callChangeComplete && optionValue(row.ce, "change_oi", "chg_oi", "oi_change") != null && Number.isFinite(Number(optionValue(row.ce, "change_oi", "chg_oi", "oi_change"))), putChangeComplete: totals.putChangeComplete && optionValue(row.pe, "change_oi", "chg_oi", "oi_change") != null && Number.isFinite(Number(optionValue(row.pe, "change_oi", "chg_oi", "oi_change"))), iv: [...totals.iv, ...ivs], callWall, putWall };
+    }, { callOi: 0, putOi: 0, callChange: 0, putChange: 0, callChangeComplete: true, putChangeComplete: true, iv: [] as number[], callWall: null, putWall: null });
     return { ...aggregate, averageIv: aggregate.iv.length ? aggregate.iv.reduce((total, value) => total + value, 0) / aggregate.iv.length : null };
   }, [providerRows]);
 
@@ -193,7 +193,7 @@ export default function OptionChain() {
       <div className="page-heading dashboard-heading">
         <div>
           <h1>Option Chain</h1>
-          <p>Live broker option-chain data, real OI, real PCR, and chain-derived signals.</p>
+          <p>Broker-sourced option-chain data, OI, PCR, and chain-derived research. Refresh time is not exchange quote time.</p>
         </div>
         <button
           type="button"
@@ -286,7 +286,7 @@ export default function OptionChain() {
           <div><dt>Support</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.support)}</dd></div>
           <div><dt>Resistance</dt><dd>{usingSynthetic || chainUnavailable ? "-" : formatNumber(chain?.resistance)}</dd></div>
         </dl>
-        <div className="option-chain-source"><span className={isProviderBacked ? "status-dot is-live" : "status-dot"} />{isProviderBacked ? "Live provider" : "Provider unavailable"}<small>{refreshLabel}</small></div>
+        <div className="option-chain-source"><span className={isProviderBacked ? "status-dot is-live" : "status-dot"} />{isProviderBacked ? "Broker-sourced chain" : "Provider unavailable"}<small>{refreshLabel}</small></div>
       </div>
 
       <OptionBuyer spot={Number(chain?.spot ?? chain?.underlying_price ?? 0)} rows={providerRows} expiry={chain?.expiry} providerReady={isProviderBacked && !usingSynthetic && !chainUnavailable} refreshedAt={chain?.quote_timestamp ? new Date(chain.quote_timestamp) : null} />
@@ -294,7 +294,7 @@ export default function OptionChain() {
       {derivatives && <section className="option-derivatives-grid" aria-label="Open interest and implied volatility analysis">
         <article><span>Call OI wall</span><strong>{formatNumber(derivatives.callWall?.strike)}</strong><small>{formatNumber(derivatives.callWall?.ce?.oi)} contracts · potential resistance</small></article>
         <article><span>Put OI wall</span><strong>{formatNumber(derivatives.putWall?.strike)}</strong><small>{formatNumber(derivatives.putWall?.pe?.oi)} contracts · potential support</small></article>
-        <article><span>Net OI build-up</span><strong className={derivatives.putChange - derivatives.callChange >= 0 ? "is-positive" : "is-negative"}>{formatNumber(Math.abs(derivatives.putChange - derivatives.callChange))}</strong><small>{derivatives.putChange - derivatives.callChange >= 0 ? "Put-side build-up" : "Call-side build-up"} · calls {formatNumber(derivatives.callChange)} / puts {formatNumber(derivatives.putChange)}</small></article>
+        <article><span>Net OI build-up</span><strong className={derivatives.callChangeComplete && derivatives.putChangeComplete ? (derivatives.putChange - derivatives.callChange >= 0 ? "is-positive" : "is-negative") : ""}>{derivatives.callChangeComplete && derivatives.putChangeComplete ? formatNumber(Math.abs(derivatives.putChange - derivatives.callChange)) : "Unavailable"}</strong><small>{derivatives.callChangeComplete && derivatives.putChangeComplete ? (derivatives.putChange - derivatives.callChange >= 0 ? "Put-side build-up" : "Call-side build-up") : "Change in OI not supplied"} · calls {derivatives.callChangeComplete ? formatNumber(derivatives.callChange) : "Unavailable"} / puts {derivatives.putChangeComplete ? formatNumber(derivatives.putChange) : "Unavailable"}</small></article>
         <article><span>Average IV</span><strong>{derivatives.averageIv === null ? "-" : `${derivatives.averageIv.toFixed(2)}%`}</strong><small>{formatNumber(derivatives.callOi + derivatives.putOi)} total open interest</small></article>
       </section>}
 
