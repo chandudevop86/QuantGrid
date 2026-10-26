@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 import threading
+import multiprocessing
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,6 +24,32 @@ from Backend.application.quant_modules import backtesting_module
 BACKTEST_STATES = {"QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"}
 DEFAULT_STRATEGIES = ["amd", "breakout", "btst", "cbt", "crt_tbs", "mean_reversion", "mtf", "mtfa", "supply_demand"]
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="quantgrid-backtest")
+# Opt-in: run CPU-intensive calculations in separate processes. Job lifecycle,
+# durable progress, and cancellation checks remain in the original coordinator.
+_CALCULATION_POOL: ProcessPoolExecutor | None = None
+_CALCULATION_POOL_LOCK = threading.Lock()
+
+
+def _calculate_in_process(payload: dict[str, Any]) -> dict[str, Any]:
+    # Import in the spawned child; never share parent SQLAlchemy connections.
+    from Backend.application.quant_modules import backtesting_module as calculate
+    return calculate(payload)
+
+
+def _run_calculation(payload: dict[str, Any]) -> dict[str, Any]:
+    if os.getenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "0").strip().lower() not in {"1", "true", "yes"}:
+        return backtesting_module(payload)
+    global _CALCULATION_POOL
+    with _CALCULATION_POOL_LOCK:
+        if _CALCULATION_POOL is None:
+            _CALCULATION_POOL = ProcessPoolExecutor(
+                max_workers=2, mp_context=multiprocessing.get_context("spawn")
+            )
+        pool = _CALCULATION_POOL
+    # Wait without holding the job-state lock; other API requests can poll or
+    # request cancellation while the current strategy finishes.
+    return pool.submit(_calculate_in_process, payload).result()
+
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}
 _RECOVERED = False
@@ -138,7 +166,7 @@ def _run_backtest_job(job_id: str) -> None:
                 current.updated_at = _utc_now()
                 _persist_job(current)
 
-            result = backtesting_module(_strategy_payload(job.payload, strategy))
+            result = _run_calculation(_strategy_payload(job.payload, strategy))
             metrics = result.get("metrics", {})
             run = {
                 "strategy": strategy,
