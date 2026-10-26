@@ -54,42 +54,49 @@ app = FastAPI(
 DEFAULT_MENU = [
     {
         "name": "Idli",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("12"),
         "image": "idli_plate_chutney_sambar.jpg",
         "category": "Tiffin",
     },
     {
         "name": "Upma",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("12"),
         "image": "suji_upma_breakfast.jpg",
         "category": "Tiffin",
     },
     {
         "name": "Vada",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("14"),
         "image": "medu_vada_sambar_chutney.jpg",
         "category": "Tiffin",
     },
     {
         "name": "Mysore Bajji",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("14"),
         "image": "mysore_bonda_bajji.jpg",
         "category": "Tiffin",
     },
     {
+        "name": "Onion Bonda",
+        "price": Decimal("50"),
+        "food_cost": Decimal("14"),
+        "image": "onion_bonda.jpg",
+        "category": "Tiffin",
+    },
+    {
         "name": "Plain Dosa",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("12"),
         "image": "plain_crispy_dosa.jpg",
         "category": "Dosa",
     },
     {
         "name": "Puri",
-        "price": Decimal("40"),
+        "price": Decimal("50"),
         "food_cost": Decimal("15"),
         "image": "puri_aloo_curry.jpg",
         "category": "Tiffin",
@@ -131,35 +138,35 @@ DEFAULT_MENU = [
     },
     {
         "name": "Upma Dosa",
-        "price": Decimal("50"),
+        "price": Decimal("60"),
         "food_cost": Decimal("18"),
         "image": "upma_filled_dosa.jpg",
         "category": "Dosa",
     },
     {
         "name": "Rava Dosa",
-        "price": Decimal("50"),
+        "price": Decimal("60"),
         "food_cost": Decimal("17"),
         "image": "crispy_rava_dosa.jpg",
         "category": "Dosa",
     },
     {
         "name": "Onion Dosa",
-        "price": Decimal("50"),
+        "price": Decimal("60"),
         "food_cost": Decimal("18"),
         "image": "onion_dosa_roast.jpg",
         "category": "Dosa",
     },
     {
         "name": "Masala Dosa",
-        "price": Decimal("50"),
+        "price": Decimal("60"),
         "food_cost": Decimal("18"),
         "image": "masala_dosa.jpg",
         "category": "Dosa",
     },
     {
         "name": "Pesara",
-        "price": Decimal("50"),
+        "price": Decimal("60"),
         "food_cost": Decimal("18"),
         "image": "pesara_dosa.jpg",
         "category": "Pesara",
@@ -299,7 +306,7 @@ def initialize_foodtruck_tables():
                         (name, price, food_cost, image, category, available)
                     VALUES
                         (:name, :price, :food_cost, :image, :category, TRUE)
-                    ON CONFLICT (name) DO NOTHING
+                    ON CONFLICT (name) DO UPDATE SET price = EXCLUDED.price, updated_at = CURRENT_TIMESTAMP
                     """
                 ),
                 item,
@@ -572,12 +579,12 @@ def create_order(payload: CreateOrder):
             )
 
     subtotal = sum(
-        item.price * item.quantity
+        Decimal(str(menu_by_name[item.name]["price"])) * item.quantity
         for item in payload.items
     )
 
     food_cost = sum(
-        item.food_cost * item.quantity
+        Decimal(str(menu_by_name[item.name]["food_cost"])) * item.quantity
         for item in payload.items
     )
 
@@ -628,8 +635,10 @@ def create_order(payload: CreateOrder):
         ).scalar_one()
 
         for item in payload.items:
-            line_total = item.price * item.quantity
-            line_food_cost = item.food_cost * item.quantity
+            unit_price = Decimal(str(menu_by_name[item.name]["price"]))
+            unit_food_cost = Decimal(str(menu_by_name[item.name]["food_cost"]))
+            line_total = unit_price * item.quantity
+            line_food_cost = unit_food_cost * item.quantity
 
             conn.execute(
                 text(
@@ -660,8 +669,8 @@ def create_order(payload: CreateOrder):
                     "order_id": order_id,
                     "name": item.name,
                     "quantity": item.quantity,
-                    "price": item.price,
-                    "food_cost": item.food_cost,
+                    "price": unit_price,
+                    "food_cost": unit_food_cost,
                     "line_total": line_total,
                     "line_food_cost": line_food_cost,
                 },
