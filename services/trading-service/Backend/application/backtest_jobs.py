@@ -274,7 +274,7 @@ def _ensure_recovered_jobs() -> None:
         records = claim_recoverable_backtest_jobs(_WORKER_ID, limit=100)
         for record in records:
             job = _job_from_record(record)
-            if job.status in {"QUEUED", "RUNNING", "TIMEOUT"} and not job.cancel_requested and job.completed_strategies < job.total_strategies:
+            if job.status in {"QUEUED", "RUNNING", "TIMEOUT"} and job.completed_at is None and not job.cancel_requested and job.completed_strategies < job.total_strategies:
                 _JOBS[job.job_id] = job
                 _EXECUTOR.submit(_run_backtest_job, job.job_id)
         _RECOVERED = True
