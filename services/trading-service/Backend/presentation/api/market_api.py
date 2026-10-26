@@ -42,6 +42,7 @@ from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan
 from Backend.infrastructure.market_data.dhan_provider import _normalize_candles
 from Backend.presentation.api.roles import require_roles
 from Backend.application.monitoring import observe_option_chain_failure
+from Backend.application.options.quote_freshness import QuoteFreshnessError, verify_exchange_quote_timestamp
 from Backend.application.volume_analysis import analyze_volume
 from Backend.application.subscriptions import require_entitlement
 from app.validation.data_quality import validate_candles, validate_option_chain_rows
@@ -1182,6 +1183,18 @@ def preview_option_buyer(
     security_id = str(leg.get("security_id") or "")
     if not security_id.isdigit():
         raise HTTPException(status_code=503, detail="Provider did not supply a valid option contract security ID.")
+    # This is a provider-reported field, not proof of exchange provenance.
+    # Report freshness only when the provider supplied a parseable, current
+    # timezone-aware timestamp; never substitute the HTTP fetch time.
+    quote_timestamp = leg.get("quote_timestamp")
+    quote_freshness_verified = False
+    try:
+        verify_exchange_quote_timestamp(quote_timestamp)
+    except QuoteFreshnessError:
+        pass
+    else:
+        quote_freshness_verified = True
+
     return {
         "symbol": "NIFTY",
         "strike": strike,
@@ -1191,10 +1204,11 @@ def preview_option_buyer(
         "source": "dhan-option-chain",
         "quote": leg,
         "paper_order_enabled": False,
-        "quote_timestamp": leg.get("quote_timestamp"),
-        "quote_freshness_verified": False,
+        "quote_timestamp": quote_timestamp,
+        "quote_freshness_verified": quote_freshness_verified,
+        "exchange_timestamp_provenance_verified": False,
         "exchange_lot_size_verified": False,
-        "reason": "Read-only preview: authoritative exchange lot size and quote freshness are not verified for execution.",
+        "reason": "Read-only preview: exchange timestamp provenance, authoritative contract master and lot size are not verified for execution.",
     }
 
 
