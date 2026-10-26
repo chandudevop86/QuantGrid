@@ -6,6 +6,7 @@ import multiprocessing
 import time
 import uuid
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -36,6 +37,15 @@ def _calculate_in_process(payload: dict[str, Any]) -> dict[str, Any]:
     return calculate(payload)
 
 
+def _process_worker_count() -> int:
+    """Cap opt-in process workers for small production hosts."""
+    try:
+        configured = int(os.getenv("QUANTGRID_BACKTEST_PROCESS_WORKERS", "1"))
+    except ValueError:
+        configured = 1
+    return max(1, min(configured, 2))
+
+
 def _run_calculation(payload: dict[str, Any]) -> dict[str, Any]:
     if os.getenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "0").strip().lower() not in {"1", "true", "yes"}:
         return backtesting_module(payload)
@@ -43,12 +53,21 @@ def _run_calculation(payload: dict[str, Any]) -> dict[str, Any]:
     with _CALCULATION_POOL_LOCK:
         if _CALCULATION_POOL is None:
             _CALCULATION_POOL = ProcessPoolExecutor(
-                max_workers=2, mp_context=multiprocessing.get_context("spawn")
+                max_workers=_process_worker_count(), mp_context=multiprocessing.get_context("spawn")
             )
         pool = _CALCULATION_POOL
     # Wait without holding the job-state lock; other API requests can poll or
     # request cancellation while the current strategy finishes.
-    return pool.submit(_calculate_in_process, payload).result()
+    try:
+        return pool.submit(_calculate_in_process, payload).result()
+    except BrokenProcessPool:
+        # The executor is unusable after a child exits abruptly. Clear only
+        # the matching instance: another request may have replaced it.
+        with _CALCULATION_POOL_LOCK:
+            if _CALCULATION_POOL is pool:
+                _CALCULATION_POOL = None
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
 
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}
