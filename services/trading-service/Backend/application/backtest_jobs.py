@@ -182,6 +182,10 @@ def _run_backtest_job(job_id: str) -> None:
                 if current is None:
                     return
                 _JOBS[current.job_id] = current
+                # Cancellation may arrive while the strategy is calculating.
+                # Never publish results after a cancellation acknowledgement.
+                if current.cancel_requested or current.status == "CANCELLED":
+                    return
                 current.partial_results.append(run)
                 current.completed_strategies = len(current.partial_results)
                 current.updated_at = _utc_now()
@@ -213,6 +217,9 @@ def _run_backtest_job(job_id: str) -> None:
             if current is None:
                 return
             _JOBS[current.job_id] = current
+            # A worker failure after cancellation must not overwrite CANCELLED.
+            if current.cancel_requested or current.status == "CANCELLED":
+                return
             current.status = "FAILED"
             current.error = _friendly_error(exc)
             current.completed_at = _utc_now()
