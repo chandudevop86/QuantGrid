@@ -14,13 +14,16 @@ def test_opt_in_uses_spawn_process_pool(monkeypatch):
     captured = {}
 
     class Future:
-        def result(self):
+        def result(self, timeout=None):
             return {"ok": True}
 
     class Pool:
         def __init__(self, *, max_workers, mp_context):
             captured["workers"] = max_workers
             captured["start_method"] = mp_context.get_start_method()
+
+        def shutdown(self, **kwargs):
+            pass
 
         def submit(self, target, payload):
             captured["target"] = target
@@ -64,5 +67,45 @@ def test_broken_process_pool_is_reset(monkeypatch):
     monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", Pool)
     with pytest.raises(BrokenProcessPool):
         backtest_jobs._run_calculation({"strategy_name": "amd"})
-    assert backtest_jobs._CALCULATION_POOL is None
     assert pools[0].shutdown_called
+
+
+def test_isolated_timeout_terminates_own_pool(monkeypatch):
+    import pytest
+    from concurrent.futures import TimeoutError as FutureTimeout
+
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", "1")
+    pools = []
+
+    class Future:
+        def result(self, timeout=None):
+            assert timeout == 1.0
+            raise FutureTimeout()
+
+    class Pool:
+        def __init__(self, **kwargs):
+            self.terminated = False
+            self.shutdown_args = None
+            pools.append(self)
+
+        def submit(self, target, payload):
+            return Future()
+
+        def terminate_workers(self):
+            self.terminated = True
+
+        def shutdown(self, **kwargs):
+            self.shutdown_args = kwargs
+
+    monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", Pool)
+    with pytest.raises(backtest_jobs.BacktestHardTimeout):
+        backtest_jobs._run_calculation({"strategy_name": "amd"})
+    assert pools[0].terminated
+    assert pools[0].shutdown_args["wait"] is False
+
+
+def test_hard_timeout_config_bounds(monkeypatch):
+    for value, expected in [("1", 1), ("60", 60), ("0", 120), ("nan", 120), ("bad", 120), ("9999", 120)]:
+        monkeypatch.setenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", value)
+        assert backtest_jobs._hard_timeout_seconds() == expected
