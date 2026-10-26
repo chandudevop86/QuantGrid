@@ -46,28 +46,36 @@ def _process_worker_count() -> int:
     return max(1, min(configured, 2))
 
 
+class BacktestHardTimeout(TimeoutError):
+    """An isolated strategy exceeded its configured execution deadline."""
+
+
+def _hard_timeout_seconds() -> float:
+    try:
+        value = float(os.getenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", "120"))
+    except ValueError:
+        value = 120.0
+    return value if 1.0 <= value <= 3600.0 else 120.0
+
+
 def _run_calculation(payload: dict[str, Any]) -> dict[str, Any]:
     if os.getenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "0").strip().lower() not in {"1", "true", "yes"}:
         return backtesting_module(payload)
-    global _CALCULATION_POOL
-    with _CALCULATION_POOL_LOCK:
-        if _CALCULATION_POOL is None:
-            _CALCULATION_POOL = ProcessPoolExecutor(
-                max_workers=_process_worker_count(), mp_context=multiprocessing.get_context("spawn")
-            )
-        pool = _CALCULATION_POOL
-    # Wait without holding the job-state lock; other API requests can poll or
-    # request cancellation while the current strategy finishes.
+    # Per-calculation ownership ensures a timed-out child cannot take down
+    # other jobs' pools. At most two coordinators run concurrently.
+    pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+    terminated = False
     try:
-        return pool.submit(_calculate_in_process, payload).result()
-    except BrokenProcessPool:
-        # The executor is unusable after a child exits abruptly. Clear only
-        # the matching instance: another request may have replaced it.
-        with _CALCULATION_POOL_LOCK:
-            if _CALCULATION_POOL is pool:
-                _CALCULATION_POOL = None
-        pool.shutdown(wait=False, cancel_futures=True)
-        raise
+        future = pool.submit(_calculate_in_process, payload)
+        try:
+            return future.result(timeout=_hard_timeout_seconds())
+        except TimeoutError as exc:
+            terminated = True
+            pool.terminate_workers()  # Python 3.14+; Future.cancel() is insufficient.
+            raise BacktestHardTimeout("Isolated backtest calculation exceeded its hard deadline") from exc
+    finally:
+        pool.shutdown(wait=not terminated, cancel_futures=True)
+
 
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}
@@ -229,6 +237,18 @@ def _run_backtest_job(job_id: str) -> None:
             current.completed_at = _utc_now()
             current.updated_at = current.completed_at
             _persist_job(current)
+    except BacktestHardTimeout as exc:
+        with _LOCK:
+            record = get_backtest_job_record(job_id)
+            current = _JOBS.get(job_id) or (_job_from_record(record) if record else None)
+            if current is None or current.cancel_requested:
+                return
+            _JOBS[current.job_id] = current
+            current.status = "TIMEOUT"
+            current.error = str(exc)
+            current.completed_at = _utc_now()
+            current.updated_at = current.completed_at
+            _persist_job(current)
     except Exception as exc:
         with _LOCK:
             record = get_backtest_job_record(job_id)
@@ -366,7 +386,7 @@ def _message(job: BacktestJob, remaining: float | None) -> str:
         remaining_text = _duration(remaining) if remaining is not None else "calculating"
         return f"Backtest is running. Processed {job.completed_strategies} of {job.total_strategies} strategies. Estimated time remaining: {remaining_text}."
     if job.status == "TIMEOUT":
-        return "The backtest exceeded the expected execution time. The job is still running in the background. You can wait for completion or cancel the job."
+        return "The backtest exceeded its execution deadline and was stopped."
     if job.status == "COMPLETED":
         return "Backtest completed successfully."
     if job.status == "FAILED":
