@@ -80,7 +80,7 @@ def test_isolated_timeout_terminates_own_pool(monkeypatch):
 
     class Future:
         def result(self, timeout=None):
-            assert timeout == 1.0
+            assert 0 < timeout <= 0.25
             raise FutureTimeout()
 
     class Pool:
@@ -99,6 +99,8 @@ def test_isolated_timeout_terminates_own_pool(monkeypatch):
             self.shutdown_args = kwargs
 
     monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", Pool)
+    times = iter([0.0, 0.0, 2.0])
+    monkeypatch.setattr(backtest_jobs.time, "monotonic", lambda: next(times))
     with pytest.raises(backtest_jobs.BacktestHardTimeout):
         backtest_jobs._run_calculation({"strategy_name": "amd"})
     assert pools[0].terminated
@@ -109,3 +111,26 @@ def test_hard_timeout_config_bounds(monkeypatch):
     for value, expected in [("1", 1), ("60", 60), ("0", 120), ("nan", 120), ("bad", 120), ("9999", 120)]:
         monkeypatch.setenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", value)
         assert backtest_jobs._hard_timeout_seconds() == expected
+
+
+def test_cancelled_isolated_job_terminates_worker(monkeypatch):
+    import pytest
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+    pools = []
+
+    class Pool:
+        def __init__(self, **kwargs):
+            self.terminated = False
+            pools.append(self)
+        def submit(self, target, payload):
+            return object()
+        def terminate_workers(self):
+            self.terminated = True
+        def shutdown(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", Pool)
+    with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
+        backtest_jobs._run_calculation({"strategy_name": "amd"}, job_id="cancelled-job")
+    assert pools[0].terminated
