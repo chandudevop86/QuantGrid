@@ -116,7 +116,8 @@ def test_hard_timeout_config_bounds(monkeypatch):
 def test_cancelled_isolated_job_terminates_worker(monkeypatch):
     import pytest
     monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
-    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+    checks = iter([False, True])  # Not cancelled at slot acquisition; cancelled after submit.
+    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: next(checks))
     pools = []
 
     class Pool:
@@ -215,3 +216,16 @@ def test_waiting_for_host_slot_can_be_cancelled(monkeypatch):
         release.set()
         thread.join(timeout=5)
     assert not thread.is_alive()
+
+
+def test_cancelled_before_slot_does_not_spawn_worker(monkeypatch):
+    import pytest
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+
+    def forbidden_pool(**kwargs):
+        pytest.fail("Already cancelled job must not spawn a process pool")
+
+    monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", forbidden_pool)
+    with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
+        backtest_jobs._run_calculation({"strategy_name": "amd"}, job_id="cancelled-before-slot")
