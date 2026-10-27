@@ -174,3 +174,44 @@ def test_real_spawned_worker_is_reaped_after_hard_timeout(monkeypatch, tmp_path)
         time.sleep(0.05)
     else:
         pytest.fail(f"Timed-out worker PID {pid} remained alive")
+
+
+def test_host_slot_releases_file_lock_after_exception():
+    import pytest
+    with pytest.raises(ValueError, match="test failure"):
+        with backtest_jobs._host_backtest_slot():
+            raise ValueError("test failure")
+    # A leaked lock would prevent immediate reacquisition.
+    with backtest_jobs._host_backtest_slot():
+        pass
+
+
+def test_waiting_for_host_slot_can_be_cancelled(monkeypatch):
+    import fcntl
+    import threading
+    import time
+    from pathlib import Path
+    import pytest
+
+    lock_path = Path(backtest_jobs.__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with backtest_jobs._host_backtest_slot():
+            acquired.set()
+            release.wait(timeout=5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert acquired.wait(timeout=3)
+        monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+        with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
+            with backtest_jobs._host_backtest_slot("cancelled-job"):
+                pytest.fail("Cancelled job must never acquire the slot")
+    finally:
+        release.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
