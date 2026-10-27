@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import fcntl
+from contextlib import contextmanager
+from pathlib import Path
 import threading
 import multiprocessing
 import time
@@ -91,32 +94,57 @@ def _terminate_calculation_pool(pool: ProcessPoolExecutor) -> None:
         raise RuntimeError("Isolated backtest worker failed to terminate")
 
 
+@contextmanager
+def _host_backtest_slot(job_id: str | None = None):
+    """Serialize isolated backtests across services sharing this host/filesystem.
+
+    flock is released by the OS on process exit. This is NOT a distributed
+    lock for multiple EC2 instances; use shared coordination before scaling.
+    """
+    lock_path = Path(__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock_file:
+        while True:
+            if job_id is not None and _job_cancelled(job_id):
+                raise BacktestCalculationCancelled("Backtest cancelled while waiting for isolation slot")
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _run_calculation(payload: dict[str, Any], *, job_id: str | None = None) -> dict[str, Any]:
     if os.getenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "0").strip().lower() not in {"1", "true", "yes"}:
         return backtesting_module(payload)
-    # One process per calculation: termination never affects another job.
-    pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
-    terminated = False
-    try:
-        future = pool.submit(_calculate_in_process, payload)
-        deadline = time.monotonic() + _hard_timeout_seconds()
-        while True:
-            if job_id is not None and _job_cancelled(job_id):
-                terminated = True
-                _terminate_calculation_pool(pool)
-                raise BacktestCalculationCancelled("Backtest cancelled; calculation worker terminated")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                terminated = True
-                _terminate_calculation_pool(pool)
-                raise BacktestHardTimeout("Isolated backtest calculation exceeded its hard deadline")
-            try:
-                return future.result(timeout=min(0.25, remaining))
-            except FutureTimeout:
-                continue
-    finally:
-        pool.shutdown(wait=not terminated, cancel_futures=True)
-
+    with _host_backtest_slot(job_id):
+        # One process per calculation: termination never affects another job.
+        pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+        terminated = False
+        try:
+            future = pool.submit(_calculate_in_process, payload)
+            deadline = time.monotonic() + _hard_timeout_seconds()
+            while True:
+                if job_id is not None and _job_cancelled(job_id):
+                    terminated = True
+                    _terminate_calculation_pool(pool)
+                    raise BacktestCalculationCancelled("Backtest cancelled; calculation worker terminated")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    terminated = True
+                    _terminate_calculation_pool(pool)
+                    raise BacktestHardTimeout("Isolated backtest calculation exceeded its hard deadline")
+                try:
+                    return future.result(timeout=min(0.25, remaining))
+                except FutureTimeout:
+                    continue
+        finally:
+            pool.shutdown(wait=not terminated, cancel_futures=True)
+    
 
 _LOCK = threading.RLock()
 _JOBS: dict[str, "BacktestJob"] = {}

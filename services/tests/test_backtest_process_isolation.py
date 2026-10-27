@@ -116,7 +116,8 @@ def test_hard_timeout_config_bounds(monkeypatch):
 def test_cancelled_isolated_job_terminates_worker(monkeypatch):
     import pytest
     monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
-    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+    checks = iter([False, True])  # Not cancelled at slot acquisition; cancelled after submit.
+    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: next(checks))
     pools = []
 
     class Pool:
@@ -174,3 +175,103 @@ def test_real_spawned_worker_is_reaped_after_hard_timeout(monkeypatch, tmp_path)
         time.sleep(0.05)
     else:
         pytest.fail(f"Timed-out worker PID {pid} remained alive")
+
+
+def test_host_slot_releases_file_lock_after_exception():
+    import pytest
+    with pytest.raises(ValueError, match="test failure"):
+        with backtest_jobs._host_backtest_slot():
+            raise ValueError("test failure")
+    # A leaked lock would prevent immediate reacquisition.
+    with backtest_jobs._host_backtest_slot():
+        pass
+
+
+def test_waiting_for_host_slot_can_be_cancelled(monkeypatch):
+    import fcntl
+    import threading
+    import time
+    from pathlib import Path
+    import pytest
+
+    lock_path = Path(backtest_jobs.__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with backtest_jobs._host_backtest_slot():
+            acquired.set()
+            release.wait(timeout=5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert acquired.wait(timeout=3)
+        monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+        with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
+            with backtest_jobs._host_backtest_slot("cancelled-job"):
+                pytest.fail("Cancelled job must never acquire the slot")
+    finally:
+        release.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+
+
+def test_cancelled_before_slot_does_not_spawn_worker(monkeypatch):
+    import pytest
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setattr(backtest_jobs, "_job_cancelled", lambda job_id: True)
+
+    def forbidden_pool(**kwargs):
+        pytest.fail("Already cancelled job must not spawn a process pool")
+
+    monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", forbidden_pool)
+    with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
+        backtest_jobs._run_calculation({"strategy_name": "amd"}, job_id="cancelled-before-slot")
+
+
+def _host_lock_process(lock_path: str, marker: str, hold_seconds: float) -> None:
+    """Spawn-safe worker that holds the same OS-level flock as production."""
+    import fcntl
+    import time
+    from pathlib import Path
+
+    with Path(lock_path).open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        Path(marker).write_text("acquired")
+        time.sleep(hold_seconds)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def test_host_slot_excludes_separate_os_process(monkeypatch, tmp_path):
+    """A real spawned process holding the lock blocks the coordinator."""
+    import multiprocessing
+    import time
+    from pathlib import Path
+
+    lock_path = Path(backtest_jobs.__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    marker = tmp_path / "child-acquired"
+    child = multiprocessing.get_context("spawn").Process(
+        target=_host_lock_process,
+        args=(str(lock_path), str(marker), 1.0),
+    )
+    child.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            if not child.is_alive():
+                raise AssertionError(f"Lock-holder exited early: {child.exitcode}")
+            time.sleep(0.02)
+        assert marker.exists(), "Spawned process did not acquire host lock"
+        started = time.monotonic()
+        with backtest_jobs._host_backtest_slot():
+            waited = time.monotonic() - started
+        assert waited >= 0.5, f"Host lock was bypassed; waited only {waited:.3f}s"
+    finally:
+        child.join(timeout=5)
+        if child.is_alive():
+            child.terminate()
+            child.join(timeout=5)
+    assert child.exitcode == 0
