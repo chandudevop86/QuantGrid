@@ -311,3 +311,54 @@ def test_host_slot_queue_wait_expires(monkeypatch):
         release.set()
         thread.join(timeout=5)
     assert not thread.is_alive()
+
+
+def _isolated_smoke_workload(payload):
+    """Spawn-safe synthetic workload; no broker/network access."""
+    import os
+    return {"ok": True, "pid": os.getpid(), "input": payload["value"]}
+
+
+def test_real_isolated_process_completes_without_broker_access(monkeypatch):
+    """Exercise the real executor, host lock, child IPC, and result collection."""
+    import os
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", "15")
+    monkeypatch.setattr(backtest_jobs, "_calculate_in_process", _isolated_smoke_workload)
+    result = backtest_jobs._run_calculation({"value": 42})
+    assert result == {"ok": True, "pid": result["pid"], "input": 42}
+    assert result["pid"] != os.getpid()
+
+
+def test_host_lock_recovered_after_abrupt_owner_exit(tmp_path):
+    """flock must be released by the OS even when a lock-holder is killed."""
+    import multiprocessing
+    import os
+    import signal
+    import time
+    from pathlib import Path
+
+    lock_path = Path(backtest_jobs.__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    marker = tmp_path / "lock-held"
+    child = multiprocessing.get_context("spawn").Process(
+        target=_host_lock_process, args=(str(lock_path), str(marker), 30.0)
+    )
+    child.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            assert child.is_alive(), f"Lock-holder exited prematurely: {child.exitcode}"
+            time.sleep(0.02)
+        assert marker.exists(), "Lock-holder failed to acquire lock"
+        os.kill(child.pid, signal.SIGKILL)
+        child.join(timeout=5)
+        assert not child.is_alive()
+        started = time.monotonic()
+        with backtest_jobs._host_backtest_slot():
+            pass
+        assert time.monotonic() - started < 2, "OS failed to release lock after SIGKILL"
+    finally:
+        if child.is_alive():
+            child.terminate()
+            child.join(timeout=5)
