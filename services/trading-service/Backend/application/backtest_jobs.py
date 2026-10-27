@@ -406,7 +406,9 @@ def _message(job: BacktestJob, remaining: float | None) -> str:
         remaining_text = _duration(remaining) if remaining is not None else "calculating"
         return f"Backtest is running. Processed {job.completed_strategies} of {job.total_strategies} strategies. Estimated time remaining: {remaining_text}."
     if job.status == "TIMEOUT":
-        return "The backtest exceeded its execution deadline and was stopped."
+        if job.completed_at and job.error:
+            return "The backtest exceeded the expected execution time and was stopped."
+        return "The backtest exceeded the expected execution time. The job is still running in the background. You can wait for completion or cancel the job."
     if job.status == "COMPLETED":
         return "Backtest completed successfully."
     if job.status == "FAILED":
