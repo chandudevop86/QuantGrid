@@ -68,6 +68,29 @@ def _job_cancelled(job_id: str) -> bool:
         return bool(job and (job.cancel_requested or job.status == "CANCELLED"))
 
 
+def _terminate_calculation_pool(pool: ProcessPoolExecutor) -> None:
+    """Stop owned child workers, including on runtimes without terminate_workers."""
+    terminate = getattr(pool, "terminate_workers", None)
+    if callable(terminate):
+        terminate()
+        return
+    # Compatibility fallback for Python builds lacking the public API.
+    # _processes is private: keep this isolated and integration-tested.
+    processes = list((getattr(pool, "_processes", None) or {}).values())
+    if not processes:
+        raise RuntimeError("Cannot identify isolated backtest worker for termination")
+    for process in processes:
+        if process.is_alive():
+            process.terminate()
+    for process in processes:
+        process.join(timeout=1)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=1)
+    if any(process.is_alive() for process in processes):
+        raise RuntimeError("Isolated backtest worker failed to terminate")
+
+
 def _run_calculation(payload: dict[str, Any], *, job_id: str | None = None) -> dict[str, Any]:
     if os.getenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "0").strip().lower() not in {"1", "true", "yes"}:
         return backtesting_module(payload)
@@ -80,12 +103,12 @@ def _run_calculation(payload: dict[str, Any], *, job_id: str | None = None) -> d
         while True:
             if job_id is not None and _job_cancelled(job_id):
                 terminated = True
-                pool.terminate_workers()
+                _terminate_calculation_pool(pool)
                 raise BacktestCalculationCancelled("Backtest cancelled; calculation worker terminated")
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 terminated = True
-                pool.terminate_workers()
+                _terminate_calculation_pool(pool)
                 raise BacktestHardTimeout("Isolated backtest calculation exceeded its hard deadline")
             try:
                 return future.result(timeout=min(0.25, remaining))
