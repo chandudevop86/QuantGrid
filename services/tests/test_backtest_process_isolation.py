@@ -134,3 +134,43 @@ def test_cancelled_isolated_job_terminates_worker(monkeypatch):
     with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
         backtest_jobs._run_calculation({"strategy_name": "amd"}, job_id="cancelled-job")
     assert pools[0].terminated
+
+
+def _real_worker_sleep_and_record_pid(pid_file: str) -> None:
+    """Top-level callable so Python's spawn context can pickle it."""
+    import os
+    import time
+    from pathlib import Path
+    Path(pid_file).write_text(str(os.getpid()))
+    time.sleep(30)
+
+
+def test_real_spawned_worker_is_reaped_after_hard_timeout(monkeypatch, tmp_path):
+    """Integration: an actual sleeping process must not survive the deadline."""
+    import os
+    import time
+    from pathlib import Path
+    import pytest
+
+    pid_file = tmp_path / "worker.pid"
+    monkeypatch.setenv("QUANTGRID_BACKTEST_PROCESS_ISOLATION", "1")
+    monkeypatch.setenv("QUANTGRID_BACKTEST_HARD_TIMEOUT_SECONDS", "2")
+    # Only substitute the workload; keep the real ProcessPoolExecutor.
+    monkeypatch.setattr(
+        backtest_jobs,
+        "_calculate_in_process",
+        _real_worker_sleep_and_record_pid,
+    )
+    with pytest.raises(backtest_jobs.BacktestHardTimeout):
+        backtest_jobs._run_calculation(str(pid_file))
+    assert pid_file.exists(), "Spawned worker never started; timeout test was inconclusive"
+    pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Timed-out worker PID {pid} remained alive")
