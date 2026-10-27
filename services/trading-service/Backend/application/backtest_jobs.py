@@ -34,8 +34,37 @@ _CALCULATION_POOL: ProcessPoolExecutor | None = None
 _CALCULATION_POOL_LOCK = threading.Lock()
 
 
+def _bounded_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if minimum <= value <= maximum else default
+
+
+def _queue_wait_seconds() -> int:
+    return _bounded_setting("QUANTGRID_BACKTEST_QUEUE_WAIT_SECONDS", 60, 1, 3600)
+
+
+def _memory_limit_mb() -> int:
+    # Disabled by default: RLIMIT_AS can reject large virtual-memory mappings.
+    return _bounded_setting("QUANTGRID_BACKTEST_MEMORY_LIMIT_MB", 0, 0, 16384)
+
+
+class BacktestQueueTimeout(TimeoutError):
+    """No isolated execution slot became available before the wait deadline."""
+
+
 def _calculate_in_process(payload: dict[str, Any]) -> dict[str, Any]:
     # Import in the spawned child; never share parent SQLAlchemy connections.
+    limit_mb = _memory_limit_mb()
+    if limit_mb:
+        import resource
+        memory_bytes = limit_mb * 1024 * 1024
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        if hard != resource.RLIM_INFINITY:
+            memory_bytes = min(memory_bytes, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, hard))
     from Backend.application.quant_modules import backtesting_module as calculate
     return calculate(payload)
 
@@ -103,6 +132,7 @@ def _host_backtest_slot(job_id: str | None = None):
     """
     lock_path = Path(__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    wait_deadline = time.monotonic() + _queue_wait_seconds()
     with lock_path.open("a+b") as lock_file:
         while True:
             if job_id is not None and _job_cancelled(job_id):
@@ -111,7 +141,9 @@ def _host_backtest_slot(job_id: str | None = None):
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
-                time.sleep(0.1)
+                if time.monotonic() >= wait_deadline:
+                    raise BacktestQueueTimeout("Isolated backtest execution slot wait timed out")
+                time.sleep(min(0.1, max(0.0, wait_deadline - time.monotonic())))
         try:
             yield
         finally:

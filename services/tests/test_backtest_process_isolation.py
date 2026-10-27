@@ -275,3 +275,39 @@ def test_host_slot_excludes_separate_os_process(monkeypatch, tmp_path):
             child.terminate()
             child.join(timeout=5)
     assert child.exitcode == 0
+
+
+def test_resource_limit_settings_are_bounded(monkeypatch):
+    monkeypatch.setenv("QUANTGRID_BACKTEST_QUEUE_WAIT_SECONDS", "0")
+    monkeypatch.setenv("QUANTGRID_BACKTEST_MEMORY_LIMIT_MB", "-1")
+    assert backtest_jobs._queue_wait_seconds() == 60
+    assert backtest_jobs._memory_limit_mb() == 0
+    monkeypatch.setenv("QUANTGRID_BACKTEST_QUEUE_WAIT_SECONDS", "1")
+    monkeypatch.setenv("QUANTGRID_BACKTEST_MEMORY_LIMIT_MB", "512")
+    assert backtest_jobs._queue_wait_seconds() == 1
+    assert backtest_jobs._memory_limit_mb() == 512
+
+
+def test_host_slot_queue_wait_expires(monkeypatch):
+    import threading
+    import pytest
+    monkeypatch.setenv("QUANTGRID_BACKTEST_QUEUE_WAIT_SECONDS", "1")
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def holder():
+        with backtest_jobs._host_backtest_slot():
+            acquired.set()
+            release.wait(timeout=4)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert acquired.wait(timeout=3)
+        with pytest.raises(backtest_jobs.BacktestQueueTimeout):
+            with backtest_jobs._host_backtest_slot():
+                pytest.fail("Slot acquired despite contention")
+    finally:
+        release.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
