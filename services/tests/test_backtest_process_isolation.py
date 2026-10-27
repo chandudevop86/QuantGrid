@@ -229,3 +229,49 @@ def test_cancelled_before_slot_does_not_spawn_worker(monkeypatch):
     monkeypatch.setattr(backtest_jobs, "ProcessPoolExecutor", forbidden_pool)
     with pytest.raises(backtest_jobs.BacktestCalculationCancelled):
         backtest_jobs._run_calculation({"strategy_name": "amd"}, job_id="cancelled-before-slot")
+
+
+def _host_lock_process(lock_path: str, marker: str, hold_seconds: float) -> None:
+    """Spawn-safe worker that holds the same OS-level flock as production."""
+    import fcntl
+    import time
+    from pathlib import Path
+
+    with Path(lock_path).open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        Path(marker).write_text("acquired")
+        time.sleep(hold_seconds)
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def test_host_slot_excludes_separate_os_process(monkeypatch, tmp_path):
+    """A real spawned process holding the lock blocks the coordinator."""
+    import multiprocessing
+    import time
+    from pathlib import Path
+
+    lock_path = Path(backtest_jobs.__file__).resolve().parents[2] / "data" / "backtest-isolation.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    marker = tmp_path / "child-acquired"
+    child = multiprocessing.get_context("spawn").Process(
+        target=_host_lock_process,
+        args=(str(lock_path), str(marker), 1.0),
+    )
+    child.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            if not child.is_alive():
+                raise AssertionError(f"Lock-holder exited early: {child.exitcode}")
+            time.sleep(0.02)
+        assert marker.exists(), "Spawned process did not acquire host lock"
+        started = time.monotonic()
+        with backtest_jobs._host_backtest_slot():
+            waited = time.monotonic() - started
+        assert waited >= 0.5, f"Host lock was bypassed; waited only {waited:.3f}s"
+    finally:
+        child.join(timeout=5)
+        if child.is_alive():
+            child.terminate()
+            child.join(timeout=5)
+    assert child.exitcode == 0
