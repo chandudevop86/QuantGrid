@@ -18,7 +18,7 @@ def test_cancel_during_calculation_preserves_cancelled_state(monkeypatch, raise_
     monkeypatch.setattr(backtest_jobs, "_persist_job", lambda job: None)
     monkeypatch.setattr(backtest_jobs, "_strategy_payload", lambda payload, strategy: {"strategy_name": strategy})
 
-    def calculation(payload):
+    def calculation(payload, *, job_id=None):
         entered.set()
         assert release.wait(timeout=5), "test calculation was not released"
         if raise_error:
