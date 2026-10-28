@@ -14,12 +14,21 @@ class BreakoutDetectionEngine:
         if index < self.lookback:
             return None
         start = index - self.lookback
-        window = candles.iloc[start:index]
-        if window.empty:
-            return None
-        high = float(window["high"].max())
-        low = float(window["low"].min())
-        atr = max(float(candles.iloc[index].get("atr_14", candles.iloc[index].get("avg_range_5", 0.0)) or 0.0), 0.01)
+        row = candles.iloc[index]
+        # BreakoutStrategy.prepare_data already computes the previous-window
+        # extrema; reuse them instead of rescanning the same slice.
+        if "breakout_high" in candles.columns and "breakout_low" in candles.columns:
+            high = float(row["breakout_high"])
+            low = float(row["breakout_low"])
+            if pd.isna(high) or pd.isna(low):
+                return None
+        else:
+            window = candles.iloc[start:index]
+            if window.empty:
+                return None
+            high = float(window["high"].max())
+            low = float(window["low"].min())
+        atr = max(float(row.get("atr_14", row.get("avg_range_5", 0.0)) or 0.0), 0.01)
         return BreakoutRange(high=high, low=low, start_index=start, end_index=index - 1, size=high - low, atr=atr)
 
     def detect(self, candles: pd.DataFrame, index: int, side: Side) -> BreakoutSetup | None:
