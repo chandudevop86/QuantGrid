@@ -135,6 +135,9 @@ class BacktestEngine:
 
         self._reset_risk(starting_capital, risk_pct)
         signal_map = self._prepare_signal_map(signals)
+        # Cache row dictionaries once for this run. Strategy evaluation still
+        # receives only the history available at each candle (no look-ahead).
+        candle_records = frame.to_dict("records") if signals is None and self.strategy is None else None
         capital_now = starting_capital
         open_trade: Trade | None = None
         closed: list[Trade] = []
@@ -163,7 +166,11 @@ class BacktestEngine:
                 elif signals is not None:
                     signal = None
                 else:
-                    signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
+                    if candle_records is None:
+                        signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
+                    else:
+                        # Keep the public _generate_signal hook unchanged for custom strategies.
+                        signal = self._generate_signal_from_records(candle_records[: i + 1], strategy_name, symbol, capital_now, risk_pct, rr_ratio)
 
                 while signal is not None and open_trade is None:
                     signal.metadata = dict(signal.metadata or {})
@@ -271,6 +278,23 @@ class BacktestEngine:
             signals = self.trading_service.run_strategy(
                 strategy_name=strategy_name,
                 data=frame.iloc[: index + 1].to_dict("records"),
+                symbol=symbol,
+                capital=capital,
+                risk_pct=risk_pct,
+                rr_ratio=rr_ratio,
+                params={},
+            )
+            return signals[0] if signals else None
+        except Exception:
+            return None
+
+    def _generate_signal_from_records(self, records: list[dict[str, Any]], strategy_name: str, symbol: str, capital: float, risk_pct: float, rr_ratio: float) -> StrategySignal | None:
+        if self.trading_service is None:
+            self.trading_service = TradingService()
+        try:
+            signals = self.trading_service.run_strategy(
+                strategy_name=strategy_name,
+                data=records,
                 symbol=symbol,
                 capital=capital,
                 risk_pct=risk_pct,
