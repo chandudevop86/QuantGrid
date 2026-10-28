@@ -42,9 +42,12 @@ def child(args: argparse.Namespace) -> None:
 
     service = Path(__file__).resolve().parents[1] / "services" / "trading-service"
     sys.path.insert(0, str(service))
+    print("phase=import_start", file=sys.stderr, flush=True)
     from Backend.application.quant_modules import backtesting_module
+    print("phase=import_complete", file=sys.stderr, flush=True)
 
     started = time.monotonic()
+    print("phase=calculation_start", file=sys.stderr, flush=True)
     result = backtesting_module({
         "symbol": args.symbol,
         "strategy_name": args.strategy,
@@ -52,6 +55,7 @@ def child(args: argparse.Namespace) -> None:
         "max_candles": args.candles,
         "capital": 100000,
     })
+    print("phase=calculation_complete", file=sys.stderr, flush=True)
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     print(json.dumps({
         "status": "completed", "workload": "real_engine_synthetic_candles",
@@ -87,8 +91,12 @@ def main() -> None:
     try:
         proc = subprocess.run(command, env=env, text=True, capture_output=True,
                               timeout=args.timeout, check=False)
-    except subprocess.TimeoutExpired:
-        print(json.dumps({"status": "timeout", "timeout_seconds": args.timeout}))
+    except subprocess.TimeoutExpired as exc:
+        stderr = exc.stderr or b""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        print(json.dumps({"status": "timeout", "timeout_seconds": args.timeout,
+                          "phase_log": stderr[-1500:]}))
         raise SystemExit(1)
     if proc.returncode:
         missing_dependency = "ModuleNotFoundError" in proc.stderr
