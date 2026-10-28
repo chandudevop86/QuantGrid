@@ -8,6 +8,7 @@ Run only on a nonproduction copy / isolated worktree with a test environment.
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,9 @@ def candles_for(symbol: str, count: int) -> list[dict]:
 
 
 def child(args: argparse.Namespace) -> None:
+    # Periodic Python stack snapshots help locate stalls without changing engine behavior.
+    faulthandler.enable(file=sys.stderr)
+    faulthandler.dump_traceback_later(8, repeat=True, file=sys.stderr)
     # Disable outbound network before importing any trading application modules.
     import socket
     def forbidden(*_args, **_kwargs):
@@ -57,6 +61,7 @@ def child(args: argparse.Namespace) -> None:
     })
     print("phase=calculation_complete", file=sys.stderr, flush=True)
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    faulthandler.cancel_dump_traceback_later()
     print(json.dumps({
         "status": "completed", "workload": "real_engine_synthetic_candles",
         "symbol": args.symbol, "strategy": args.strategy, "candles": args.candles,
@@ -96,7 +101,7 @@ def main() -> None:
         if isinstance(stderr, bytes):
             stderr = stderr.decode("utf-8", errors="replace")
         print(json.dumps({"status": "timeout", "timeout_seconds": args.timeout,
-                          "phase_log": stderr[-1500:]}))
+                          "phase_log": stderr[-7000:]}))
         raise SystemExit(1)
     if proc.returncode:
         missing_dependency = "ModuleNotFoundError" in proc.stderr
