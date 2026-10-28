@@ -277,7 +277,22 @@ class BacktestEngine:
                 rr_ratio=rr_ratio,
                 params={},
             )
-            return signals[0] if signals else None
+            # A historical scan may return signals from earlier candles. Never
+            # replay those signals as new entries at the current candle price.
+            current_time = pd.Timestamp(frame.iloc[index]["timestamp"])
+            if current_time.tzinfo is None:
+                current_time = current_time.tz_localize("UTC")
+            else:
+                current_time = current_time.tz_convert("UTC")
+            for signal in signals:
+                signal_time = pd.Timestamp(signal.signal_time)
+                if signal_time.tzinfo is None:
+                    signal_time = signal_time.tz_localize("UTC")
+                else:
+                    signal_time = signal_time.tz_convert("UTC")
+                if signal_time == current_time:
+                    return signal
+            return None
         except Exception:
             return None
 
