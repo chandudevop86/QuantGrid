@@ -73,3 +73,59 @@ def test_naive_utc_signal_matches_aware_candle():
     naive_utc = frame.iloc[2]["timestamp"].tz_convert("UTC").tz_localize(None)
     current = _signal(naive_utc)
     assert _generate([current]) is current
+
+
+def test_canonical_backtest_does_not_replay_stale_service_signals():
+    """A stale signal alone must not open any trade during a full backtest."""
+    from datetime import datetime, timezone
+
+    start = datetime(2026, 10, 28, 9, 15, tzinfo=timezone.utc)
+    candles = [
+        {"timestamp": start + timedelta(minutes=i), "open": 100.0,
+         "high": 101.0 if i < 2 else 106.0, "low": 99.0,
+         "close": 100.0 if i < 2 else 105.0, "volume": 1000}
+        for i in range(3)
+    ]
+    stale = _signal(start - timedelta(minutes=1))
+    engine = BacktestEngine(commission_rate=0, slippage_rate=0)
+    engine.trading_service = FakeService([stale])
+    result = engine.run(candles=candles, strategy_name="breakout", symbol="NIFTY")
+    assert result.total_trades == 0
+    assert result.net_pnl == 0
+
+
+def test_canonical_backtest_selects_current_signal_and_completes_trade():
+    """An older signal preceding a valid current signal must not hide it."""
+    from datetime import datetime, timezone
+
+    start = datetime(2026, 10, 28, 9, 15, tzinfo=timezone.utc)
+    candles = [
+        {"timestamp": start + timedelta(minutes=i), "open": 100.0,
+         "high": 101.0 if i < 2 else 106.0, "low": 99.0,
+         "close": 100.0 if i < 2 else 105.0, "volume": 1000}
+        for i in range(3)
+    ]
+    stale = _signal(start - timedelta(minutes=1))
+    current = _signal(start)
+    current.stop_loss = 95.0
+    current.target_price = 105.0
+
+    class MixedService:
+        def run_strategy(self, **kwargs):
+            # Simulates a historical scan returning the earliest signal first.
+            return [stale, current]
+
+    engine = BacktestEngine(
+        commission_rate=0, slippage_rate=0, brokerage_per_order=0,
+        brokerage_bps=0, taxes_bps=0,
+    )
+    engine.trading_service = MixedService()
+    result = engine.run(candles=candles, strategy_name="breakout", symbol="NIFTY")
+
+    assert result.total_trades == 1
+    trade = result.trades[0]
+    assert trade["entry_time"] == start
+    assert trade["exit_time"] == start + timedelta(minutes=2)
+    assert trade["exit_reason"] == "target"
+    assert trade["total_costs"] == 0
+    assert result.net_pnl == 1000.0
