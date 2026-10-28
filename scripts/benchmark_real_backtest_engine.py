@@ -91,7 +91,11 @@ def main() -> None:
         print(json.dumps({"status": "timeout", "timeout_seconds": args.timeout}))
         raise SystemExit(1)
     if proc.returncode:
-        print(json.dumps({"status": "failed", "exit_code": proc.returncode,
+        missing_dependency = "ModuleNotFoundError" in proc.stderr
+        print(json.dumps({"status": "dependency_error" if missing_dependency else "failed",
+                          "exit_code": proc.returncode,
+                          "python_executable": sys.executable,
+                          "hint": "Use the existing QuantGrid backend virtualenv Python; do not install into system Python." if missing_dependency else None,
                           "stderr_tail": proc.stderr[-1500:]}))
         raise SystemExit(1)
     try:
