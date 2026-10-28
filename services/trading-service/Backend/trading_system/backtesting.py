@@ -137,7 +137,7 @@ class BacktestEngine:
         signal_map = self._prepare_signal_map(signals)
         # Cache row dictionaries once for this run. Strategy evaluation still
         # receives only the history available at each candle (no look-ahead).
-        candle_records = frame.to_dict("records") if signals is None and self.strategy is None else None
+        candle_records = frame.to_dict("records") if signals is None and self.strategy is None and type(self)._generate_signal is BacktestEngine._generate_signal else None
         capital_now = starting_capital
         open_trade: Trade | None = None
         closed: list[Trade] = []
@@ -170,7 +170,7 @@ class BacktestEngine:
                         signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
                     else:
                         # Keep the public _generate_signal hook unchanged for custom strategies.
-                        signal = self._generate_signal_from_records(candle_records[: i + 1], strategy_name, symbol, capital_now, risk_pct, rr_ratio)
+                        signal = self._generate_signal_from_records([record.copy() for record in candle_records[: i + 1]], strategy_name, symbol, capital_now, risk_pct, rr_ratio)
 
                 while signal is not None and open_trade is None:
                     signal.metadata = dict(signal.metadata or {})
