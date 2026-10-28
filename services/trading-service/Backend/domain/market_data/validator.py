@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 import pandas as pd
 
@@ -82,26 +83,28 @@ class MarketDataValidator:
         )
 
         # --------------------------------------------------
-        # Debug
+        # Optional diagnostics; validation itself always runs.
         # --------------------------------------------------
 
-        print("\n================ MARKET DATA VALIDATOR ================")
-        print(f"Rows : {len(candles)}")
-        print("\nData Types:")
-        print(candles.dtypes)
+        verbose = os.getenv("QUANTGRID_MARKET_DATA_VALIDATOR_VERBOSE", "0").strip().lower() in {"1", "true", "yes", "on"}
+        if verbose:
+            print("\n================ MARKET DATA VALIDATOR ================")
+            print(f"Rows : {len(candles)}")
+            print("\nData Types:")
+            print(candles.dtypes)
 
-        print("\nHead:")
-        print(candles.head())
+            print("\nHead:")
+            print(candles.head())
 
-        print("\nTail:")
-        print(candles.tail())
+            print("\nTail:")
+            print(candles.tail())
 
-        print("\nNaN Counts:")
-        print(candles[numeric_cols].isna().sum())
+            print("\nNaN Counts:")
+            print(candles[numeric_cols].isna().sum())
 
-        print("\nStatistics:")
-        print(candles[numeric_cols].describe())
-        print("=======================================================\n")
+            print("\nStatistics:")
+            print(candles[numeric_cols].describe())
+            print("=======================================================\n")
 
         # --------------------------------------------------
         # Candle count
@@ -179,7 +182,7 @@ class MarketDataValidator:
             | (candles["volume"].isna())
         ]
 
-        if not invalid_rows.empty:
+        if verbose and not invalid_rows.empty:
             print("\n========== INVALID OHLCV ROWS ==========")
             print(invalid_rows.head(20))
             print(f"Total invalid rows: {len(invalid_rows)}")
@@ -193,7 +196,7 @@ class MarketDataValidator:
             | (candles["low"] > candles["close"])
         ]
 
-        if not relationship_errors.empty:
+        if verbose and not relationship_errors.empty:
             print("\n========== INVALID OHLC RELATION ==========")
             print(relationship_errors.head(20))
             print(f"Total relation errors: {len(relationship_errors)}")
@@ -203,12 +206,12 @@ class MarketDataValidator:
         # Print validation result
         # --------------------------------------------------
 
-        if errors:
+        if verbose and errors:
             print("\n========== VALIDATION FAILED ==========")
             for err in errors:
                 print(f"- {err}")
             print("=======================================\n")
-        else:
+        elif verbose:
             print("\n✅ Market data validation PASSED\n")
 
         return ValidationResult(
