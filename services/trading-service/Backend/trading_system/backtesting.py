@@ -290,17 +290,29 @@ class BacktestEngine:
         if self.trading_service is None:
             self.trading_service = TradingService()
         try:
-            signals = self.trading_service.run_strategy(
-                strategy_name=strategy_name,
-                data=frame.iloc[: index + 1].to_dict("records"),
-                symbol=symbol,
-                capital=capital,
-                risk_pct=risk_pct,
-                rr_ratio=rr_ratio,
-                params=self._backtest_cache_params(
-                    indicator_cache, index
-                ),
+            from Backend.domain.strategies.backtest_cache_context import (
+                allow_backtest_cache,
             )
+            from contextlib import nullcontext
+
+            authorization = (
+                allow_backtest_cache()
+                if indicator_cache is not None
+                else nullcontext()
+            )
+
+            with authorization:
+                signals = self.trading_service.run_strategy(
+                    strategy_name=strategy_name,
+                    data=frame.iloc[: index + 1].to_dict("records"),
+                    symbol=symbol,
+                    capital=capital,
+                    risk_pct=risk_pct,
+                    rr_ratio=rr_ratio,
+                    params=self._backtest_cache_params(
+                        indicator_cache, index
+                    ),
+                )
             # A historical scan may return signals from earlier candles. Never
             # replay those signals as new entries at the current candle price.
             current_time = pd.Timestamp(frame.iloc[index]["timestamp"])

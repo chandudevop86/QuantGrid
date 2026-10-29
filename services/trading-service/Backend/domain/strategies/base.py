@@ -36,8 +36,12 @@ class BaseStrategy(ABC):
 
         # Explicit backtest-only prepared-data path.
         # Normal and live strategy execution retain their existing behavior.
+        from Backend.domain.strategies.backtest_cache_context import (
+            backtest_cache_allowed,
+        )
+
         prepared = context.params.get("_backtest_prepared_frame")
-        if prepared is not None:
+        if prepared is not None and backtest_cache_allowed():
             if not isinstance(prepared, pd.DataFrame):
                 raise TypeError("Backtest prepared frame must be a DataFrame")
             candles = prepared.copy()
