@@ -79,3 +79,28 @@ def test_external_prepared_frame_cannot_bypass_strategy_preparation():
     assert strategy.preparation_called is True, (
         "External caller bypassed normal strategy preparation"
     )
+
+
+def test_cache_authorization_isolated_between_threads():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier = Barrier(2)
+
+    def authorized_worker():
+        with allow_backtest_cache():
+            barrier.wait(timeout=10)
+            return backtest_cache_allowed()
+
+    def unauthorized_worker():
+        barrier.wait(timeout=10)
+        return backtest_cache_allowed()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        authorized = executor.submit(authorized_worker)
+        unauthorized = executor.submit(unauthorized_worker)
+
+        assert authorized.result(timeout=15) is True
+        assert unauthorized.result(timeout=15) is False
+
+    assert backtest_cache_allowed() is False
