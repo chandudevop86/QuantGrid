@@ -120,6 +120,7 @@ class BacktestEngine:
         rr_ratio: float = 2.0,
         min_score: float = 7.0,
         signals: list[StrategySignal] | None = None,
+        use_indicator_cache: bool = False,
         **_: Any,
     ) -> BacktestMetrics:
         frame = self._normalize_candles(candles)
@@ -135,6 +136,19 @@ class BacktestEngine:
 
         self._reset_risk(starting_capital, risk_pct)
         signal_map = self._prepare_signal_map(signals)
+
+        # Cache is scoped to this invocation, never shared across backtests.
+        indicator_cache = None
+        if (
+            use_indicator_cache
+            and signals is None
+            and self.strategy is None
+            and str(strategy_name).strip().lower() == "breakout"
+        ):
+            from Backend.trading_system.indicator_prefix_cache import (
+                IndicatorPrefixCache,
+            )
+            indicator_cache = IndicatorPrefixCache(frame)
         capital_now = starting_capital
         open_trade: Trade | None = None
         closed: list[Trade] = []
@@ -163,7 +177,11 @@ class BacktestEngine:
                 elif signals is not None:
                     signal = None
                 else:
-                    signal = self._generate_signal(frame, i, strategy_name, symbol, capital_now, risk_pct, rr_ratio, min_score)
+                    signal = self._generate_signal(
+                        frame, i, strategy_name, symbol, capital_now,
+                        risk_pct, rr_ratio, min_score,
+                        indicator_cache=indicator_cache,
+                    )
 
                 while signal is not None and open_trade is None:
                     signal.metadata = dict(signal.metadata or {})
@@ -259,7 +277,11 @@ class BacktestEngine:
             return quantity > 0, "accepted" if quantity > 0 else "position_size_zero", quantity
         raise TypeError("Risk manager must expose validate_order(), position_size(), or size_position().")
 
-    def _generate_signal(self, frame: pd.DataFrame, index: int, strategy_name: str, symbol: str, capital: float, risk_pct: float, rr_ratio: float, min_score: float) -> StrategySignal | None:
+    def _generate_signal(
+        self, frame: pd.DataFrame, index: int, strategy_name: str,
+        symbol: str, capital: float, risk_pct: float, rr_ratio: float,
+        min_score: float, indicator_cache=None,
+    ) -> StrategySignal | None:
         if self.strategy is not None:
             try:
                 return self.strategy.generate_signal(frame.iloc[: index + 1])
@@ -275,7 +297,9 @@ class BacktestEngine:
                 capital=capital,
                 risk_pct=risk_pct,
                 rr_ratio=rr_ratio,
-                params={},
+                params=self._backtest_cache_params(
+                    indicator_cache, index
+                ),
             )
             # A historical scan may return signals from earlier candles. Never
             # replay those signals as new entries at the current candle price.
@@ -295,6 +319,35 @@ class BacktestEngine:
             return None
         except Exception:
             return None
+
+    def _backtest_cache_params(self, indicator_cache, index: int):
+        if indicator_cache is None:
+            return {}
+
+        prepared = indicator_cache.prefix(index + 1)
+
+        # Preserve BreakoutStrategy.prepare_data calculations exactly.
+        strategy_engine = self.trading_service.trading_engine.strategy_engine
+        strategy = strategy_engine._strategies.get("breakout")
+        if strategy is None:
+            return {}
+
+        lookback = int(strategy.config.lookback)
+        prepared = prepared.copy()
+        prepared["breakout_high"] = (
+            prepared["high"]
+            .shift(1)
+            .rolling(lookback, min_periods=lookback)
+            .max()
+        )
+        prepared["breakout_low"] = (
+            prepared["low"]
+            .shift(1)
+            .rolling(lookback, min_periods=lookback)
+            .min()
+        )
+
+        return {"_backtest_prepared_frame": prepared}
 
     @staticmethod
     def _prepare_signal_map(signals: list[StrategySignal] | None) -> dict[pd.Timestamp, list[StrategySignal]]:

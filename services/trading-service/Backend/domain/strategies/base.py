@@ -34,7 +34,15 @@ class BaseStrategy(ABC):
     context: StrategyContext
     ) -> list[StrategySignal]:
 
-        candles = self.prepare_data(data)
+        # Explicit backtest-only prepared-data path.
+        # Normal and live strategy execution retain their existing behavior.
+        prepared = context.params.get("_backtest_prepared_frame")
+        if prepared is not None:
+            if not isinstance(prepared, pd.DataFrame):
+                raise TypeError("Backtest prepared frame must be a DataFrame")
+            candles = prepared.copy()
+        else:
+            candles = self.prepare_data(data)
 
         logger.debug(
             "Prepared candles: rows=%s columns=%s",
