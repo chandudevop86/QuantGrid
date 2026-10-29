@@ -330,6 +330,8 @@ class BacktestEngine:
                     return signal
             return None
         except Exception:
+            if indicator_cache is not None:
+                raise
             return None
 
     def _backtest_cache_params(self, indicator_cache, index: int):

@@ -42,8 +42,46 @@ class BaseStrategy(ABC):
 
         prepared = context.params.get("_backtest_prepared_frame")
         if prepared is not None and backtest_cache_allowed():
+            if self.__class__.__name__ != "BreakoutStrategy":
+                raise ValueError(
+                    "Prepared backtest cache is restricted to BreakoutStrategy"
+                )
             if not isinstance(prepared, pd.DataFrame):
                 raise TypeError("Backtest prepared frame must be a DataFrame")
+
+            raw = pd.DataFrame(data)
+            required = {"timestamp", "open", "high", "low", "close", "volume"}
+
+            if not required.issubset(raw.columns):
+                raise ValueError("Backtest cache input is missing OHLCV fields")
+            if not required.issubset(prepared.columns):
+                raise ValueError("Backtest cache is missing OHLCV fields")
+            if len(raw) != len(prepared):
+                raise ValueError("Backtest cache candle count mismatch")
+
+            from Backend.domain.indicators.indicators import prepare_ohlcv
+
+            normalized = prepare_ohlcv(raw)
+
+            if len(normalized) != len(prepared):
+                raise ValueError("Backtest cache normalization mismatch")
+
+            from pandas.testing import assert_frame_equal
+
+            try:
+                assert_frame_equal(
+                    normalized[list(sorted(required))].reset_index(drop=True),
+                    prepared[list(sorted(required))].reset_index(drop=True),
+                    check_dtype=False,
+                    check_exact=False,
+                    rtol=1e-10,
+                    atol=1e-10,
+                )
+            except AssertionError as exc:
+                raise ValueError(
+                    "Backtest cache does not match current candles"
+                ) from exc
+
             candles = prepared.copy()
         else:
             candles = self.prepare_data(data)
