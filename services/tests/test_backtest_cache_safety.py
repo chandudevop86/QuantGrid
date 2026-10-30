@@ -1,14 +1,24 @@
 """Safety regression tests for the experimental backtest cache."""
 
+from contextlib import contextmanager
+
 import pandas as pd
 import pytest
 
 from Backend.domain.models.context import StrategyContext
-from Backend.domain.strategies.backtest_cache_context import (
-    allow_backtest_cache,
-)
 from Backend.domain.strategies.base import BaseStrategy
 from Backend.domain.strategies.breakout import BreakoutStrategy
+
+
+@contextmanager
+def allow_backtest_cache():
+    # Resolve authorization after app_client fixtures reset Backend modules.
+    from Backend.domain.strategies.backtest_cache_context import (
+        allow_backtest_cache as current_allow_backtest_cache,
+    )
+
+    with current_allow_backtest_cache():
+        yield
 
 
 def candles():
