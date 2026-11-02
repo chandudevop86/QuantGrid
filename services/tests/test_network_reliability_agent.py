@@ -1,4 +1,4 @@
-from Backend.application.monitoring.network_reliability_agent import assess_network_reliability
+from Backend.application.network_reliability_agent import assess_network_reliability
 
 
 def _metrics():
