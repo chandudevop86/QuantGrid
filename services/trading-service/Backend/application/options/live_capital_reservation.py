@@ -72,8 +72,8 @@ def transition_live_reservation(db_path, *, actor_id, key, expected_state, next_
             or not isinstance(actor_id, str) or not actor_id.strip()
             or not isinstance(key, str) or not 16 <= len(key) <= 128):
         raise ReservationRejected("invalid reservation transition")
-    if next_state == "released" and broker_reconciliation_confirmed is not True:
-        raise ReservationRejected("verified broker reconciliation required before release")
+    if next_state == "released":
+        raise ReservationRejected("direct release forbidden: use reconciled release API")
     path = Path(db_path)
     if not path.is_file():
         raise ReservationRejected("durable reservation database not provisioned")
@@ -91,6 +91,42 @@ def transition_live_reservation(db_path, *, actor_id, key, expected_state, next_
                 (next_state, row[0], expected_state))
             db.execute("COMMIT")
             return {"reservation_id": row[0], "state": next_state}
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+
+def release_rejected_live_reservation(db_path, *, actor_id, key, sdk_client,
+                                      broker_order_id, security_id):
+    """Only the trusted server-side Dhan reader can authorize a non-fill release.
+
+    No caller-supplied boolean or broker snapshot can authorize this path.
+    This does not handle filled positions or any broker order submission.
+    """
+    from .dhan_reconciliation_reader import verify_dhan_nonfill
+
+    result = verify_dhan_nonfill(sdk_client=sdk_client, order_id=broker_order_id,
+                                 security_id=security_id)
+    if result.get("release_eligible") is not True:
+        raise ReservationRejected("Dhan reconciliation did not prove zero-fill")
+    path = Path(db_path)
+    if not path.is_file():
+        raise ReservationRejected("durable reservation database not provisioned")
+    with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute(
+                "SELECT id,state FROM option_live_reservations WHERE actor_id=? AND idem_key=?",
+                (actor_id, key)).fetchone()
+            if not row or row[1] not in ("submitted", "unknown"):
+                raise ReservationRejected("reservation state not releasable")
+            db.execute(
+                "UPDATE option_live_reservations SET state='released' WHERE id=? AND state=?",
+                (row[0], row[1]))
+            db.execute("COMMIT")
+            return {"reservation_id": row[0], "state": "released",
+                    "broker_order_id": broker_order_id}
         except BaseException:
             db.execute("ROLLBACK")
             raise
