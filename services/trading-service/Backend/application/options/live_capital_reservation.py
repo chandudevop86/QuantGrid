@@ -53,3 +53,44 @@ def reserve_live_premium(db_path, *, actor_id, key, premium_rupees, cap_rupees=5
         except BaseException:
             db.execute("ROLLBACK")
             raise
+
+
+def transition_live_reservation(db_path, *, actor_id, key, expected_state, next_state,
+                                broker_reconciliation_confirmed=False):
+    """Compare-and-swap state transition; never calls the broker.
+
+    Unknown broker outcomes remain locked. 'released' requires verified
+    reconciliation, even after an apparent rejection.
+    """
+    transitions = {
+        "reserved": {"submitted", "unknown", "released"},
+        "submitted": {"unknown", "filled", "released"},
+        "unknown": {"filled", "released"},
+        "filled": {"released"},
+    }
+    if (expected_state not in transitions or next_state not in transitions[expected_state]
+            or not isinstance(actor_id, str) or not actor_id.strip()
+            or not isinstance(key, str) or not 16 <= len(key) <= 128):
+        raise ReservationRejected("invalid reservation transition")
+    if next_state == "released" and broker_reconciliation_confirmed is not True:
+        raise ReservationRejected("verified broker reconciliation required before release")
+    path = Path(db_path)
+    if not path.is_file():
+        raise ReservationRejected("durable reservation database not provisioned")
+    with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute(
+                "SELECT id,state FROM option_live_reservations WHERE actor_id=? AND idem_key=?",
+                (actor_id, key)).fetchone()
+            if not row or row[1] != expected_state:
+                raise ReservationRejected("reservation state mismatch")
+            db.execute(
+                "UPDATE option_live_reservations SET state=? WHERE id=? AND state=?",
+                (next_state, row[0], expected_state))
+            db.execute("COMMIT")
+            return {"reservation_id": row[0], "state": next_state}
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
