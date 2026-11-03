@@ -14,3 +14,11 @@ CREATE TABLE IF NOT EXISTS option_live_pg_reservations (
 );
 CREATE INDEX IF NOT EXISTS option_live_pg_active_account_idx
 ON option_live_pg_reservations (broker_account_id, state);
+
+CREATE TABLE IF NOT EXISTS option_live_pg_order_bindings (
+    reservation_id BIGINT PRIMARY KEY REFERENCES option_live_pg_reservations(id),
+    broker_account_id TEXT NOT NULL REFERENCES option_live_account_locks(broker_account_id),
+    broker_order_id TEXT NOT NULL,
+    security_id TEXT NOT NULL,
+    UNIQUE (broker_account_id, broker_order_id)
+);
