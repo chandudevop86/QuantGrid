@@ -38,3 +38,48 @@ def test_missing_server_config_fails_closed():
             sdk_client=Client({"status": "success", "data": {"dhanClientId": "123"}}),
             configured_client_id="",
         )
+
+
+def test_postgres_release_rejects_missing_identity_before_database_access():
+    from types import SimpleNamespace
+    from Backend.application.options.live_postgres_reservation import (
+        release_postgres_rejected_order,
+    )
+
+    class Engine:
+        dialect = SimpleNamespace(name="postgresql")
+
+        def begin(self):
+            raise AssertionError("database must not be accessed")
+
+    with pytest.raises(DhanIdentityUnavailable):
+        release_postgres_rejected_order(
+            Engine(), broker_account_id="123", actor_id="trader",
+            key="request-identifier-0001", broker_order_id="order-1",
+            security_id="12345", sdk_client=Client({
+                "status": "success", "data": {"dhanClientId": "123"}
+            }),
+        )
+
+
+def test_postgres_release_rejects_other_authenticated_account():
+    from types import SimpleNamespace
+    from Backend.application.options.live_postgres_reservation import (
+        PostgresReservationRejected, release_postgres_rejected_order,
+    )
+
+    class Engine:
+        dialect = SimpleNamespace(name="postgresql")
+
+        def begin(self):
+            raise AssertionError("database must not be accessed")
+
+    with pytest.raises(PostgresReservationRejected, match="account mismatch"):
+        release_postgres_rejected_order(
+            Engine(), broker_account_id="123", actor_id="trader",
+            key="request-identifier-0001", broker_order_id="order-1",
+            security_id="12345", configured_client_id="456",
+            sdk_client=Client({
+                "status": "success", "data": {"dhanClientId": "456"}
+            }),
+        )
