@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from Backend.application.options.live_postgres_reservation import (
-    PostgresReservationRejected, reserve_postgres_premium,
+    PostgresReservationRejected, reserve_postgres_premium, bind_postgres_broker_order,
 )
 
 
@@ -42,11 +42,22 @@ def pg():
                 UNIQUE(broker_account_id, actor_id, idem_key)
             )
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS option_live_pg_order_bindings (
+                reservation_id BIGINT PRIMARY KEY REFERENCES option_live_pg_reservations(id),
+                broker_account_id TEXT NOT NULL REFERENCES option_live_account_locks(broker_account_id),
+                broker_order_id TEXT NOT NULL,
+                security_id TEXT NOT NULL,
+                UNIQUE (broker_account_id, broker_order_id)
+            )
+        """))
     account = "integration-" + uuid4().hex
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO option_live_account_locks VALUES (:account)"), {"account": account})
     yield engine, account
     with engine.begin() as conn:
+        conn.execute(text("DELETE FROM option_live_pg_order_bindings WHERE broker_account_id=:account"),
+                     {"account": account})
         conn.execute(text("DELETE FROM option_live_pg_reservations WHERE broker_account_id=:account"),
                      {"account": account})
         conn.execute(text("DELETE FROM option_live_account_locks WHERE broker_account_id=:account"),
@@ -98,3 +109,35 @@ def test_account_isolation_and_unprovisioned_rejection(pg):
     assert reserve_postgres_premium(
         engine, broker_account_id=account, actor_id="trader",
         key="new-request-identifier-0001", premium_rupees=100)["state"] == "reserved"
+
+
+def test_immutable_order_binding_and_replay(pg):
+    engine, account = pg
+    args = dict(broker_account_id=account, actor_id="trader",
+                key="binding-request-identifier-0001")
+    reserve_postgres_premium(engine, **args, premium_rupees=250)
+    first = bind_postgres_broker_order(
+        engine, **args, broker_order_id="order-1", security_id="12345")
+    replay = bind_postgres_broker_order(
+        engine, **args, broker_order_id="order-1", security_id="12345")
+    assert first["bound"] is True and first["replayed"] is False
+    assert replay["replayed"] is True
+    with pytest.raises(PostgresReservationRejected, match="immutable"):
+        bind_postgres_broker_order(
+            engine, **args, broker_order_id="order-2", security_id="12345")
+
+
+def test_order_cannot_bind_to_second_reservation(pg):
+    engine, account = pg
+    first = dict(broker_account_id=account, actor_id="trader",
+                 key="binding-request-identifier-0002")
+    second = dict(broker_account_id=account, actor_id="trader",
+                  key="binding-request-identifier-0003")
+    for args in (first, second):
+        reserve_postgres_premium(engine, **args, premium_rupees=250)
+    bind_postgres_broker_order(
+        engine, **first, broker_order_id="unique-order-1", security_id="12345")
+    from sqlalchemy.exc import IntegrityError
+    with pytest.raises(IntegrityError):
+        bind_postgres_broker_order(
+            engine, **second, broker_order_id="unique-order-1", security_id="12345")
