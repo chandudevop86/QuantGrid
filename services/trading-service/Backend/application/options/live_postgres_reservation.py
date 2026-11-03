@@ -112,6 +112,44 @@ def bind_postgres_broker_order(engine, *, broker_account_id, actor_id, key,
         return {"reservation_id": row.id, "bound": True, "replayed": False}
 
 
+
+def transition_postgres_reservation(engine, *, broker_account_id, actor_id, key,
+                                    expected_state, next_state):
+    """Record a trusted server-side submission state without releasing exposure.
+
+    Only reserved -> unknown and unknown -> submitted are allowed here.
+    'unknown' MUST be recorded before any external submission attempt; after
+    a crash or timeout, reconcile with the broker before any retry. This
+    function never submits an order and cannot authorize a second submission.
+    """
+    if engine.dialect.name != "postgresql":
+        raise PostgresReservationRejected("PostgreSQL required")
+    if (not isinstance(broker_account_id, str) or not broker_account_id.strip()
+            or not isinstance(actor_id, str) or not actor_id.strip()
+            or not isinstance(key, str) or not 16 <= len(key) <= 128):
+        raise PostgresReservationRejected("invalid reservation identity")
+    if (expected_state, next_state) not in (
+        ("reserved", "unknown"), ("unknown", "submitted")
+    ):
+        raise PostgresReservationRejected("forbidden reservation transition")
+    with engine.begin() as connection:
+        row = _lock_reservation(connection, broker_account_id=broker_account_id,
+                                actor_id=actor_id, key=key)
+        if row.state != expected_state:
+            raise PostgresReservationRejected("reservation state mismatch")
+        bound = connection.execute(text("""
+            SELECT reservation_id FROM option_live_pg_order_bindings
+            WHERE reservation_id=:id AND broker_account_id=:account
+        """), {"id": row.id, "account": broker_account_id}).first()
+        if bound is None:
+            raise PostgresReservationRejected("immutable broker order binding required")
+        connection.execute(text("""
+            UPDATE option_live_pg_reservations SET state=:next
+            WHERE id=:id AND state=:expected
+        """), {"id": row.id, "next": next_state, "expected": expected_state})
+        return {"reservation_id": row.id, "state": next_state}
+
+
 def release_postgres_rejected_order(engine, *, broker_account_id, actor_id, key,
                                     broker_order_id, security_id, sdk_client):
     """Release only on verified zero-fill for the immutably bound order.
