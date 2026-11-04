@@ -200,3 +200,47 @@ def test_real_postgres_release_fails_closed_without_account_identity(pg):
             WHERE broker_account_id=:account AND idem_key=:key
         """), {"account": account, "key": args["key"]}).scalar_one()
     assert state == "unknown"
+
+
+def test_timeout_restart_preserves_unknown_and_blocks_second_submission(pg):
+    """A timeout leaves exposure held across a new DB connection/process boundary.
+
+    This exercises durable state, not an actual Dhan SDK submission.
+    """
+    engine, account = pg
+    args = dict(broker_account_id=account, actor_id="trader",
+                key="restart-timeout-request-0001")
+    first = reserve_postgres_premium(engine, **args, premium_rupees=4900)
+    bind_postgres_broker_order(
+        engine, **args, broker_order_id="timeout-order-1", security_id="12345")
+    transition_postgres_reservation(
+        engine, **args, expected_state="reserved", next_state="unknown")
+
+    # New engine simulates a fresh worker after the previous process died.
+    restarted = create_engine(os.environ["QUANTGRID_TEST_POSTGRES_URL"])
+    try:
+        replay = reserve_postgres_premium(
+            restarted, **args, premium_rupees=4900)
+        assert replay["replayed"] is True
+        assert replay["reservation_id"] == first["reservation_id"]
+        assert replay["state"] == "unknown"
+
+        with pytest.raises(PostgresReservationRejected, match="state mismatch"):
+            transition_postgres_reservation(
+                restarted, **args, expected_state="reserved", next_state="unknown")
+        with pytest.raises(PostgresReservationRejected, match="reserved state"):
+            bind_postgres_broker_order(
+                restarted, **args, broker_order_id="timeout-order-2",
+                security_id="12345")
+        with pytest.raises(PostgresReservationRejected, match="cap exceeded"):
+            reserve_postgres_premium(
+                restarted, broker_account_id=account, actor_id="trader",
+                key="second-after-timeout-request-0002", premium_rupees=200)
+        with restarted.connect() as conn:
+            state = conn.execute(text("""
+                SELECT state FROM option_live_pg_reservations
+                WHERE broker_account_id=:account AND idem_key=:key
+            """), {"account": account, "key": args["key"]}).scalar_one()
+        assert state == "unknown"
+    finally:
+        restarted.dispose()
