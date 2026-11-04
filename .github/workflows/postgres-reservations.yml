@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - test/live-postgres-concurrency-20261103
+      - integration/live-risk-stack-20261104
 
 permissions:
   contents: read

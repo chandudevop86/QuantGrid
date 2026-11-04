@@ -112,17 +112,62 @@ def bind_postgres_broker_order(engine, *, broker_account_id, actor_id, key,
         return {"reservation_id": row.id, "bound": True, "replayed": False}
 
 
-def release_postgres_rejected_order(engine, *, broker_account_id, actor_id, key,
-                                    broker_order_id, security_id, sdk_client):
-    """Release only on verified zero-fill for the immutably bound order.
+def transition_postgres_reservation(engine, *, broker_account_id, actor_id, key,
+                                    expected_state, next_state):
+    """Record a trusted server-side submission state without releasing exposure.
 
-    The SDK client must be trusted and scoped to the authenticated broker
-    account by the caller. This module does not establish account identity.
+    Only reserved -> unknown and unknown -> submitted are allowed here.
+    'unknown' MUST be recorded before any external submission attempt; after
+    a crash or timeout, reconcile with the broker before any retry. This
+    function never submits an order and cannot authorize a second submission.
+    """
+    if engine.dialect.name != "postgresql":
+        raise PostgresReservationRejected("PostgreSQL required")
+    if (not isinstance(broker_account_id, str) or not broker_account_id.strip()
+            or not isinstance(actor_id, str) or not actor_id.strip()
+            or not isinstance(key, str) or not 16 <= len(key) <= 128):
+        raise PostgresReservationRejected("invalid reservation identity")
+    if (expected_state, next_state) not in (
+        ("reserved", "unknown"), ("unknown", "submitted")
+    ):
+        raise PostgresReservationRejected("forbidden reservation transition")
+    with engine.begin() as connection:
+        row = _lock_reservation(connection, broker_account_id=broker_account_id,
+                                actor_id=actor_id, key=key)
+        if row.state != expected_state:
+            raise PostgresReservationRejected("reservation state mismatch")
+        bound = connection.execute(text("""
+            SELECT reservation_id FROM option_live_pg_order_bindings
+            WHERE reservation_id=:id AND broker_account_id=:account
+        """), {"id": row.id, "account": broker_account_id}).first()
+        if bound is None:
+            raise PostgresReservationRejected("immutable broker order binding required")
+        connection.execute(text("""
+            UPDATE option_live_pg_reservations SET state=:next
+            WHERE id=:id AND state=:expected
+        """), {"id": row.id, "next": next_state, "expected": expected_state})
+        return {"reservation_id": row.id, "state": next_state}
+
+
+def release_postgres_rejected_order(engine, *, broker_account_id, actor_id, key,
+                                    broker_order_id, security_id, sdk_client,
+                                    configured_client_id=None):
+    """Release only after authenticated account identity and broker zero-fill.
+
+    The SDK and configured_client_id MUST come from trusted server-side
+    credentials, never from HTTP request parameters or user-provided snapshots.
+    Missing identity fails closed; this function never submits broker orders.
     """
     from .dhan_reconciliation_reader import verify_dhan_nonfill
+    from .dhan_account_identity import verify_dhan_account_identity
 
     if engine.dialect.name != "postgresql":
         raise PostgresReservationRejected("PostgreSQL required")
+    verified_account = verify_dhan_account_identity(
+        sdk_client=sdk_client, configured_client_id=configured_client_id,
+    )
+    if verified_account != broker_account_id:
+        raise PostgresReservationRejected("authenticated broker account mismatch")
     with engine.begin() as connection:
         row = _lock_reservation(connection, broker_account_id=broker_account_id,
                                 actor_id=actor_id, key=key)
