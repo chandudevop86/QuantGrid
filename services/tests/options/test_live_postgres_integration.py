@@ -13,6 +13,7 @@ from sqlalchemy import create_engine, text
 
 from Backend.application.options.live_postgres_reservation import (
     PostgresReservationRejected, reserve_postgres_premium, bind_postgres_broker_order,
+    transition_postgres_reservation, release_postgres_rejected_order,
 )
 
 
@@ -141,3 +142,61 @@ def test_order_cannot_bind_to_second_reservation(pg):
     with pytest.raises(IntegrityError):
         bind_postgres_broker_order(
             engine, **second, broker_order_id="unique-order-1", security_id="12345")
+
+
+def test_real_postgres_submission_state_machine(pg):
+    engine, account = pg
+    args = dict(broker_account_id=account, actor_id="trader",
+                key="transition-request-identifier-0001")
+    reserve_postgres_premium(engine, **args, premium_rupees=300)
+    with pytest.raises(PostgresReservationRejected, match="binding required"):
+        transition_postgres_reservation(
+            engine, **args, expected_state="reserved", next_state="unknown")
+    bind_postgres_broker_order(
+        engine, **args, broker_order_id="transition-order-1", security_id="12345")
+    unknown = transition_postgres_reservation(
+        engine, **args, expected_state="reserved", next_state="unknown")
+    assert unknown["state"] == "unknown"
+    with pytest.raises(PostgresReservationRejected, match="state mismatch"):
+        transition_postgres_reservation(
+            engine, **args, expected_state="reserved", next_state="unknown")
+    submitted = transition_postgres_reservation(
+        engine, **args, expected_state="unknown", next_state="submitted")
+    assert submitted["state"] == "submitted"
+    with engine.connect() as conn:
+        state = conn.execute(text("""
+            SELECT state FROM option_live_pg_reservations
+            WHERE broker_account_id=:account AND idem_key=:key
+        """), {"account": account, "key": args["key"]}).scalar_one()
+    assert state == "submitted"
+
+
+def test_real_postgres_release_fails_closed_without_account_identity(pg):
+    engine, account = pg
+    args = dict(broker_account_id=account, actor_id="trader",
+                key="identity-request-identifier-0001")
+    reserve_postgres_premium(engine, **args, premium_rupees=300)
+    bind_postgres_broker_order(
+        engine, **args, broker_order_id="identity-order-1", security_id="12345")
+    transition_postgres_reservation(
+        engine, **args, expected_state="reserved", next_state="unknown")
+
+    class FakeClient:
+        def get_fund_limits(self):
+            return {"status": "success", "data": {"dhanClientId": "wrong-account"}}
+
+        def get_order_list(self):
+            raise AssertionError("order list must not be read with mismatched identity")
+
+    from Backend.application.options.dhan_account_identity import DhanIdentityUnavailable
+    with pytest.raises(DhanIdentityUnavailable):
+        release_postgres_rejected_order(
+            engine, **args, broker_order_id="identity-order-1",
+            security_id="12345", sdk_client=FakeClient(),
+            configured_client_id=account)
+    with engine.connect() as conn:
+        state = conn.execute(text("""
+            SELECT state FROM option_live_pg_reservations
+            WHERE broker_account_id=:account AND idem_key=:key
+        """), {"account": account, "key": args["key"]}).scalar_one()
+    assert state == "unknown"
