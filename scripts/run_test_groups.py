@@ -19,6 +19,12 @@ def _test_files(pattern: str) -> list[Path]:
     # not implicitly enabled here; run them explicitly with --pattern.
     if pattern == "test_*.py":
         files.extend(tests.glob("strategy/test_*.py"))
+    # Run expensive trade parity separately in CI.
+    if pattern == "test_*.py":
+        files = [
+            path for path in files
+            if path.name != "test_backtest_cache_trade_parity.py"
+        ]
     return sorted(set(files))
 
 

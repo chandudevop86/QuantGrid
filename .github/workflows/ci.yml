@@ -35,6 +35,17 @@ jobs:
           QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
           QUANTGRID_ALLOW_DEV_SEED_USERS: "true"
         run: python scripts/run_test_groups.py --groups 4 --group-timeout 180 --coverage --cov-fail-under 70
+      - name: Backtest positive-trade parity
+        env:
+          QUANTGRID_ENV: local
+          QUANTGRID_AUTH_SECRET: ci-secret-value-that-is-long-enough-12345
+        run: |
+          PYTHONPATH=services/trading-service:services/tests:. \
+            python -m pytest -q \
+            --timeout=240 \
+            --timeout-method=thread \
+            services/tests/test_backtest_cache_trade_parity.py
+
 
   frontend:
     name: Frontend build
