@@ -244,3 +244,45 @@ def test_timeout_restart_preserves_unknown_and_blocks_second_submission(pg):
         assert state == "unknown"
     finally:
         restarted.dispose()
+
+
+def test_timeout_broker_missing_order_does_not_release_exposure(pg):
+    """A successful identity probe is insufficient when the broker order is absent."""
+    from Backend.application.options.dhan_reconciliation_reader import (
+        BrokerReconciliationUnavailable,
+    )
+
+    engine, account = pg
+    args = dict(broker_account_id=account, actor_id="trader",
+                key="missing-broker-order-request-0001")
+    reserve_postgres_premium(engine, **args, premium_rupees=4900)
+    bind_postgres_broker_order(
+        engine, **args, broker_order_id="missing-order-1", security_id="12345")
+    transition_postgres_reservation(
+        engine, **args, expected_state="reserved", next_state="unknown")
+
+    class MissingOrderClient:
+        def get_fund_limits(self):
+            return {"status": "success", "data": {"dhanClientId": account}}
+
+        def get_order_list(self):
+            return {"status": "success", "data": []}
+
+        def get_positions(self):
+            return {"status": "success", "data": []}
+
+    with pytest.raises(BrokerReconciliationUnavailable, match="missing or ambiguous"):
+        release_postgres_rejected_order(
+            engine, **args, broker_order_id="missing-order-1",
+            security_id="12345", sdk_client=MissingOrderClient(),
+            configured_client_id=account)
+    with engine.connect() as conn:
+        state = conn.execute(text("""
+            SELECT state FROM option_live_pg_reservations
+            WHERE broker_account_id=:account AND idem_key=:key
+        """), {"account": account, "key": args["key"]}).scalar_one()
+    assert state == "unknown"
+    with pytest.raises(PostgresReservationRejected, match="cap exceeded"):
+        reserve_postgres_premium(
+            engine, broker_account_id=account, actor_id="trader",
+            key="new-order-after-missing-0001", premium_rupees=200)
