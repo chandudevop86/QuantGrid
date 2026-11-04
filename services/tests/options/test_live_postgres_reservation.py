@@ -46,3 +46,36 @@ def test_release_and_binding_reject_sqlite():
         bind_postgres_broker_order(engine, **args)
     with pytest.raises(PostgresReservationRejected, match="PostgreSQL"):
         release_postgres_rejected_order(engine, **args, sdk_client=None)
+
+def test_submission_transition_rejects_sqlite():
+    from Backend.application.options.live_postgres_reservation import transition_postgres_reservation
+    engine = SimpleNamespace(dialect=SimpleNamespace(name="sqlite"))
+    with pytest.raises(PostgresReservationRejected, match="PostgreSQL"):
+        transition_postgres_reservation(
+            engine, broker_account_id="acct-1", actor_id="trader",
+            key="request-identifier-001", expected_state="reserved",
+            next_state="unknown",
+        )
+
+
+@pytest.mark.parametrize("expected,next_state", [
+    ("reserved", "submitted"),
+    ("unknown", "released"),
+    ("submitted", "unknown"),
+    ("unknown", "reserved"),
+    ("reserved", "released"),
+])
+def test_submission_transition_forbids_unsafe_state_changes(expected, next_state):
+    from Backend.application.options.live_postgres_reservation import transition_postgres_reservation
+
+    class Engine:
+        dialect = SimpleNamespace(name="postgresql")
+        def begin(self):
+            raise AssertionError("invalid transitions must not access database")
+
+    with pytest.raises(PostgresReservationRejected, match="forbidden"):
+        transition_postgres_reservation(
+            Engine(), broker_account_id="acct-1", actor_id="trader",
+            key="request-identifier-001", expected_state=expected,
+            next_state=next_state,
+        )
