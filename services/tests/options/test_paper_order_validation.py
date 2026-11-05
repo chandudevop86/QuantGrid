@@ -34,7 +34,18 @@ def test_stale_quote_rejected():
 
 
 def test_premium_limit_rejected():
-    assert "premium_risk_limit_exceeded" in validate_option_paper_order(**{**payload(), "lots": 3})["reasons"]
+    # The paper limit is configurable; 3 lots cost 101 * 65 * 3 = 19,695.
+    result = validate_option_paper_order(**{**payload(), "lots": 3},
+                                         max_premium_rupees=10000)
+    assert result["estimated_premium_rupees"] == 19695
+    assert "premium_risk_limit_exceeded" in result["reasons"]
+
+
+def test_premium_below_default_paper_limit_allowed():
+    result = validate_option_paper_order(**{**payload(), "lots": 3})
+    assert result["estimated_premium_rupees"] == 19695
+    assert "premium_risk_limit_exceeded" not in result["reasons"]
+    assert result["execution_enabled"] is False
 
 
 def test_deep_otm_rejected():
