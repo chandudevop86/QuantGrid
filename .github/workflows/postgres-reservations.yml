@@ -1,0 +1,44 @@
+name: Isolated PostgreSQL Reservation Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - test/live-postgres-concurrency-20261103
+      - integration/live-risk-stack-20261104
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-reservations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: quantgrid_test
+          POSTGRES_PASSWORD: ci-only-reservation-test
+          POSTGRES_DB: quantgrid_reservation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quantgrid_test -d quantgrid_reservation_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run real PostgreSQL concurrency and idempotency tests (no skips)
+        env:
+          QUANTGRID_TEST_POSTGRES_URL: postgresql+psycopg://quantgrid_test:ci-only-reservation-test@localhost:5432/quantgrid_reservation_test
+          PYTHONPATH: services/trading-service:.
+          QUANTGRID_ENV: local
+          QUANTGRID_AUTH_SECRET: ci-only-reservation-test-secret-not-for-production
+        run: python -m pytest -q -rs -o addopts='' services/tests/options/test_live_postgres_integration.py --strict-markers
