@@ -19,6 +19,27 @@ describe("NIFTY option buyer", () => {
     const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5},quote_timestamp:new Date().toISOString() };
     expect(screenBuyerContract(22455,22450,"PE",leg,true,new Date()).eligible).toBe(true);
   });
+
+  it("accepts fresh IST offset timestamps", () => {
+    const timestamp = new Date(Date.now() - 5000)
+      .toISOString()
+      .replace("Z", "+00:00");
+
+    const leg = {
+      security_id: "123",
+      bid: { price: 100 },
+      ask: { price: 101 },
+      oi: 10000,
+      greeks: { delta: -0.5 },
+      quote_timestamp: timestamp,
+    };
+
+    expect(
+      screenBuyerContract(22455, 22450, "PE", leg, true)
+        .eligible
+    ).toBe(true);
+  });
+
   it("blocks missing exchange quote timestamps even after a fresh UI refresh", () => {
     const leg = { security_id:"123",bid:{price:100},ask:{price:101},oi:10000,greeks:{delta:-0.5} };
     expect(screenBuyerContract(22455,22450,"PE",leg,true,new Date()).reasons).toContain("Exchange quote timestamp missing, future or older than 30 seconds");
