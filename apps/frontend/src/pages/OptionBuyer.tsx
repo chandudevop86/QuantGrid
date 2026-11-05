@@ -41,7 +41,7 @@ export function screenBuyerContract(spot: number, strike: number, side: "CE" | "
   if (delta === null || Math.abs(delta) < 0.25 || Math.abs(delta) > 0.85 || (side === "PE" ? delta >= 0 : delta <= 0)) reasons.push("Delta unavailable or outside configured limits");
   // HTTP refresh time is not an exchange quote timestamp. Never substitute it.
   const rawTimestamp = leg?.quote_timestamp;
-  const quoteTime = typeof rawTimestamp === "string" && /(?:Z|[+-]\\d{2}:\\d{2})$/i.test(rawTimestamp) ? Date.parse(rawTimestamp) : NaN;
+  const quoteTime = typeof rawTimestamp === "string" && /(?:Z|[+-]\d{2}:\d{2})$/i.test(rawTimestamp) ? Date.parse(rawTimestamp) : NaN;
   const quoteAge = Date.now() - quoteTime;
   if (!Number.isFinite(quoteTime) || quoteAge < 0 || quoteAge > 30000) reasons.push("Exchange quote timestamp missing, future or older than 30 seconds");
   if (!id) reasons.push("Contract security ID missing");
