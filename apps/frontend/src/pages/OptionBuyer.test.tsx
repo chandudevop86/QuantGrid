@@ -21,9 +21,9 @@ describe("NIFTY option buyer", () => {
   });
 
   it("accepts fresh IST offset timestamps", () => {
-    const timestamp = new Date(Date.now() - 5000)
+    const timestamp = new Date(Date.now() - 5000 + 330 * 60000)
       .toISOString()
-      .replace("Z", "+00:00");
+      .slice(0, 19) + "+05:30";
 
     const leg = {
       security_id: "123",
