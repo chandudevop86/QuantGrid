@@ -1,5 +1,4 @@
 """Tests for PostgreSQL live-reservation migration (no live broker actions)."""
-import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -11,9 +10,13 @@ MIGRATION = ROOT / "alembic/versions/0009_option_live_reservations.py"
 
 
 def _module():
-    spec = importlib.util.spec_from_file_location("live_reservation_migration_0009", MIGRATION)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # CI does not install Alembic; exercise migration operations with a mocked
+    # op facade while retaining the production import in the migration file.
+    import types
+    source = MIGRATION.read_text(encoding="utf-8")
+    source = source.replace("from alembic import op", "op = None", 1)
+    module = types.ModuleType("live_reservation_migration_0009")
+    exec(compile(source, str(MIGRATION), "exec"), module.__dict__)
     return module
 
 
