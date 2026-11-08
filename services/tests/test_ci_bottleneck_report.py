@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci-bottleneck-agent.yml"
 SCRIPT = ROOT / "scripts/ci_bottleneck_agent.py"
 
