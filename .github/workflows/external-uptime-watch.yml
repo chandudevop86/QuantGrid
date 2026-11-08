@@ -45,10 +45,7 @@ jobs:
             if (!healthy) {
               const body = marker + '\\nPublic https://quantgrid.info/health did not return HTTP 200. ' +
                 'Check EC2, nginx, backend and networking. No automated restart or trading action was performed.';
-              if (existing) {
-                await github.rest.issues.createComment({owner, repo, issue_number: existing.number,
-                  body: 'Scheduled public health check still failing.'});
-              } else {
+              if (!existing) {
                 await github.rest.issues.create({owner, repo, title, body, labels: []});
               }
             } else if (existing) {
