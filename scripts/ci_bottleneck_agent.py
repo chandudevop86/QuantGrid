@@ -105,6 +105,10 @@ def main():
     report = collect()
     output = markdown(report)
     print(output)
+    report_path = os.environ.get("QUANTGRID_CI_REPORT_PATH")
+    if report_path:
+        with open(report_path, "w", encoding="utf-8") as handle:
+            handle.write(output + "\n")
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if path:
         with open(path, "a", encoding="utf-8") as handle:
