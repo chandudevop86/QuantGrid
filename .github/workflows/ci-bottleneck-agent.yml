@@ -26,9 +26,12 @@ jobs:
       - name: Analyze completed CI runs and PR queue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUANTGRID_CI_REPORT_PATH: ${{ runner.temp }}/quantgrid-ci-bottleneck-report.md
         run: python scripts/ci_bottleneck_agent.py
       - name: Publish one continuously updated tracking issue
         uses: actions/github-script@v7
+        env:
+          QUANTGRID_CI_REPORT_PATH: ${{ runner.temp }}/quantgrid-ci-bottleneck-report.md
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -37,7 +40,7 @@ jobs:
             const title = 'QuantGrid CI bottleneck agent report';
             const marker = '<!-- quantgrid-bottleneck-agent -->';
             // Job summary is also the canonical rendered report.
-            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            const summaryPath = process.env.QUANTGRID_CI_REPORT_PATH;
             const body = fs.readFileSync(summaryPath, 'utf8');
             if (!body.includes(marker)) throw new Error('Missing report marker');
             const issues = await github.paginate(github.rest.issues.listForRepo, {
