@@ -1,0 +1,42 @@
+name: PostgreSQL Live Reservation Migration Tests
+
+on:
+  pull_request:
+    paths:
+      - "alembic/versions/0009_option_live_reservations.py"
+      - "services/tests/test_live_reservation_alembic_migration.py"
+      - ".github/workflows/live-reservation-migration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: quantgrid_test
+          POSTGRES_PASSWORD: ci-only-migration-test
+          POSTGRES_DB: quantgrid_migration_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quantgrid_test -d quantgrid_migration_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install migration test dependencies
+        run: python -m pip install -r requirements-dev.txt "alembic>=1.13,<2" "psycopg[binary]>=3,<4"
+      - name: Run migration on isolated PostgreSQL and verify constraints
+        env:
+          QUANTGRID_TEST_POSTGRES_URL: postgresql+psycopg://quantgrid_test:ci-only-migration-test@localhost:5432/quantgrid_migration_test
+        run: python -m pytest -q -rs -o addopts='' services/tests/test_live_reservation_postgres_integration.py
