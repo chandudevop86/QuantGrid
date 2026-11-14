@@ -158,6 +158,21 @@ fi
 run curl -fsSI -H "Host: ${PRODUCTION_HOST:-quantgrid.info}" "http://127.0.0.1/" >/dev/null
 bash "${SCRIPT_DIR}/production_frontend.sh" check
 
+if [[ -f "${APP_DIR}/scripts/host_watchdog.py" || -z "${ROLLBACK_REF}" ]]; then
+  require_file "${APP_DIR}/scripts/host_watchdog.py"
+  log "Installing and starting the read-only host watchdog"
+  for unit in quantgrid-host-watchdog.service quantgrid-host-watchdog.timer; do
+    require_file "${APP_DIR}/deploy/systemd/${unit}"
+    run sudo install -m 0644 "${APP_DIR}/deploy/systemd/${unit}" "/etc/systemd/system/${unit}"
+  done
+  systemctl_run daemon-reload
+  systemctl_run enable --now quantgrid-host-watchdog.timer
+  systemctl_run is-active quantgrid-host-watchdog.timer
+elif [[ "${DRY_RUN}" != "1" && -f /etc/systemd/system/quantgrid-host-watchdog.timer ]]; then
+  log "Stopping the watchdog timer for a rollback predating the watchdog"
+  systemctl_run disable --now quantgrid-host-watchdog.timer
+fi
+
 deployed_commit="$(git rev-parse HEAD)"
 log "Deployment complete at ${deployed_commit}"
 log "Previous commit was ${current_commit}"

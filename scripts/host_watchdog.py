@@ -1,7 +1,6 @@
 """Read-only host watchdog. Never submits orders, restarts services, or exposes secrets."""
 from __future__ import annotations
 import json
-import os
 import subprocess
 import sys
 import urllib.error
@@ -25,8 +24,8 @@ def api_status() -> dict:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=5) as response:
             data = json.load(response)
-            # Do not expose response contents: health may include credentials or identifiers.
-            return {"name": "backend_api", "ok": response.status == 200 and isinstance(data, dict)}
+            healthy = response.status == 200 and isinstance(data, dict) and data.get("status") == "ok"
+            return {"name": "backend_api", "ok": healthy}
     except (OSError, ValueError, urllib.error.URLError):
         return {"name": "backend_api", "ok": False}
 
