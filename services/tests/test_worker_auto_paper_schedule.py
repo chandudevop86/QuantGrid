@@ -114,3 +114,51 @@ def test_candle_ingestion_provenance_uses_provider_not_paper_demo_label():
     }) == "dhan"
     assert worker._candle_storage_source({"source": "demo"}) == "demo"
     assert worker._candle_storage_source({}) == "unknown"
+
+
+def test_auto_paper_retries_failed_analysis_on_same_candle(monkeypatch):
+    worker._LAST_AUTO_PAPER_CANDLE.clear()
+    monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=True))
+    market = _MarketService()
+    monkeypatch.setattr(worker, "get_market_data_service", lambda: market)
+    monkeypatch.setattr(worker, "_auto_paper_symbols", lambda: ["NIFTY"])
+    responses = iter([
+        {"strategies": {
+            "breakout": {"error": "temporary failure"},
+            "crt_tbs": {"trades": [{"status": "paper_simulated"}]},
+        }},
+        {"strategies": {"breakout": {"trades": [{"status": "paper_simulated"}]}}},
+    ])
+    monkeypatch.setattr(worker, "_run_auto_paper_job", lambda payload: next(responses))
+
+    assert worker._run_periodic_auto_paper()["status"] == "partial_failure"
+    assert worker._LAST_AUTO_PAPER_CANDLE == {}
+    assert worker._run_periodic_auto_paper()["status"] == "completed"
+    assert worker._run_periodic_auto_paper()["symbols"]["NIFTY"]["status"] == "already_scanned"
+
+
+def test_auto_paper_provider_failure_does_not_block_other_symbols(monkeypatch):
+    worker._LAST_AUTO_PAPER_CANDLE.clear()
+    monkeypatch.setattr(worker, "get_market_session", lambda: SimpleNamespace(market_live=True))
+    monkeypatch.setattr(worker, "_auto_paper_symbols", lambda: ["NIFTY", "BANKNIFTY"])
+
+    class Market(_MarketService):
+        def get_candles(self, symbol, **kwargs):
+            if symbol == "NIFTY":
+                raise RuntimeError("provider unavailable")
+            return super().get_candles(symbol, **kwargs)
+
+    monkeypatch.setattr(worker, "get_market_data_service", lambda: Market())
+    calls = []
+
+    def scan(payload):
+        calls.append(payload["symbol"])
+        return {"status": "no_trade"}
+
+    monkeypatch.setattr(worker, "_run_auto_paper_job", scan)
+    result = worker._run_periodic_auto_paper()
+    assert result["status"] == "partial_failure"
+    assert result["symbols"]["NIFTY"]["status"] == "market_data_error"
+    assert calls == ["BANKNIFTY"]
+    assert "NIFTY" not in worker._LAST_AUTO_PAPER_CANDLE
+

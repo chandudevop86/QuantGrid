@@ -1080,12 +1080,17 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
     results: dict[str, Any] = {}
 
     for symbol in _auto_paper_symbols():
-        response = service.get_candles(
-            symbol,
-            interval="1m",
-            period="1d",
-            limit=2,
-        )
+        try:
+            response = service.get_candles(
+                symbol,
+                interval="1m",
+                period="1d",
+                limit=2,
+            )
+        except Exception:
+            logger.exception("Automatic paper market data failed symbol=%s", symbol)
+            results[symbol] = {"status": "market_data_error"}
+            continue
         candles = list(response.get("candles") or [])
         if not candles:
             results[symbol] = {"status": "no_market_data"}
@@ -1113,7 +1118,6 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
             }
             continue
 
-        _LAST_AUTO_PAPER_CANDLE[symbol] = latest_candle
         results[symbol] = _run_auto_paper_job(
             {
                 "symbol": symbol,
@@ -1125,8 +1129,19 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
             }
         )
 
+        # Failed analyses may be retried while this candle is still fresh.
+        # Persisted paper trades already deduplicate by strategy/symbol/time.
+        analyses = results[symbol].get("strategies", {"single": results[symbol]})
+        if any("error" in analysis for analysis in analyses.values()):
+            results[symbol]["status"] = "analysis_error"
+        else:
+            _LAST_AUTO_PAPER_CANDLE[symbol] = latest_candle
+
     return {
-        "status": "completed",
+        "status": "partial_failure" if any(
+            result.get("status") in {"market_data_error", "analysis_error"}
+            for result in results.values()
+        ) else "completed",
         "execution_mode": "paper",
         "symbols": results,
     }
