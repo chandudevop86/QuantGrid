@@ -1,5 +1,7 @@
 """Watchdog does not perform remediation or broker activity."""
 import importlib.util
+import io
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -33,3 +35,27 @@ def test_watchdog_is_read_only():
     assert "broker.place" not in source
     assert "quantgrid-backend" in source
     assert "quantgrid-worker" in source
+
+
+def test_api_status_requires_healthy_application_response(monkeypatch):
+    module = _load()
+    for payload, expected in [
+        ({"status": "ok", "services": {"db": {"healthy": True}}}, True),
+        ({"status": "degraded", "services": {"db": {"healthy": False}}}, False),
+        ({"status": "ok", "services": {"db": {"healthy": False}}}, False),
+        ({"status": "ok", "services": {}}, False),
+        ({"unexpected": "response"}, False),
+        ([], False),
+    ]:
+        response = io.BytesIO(json.dumps(payload).encode())
+        response.status = 200
+        monkeypatch.setattr(module.urllib.request, "urlopen", lambda *a, **k: response)
+        assert module.api_status() == {"name": "backend_api", "ok": expected}
+
+
+def test_api_status_rejects_invalid_json(monkeypatch):
+    module = _load()
+    response = io.BytesIO(b"<html>frontend</html>")
+    response.status = 200
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *a, **k: response)
+    assert module.api_status() == {"name": "backend_api", "ok": False}

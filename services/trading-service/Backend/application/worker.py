@@ -471,13 +471,16 @@ def _run_auto_paper_job(
             logger.info(
                 "auto_paper_signal_diagnostics "
                 "strategy=%s active=%s rejected=%s stale=%s "
-                "trades=%s blocked_reason=%s "
+                "persisted_paper_trades=%s no_trade=%s no_trade_reasons=%s paper_trade_ids=%s blocked_reason=%s "
                 "rejected_reasons=%s stale_reasons=%s",
                 strategy_name,
                 len(analysis.get("signals", [])),
                 len(analysis.get("rejected_signals", [])),
                 len(analysis.get("stale_signals", [])),
-                len(analysis.get("trades", [])),
+                sum(trade.get("status") == "paper_simulated" for trade in analysis.get("trades", [])),
+                sum(trade.get("status") == "no_trade" for trade in analysis.get("trades", [])),
+                [trade.get("reason") for trade in analysis.get("trades", []) if trade.get("status") == "no_trade"],
+                [trade.get("paper_trade_id") for trade in analysis.get("trades", []) if trade.get("status") == "paper_simulated"],
                 analysis.get("auto_trade_blocked_reason"),
                 [
                     item.get("decision", {}).get("reason")
@@ -585,6 +588,11 @@ async def _run_exit_monitor_job_async(
     )
 
 
+
+    if execution_mode == "paper":
+        from Backend.application.options.auto_paper_execution import monitor_option_positions
+
+        monitor_option_positions()
 
     with SessionLocal() as db:
 
@@ -985,9 +993,12 @@ def _paper_reconciliation_interval() -> float:
 def _run_periodic_paper_reconciliation() -> dict[str, Any]:
     # Intentionally hard-coded. Periodic reconciliation introduced for the
     # automated paper lifecycle must never inherit or switch to live mode.
-    return _run_reconciliation_job(
-        {"execution_mode": "paper"}
-    )
+    from Backend.application.options.auto_paper_execution import monitor_option_positions
+
+    try:
+        return _run_reconciliation_job({"execution_mode": "paper"})
+    finally:
+        monitor_option_positions()
 
 
 def _exit_monitor_enabled():
@@ -1080,12 +1091,17 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
     results: dict[str, Any] = {}
 
     for symbol in _auto_paper_symbols():
-        response = service.get_candles(
-            symbol,
-            interval="1m",
-            period="1d",
-            limit=2,
-        )
+        try:
+            response = service.get_candles(
+                symbol,
+                interval="1m",
+                period="1d",
+                limit=2,
+            )
+        except Exception:
+            logger.exception("Automatic paper market data failed symbol=%s", symbol)
+            results[symbol] = {"status": "market_data_error"}
+            continue
         candles = list(response.get("candles") or [])
         if not candles:
             results[symbol] = {"status": "no_market_data"}
@@ -1113,7 +1129,6 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
             }
             continue
 
-        _LAST_AUTO_PAPER_CANDLE[symbol] = latest_candle
         results[symbol] = _run_auto_paper_job(
             {
                 "symbol": symbol,
@@ -1125,8 +1140,17 @@ def _run_periodic_auto_paper() -> dict[str, Any]:
             }
         )
 
+        analyses = results[symbol].get("strategies", {"single": results[symbol]})
+        if any("error" in analysis for analysis in analyses.values()):
+            results[symbol]["status"] = "analysis_error"
+        else:
+            _LAST_AUTO_PAPER_CANDLE[symbol] = latest_candle
+
     return {
-        "status": "completed",
+        "status": "partial_failure" if any(
+            result.get("status") in {"market_data_error", "analysis_error"}
+            for result in results.values()
+        ) else "completed",
         "execution_mode": "paper",
         "symbols": results,
     }

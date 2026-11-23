@@ -26,7 +26,18 @@ def api_status() -> dict:
         with urllib.request.urlopen(HEALTH_URL, timeout=5) as response:
             data = json.load(response)
             # Do not expose response contents: health may include credentials or identifiers.
-            return {"name": "backend_api", "ok": response.status == 200 and isinstance(data, dict)}
+            healthy = (
+                response.status == 200
+                and isinstance(data, dict)
+                and data.get("status") == "ok"
+                and isinstance(data.get("services"), dict)
+                and bool(data["services"])
+                and all(
+                    isinstance(service, dict) and service.get("healthy") is True
+                    for service in data["services"].values()
+                )
+            )
+            return {"name": "backend_api", "ok": healthy}
     except (OSError, ValueError, urllib.error.URLError):
         return {"name": "backend_api", "ok": False}
 

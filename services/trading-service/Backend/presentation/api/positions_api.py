@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from Backend.application.job_queue import enqueue_job
 from Backend.application.position_store import list_closed_positions, list_open_positions, position_summary
+from Backend.application.options.paper_order_ledger import list_option_positions
 from Backend.application.trade_exit_engine import evaluate_exit_rule, exit_all_positions, exit_position, exit_rules, monitor_open_positions
 from Backend.core.database import get_db
 from Backend.domain.security.models import User
@@ -28,19 +31,57 @@ def _execution_mode(x_quantgrid_mode: str = Header(default="paper", alias="X-Qua
     return mode
 
 
+def _option_position(row: dict) -> dict:
+    # Negative IDs keep the option ledger distinct from generic position IDs.
+    return {**row, "id": -int(row["id"]), "option_order_id": int(row["id"])}
+
+
+def _paper_options(execution_mode: str, position_status: str) -> list[dict]:
+    if execution_mode != "paper":
+        return []
+    return [_option_position(row) for row in list_option_positions()
+            if row["status"] == position_status]
+
+
 @router.get("/open")
-def open_positions(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
-    return {"positions": list_open_positions()}
+def open_positions(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    return {"positions": list_open_positions() + _paper_options(execution_mode, "open")}
 
 
 @router.get("/closed")
-def closed_positions(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
-    return {"positions": list_closed_positions()}
+def closed_positions(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    return {"positions": list_closed_positions() + _paper_options(execution_mode, "closed")}
 
 
 @router.get("/summary")
-def summary(_role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops"))):
-    return position_summary()
+def summary(
+    _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
+    execution_mode: str = Depends(_execution_mode),
+):
+    result = position_summary()
+    opened = _paper_options(execution_mode, "open")
+    closed = _paper_options(execution_mode, "closed")
+    today = datetime.now(timezone.utc).date().isoformat()
+    unrealized = sum(float(row.get("open_pnl") or 0) for row in opened)
+    result["open_positions"] += len(opened)
+    result["closed_positions"] += len(closed)
+    result["current_exposure"] = round(result["current_exposure"] + sum(
+        row["quantity"] * float(row.get("current_price") or row["entry_price"])
+        for row in opened
+    ), 2)
+    result["realized_pnl"] = round(result["realized_pnl"] + sum(float(row.get("closed_pnl") or 0) for row in closed), 2)
+    result["unrealized_pnl"] = round(result["unrealized_pnl"] + unrealized, 2)
+    result["todays_pnl"] = round(result["todays_pnl"] + unrealized + sum(
+        float(row.get("closed_pnl") or 0) for row in closed
+        if str(row.get("closed_at") or "").startswith(today)
+    ), 2)
+    return result
 
 
 @router.get("/exit-rules")
@@ -70,12 +111,17 @@ async def run_exit_monitor_now(
     db: Session = Depends(get_db),
 ):
     try:
-        return await monitor_open_positions(
+        result = await monitor_open_positions(
             db=db,
             actor=actor,
             request=request,
             execution_mode=execution_mode,
         )
+        if execution_mode == "paper":
+            from Backend.application.options.auto_paper_execution import monitor_option_positions
+
+            result["option_paper"] = monitor_option_positions()
+        return result
     except Exception as exc:
         raise upstream_service_error("broker", "exit_monitor", exc) from exc
 
@@ -102,6 +148,18 @@ async def exit_single_position(
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
 ):
+    if position_id < 0:
+        if execution_mode != "paper":
+            raise HTTPException(status_code=400, detail="Option paper positions require paper mode.")
+        from Backend.application.options.auto_paper_execution import exit_option_paper
+
+        try:
+            position = exit_option_paper(-position_id, reason=(payload or ExitRequest()).reason)
+            return {"position": _option_position(position), "execution_mode": "paper"}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise upstream_service_error("market_data", "option_paper_exit", exc) from exc
     try:
         return await exit_position(
             position_id,
@@ -127,10 +185,22 @@ async def exit_all_open_positions(
     execution_mode: str = Depends(_execution_mode),
     db: Session = Depends(get_db),
 ):
-    return await exit_all_positions(
+    result = await exit_all_positions(
         db=db,
         actor=actor,
         request=request,
         execution_mode=execution_mode,
         reason=(payload or ExitRequest()).reason,
     )
+    if execution_mode == "paper":
+        from Backend.application.options.auto_paper_execution import exit_option_paper
+
+        for position in _paper_options(execution_mode, "open"):
+            result["checked"] += 1
+            try:
+                closed = exit_option_paper(position["option_order_id"], reason=(payload or ExitRequest()).reason)
+                result["positions"].append({"position": _option_position(closed), "execution_mode": "paper"})
+                result["exited"] += 1
+            except Exception:
+                result["errors"].append(f"{position['id']}: Option paper exit unavailable.")
+    return result

@@ -854,7 +854,7 @@ def _float_or_none(value: Any) -> float | None:
     return float(value)
 
 
-def risk_status() -> dict[str, Any]:
+def risk_status(*, include_closed_outcomes: bool = False) -> dict[str, Any]:
     """Consolidate each closure once, preferring cost-adjusted paper evidence.
 
     Position records represent broker/position state; paper-trade records may
@@ -947,7 +947,7 @@ def risk_status() -> dict[str, Any]:
         else:
             break
 
-    return {
+    result = {
         "daily_pnl": daily_pnl,
         "weekly_pnl": weekly_pnl,
         "trades_today": len(today_trades) + live_entries_today,
@@ -967,6 +967,12 @@ def risk_status() -> dict[str, Any]:
         "max_quantity": int(os.getenv("QUANTGRID_MAX_QUANTITY", "1800")),
         "risk_configured": settings.risk_configured,
     }
+    if include_closed_outcomes:
+        result["closed_outcomes"] = [
+            {"closed_at": time.isoformat(), "pnl": pnl}
+            for time, pnl in closed_events
+        ]
+    return result
 
 
 def _trade_created_at(trade: dict[str, Any]) -> datetime | None:

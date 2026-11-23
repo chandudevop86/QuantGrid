@@ -1,7 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
 
-from Backend.application.live_analysis_worker import LiveAnalysisPayload, run_live_analysis
 from Backend.domain.models.signal import StrategySignal
 
 
@@ -68,8 +67,8 @@ def test_after_market_analysis_allowed_but_live_execution_blocked(monkeypatch):
         ),
     )
 
-    result = run_live_analysis(
-        LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=False, execution_mode="paper")
+    result = worker.run_live_analysis(
+        worker.LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=False, execution_mode="paper")
     )
 
     assert result["validation"]["market_status"] == "MARKET CLOSED"
@@ -79,8 +78,8 @@ def test_after_market_analysis_allowed_but_live_execution_blocked(monkeypatch):
     assert ("1h", "5d") in requested_intervals
 
     try:
-        run_live_analysis(
-            LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="live")
+        worker.run_live_analysis(
+            worker.LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="live")
         )
     except ValueError as exc:
         assert "only paper execution is supported" in str(exc)
@@ -127,8 +126,8 @@ def test_after_market_auto_paper_does_not_create_trade(monkeypatch):
     created = []
     monkeypatch.setattr(worker, "_generate_paper_trades", lambda signals: created.append(signals) or [{"status": "paper_simulated"}])
 
-    result = run_live_analysis(
-        LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
+    result = worker.run_live_analysis(
+        worker.LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
     )
 
     assert result["trades"] == []
@@ -178,8 +177,8 @@ def test_stale_demo_data_cannot_create_auto_paper_trade(monkeypatch):
     created = []
     monkeypatch.setattr(worker, "_generate_paper_trades", lambda signals: created.append(signals) or [{"status": "paper_simulated"}])
 
-    result = run_live_analysis(
-        LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
+    result = worker.run_live_analysis(
+        worker.LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
     )
 
     assert result["trades"] == []
@@ -226,10 +225,48 @@ def test_kill_switch_blocks_worker_auto_paper_trade(monkeypatch):
     created = []
     monkeypatch.setattr(worker, "_generate_paper_trades", lambda signals: created.append(signals) or [{"status": "paper_simulated"}])
 
-    result = run_live_analysis(
-        LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
+    result = worker.run_live_analysis(
+        worker.LiveAnalysisPayload(symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper")
     )
 
     assert result["trades"] == []
     assert result["auto_trade_blocked_reason"] == "KILL_SWITCH_ACTIVE: operator halt"
     assert created == []
+
+
+def test_live_nifty_scan_routes_underlying_signal_to_option_execution(monkeypatch):
+    from Backend.application import live_analysis_worker as worker
+    from Backend.application.options import auto_paper_execution
+
+    signal = StrategySignal(
+        strategy_name="breakout", symbol="NIFTY", side="BUY",
+        entry_price=25000, stop_loss=24950, target_price=25100,
+        signal_time=datetime.fromisoformat("2026-11-23T10:30:00+05:30"),
+        metadata={"quantity": 1},
+    )
+    monkeypatch.delenv("QUANTGRID_AUTO_OPTION_PAPER_CANDIDATES", raising=False)
+    monkeypatch.setattr(worker, "get_candles", lambda *a, **k: _closed_market_response())
+    monkeypatch.setattr(worker.TradingService, "run_strategy", lambda *a, **k: [signal])
+    monkeypatch.setattr(worker, "split_signals", lambda signals, **k: (signals, [], []))
+    monkeypatch.setattr(worker, "validate_signals", lambda signals, **k: (signals, "live"))
+    monkeypatch.setattr(worker, "analyze_market_structure", lambda *a, **k: {})
+    monkeypatch.setattr(worker, "kill_switch_status", lambda: {"active": False})
+    monkeypatch.setattr(worker, "validate_live_candle", lambda *a, **k: SimpleNamespace(
+        valid_for_execution=True, market_status="LIVE MARKET", model_dump=lambda: {},
+    ))
+    calls = []
+
+    def option_fill(candidate, **kwargs):
+        calls.append((candidate, kwargs))
+        return {"status": "paper_simulated", "paper_trade_id": 123,
+                "order": {"price": 50, "quantity": 65, "option_type": "CE"}}
+
+    monkeypatch.setattr(auto_paper_execution, "execute_option_paper", option_fill)
+    monkeypatch.setattr(worker, "_generate_paper_trades", lambda signals:
+                        (_ for _ in ()).throw(AssertionError("Underlying fill must not run")))
+    result = worker.run_live_analysis(worker.LiveAnalysisPayload(
+        symbol="NIFTY", strategy="breakout", auto_trade=True, execution_mode="paper",
+    ))
+    assert calls[0][0] is signal
+    assert result["trades"][0]["order"]["price"] == 50
+    assert result["trades"][0]["order"]["quantity"] == 65
