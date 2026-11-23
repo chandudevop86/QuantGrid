@@ -95,6 +95,9 @@ else
   fi
 fi
 
+log "Backing up PostgreSQL and the option ledger before deployment"
+run bash "${SCRIPT_DIR}/database-backup.sh" backup
+
 PYTHON="$(python_bin)"
 log "Installing backend dependencies"
 run "${PYTHON}" -m pip install -r "${TRADING_SERVICE_DIR}/requirements.txt"
@@ -131,12 +134,16 @@ log "Validating Nginx before restarting services"
 run sudo nginx -t
 
 log "Installing current systemd units"
+run sudo install -d -m 0700 /var/lib/quantgrid /etc/quantgrid
+run sudo install -m 0644 "${APP_DIR}/deploy/systemd/quantgrid-host-watchdog.service" /etc/systemd/system/quantgrid-host-watchdog.service
+run sudo install -m 0644 "${APP_DIR}/deploy/systemd/quantgrid-host-watchdog.timer" /etc/systemd/system/quantgrid-host-watchdog.timer
 run sudo install -m 0644 "${APP_DIR}/deploy/systemd/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 run sudo install -m 0644 "${APP_DIR}/deploy/systemd/${WORKER_SERVICE_NAME}.service" "/etc/systemd/system/${WORKER_SERVICE_NAME}.service"
 systemctl_run daemon-reload
 systemctl_run enable "${SERVICE_NAME}" "${WORKER_SERVICE_NAME}"
 systemctl_run restart "${SERVICE_NAME}" "${WORKER_SERVICE_NAME}"
 systemctl_run reload nginx
+systemctl_run enable --now quantgrid-host-watchdog.timer
 
 health_check "${BASE_URL}/health"
 if [[ "${DRY_RUN}" != "1" ]]; then
@@ -157,6 +164,15 @@ PY
 fi
 run curl -fsSI -H "Host: ${PRODUCTION_HOST:-quantgrid.info}" "http://127.0.0.1/" >/dev/null
 bash "${SCRIPT_DIR}/production_frontend.sh" check
+
+# A pending paper-position recovery is an operational alert, not a reason to
+# roll back healthy application code or discard its ledger state.
+if [[ "${DRY_RUN}" != "1" ]]; then
+  if ! sudo systemctl start quantgrid-host-watchdog.service; then
+    log "Watchdog reported unhealthy checks; inspect its report and retain ledger data."
+  fi
+  sudo journalctl -u quantgrid-host-watchdog.service -n 5 --no-pager
+fi
 
 deployed_commit="$(git rev-parse HEAD)"
 log "Deployment complete at ${deployed_commit}"
