@@ -40,7 +40,7 @@ from Backend.core.config import get_settings
 from Backend.infrastructure.broker.dhan_status import dhan_credentials
 from Backend.infrastructure.market_data.dhan_sdk import DhanSdkUnavailable, dhan_sdk_client
 from Backend.infrastructure.market_data.dhan_provider import _normalize_candles
-from Backend.presentation.api.roles import require_roles
+from Backend.presentation.api.roles import current_user, require_roles
 from Backend.application.monitoring import observe_option_chain_failure
 from Backend.application.options.quote_freshness import QuoteFreshnessError, verify_exchange_quote_timestamp
 from Backend.application.volume_analysis import analyze_volume
@@ -1142,7 +1142,7 @@ def submit_option_buyer_paper_order(
     payload: OptionBuyerPaperRequest,
     _access=Depends(require_entitlement("options.basic")),
 ):
-    """Fail-closed option order gate. Never route to brokers or paper ledger."""
+    """Submit a verified long option fill to the paper ledger."""
     actor = getattr(_access, "user", None)
     if actor is None or getattr(actor, "role", None) not in {"admin", "trader", "quant"}:
         raise HTTPException(status_code=403, detail="Trading role required.")
@@ -1155,13 +1155,52 @@ def submit_option_buyer_paper_order(
         raise HTTPException(status_code=503, detail="Trading safety state unavailable.") from exc
     if not isinstance(switch, dict) or switch.get("active") is not False:
         raise HTTPException(status_code=423, detail="Trading kill switch active or unverified.")
-    # A client may never supply contract identity, lot size, pricing or Greeks.
-    # A verified contract-master and provider per-quote timestamp are not yet
-    # exposed by _dhan_option_rows, so no safe persistence is possible.
-    raise HTTPException(
-        status_code=503,
-        detail="Paper orders disabled until independently verified exchange lot size, quote timestamp and atomic idempotent persistence are available.",
-    )
+    if getattr(actor, "id", None) is None:
+        raise HTTPException(status_code=403, detail="Authenticated trader identity required.")
+    from Backend.application.options.auto_paper_execution import submit_manual_option_paper
+
+    try:
+        result = submit_manual_option_paper(
+            actor_id=f"user:{actor.id}", key=payload.idempotency_key,
+            strike=payload.strike, side=payload.side, lots=payload.lots,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("option_buyer_paper_submission_failed", extra={"error_type": type(exc).__name__})
+        raise HTTPException(status_code=503, detail="Verified paper option execution unavailable.") from exc
+    if result.get("status") == "no_trade":
+        reason = str(result.get("reason") or "paper_order_rejected")
+        code = 409 if reason == "idempotency_key_conflict" else 422
+        if reason == "KILL_SWITCH_ACTIVE":
+            code = 423
+        raise HTTPException(status_code=code, detail=reason)
+    return result
+
+
+class OptionPaperSettlementRequest(BaseModel):
+    final_underlying_price: float = Field(gt=0, allow_inf_nan=False)
+    evidence_reference: str = Field(min_length=8, max_length=500)
+    confirmed_final_settlement: Literal[True]
+
+
+@router.post("/option-buyer/paper-positions/{order_id}/settle")
+def settle_option_paper_position(
+    order_id: int,
+    payload: OptionPaperSettlementRequest,
+    actor=Depends(current_user),
+    _role=Depends(require_roles("admin", "ops")),
+):
+    """Record an operator-reviewed final settlement for an expired paper option."""
+    from Backend.application.options.auto_paper_execution import settle_expired_option_paper
+
+    try:
+        return {"position": settle_expired_option_paper(
+            order_id, final_underlying_price=payload.final_underlying_price,
+            evidence_reference=payload.evidence_reference, actor_id=f"user:{actor.id}",
+        ), "execution_mode": "paper", "settlement_source": "manual_final_settlement"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/option-buyer/preview")
@@ -1174,42 +1213,13 @@ def preview_option_buyer(
     normalized_side = side.upper()
     if normalized_side not in {"CE", "PE"} or strike <= 0:
         raise HTTPException(status_code=422, detail="Valid CE/PE side and positive strike required.")
+    from Backend.application.options.auto_paper_execution import preview_option_paper
+
     try:
-        rows, expiry = _dhan_option_rows("NIFTY", [strike])
+        return preview_option_paper(strike=strike, side=normalized_side)
     except Exception as exc:
         logger.warning("option_buyer_preview_provider_error", extra={"error_type": type(exc).__name__})
         raise HTTPException(status_code=503, detail="Verified option provider quote unavailable.") from exc
-    leg = (rows[0].get(normalized_side.lower()) if rows else None) or {}
-    security_id = str(leg.get("security_id") or "")
-    if not security_id.isdigit():
-        raise HTTPException(status_code=503, detail="Provider did not supply a valid option contract security ID.")
-    # This is a provider-reported field, not proof of exchange provenance.
-    # Report freshness only when the provider supplied a parseable, current
-    # timezone-aware timestamp; never substitute the HTTP fetch time.
-    quote_timestamp = leg.get("quote_timestamp")
-    quote_freshness_verified = False
-    try:
-        verify_exchange_quote_timestamp(quote_timestamp)
-    except QuoteFreshnessError:
-        pass
-    else:
-        quote_freshness_verified = True
-
-    return {
-        "symbol": "NIFTY",
-        "strike": strike,
-        "side": normalized_side,
-        "expiry": expiry,
-        "security_id": security_id,
-        "source": "dhan-option-chain",
-        "quote": leg,
-        "paper_order_enabled": False,
-        "quote_timestamp": quote_timestamp,
-        "quote_freshness_verified": quote_freshness_verified,
-        "exchange_timestamp_provenance_verified": False,
-        "exchange_lot_size_verified": False,
-        "reason": "Read-only preview: exchange timestamp provenance, authoritative contract master and lot size are not verified for execution.",
-    }
 
 
 @router.get("/option-candles/{security_id}")

@@ -78,12 +78,7 @@ def _generate_paper_trades(signals: list[StrategySignal]) -> list[dict[str, Any]
             constraints,
             requested_quantity(signal),
         )
-        trades.append({
-            "status": "paper_simulated",
-            "source": "auto_signal",
-            "order": _serialize_order(order),
-        })
-        create_paper_trade(
+        saved = create_paper_trade(
             {
                 "strategy": signal.strategy_name,
                 "symbol": signal.symbol,
@@ -100,6 +95,12 @@ def _generate_paper_trades(signals: list[StrategySignal]) -> list[dict[str, Any]
                 "signal_time": signal.signal_time.isoformat(),
             }
         )
+        trades.append({
+            "status": "paper_simulated",
+            "source": "auto_signal",
+            "order": _serialize_order(order),
+            "paper_trade_id": saved["id"],
+        })
     return trades
 
 
@@ -216,17 +217,25 @@ def run_live_analysis(payload: LiveAnalysisPayload) -> dict[str, Any]:
     )
     if option_paper_pilot and auto_trade_blocked_reason is None:
         option_candidate = _paper_option_candidate(signals)
-    auto_trades = (
-        _generate_paper_trades(signals)
-        if payload.auto_trade and auto_trade_blocked_reason is None and not option_paper_pilot
-        else []
-    )
+    auto_trades = []
+    if payload.auto_trade and auto_trade_blocked_reason is None and not option_paper_pilot:
+        if payload.symbol.upper() == "NIFTY":
+            from Backend.application.options.auto_paper_execution import execute_option_paper
+
+            auto_trades = [execute_option_paper(
+                signal, capital=payload.capital, risk_pct=payload.risk_pct,
+                rr_ratio=payload.rr_ratio,
+            ) for signal in signals]
+        else:
+            auto_trades = _generate_paper_trades(signals)
     if option_paper_pilot and auto_trade_blocked_reason is None:
         auto_trade_blocked_reason = "NIFTY_OPTION_CANDIDATE_ONLY_NO_EXECUTION"
     logger.info(
-        "Live analysis generated %s signals and %s trades for %s/%s",
+        "Live analysis generated signals=%s persisted_paper_trades=%s no_trade=%s no_trade_reasons=%s for %s/%s",
         len(serialized_signals),
-        len(auto_trades),
+        sum(trade.get("status") == "paper_simulated" for trade in auto_trades),
+        sum(trade.get("status") == "no_trade" for trade in auto_trades),
+        [trade.get("reason") for trade in auto_trades if trade.get("status") == "no_trade"],
         payload.symbol.upper(),
         payload.strategy,
     )

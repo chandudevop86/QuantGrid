@@ -4,6 +4,7 @@ from Backend.presentation.api import market_api
 
 
 class Actor:
+    id = 1
     role = "trader"
 
 
@@ -19,6 +20,12 @@ def request(**updates):
 
 
 def test_paper_endpoint_fails_closed(monkeypatch):
+    from Backend.application.options import auto_paper_execution
+
+    def unavailable(**kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(auto_paper_execution, "submit_manual_option_paper", unavailable)
     monkeypatch.setattr(market_api, "kill_switch_status", lambda **kwargs: {"active": False})
     try:
         market_api.submit_option_buyer_paper_order(request(), _access=Access())

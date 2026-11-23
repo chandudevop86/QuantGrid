@@ -14,6 +14,7 @@ from Backend.application.position_store import (
     update_open_position,
 )
 from Backend.application.trade_exit_engine import exit_rules
+from Backend.application.options.paper_order_ledger import option_position_rows
 
 
 VALID_SIDES = {"BUY", "SELL"}
@@ -22,7 +23,7 @@ VALID_SCALE_ACTIONS = {"scale_in", "scale_out"}
 
 def trading_engine_dashboard() -> dict[str, Any]:
     halt = kill_switch_status()
-    positions = list_open_positions()
+    positions = list_open_positions() + option_position_rows(status="open")
     return {
         "module": "trading_engine",
         "generated_at": _now(),

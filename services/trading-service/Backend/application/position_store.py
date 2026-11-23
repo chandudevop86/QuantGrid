@@ -172,11 +172,15 @@ def list_open_positions(*, execution_mode: str | None = None) -> list[dict[str, 
     return positions
 
 
-def list_closed_positions(limit: int = 100) -> list[dict[str, Any]]:
+def list_closed_positions(limit: int = 100, *, execution_mode: str | None = None) -> list[dict[str, Any]]:
     init_position_store()
+    normalized_mode = _validate_execution_mode(execution_mode) if execution_mode is not None else None
     if not _use_sqlite():
-        return _db_list_positions("closed", limit=limit)
-    return _list_positions("closed", limit=limit)
+        return _db_list_positions("closed", limit=limit, execution_mode=normalized_mode)
+    rows = _list_positions("closed", limit=500 if normalized_mode else limit)
+    if normalized_mode:
+        rows = [row for row in rows if row.get("execution_mode", "paper") == normalized_mode]
+    return rows[:max(1, min(int(limit), 500))]
 
 
 def find_position_by_broker_order_id(
@@ -353,9 +357,15 @@ def close_open_position(position_id: int, *, current_price: float | None = None,
     return dict(updated) if updated else None
 
 
-def position_summary() -> dict[str, Any]:
-    open_positions = list_open_positions()
-    closed_positions = list_closed_positions(500)
+def position_summary(*, execution_mode: str | None = None, include_options: bool = True) -> dict[str, Any]:
+    open_positions = list_open_positions(execution_mode=execution_mode)
+    closed_positions = list_closed_positions(500, execution_mode=execution_mode)
+    if include_options and execution_mode != "live":
+        from Backend.application.options.paper_order_ledger import option_position_rows
+
+        option_rows = option_position_rows()
+        open_positions += [row for row in option_rows if row["status"] == "open"]
+        closed_positions += [row for row in option_rows if row["status"] == "closed"]
     today = datetime.now(timezone.utc).date().isoformat()
     realized_today = sum(float(item.get("closed_pnl") or 0.0) for item in closed_positions if str(item.get("closed_at") or "").startswith(today))
     unrealized = sum(float(item.get("open_pnl") or 0.0) for item in open_positions)

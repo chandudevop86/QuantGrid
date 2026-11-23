@@ -357,6 +357,8 @@ def patch_trade_journal(
     payload_data = payload.model_dump(exclude_none=True) if hasattr(payload, "model_dump") else payload.dict(exclude_none=True)
     try:
         return update_trade_journal_entry(entry_id, payload_data)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade journal entry not found.") from exc
 

@@ -25,10 +25,10 @@ def _mock_risk_sources(monkeypatch, trades, open_positions, closed_positions):
     resolved_config = importlib.import_module("Backend.core.config")
 
     monkeypatch.setattr(paper_trade_store, "init_paper_trade_store", lambda: None)
-    monkeypatch.setattr(paper_trade_store, "list_paper_trades", lambda limit: trades)
+    monkeypatch.setattr(paper_trade_store, "list_paper_trades", lambda limit, **kwargs: trades)
     monkeypatch.setattr(resolved_position_store, "list_open_positions", lambda **kwargs: open_positions)
     monkeypatch.setattr(resolved_position_store, "list_closed_positions", lambda limit: closed_positions)
-    monkeypatch.setattr(resolved_position_store, "position_summary", lambda: {
+    monkeypatch.setattr(resolved_position_store, "position_summary", lambda **kwargs: {
         "open_positions": len(open_positions),
         "current_exposure": 200,
         "realized_pnl": -100,

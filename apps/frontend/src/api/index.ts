@@ -113,6 +113,10 @@ export const api = {
   getPrice: () => API.get("/market/price").then((res) => res.data),
   optionBuyerPreview: (strike: number, side: "CE" | "PE") =>
     API.get("/market/option-buyer/preview", { params: { strike, side } }).then((res) => res.data),
+  optionBuyerPaperOrder: (payload: { symbol: "NIFTY"; side: "CE" | "PE"; strike: number; lots: number; execution_mode: "paper"; idempotency_key: string }) =>
+    API.post("/market/option-buyer/paper-order", payload).then((res) => res.data),
+  settleOptionPaper: (orderId: number, payload: { final_underlying_price: number; evidence_reference: string; confirmed_final_settlement: true }) =>
+    API.post(`/market/option-buyer/paper-positions/${orderId}/settle`, payload).then((res) => res.data),
   optionChain: (symbol = "NIFTY") =>
     API.get(`/market/option-chain/${symbol}`).then((res) => res.data),
   optionCandles: (securityId: string, interval = "1m", contract?: { symbol?: string; strike?: number; side?: "CE" | "PE" }) =>
