@@ -83,6 +83,7 @@ from Backend.application.market_data_store import (
 )
 
 from Backend.application.notification_retry import NotificationRetryWorker
+from Backend.application.worker_progress import record_worker_progress
 
 
 
@@ -413,6 +414,8 @@ def _run_auto_paper_job(
 
 
     for strategy_name in strategies:
+
+        record_worker_progress("auto_paper_strategy")
 
         live_payload = LiveAnalysisPayload(
 
@@ -995,10 +998,20 @@ def _run_periodic_paper_reconciliation() -> dict[str, Any]:
     # automated paper lifecycle must never inherit or switch to live mode.
     from Backend.application.options.auto_paper_execution import monitor_option_positions
 
+    result = None
     try:
-        return _run_reconciliation_job({"execution_mode": "paper"})
+        result = _run_reconciliation_job({"execution_mode": "paper"})
+        return result
     finally:
-        monitor_option_positions()
+        try:
+            option_result = monitor_option_positions()
+        except Exception:
+            record_worker_progress("option_exit_monitor_failed", option_recovery_count=1)
+            raise
+        if isinstance(option_result, dict):
+            record_worker_progress("option_exit_monitor", option_recovery_count=len(option_result.get("errors", [])))
+            if isinstance(result, dict):
+                result["option_paper"] = option_result
 
 
 def _exit_monitor_enabled():
@@ -1260,6 +1273,7 @@ def run_worker_loop(
         "QuantGrid worker started id=%s",
         WORKER_ID
     )
+    record_worker_progress("started")
 
 
     next_heartbeat = time.monotonic()
@@ -1283,6 +1297,8 @@ def run_worker_loop(
         # -------------------------
 
         if time.monotonic() >= next_heartbeat:
+
+            record_worker_progress("worker_loop")
 
             redis_service.write_worker_heartbeat(
                 {
@@ -1371,11 +1387,18 @@ def run_worker_loop(
             and
             time.monotonic() >= next_auto_paper_check
         ):
+            record_worker_progress("auto_paper_scan", scan_status="started")
             try:
                 result = _run_periodic_auto_paper()
                 logger.info("auto_paper_periodic_scan result=%s", result.get("status"))
+                scan_status = str(result.get("status") or "unknown")
+                if any(item.get("status") in {"no_market_data", "stale_candle", "missing_candle_timestamp"}
+                       for item in result.get("symbols", {}).values()):
+                    scan_status = "degraded"
+                record_worker_progress("auto_paper_scan", scan_status=scan_status)
             except Exception:
                 logger.exception("Automatic paper scan failed")
+                record_worker_progress("auto_paper_scan", scan_status="failed")
 
             next_auto_paper_check = (
                 time.monotonic()

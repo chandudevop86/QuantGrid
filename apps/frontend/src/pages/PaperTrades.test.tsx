@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ openPositions: vi.fn(), closedPositions: vi.fn(), positionSummary: vi.fn(), exitPosition: vi.fn() }));
+const api = vi.hoisted(() => ({ openPositions: vi.fn(), closedPositions: vi.fn(), positionSummary: vi.fn(), exitPosition: vi.fn(), settleOptionPaper: vi.fn() }));
 vi.mock("../api", () => ({ api }));
 
 import PaperTrades from "./PaperTrades";
+import * as roles from "../roles";
 
 describe("position lifecycle", () => {
   beforeEach(() => {
@@ -39,5 +40,28 @@ describe("position lifecycle", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Search positions" }), { target: { value: "does-not-exist" } });
     expect(screen.getByText("No open positions match this filter")).toBeVisible();
     expect(screen.getByText("No closed positions match this filter")).toBeVisible();
+  });
+
+  it("requires reviewed evidence before an operator can settle an expired paper option", async () => {
+    const role = vi.spyOn(roles,"getCurrentRole").mockReturnValue("admin");
+    api.openPositions.mockResolvedValue({positions:[{id:-1,option_order_id:1,symbol:"NIFTY expired CE",side:"BUY",
+      quantity:65,entry_price:50,recovery_reason:"expired_contract_requires_verified_settlement"}]});
+    api.settleOptionPaper.mockResolvedValue({position:{status:"closed"}});
+    try {
+      render(<PaperTrades/>);
+      fireEvent.click(await screen.findByRole("button",{name:"Review settlement"}));
+      const record=screen.getByRole("button",{name:"Record paper settlement"});
+      expect(record).toBeDisabled();
+      fireEvent.change(screen.getByLabelText("Final underlying settlement price"),{target:{value:"24900"}});
+      fireEvent.change(screen.getByLabelText("Official settlement evidence reference"),{target:{value:"Reviewed exchange settlement record"}});
+      expect(record).toBeDisabled();
+      fireEvent.click(screen.getByRole("checkbox",{name:"I reviewed the final settlement evidence for this expiry."}));
+      fireEvent.click(record);
+      await waitFor(()=>expect(api.settleOptionPaper).toHaveBeenCalledWith(1,{
+        final_underlying_price:24900,evidence_reference:"Reviewed exchange settlement record",confirmed_final_settlement:true,
+      }));
+    } finally {
+      role.mockRestore();
+    }
   });
 });

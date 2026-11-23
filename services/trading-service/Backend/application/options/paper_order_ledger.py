@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from Backend.application.options.quote_freshness import verify_exchange_quote_timestamp
+from Backend.application.paper_trade_costs import calculate_paper_trade_costs
 
 
 class IdempotencyConflict(ValueError):
@@ -19,6 +20,8 @@ def ledger_path():
 
 
 def _initialize_lifecycle(db):
+    if not db.in_transaction:
+        db.execute("BEGIN IMMEDIATE")
     # Sidecar tables preserve ledgers created with CHECK(status='open').
     db.execute("""CREATE TABLE IF NOT EXISTS option_paper_exits (
         order_id INTEGER PRIMARY KEY REFERENCES option_paper_orders(id),
@@ -27,6 +30,21 @@ def _initialize_lifecycle(db):
     db.execute("""CREATE TABLE IF NOT EXISTS option_paper_marks (
         order_id INTEGER PRIMARY KEY REFERENCES option_paper_orders(id),
         price REAL NOT NULL, quote_timestamp TEXT NOT NULL)""")
+    columns = {row[1] for row in db.execute("PRAGMA table_info(option_paper_exits)")}
+    for name in ("gross_pnl", "brokerage", "taxes", "slippage_cost", "total_costs", "net_pnl"):
+        if name not in columns:
+            db.execute(f"ALTER TABLE option_paper_exits ADD COLUMN {name} REAL")
+    for name in ("settlement_evidence", "settlement_actor", "settlement_source"):
+        if name not in columns:
+            db.execute(f"ALTER TABLE option_paper_exits ADD COLUMN {name} TEXT")
+    db.execute("""CREATE TABLE IF NOT EXISTS option_paper_settlement_audit (
+        order_id INTEGER PRIMARY KEY REFERENCES option_paper_orders(id),
+        actor TEXT NOT NULL, evidence TEXT NOT NULL, settlement_price REAL NOT NULL,
+        created_at TEXT NOT NULL)""")
+    db.execute("""CREATE TABLE IF NOT EXISTS option_paper_recovery (
+        order_id INTEGER PRIMARY KEY REFERENCES option_paper_orders(id),
+        reason TEXT NOT NULL, first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 1)""")
 
 
 def list_option_positions(db_path=None):
@@ -41,27 +59,63 @@ def list_option_positions(db_path=None):
         rows = db.execute("""
             SELECT o.id,o.actor_id,o.idem_key,o.payload,o.created_at,
                 p.quantity,p.entry_price,e.exit_price,e.pnl,e.reason,e.closed_at,
-                m.price AS mark_price,m.quote_timestamp
+                e.gross_pnl,e.brokerage,e.taxes,e.slippage_cost,e.total_costs,e.net_pnl,
+                e.settlement_evidence,e.settlement_actor,e.settlement_source,
+                m.price AS mark_price,m.quote_timestamp,
+                r.reason AS recovery_reason,r.attempts AS recovery_attempts,
+                r.last_seen_at AS recovery_last_seen_at
             FROM option_paper_orders o JOIN option_paper_positions p ON p.order_id=o.id
             LEFT JOIN option_paper_exits e ON e.order_id=o.id
             LEFT JOIN option_paper_marks m ON m.order_id=o.id
+            LEFT JOIN option_paper_recovery r ON r.order_id=o.id
             ORDER BY o.id DESC
         """).fetchall()
     result = []
     for row in rows:
         payload = json.loads(row["payload"])
         price = row["exit_price"] if row["closed_at"] else row["mark_price"]
-        pnl = row["pnl"] if row["closed_at"] else ((price - row["entry_price"]) * row["quantity"] if price is not None else None)
+        costs = calculate_paper_trade_costs(side="BUY", entry_price=row["entry_price"],
+                                           exit_price=price, quantity=row["quantity"]).to_dict() if price is not None else {}
+        if row["closed_at"]:
+            costs = {name: row[name] for name in ("gross_pnl", "brokerage", "taxes", "slippage_cost", "total_costs", "net_pnl")}
+        pnl = row["pnl"] if row["closed_at"] else costs.get("net_pnl")
         result.append({**payload, "id": row["id"], "actor_id": row["actor_id"], "idempotency_key": row["idem_key"],
                        "symbol": f"NIFTY {payload['expiry']} {float(payload['strike']):g} {payload['side']}",
                        "underlying": "NIFTY", "option_type": payload["side"], "side": "BUY",
                        "quantity": row["quantity"], "entry_price": row["entry_price"],
                        "current_price": price, "quote_timestamp": row["quote_timestamp"],
                        "exit_price": row["exit_price"], "status": "closed" if row["closed_at"] else "open",
-                       "pnl": pnl, "closed_pnl": row["pnl"], "open_pnl": pnl if not row["closed_at"] else 0,
+                       **costs, "pnl": pnl, "closed_pnl": row["pnl"], "open_pnl": pnl if not row["closed_at"] else 0,
                        "opened_at": row["created_at"], "created_at": row["created_at"], "closed_at": row["closed_at"],
-                       "exit_reason": row["reason"], "execution_mode": "paper", "product": "OPTIDX paper"})
+                       "exit_reason": row["reason"], "execution_mode": "paper", "product": "OPTIDX paper",
+                       "recovery_reason": row["recovery_reason"], "recovery_attempts": row["recovery_attempts"] or 0,
+                       "recovery_last_seen_at": row["recovery_last_seen_at"],
+                       "settlement_evidence": row["settlement_evidence"], "settlement_actor": row["settlement_actor"],
+                       "settlement_source": row["settlement_source"],
+                       "cost_model": "estimated_round_trip" if costs.get("net_pnl") is not None else "legacy_costs_unavailable"})
     return result
+
+
+def option_position_rows(*, status=None):
+    return [{**row, "id": -int(row["id"]), "option_order_id": int(row["id"]),
+             "broker_order_id": f"option-paper:{row['id']}"}
+            for row in list_option_positions() if status is None or row["status"] == status]
+
+
+def record_option_recovery(db_path, order_id, reason):
+    now = datetime.now(timezone.utc).isoformat()
+    with sqlite3.connect(str(db_path), timeout=30) as db:
+        _initialize_lifecycle(db)
+        db.execute("""INSERT INTO option_paper_recovery(order_id,reason,first_seen_at,last_seen_at,attempts)
+            VALUES(?,?,?,?,1) ON CONFLICT(order_id) DO UPDATE SET reason=excluded.reason,
+            last_seen_at=excluded.last_seen_at,attempts=option_paper_recovery.attempts+1""",
+                   (order_id, reason, now, now))
+
+
+def clear_option_recovery(db_path, order_id):
+    with sqlite3.connect(str(db_path), timeout=30) as db:
+        _initialize_lifecycle(db)
+        db.execute("DELETE FROM option_paper_recovery WHERE order_id=?", (order_id,))
 
 
 def mark_option_position(db_path, order_id, price, quote_timestamp):
@@ -73,9 +127,12 @@ def mark_option_position(db_path, order_id, price, quote_timestamp):
                    (order_id, price, quote_timestamp))
 
 
-def close_option_position(db_path, order_id, price, reason):
-    if not math.isfinite(price) or price <= 0:
+def close_option_position(db_path, order_id, price, reason, *, settlement_evidence=None, settlement_actor=None):
+    settlement = reason == "expiry_settlement" and bool(settlement_evidence) and bool(settlement_actor)
+    if not math.isfinite(price) or price < 0 or (price == 0 and not settlement):
         raise ValueError("invalid option exit price")
+    if reason == "expiry_settlement" and not settlement:
+        raise ValueError("verified settlement evidence and actor required")
     with sqlite3.connect(str(db_path), timeout=30, isolation_level=None) as db:
         db.execute("BEGIN IMMEDIATE")
         try:
@@ -83,9 +140,21 @@ def close_option_position(db_path, order_id, price, reason):
             position = db.execute("SELECT quantity,entry_price FROM option_paper_positions WHERE order_id=?", (order_id,)).fetchone()
             if position is None:
                 raise ValueError("option paper position not found")
-            pnl = round((price - position[1]) * position[0], 2)
-            db.execute("INSERT OR IGNORE INTO option_paper_exits(order_id,exit_price,pnl,reason,closed_at) VALUES(?,?,?,?,?)",
-                       (order_id, price, pnl, reason, datetime.now(timezone.utc).isoformat()))
+            costs = calculate_paper_trade_costs(side="BUY", entry_price=position[1], exit_price=price, quantity=position[0])
+            inserted = db.execute("""INSERT OR IGNORE INTO option_paper_exits
+                (order_id,exit_price,pnl,reason,closed_at,gross_pnl,brokerage,taxes,slippage_cost,total_costs,net_pnl)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                       (order_id, price, costs.net_pnl, reason, datetime.now(timezone.utc).isoformat(),
+                        costs.gross_pnl,costs.brokerage,costs.taxes,costs.slippage_cost,costs.total_costs,costs.net_pnl))
+            if settlement and inserted.rowcount:
+                now = datetime.now(timezone.utc).isoformat()
+                db.execute("""UPDATE option_paper_exits SET settlement_evidence=?,settlement_actor=?,
+                    settlement_source='manual_final_settlement' WHERE order_id=?""",
+                           (settlement_evidence, settlement_actor, order_id))
+                db.execute("""INSERT INTO option_paper_settlement_audit
+                    (order_id,actor,evidence,settlement_price,created_at) VALUES(?,?,?,?,?)""",
+                           (order_id, settlement_actor, settlement_evidence, price, now))
+            db.execute("DELETE FROM option_paper_recovery WHERE order_id=?", (order_id,))
             db.execute("COMMIT")
         except BaseException:
             db.execute("ROLLBACK")
@@ -105,9 +174,11 @@ def _check_account_limits(db, limits, now):
     today_count = db.execute("SELECT COUNT(*) FROM option_paper_orders WHERE created_at>=?", (day_start,)).fetchone()[0]
     daily_pnl = db.execute("SELECT COALESCE(SUM(pnl),0) FROM option_paper_exits WHERE closed_at>=?", (day_start,)).fetchone()[0]
     weekly_pnl = db.execute("SELECT COALESCE(SUM(pnl),0) FROM option_paper_exits WHERE closed_at>=?", (week_start,)).fetchone()[0]
-    unrealized = db.execute("""SELECT COALESCE(SUM((m.price-p.entry_price)*p.quantity),0)
+    marked_positions = db.execute("""SELECT p.entry_price,m.price,p.quantity
         FROM option_paper_positions p JOIN option_paper_marks m ON m.order_id=p.order_id
-        WHERE NOT EXISTS (SELECT 1 FROM option_paper_exits e WHERE e.order_id=p.order_id)""").fetchone()[0]
+        WHERE NOT EXISTS (SELECT 1 FROM option_paper_exits e WHERE e.order_id=p.order_id)""").fetchall()
+    unrealized = sum(calculate_paper_trade_costs(side="BUY", entry_price=entry, exit_price=price, quantity=quantity).net_pnl
+                     for entry, price, quantity in marked_positions)
     if open_count + int(limits["open_positions"]) >= int(limits["max_open_positions"]):
         raise ValueError("MAX_OPEN_POSITIONS_EXCEEDED")
     if today_count + int(limits["trades_today"]) >= int(limits["max_trades_per_day"]):

@@ -77,7 +77,7 @@ def instrument_master() -> list[dict]:
         return list(_master_rows)
 
 
-def select_contract(spot: float, option_type: str, *, rows=None, now=None) -> dict:
+def select_contract(spot: float, option_type: str, *, strike: float | None = None, rows=None, now=None) -> dict:
     if option_type not in {"CE", "PE"}:
         raise ValueError("invalid_option_type")
     clock = now or datetime.now(IST)
@@ -87,8 +87,9 @@ def select_contract(spot: float, option_type: str, *, rows=None, now=None) -> di
         raise ValueError("no_active_option_contract")
     expiry = min(row["expiry"] for row in available)
     available = [row for row in available if row["expiry"] == expiry]
-    strike = min((row["strike"] for row in available), key=lambda strike: (abs(strike - spot), strike))
-    matches = [row for row in available if row["strike"] == strike]
+    selected_strike = (_positive(strike, "strike") if strike is not None else
+                       min((row["strike"] for row in available), key=lambda value: (abs(value - spot), value)))
+    matches = [row for row in available if row["strike"] == selected_strike]
     if len(matches) != 1:
         raise ValueError("ambiguous_option_contract")
     return matches[0]

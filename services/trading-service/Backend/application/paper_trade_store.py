@@ -225,16 +225,32 @@ def create_paper_trade(payload: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def list_paper_trades(limit: int = 100) -> list[dict[str, Any]]:
+def _option_trade_rows() -> list[dict[str, Any]]:
+    from Backend.application.options.paper_order_ledger import option_position_rows
+
+    return [{**row, "strategy": row.get("strategy") or "option_buyer",
+             "entry": row["entry_price"], "signal": row["side"],
+             "source": "option_paper", "reason": row.get("exit_reason"),
+             "timestamp": row["created_at"]}
+            for row in option_position_rows()]
+
+
+def _recent_trade_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    return sorted(rows, key=lambda row: (_trade_created_at(row) or datetime.min.replace(tzinfo=timezone.utc), int(row.get("id") or 0)),
+                  reverse=True)[:max(1, min(int(limit), 500))]
+
+
+def list_paper_trades(limit: int = 100, *, include_options: bool = True) -> list[dict[str, Any]]:
     init_paper_trade_store()
     if not _use_sqlite():
-        return _db_list_paper_trades(limit)
-    with _connect() as connection:
-        rows = connection.execute(
-            "SELECT * FROM paper_trades ORDER BY created_at DESC, id DESC LIMIT ?",
-            (max(1, min(int(limit), 500)),),
-        ).fetchall()
-    return [dict(row) for row in rows]
+        rows = _db_list_paper_trades(limit)
+    else:
+        with _connect() as connection:
+            rows = [dict(row) for row in connection.execute(
+                "SELECT * FROM paper_trades ORDER BY created_at DESC, id DESC LIMIT ?",
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()]
+    return _recent_trade_rows(rows + (_option_trade_rows() if include_options else []), limit)
 
 
 def update_paper_trade_status(
@@ -399,6 +415,30 @@ def list_trade_journal(
     status: str | None = None,
     symbol: str | None = None,
     date: str | None = None,
+    include_options: bool = True,
+) -> list[dict[str, Any]]:
+    rows = _list_generic_trade_journal(limit, strategy=strategy, status=status, symbol=symbol, date=date)
+    if include_options:
+        for row in _option_trade_rows():
+            if strategy and str(row["strategy"]).lower() != strategy.lower():
+                continue
+            if status and str(row["status"]).lower() != status.lower():
+                continue
+            if symbol and str(row["symbol"]).upper() != symbol.upper():
+                continue
+            if date and not str(row["created_at"]).startswith(date[:10]):
+                continue
+            rows.append(_journal_with_timestamp(row))
+    return _recent_trade_rows(rows, limit)
+
+
+def _list_generic_trade_journal(
+    limit: int = 100,
+    *,
+    strategy: str | None = None,
+    status: str | None = None,
+    symbol: str | None = None,
+    date: str | None = None,
 ) -> list[dict[str, Any]]:
     init_paper_trade_store()
     if not _use_sqlite():
@@ -451,11 +491,13 @@ def list_trade_journal(
             "closed_at": trade.get("closed_at"),
         }
         )
-        for trade in list_paper_trades(limit)
+        for trade in list_paper_trades(limit, include_options=False)
     ]
 
 
 def get_trade_journal_entry(entry_id: int) -> dict[str, Any] | None:
+    if entry_id < 0:
+        return next((row for row in _option_trade_rows() if row["id"] == entry_id), None)
     init_paper_trade_store()
     if not _use_sqlite():
         return _db_get_trade_journal_entry(entry_id)
@@ -465,6 +507,10 @@ def get_trade_journal_entry(entry_id: int) -> dict[str, Any] | None:
 
 
 def update_trade_journal_entry(entry_id: int, updates: dict[str, Any]) -> dict[str, Any]:
+    if entry_id < 0:
+        if get_trade_journal_entry(entry_id) is None:
+            raise KeyError(entry_id)
+        raise ValueError("Option execution records are read-only. Use position exits or reviewed expiry settlement.")
     init_paper_trade_store()
     allowed = {"strategy", "signal", "symbol", "status", "entry", "entry_price", "stop_loss", "target", "exit_price", "pnl", "gross_pnl", "total_costs", "net_pnl", "broker_order_id", "quantity", "reason", "exit_reason", "source", "closed_at"}
     filtered = {key: value for key, value in updates.items() if key in allowed and value is not None}
@@ -854,7 +900,7 @@ def _float_or_none(value: Any) -> float | None:
     return float(value)
 
 
-def risk_status(*, include_closed_outcomes: bool = False) -> dict[str, Any]:
+def risk_status(*, include_closed_outcomes: bool = False, include_options: bool = True) -> dict[str, Any]:
     """Consolidate each closure once, preferring cost-adjusted paper evidence.
 
     Position records represent broker/position state; paper-trade records may
@@ -871,10 +917,21 @@ def risk_status(*, include_closed_outcomes: bool = False) -> dict[str, Any]:
     from zoneinfo import ZoneInfo
 
     settings = get_settings()
-    positions = position_summary()
+    positions = position_summary(include_options=False)
     open_positions = list_open_positions()
     closed_positions = list_closed_positions(500)
-    trades = list_paper_trades(500)
+    trades = list_paper_trades(500, include_options=False)
+    if include_options:
+        option_rows = _option_trade_rows()
+        open_options = [row for row in option_rows if row["status"] == "open"]
+        closed_options = [row for row in option_rows if row["status"] == "closed"]
+        open_positions += open_options
+        closed_positions += closed_options
+        trades += option_rows
+        positions["open_positions"] += len(open_options)
+        positions["current_exposure"] += sum(
+            float(row.get("current_price") or row["entry_price"]) * row["quantity"] for row in open_options)
+        positions["realized_pnl"] += sum(float(row.get("pnl") or 0) for row in closed_options)
     now = datetime.now(timezone.utc)
     ist = ZoneInfo("Asia/Kolkata")
     today = now.astimezone(ist).date()
@@ -941,8 +998,8 @@ def risk_status(*, include_closed_outcomes: bool = False) -> dict[str, Any]:
         and opened.astimezone(ist).date() == today
     )
     consecutive_losses = 0
-    for trade in trades:
-        if float(trade.get("pnl") or 0.0) < 0:
+    for _time, pnl in sorted(closed_events, reverse=True):
+        if pnl < 0:
             consecutive_losses += 1
         else:
             break

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -48,7 +46,7 @@ def open_positions(
     _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
     execution_mode: str = Depends(_execution_mode),
 ):
-    return {"positions": list_open_positions() + _paper_options(execution_mode, "open")}
+    return {"positions": list_open_positions(execution_mode=execution_mode) + _paper_options(execution_mode, "open")}
 
 
 @router.get("/closed")
@@ -56,7 +54,7 @@ def closed_positions(
     _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
     execution_mode: str = Depends(_execution_mode),
 ):
-    return {"positions": list_closed_positions() + _paper_options(execution_mode, "closed")}
+    return {"positions": list_closed_positions(execution_mode=execution_mode) + _paper_options(execution_mode, "closed")}
 
 
 @router.get("/summary")
@@ -64,24 +62,7 @@ def summary(
     _role: str = Depends(require_roles("admin", "developer", "trader", "viewer", "ops")),
     execution_mode: str = Depends(_execution_mode),
 ):
-    result = position_summary()
-    opened = _paper_options(execution_mode, "open")
-    closed = _paper_options(execution_mode, "closed")
-    today = datetime.now(timezone.utc).date().isoformat()
-    unrealized = sum(float(row.get("open_pnl") or 0) for row in opened)
-    result["open_positions"] += len(opened)
-    result["closed_positions"] += len(closed)
-    result["current_exposure"] = round(result["current_exposure"] + sum(
-        row["quantity"] * float(row.get("current_price") or row["entry_price"])
-        for row in opened
-    ), 2)
-    result["realized_pnl"] = round(result["realized_pnl"] + sum(float(row.get("closed_pnl") or 0) for row in closed), 2)
-    result["unrealized_pnl"] = round(result["unrealized_pnl"] + unrealized, 2)
-    result["todays_pnl"] = round(result["todays_pnl"] + unrealized + sum(
-        float(row.get("closed_pnl") or 0) for row in closed
-        if str(row.get("closed_at") or "").startswith(today)
-    ), 2)
-    return result
+    return position_summary(execution_mode=execution_mode)
 
 
 @router.get("/exit-rules")

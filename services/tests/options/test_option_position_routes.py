@@ -4,12 +4,11 @@ def _seed_option(tmp_path, monkeypatch):
 
     path = tmp_path / "option-paper.sqlite3"
     monkeypatch.setenv("QUANTGRID_OPTION_PAPER_LEDGER", str(path))
-    monkeypatch.setattr(positions_api, "list_open_positions", lambda: [])
-    monkeypatch.setattr(positions_api, "list_closed_positions", lambda: [])
-    monkeypatch.setattr(positions_api, "position_summary", lambda: {
-        "open_positions": 0, "closed_positions": 0, "current_exposure": 0,
-        "realized_pnl": 0, "unrealized_pnl": 0, "todays_pnl": 0,
-    })
+    from Backend.application import position_store
+    monkeypatch.setattr(positions_api, "list_open_positions", lambda **kwargs: [])
+    monkeypatch.setattr(positions_api, "list_closed_positions", lambda **kwargs: [])
+    monkeypatch.setattr(position_store, "list_open_positions", lambda **kwargs: [])
+    monkeypatch.setattr(position_store, "list_closed_positions", lambda *args, **kwargs: [])
     result = ledger.record_verified_paper_buy(path, "auto-paper", "test-option-signal-0001", {
         "execution_mode": "paper", "eligible": True,
         "symbol": "NIFTY", "side": "PE", "security_id": "123456",
@@ -54,12 +53,13 @@ def test_option_manual_exit_uses_verified_service_price(app_client, admin_header
     row = response.json()["position"]
     assert row["id"] == -order_id
     assert row["exit_price"] == 110
-    assert row["closed_pnl"] == 650
+    assert row["gross_pnl"] == 650
+    assert row["closed_pnl"] == round(650 - row["total_costs"], 2)
     assert calls == [(order_id, "manual_exit")]
     summary = app_client.get("/positions/summary", headers=admin_headers).json()
     assert summary["open_positions"] == 0
     assert summary["closed_positions"] == 1
-    assert summary["realized_pnl"] == 650
+    assert summary["realized_pnl"] == row["closed_pnl"]
 
 
 def test_live_mode_cannot_exit_option_paper_position(app_client, admin_headers, tmp_path, monkeypatch):
@@ -92,4 +92,5 @@ def test_exit_all_includes_option_ledger_positions(app_client, admin_headers, tm
     assert result["checked"] == result["exited"] == 1
     assert result["errors"] == []
     assert result["positions"][0]["position"]["id"] == -order_id
-    assert result["positions"][0]["position"]["closed_pnl"] == -325
+    assert result["positions"][0]["position"]["gross_pnl"] == -325
+    assert result["positions"][0]["position"]["closed_pnl"] < -325

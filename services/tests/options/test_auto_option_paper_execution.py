@@ -27,7 +27,7 @@ def execution(monkeypatch, tmp_path):
     monkeypatch.setattr(ledger, "datetime", Clock)
     monkeypatch.setattr(service, "get_market_session", lambda: SimpleNamespace(market_live=True))
     monkeypatch.setattr(service, "kill_switch_status", lambda **kwargs: {"active": False})
-    account = {"capital": 100000, "risk_per_trade_amount": 1000,
+    account = {"capital": 100000, "risk_per_trade_amount": 1000, "risk_per_trade_pct": 1,
                "max_quantity": 1800, "open_positions": 0, "max_open_positions": 3,
                "trades_today": 0, "max_trades_per_day": 3, "daily_pnl": 0,
                "max_daily_loss": 3000, "weekly_pnl": 0, "max_weekly_loss": 9000,
@@ -35,10 +35,10 @@ def execution(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "risk_status", lambda **kwargs: dict(account))
     selected = []
 
-    def select(spot, side):
+    def select(spot, side, *, strike=None):
         selected.append((spot, side))
         return {"symbol": "NIFTY", "security_id": "12345" if side == "CE" else "23456",
-                "side": side, "expiry": "2026-11-24", "strike": 25000.0, "lot_size": 65}
+                "side": side, "expiry": "2026-11-24", "strike": float(strike or 25000), "lot_size": 65}
 
     monkeypatch.setattr(service, "select_contract", select)
     quote = {"ask": 50.0, "bid": 49.0, "ask_quantity": 1300, "bid_quantity": 1300,
@@ -100,7 +100,8 @@ def test_monitor_exit_uses_option_bid_and_releases_exposure(execution):
     result = service.monitor_option_positions()
     assert result["closed"][0]["exit_reason"] == "target_hit"
     assert result["closed"][0]["exit_price"] == 70
-    assert result["closed"][0]["pnl"] == 1300
+    assert result["closed"][0]["gross_pnl"] == 1300
+    assert result["closed"][0]["pnl"] == round(1300 - result["closed"][0]["total_costs"], 2)
     assert list_option_positions(execution.path)[0]["status"] == "closed"
 
 
@@ -109,9 +110,10 @@ def test_manual_exit_uses_fresh_option_bid_and_is_idempotent(execution):
     execution.quote.update(bid=45.0, ask=46.0)
     closed = service.exit_option_paper(first["option_order_id"])
     assert closed["exit_price"] == 45
-    assert closed["pnl"] == -325
+    assert closed["gross_pnl"] == -325
+    assert closed["pnl"] < -325
     execution.quote.update(bid=40.0)
-    assert service.exit_option_paper(first["option_order_id"])["pnl"] == -325
+    assert service.exit_option_paper(first["option_order_id"])["pnl"] == closed["pnl"]
 
 
 def test_atomic_global_account_position_limit(execution):
@@ -134,3 +136,72 @@ def test_option_win_resets_earlier_generic_loss_streak(execution):
     execution.signal.strategy_name = "crt_tbs"
     second = service.execute_option_paper(execution.signal, capital=100000, risk_pct=1, rr_ratio=2)
     assert second["status"] == "paper_simulated"
+
+
+def test_manual_buy_preserves_requested_lots_and_request_identity(execution):
+    first = service.submit_manual_option_paper(
+        actor_id="user:1", key="manual-request-000001", strike=25100, side="PE", lots=1,
+    )
+    assert first["status"] == "paper_simulated"
+    assert first["order"]["strike"] == 25100
+    assert first["order"]["option_type"] == "PE"
+    assert first["order"]["quantity"] == 65
+    replay = service.submit_manual_option_paper(
+        actor_id="user:1", key="manual-request-000001", strike=25100, side="PE", lots=1,
+    )
+    assert replay["replayed"] is True
+    assert replay["paper_trade_id"] == first["paper_trade_id"]
+    conflict = service.submit_manual_option_paper(
+        actor_id="user:1", key="manual-request-000001", strike=25200, side="PE", lots=1,
+    )
+    assert conflict["reason"] == "idempotency_key_conflict"
+    assert len(list_option_positions(execution.path)) == 1
+
+
+def test_manual_buy_rejects_unaffordable_requested_lots(execution):
+    result = service.submit_manual_option_paper(
+        actor_id="user:1", key="manual-request-000001", strike=25000, side="CE", lots=2,
+    )
+    assert result["reason"] == "option_lot_exceeds_budget_or_depth"
+    assert list_option_positions(execution.path) == []
+
+
+def test_expired_position_requires_review_and_zero_settlement_is_audited(execution, monkeypatch):
+    import sys
+
+    first = service.execute_option_paper(execution.signal, capital=100000, risk_pct=1, rr_ratio=2)
+    monkeypatch.setattr(sys.modules[__name__], "NOW", datetime(2026, 11, 25, 5, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(service, "get_market_session", lambda: SimpleNamespace(market_live=False))
+    monitored = service.monitor_option_positions()
+    assert monitored["open"] == 1
+    assert monitored["errors"][0]["reason"] == "expired_contract_requires_verified_settlement"
+    assert list_option_positions(execution.path)[0]["recovery_reason"]
+    with pytest.raises(ValueError, match="reviewed_settlement_evidence_required"):
+        service.settle_expired_option_paper(first["option_order_id"], final_underlying_price=24900,
+                                            evidence_reference="", actor_id="user:1")
+    closed = service.settle_expired_option_paper(first["option_order_id"], final_underlying_price=24900,
+                                                evidence_reference="Reviewed NSE final settlement 2026-11-24", actor_id="user:1")
+    assert closed["status"] == "closed"
+    assert closed["exit_price"] == 0
+    assert closed["gross_pnl"] == -3250
+    assert closed["settlement_source"] == "manual_final_settlement"
+    assert closed["settlement_actor"] == "user:1"
+    assert closed["recovery_reason"] is None
+
+
+def test_failed_square_off_is_retried_for_active_contract(execution, monkeypatch):
+    import sys
+
+    service.execute_option_paper(execution.signal, capital=100000, risk_pct=1, rr_ratio=2)
+    monkeypatch.setattr(sys.modules[__name__], "NOW", datetime(2026, 11, 23, 10, 0, tzinfo=timezone.utc))
+
+    def unavailable(ids):
+        raise OSError("provider unavailable")
+
+    monkeypatch.setattr(service, "contract_quotes", unavailable)
+    assert service.monitor_option_positions()["errors"][0]["reason"] == "option_exit_quote_unavailable"
+    assert list_option_positions(execution.path)[0]["status"] == "open"
+    monkeypatch.setattr(sys.modules[__name__], "NOW", datetime(2026, 11, 24, 4, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(service, "contract_quotes", lambda ids: {value: {**execution.quote, "security_id": value} for value in ids})
+    recovered = service.monitor_option_positions()
+    assert recovered["closed"][0]["exit_reason"] == "overdue_square_off"

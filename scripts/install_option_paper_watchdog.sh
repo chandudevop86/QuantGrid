@@ -16,7 +16,10 @@ bash -n scripts/install_option_paper_watchdog.sh
     services/trading-service/Backend/application/options/paper_order_ledger.py \
     services/trading-service/Backend/infrastructure/market_data/dhan_option_execution.py
 
-install -d -m 0700 services/trading-service/Backend/data /etc/quantgrid
+install -d -m 0700 services/trading-service/Backend/data /etc/quantgrid /var/lib/quantgrid
+if [ ! -e /etc/quantgrid/watchdog.env ]; then
+    install -m 0600 /dev/null /etc/quantgrid/watchdog.env
+fi
 install -d -m 0755 /etc/systemd/system/quantgrid-worker.service.d
 cat > /etc/quantgrid/auto-option-paper.env <<'ENV'
 QUANTGRID_AUTO_PAPER_ENABLED=true

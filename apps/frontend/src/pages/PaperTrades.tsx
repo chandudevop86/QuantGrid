@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import Loader from "../components/Loader";
 import { getCurrentMode, type TradingMode } from "../mode";
+import { getCurrentRole } from "../roles";
 
 function money(value: unknown, digits = 2) {
   const number = Number(value);
@@ -62,6 +63,12 @@ export default function PaperTrades() {
   const [closingPosition, setClosingPosition] = useState<any>(null);
   const [closing, setClosing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [settlementPosition, setSettlementPosition] = useState<any>(null);
+  const [settlementPrice, setSettlementPrice] = useState("");
+  const [settlementEvidence, setSettlementEvidence] = useState("");
+  const [settlementConfirmed, setSettlementConfirmed] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const canSettle = ["admin", "ops"].includes(getCurrentRole()) && mode === "paper";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,6 +141,25 @@ export default function PaperTrades() {
     }
   };
 
+  const settlePosition = async () => {
+    const price = Number(settlementPrice);
+    if (!settlementPosition || !settlementConfirmed || !Number.isFinite(price) || price <= 0 || settlementEvidence.trim().length < 8) return;
+    setSettling(true);
+    setError(null);
+    try {
+      await api.settleOptionPaper(settlementPosition.option_order_id, {
+        final_underlying_price: price, evidence_reference: settlementEvidence.trim(), confirmed_final_settlement: true,
+      });
+      setMessage(`${settlementPosition.symbol} paper expiry settlement recorded.`);
+      setSettlementPosition(null);
+      await load();
+    } catch (reason: any) {
+      setError(reason?.response?.data?.detail ?? "Paper settlement could not be recorded.");
+    } finally {
+      setSettling(false);
+    }
+  };
+
   const renderRows = (rows: any[], closed: boolean) => rows.map((row) => {
     const pnl = positionPnl(row, closed);
     const change = positionChange(row, closed);
@@ -141,14 +167,18 @@ export default function PaperTrades() {
     return (
       <tr key={row.id ?? row.broker_order_id}>
         <td data-label="Side"><span className={`position-side ${String(row.side).toLowerCase()}`}>{row.side === "BUY" ? "B" : row.side === "SELL" ? "S" : row.side ?? "-"}</span></td>
-        <td data-label="Instrument" className="position-instrument"><strong>{row.symbol ?? "-"}</strong><small>{row.broker_order_id ? `Order ${row.broker_order_id}` : closed && row.closed_at ? `Closed ${new Date(row.closed_at).toLocaleString()}` : row.opened_at ? `Opened ${new Date(row.opened_at).toLocaleString()}` : ""}</small></td>
+        <td data-label="Instrument" className="position-instrument"><strong>{row.symbol ?? "-"}</strong><small>{row.broker_order_id ? `Order ${row.broker_order_id}` : closed && row.closed_at ? `Closed ${new Date(row.closed_at).toLocaleString()}` : row.opened_at ? `Opened ${new Date(row.opened_at).toLocaleString()}` : ""}</small>{row.recovery_reason && <small role="status">Recovery required · {String(row.recovery_reason).replace(/_/g, " ")}</small>}</td>
         <td data-label="Product"><span className="position-product">{productName(row)}</span></td>
         <td data-label="Quantity">{number(row.quantity)}</td>
         <td data-label="Average price">{number(row.entry_price ?? row.entry)}</td>
         <td data-label={closed ? "Exit price" : "LTP"}>{number(ltp)}</td>
         <td data-label="P&L" className={pnl >= 0 ? "is-positive" : "is-negative"}><strong>{money(pnl)}</strong></td>
         <td data-label="Change" className={pnl >= 0 ? "is-positive" : "is-negative"}>{change === null ? "-" : `${change > 0 ? "+" : ""}${change.toFixed(2)}%`}</td>
-        {!closed && <td data-label="Action"><button type="button" className="position-exit-button" onClick={() => setClosingPosition(row)} disabled={!row.id} aria-label={`Close ${row.symbol ?? "position"}`}>Close</button></td>}
+        {!closed && <td data-label="Action">{row.recovery_reason === "expired_contract_requires_verified_settlement"
+          ? canSettle ? <button type="button" className="position-exit-button" onClick={() => {
+            setSettlementPosition(row); setSettlementPrice(""); setSettlementEvidence(""); setSettlementConfirmed(false);
+          }}>Review settlement</button> : <span>Admin settlement review required</span>
+          : <button type="button" className="position-exit-button" onClick={() => setClosingPosition(row)} disabled={!row.id} aria-label={`Close ${row.symbol ?? "position"}`}>Close</button>}</td>}
       </tr>
     );
   });
@@ -207,6 +237,14 @@ export default function PaperTrades() {
         </section>
       </>}
 
+      {settlementPosition && <div className="modal-backdrop" role="presentation"><form className="live-confirm-modal position-exit-modal" role="dialog" aria-modal="true" aria-labelledby="settlement-title" onSubmit={event => { event.preventDefault(); void settlePosition(); }}>
+        <h2 id="settlement-title">Review expired paper option settlement</h2>
+        <p>{settlementPosition.symbol}. Intrinsic value will be calculated from the final underlying settlement, and the operator and evidence will be recorded.</p>
+        <label>Final underlying settlement price<input type="number" min="0.01" step="0.01" required value={settlementPrice} onChange={event => setSettlementPrice(event.target.value)} /></label>
+        <label>Official settlement evidence reference<input required minLength={8} maxLength={500} value={settlementEvidence} onChange={event => setSettlementEvidence(event.target.value)} /></label>
+        <label><input type="checkbox" checked={settlementConfirmed} onChange={event => setSettlementConfirmed(event.target.checked)} />I reviewed the final settlement evidence for this expiry.</label>
+        <div className="modal-actions"><button type="button" className="refresh-button" disabled={settling} onClick={() => setSettlementPosition(null)}>Cancel</button><button type="submit" className="primary-action" disabled={settling || !settlementConfirmed || Number(settlementPrice) <= 0 || settlementEvidence.trim().length < 8}>{settling ? "Recording…" : "Record paper settlement"}</button></div>
+      </form></div>}
       {closingPosition && <div className="modal-backdrop" role="presentation"><div className="live-confirm-modal position-exit-modal" role="dialog" aria-modal="true" aria-labelledby="close-position-title">
         <div className="modal-header"><div><span className="page-eyebrow">Manual exit · {mode} mode</span><h2 id="close-position-title">Close {closingPosition.symbol} position?</h2><p>This exits the complete open quantity at the latest available price.</p></div><span className="environment-badge danger">CLOSE</span></div>
         <div className="confirm-grid"><span><strong>{closingPosition.side}</strong>Side</span><span><strong>{closingPosition.quantity}</strong>Quantity</span><span><strong>{closingPosition.entry_price ?? "-"}</strong>Entry</span><span><strong>{closingPosition.current_price ?? "Market"}</strong>Exit price</span><span><strong>{money(closingPosition.open_pnl)}</strong>Open P&amp;L</span></div>
