@@ -26,7 +26,7 @@ case "${ACTION}" in
     install -d -m 0700 "${BACKUP_DIR}"
     backup_file="${2:-${BACKUP_DIR}/quantgrid-$(date -u +%Y%m%dT%H%M%SZ).dump}"
     umask 077
-    pg_dump --format=custom --no-owner --no-acl --file="${backup_file}" "${DATABASE_URL}"
+    "$(python_bin)" "${APP_DIR}/scripts/postgres_archive.py" backup "${backup_file}"
     pg_restore --list "${backup_file}" >/dev/null
     sha256sum "${backup_file}" >"${backup_file}.sha256"
     "$(python_bin)" "${APP_DIR}/scripts/option_ledger_backup.py" backup "${backup_file}" \
@@ -53,7 +53,7 @@ case "${ACTION}" in
     command -v pg_restore >/dev/null 2>&1 || { echo "pg_restore is not installed." >&2; exit 1; }
     "$(python_bin)" "${APP_DIR}/scripts/option_ledger_backup.py" restore-check "${backup_file}" \
       ${RESTORE_OPTION_PAPER_LEDGER:+"${RESTORE_OPTION_PAPER_LEDGER}"}
-    pg_restore --exit-on-error --no-owner --no-acl --clean --if-exists --dbname="${RESTORE_DATABASE_URL}" "${backup_file}"
+    "$(python_bin)" "${APP_DIR}/scripts/postgres_archive.py" restore "${backup_file}"
     "$(python_bin)" "${APP_DIR}/scripts/option_ledger_backup.py" restore "${backup_file}" \
       ${RESTORE_OPTION_PAPER_LEDGER:+"${RESTORE_OPTION_PAPER_LEDGER}"}
     echo "Restore completed. Run database.sh check against the restored target."
