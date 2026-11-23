@@ -471,13 +471,16 @@ def _run_auto_paper_job(
             logger.info(
                 "auto_paper_signal_diagnostics "
                 "strategy=%s active=%s rejected=%s stale=%s "
-                "trades=%s blocked_reason=%s "
+                "persisted_paper_trades=%s no_trade=%s no_trade_reasons=%s paper_trade_ids=%s blocked_reason=%s "
                 "rejected_reasons=%s stale_reasons=%s",
                 strategy_name,
                 len(analysis.get("signals", [])),
                 len(analysis.get("rejected_signals", [])),
                 len(analysis.get("stale_signals", [])),
-                len(analysis.get("trades", [])),
+                sum(trade.get("status") == "paper_simulated" for trade in analysis.get("trades", [])),
+                sum(trade.get("status") == "no_trade" for trade in analysis.get("trades", [])),
+                [trade.get("reason") for trade in analysis.get("trades", []) if trade.get("status") == "no_trade"],
+                [trade.get("paper_trade_id") for trade in analysis.get("trades", []) if trade.get("status") == "paper_simulated"],
                 analysis.get("auto_trade_blocked_reason"),
                 [
                     item.get("decision", {}).get("reason")
