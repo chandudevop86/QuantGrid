@@ -59,3 +59,19 @@ def test_api_status_rejects_invalid_json(monkeypatch):
     response.status = 200
     monkeypatch.setattr(module.urllib.request, "urlopen", lambda *a, **k: response)
     assert module.api_status() == {"name": "backend_api", "ok": False}
+
+
+def test_loopback_probe_supplies_https_proxy_header(monkeypatch):
+    module = _load()
+    response = io.BytesIO(json.dumps({
+        "status": "ok", "services": {"db": {"healthy": True}},
+    }).encode())
+    response.status = 200
+
+    def local_backend(request, **kwargs):
+        assert request.full_url == "http://127.0.0.1:8000/health"
+        assert request.get_header("X-forwarded-proto") == "https"
+        return response
+
+    monkeypatch.setattr(module.urllib.request, "urlopen", local_backend)
+    assert module.api_status()["ok"] is True
