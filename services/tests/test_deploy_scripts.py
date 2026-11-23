@@ -66,12 +66,12 @@ def test_database_script_exposes_expected_check_command_without_duplicate_schema
 
 def test_database_backup_requires_explicit_restore_authorization():
     script = _text("database-backup.sh")
-    assert "pg_dump --format=custom" in script
+    assert 'scripts/postgres_archive.py" backup' in script
     assert "pg_restore --list" in script
     assert "sha256sum" in script
     assert 'ALLOW_DATABASE_RESTORE:-}" == "YES"' in script
     assert "RESTORE_DATABASE_URL is required" in script
-    assert "--exit-on-error" in script
+    assert 'scripts/postgres_archive.py" restore' in script
 
 
 def test_health_check_waits_and_prints_backend_diagnostics():
