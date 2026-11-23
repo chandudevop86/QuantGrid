@@ -23,7 +23,8 @@ def service_status(name: str) -> dict:
 
 def api_status() -> dict:
     try:
-        with urllib.request.urlopen(HEALTH_URL, timeout=5) as response:
+        request = urllib.request.Request(HEALTH_URL, headers={"X-Forwarded-Proto": "https"})
+        with urllib.request.urlopen(request, timeout=5) as response:
             data = json.load(response)
             # Do not expose response contents: health may include credentials or identifiers.
             healthy = (
