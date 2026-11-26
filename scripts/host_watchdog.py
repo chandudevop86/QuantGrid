@@ -61,6 +61,22 @@ def api_status() -> dict:
         return {"name": "backend_api", "ok": False}
 
 
+def broker_status() -> dict:
+    try:
+        request = urllib.request.Request(HEALTH_URL + "/broker-readiness",
+                                         headers={"X-Forwarded-Proto": "https"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.load(response)
+        ready = response.status == 200 and data.get("ready") is True
+        allowed = {"token_expired", "token_missing", "invalid_token", "missing_client_id",
+                   "api_timeout", "api_unavailable", "broker_unavailable", "broker_check_failed"}
+        reason = data.get("reason")
+        return {"name": "dhan_authentication", "ok": ready,
+                "reason": "authenticated" if ready else reason if reason in allowed else "broker_unavailable"}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {"name": "dhan_authentication", "ok": False, "reason": "broker_check_failed"}
+
+
 def scanner_status(*, now: datetime | None = None) -> dict:
     clock = (now or datetime.now(timezone.utc)).astimezone(IST)
     path = Path(os.getenv("QUANTGRID_WORKER_PROGRESS_FILE", "/var/lib/quantgrid/worker-progress.json"))
@@ -152,7 +168,7 @@ def option_recovery_status() -> dict:
 
 
 def main() -> int:
-    checks = [service_status(name) for name in SERVICES] + [api_status(), scanner_status(), option_recovery_status()]
+    checks = [service_status(name) for name in SERVICES] + [api_status(), scanner_status(), option_recovery_status(), broker_status()]
     report = {"timestamp_utc": datetime.now(timezone.utc).isoformat(),
               "healthy": all(x["ok"] for x in checks), "checks": checks,
               "mode": "read_only_no_broker_orders_no_auto_restart"}
