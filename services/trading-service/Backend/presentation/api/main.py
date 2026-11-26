@@ -261,6 +261,20 @@ def create_app():
             "services": services,
         }
 
+    @app.get("/health/broker-readiness")
+    def broker_readiness():
+        from Backend.infrastructure.broker.dhan_status import cached_dhan_profile
+        try:
+            status = cached_dhan_profile(timeout=3.0)
+            ready = status.get("connected") is True and status.get("authenticated") is True
+            allowed = {"token_expired", "token_missing", "invalid_token", "missing_client_id",
+                       "api_timeout", "api_unavailable"}
+            reason = status.get("error")
+            return {"ready": ready, "reason": "authenticated" if ready else
+                    reason if reason in allowed else "broker_unavailable"}
+        except Exception:
+            return {"ready": False, "reason": "broker_check_failed"}
+
     @app.get("/metrics")
     def metrics(_role: str = Depends(require_roles("admin", "ops"))):
         return prometheus_metrics_response()
