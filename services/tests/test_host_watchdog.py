@@ -146,3 +146,30 @@ def test_webhook_destination_is_optional_and_failed_delivery_retries(monkeypatch
                         (_ for _ in ()).throw(OSError("offline")))
     assert module.notify_status(report)["reason"] == "delivery_failed"
     assert not state.exists()
+
+
+def test_broker_readiness_sanitizes_and_reports_expiry(monkeypatch):
+    module = _load()
+    for payload, expected in [
+        ({"ready": True}, (True, "authenticated")),
+        ({"ready": False, "reason": "token_expired"}, (False, "token_expired")),
+        ({"ready": False, "reason": "private detail"}, (False, "broker_unavailable")),
+        ([], (False, "broker_check_failed")),
+    ]:
+        response = io.BytesIO(json.dumps(payload).encode())
+        response.status = 200
+        def probe(request, **kwargs):
+            assert request.full_url == "http://127.0.0.1:8000/health/broker-readiness"
+            assert request.get_header("X-forwarded-proto") == "https"
+            return response
+        monkeypatch.setattr(module.urllib.request, "urlopen", probe)
+        result = module.broker_status()
+        assert (result["ok"], result["reason"]) == expected
+
+
+def test_broker_readiness_network_failure(monkeypatch):
+    module = _load()
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *a, **k:
+                        (_ for _ in ()).throw(OSError("offline")))
+    assert module.broker_status() == {"name": "dhan_authentication", "ok": False,
+                                      "reason": "broker_check_failed"}
