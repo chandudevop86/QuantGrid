@@ -53,3 +53,137 @@ def reserve_live_premium(db_path, *, actor_id, key, premium_rupees, cap_rupees=5
         except BaseException:
             db.execute("ROLLBACK")
             raise
+
+
+def transition_live_reservation(db_path, *, actor_id, key, expected_state, next_state,
+                                broker_reconciliation_confirmed=False):
+    """Compare-and-swap state transition; never calls the broker.
+
+    Unknown broker outcomes remain locked. 'released' requires verified
+    reconciliation, even after an apparent rejection.
+    """
+    transitions = {
+        "reserved": {"submitted", "unknown", "released"},
+        "submitted": {"unknown", "filled", "released"},
+        "unknown": {"filled", "released"},
+        "filled": {"released"},
+    }
+    if (expected_state not in transitions or next_state not in transitions[expected_state]
+            or not isinstance(actor_id, str) or not actor_id.strip()
+            or not isinstance(key, str) or not 16 <= len(key) <= 128):
+        raise ReservationRejected("invalid reservation transition")
+    if next_state == "released":
+        raise ReservationRejected("direct release forbidden: use reconciled release API")
+    path = Path(db_path)
+    if not path.is_file():
+        raise ReservationRejected("durable reservation database not provisioned")
+    with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute(
+                "SELECT id,state FROM option_live_reservations WHERE actor_id=? AND idem_key=?",
+                (actor_id, key)).fetchone()
+            if not row or row[1] != expected_state:
+                raise ReservationRejected("reservation state mismatch")
+            db.execute(
+                "UPDATE option_live_reservations SET state=? WHERE id=? AND state=?",
+                (next_state, row[0], expected_state))
+            db.execute("COMMIT")
+            return {"reservation_id": row[0], "state": next_state}
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+
+def bind_live_reservation_order(db_path, *, actor_id, key, broker_account_id,
+                                broker_order_id, security_id):
+    """Permanently bind a reservation to one broker account/order/contract.
+
+    Must be invoked by trusted server-side execution code, never from a client
+    request. No order is submitted by this function.
+    """
+    identifiers = (actor_id, broker_account_id, broker_order_id, security_id)
+    if (any(not isinstance(v, str) or not v.strip() for v in identifiers)
+            or not isinstance(key, str) or not 16 <= len(key) <= 128
+            or not security_id.isdigit()):
+        raise ReservationRejected("invalid broker binding identifiers")
+    path = Path(db_path)
+    if not path.is_file():
+        raise ReservationRejected("durable reservation database not provisioned")
+    with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute(
+                "SELECT id,state FROM option_live_reservations WHERE actor_id=? AND idem_key=?",
+                (actor_id, key)).fetchone()
+            if not row or row[1] != "reserved":
+                raise ReservationRejected("reservation must be reserved before binding")
+            db.execute("""CREATE TABLE IF NOT EXISTS option_live_order_bindings (
+                reservation_id INTEGER PRIMARY KEY,
+                broker_account_id TEXT NOT NULL,
+                broker_order_id TEXT NOT NULL,
+                security_id TEXT NOT NULL,
+                UNIQUE(broker_account_id, broker_order_id))""")
+            existing = db.execute(
+                "SELECT broker_account_id,broker_order_id,security_id FROM option_live_order_bindings WHERE reservation_id=?",
+                (row[0],)).fetchone()
+            identity = (broker_account_id, broker_order_id, security_id)
+            if existing and tuple(existing) != identity:
+                raise ReservationRejected("immutable broker identity mismatch")
+            if not existing:
+                try:
+                    db.execute("INSERT INTO option_live_order_bindings VALUES(?,?,?,?)", (row[0], *identity))
+                except sqlite3.IntegrityError as exc:
+                    raise ReservationRejected("broker order already bound") from exc
+            db.execute("COMMIT")
+            return {"reservation_id": row[0], "bound": True}
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
+
+
+def release_rejected_live_reservation(db_path, *, actor_id, key, sdk_client,
+                                      broker_account_id, broker_order_id, security_id):
+    """Only the trusted server-side Dhan reader can authorize a non-fill release.
+
+    No caller-supplied boolean or broker snapshot can authorize this path.
+    This does not handle filled positions or any broker order submission.
+    """
+    from .dhan_reconciliation_reader import verify_dhan_nonfill
+
+    if not isinstance(broker_account_id, str) or not broker_account_id.strip():
+        raise ReservationRejected("broker account identity required")
+    path = Path(db_path)
+    if not path.is_file():
+        raise ReservationRejected("durable reservation database not provisioned")
+    with sqlite3.connect(str(path), timeout=30, isolation_level=None) as db:
+        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            row = db.execute(
+                "SELECT id,state FROM option_live_reservations WHERE actor_id=? AND idem_key=?",
+                (actor_id, key)).fetchone()
+            if not row or row[1] not in ("submitted", "unknown"):
+                raise ReservationRejected("reservation state not releasable")
+            bound = db.execute(
+                "SELECT broker_account_id,broker_order_id,security_id FROM option_live_order_bindings WHERE reservation_id=?",
+                (row[0],)).fetchone()
+            if not bound or tuple(bound) != (broker_account_id, broker_order_id, security_id):
+                raise ReservationRejected("broker identity mismatch or missing binding")
+            # Broker reads occur only after identity has been checked under the
+            # reservation write lock; failures roll back and retain exposure.
+            result = verify_dhan_nonfill(sdk_client=sdk_client, order_id=broker_order_id,
+                                         security_id=security_id)
+            if result.get("release_eligible") is not True:
+                raise ReservationRejected("Dhan reconciliation did not prove zero-fill")
+            db.execute(
+                "UPDATE option_live_reservations SET state='released' WHERE id=? AND state=?",
+                (row[0], row[1]))
+            db.execute("COMMIT")
+            return {"reservation_id": row[0], "state": "released",
+                    "broker_order_id": broker_order_id}
+        except BaseException:
+            db.execute("ROLLBACK")
+            raise
