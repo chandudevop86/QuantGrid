@@ -591,6 +591,11 @@ def create_order(payload: CreateOrder):
     order_number = str(random.randint(1000, 9999))
 
     with engine.begin() as conn:
+        # Serialize four-digit receipt allocation across both order endpoints.
+        # The lock lasts until commit/rollback; never rely on SELECT alone.
+        if conn.dialect.name != "postgresql":
+            raise RuntimeError("Atomic receipt allocation requires PostgreSQL")
+        conn.execute(text("SELECT pg_advisory_xact_lock(6211991)"))
 
         while conn.execute(
             text(
@@ -812,6 +817,11 @@ def create_razorpay_order(payload: CreateRazorpayOrder):
     order_number = str(random.randint(1000, 9999))
 
     with engine.begin() as conn:
+        # Serialize four-digit receipt allocation across both order endpoints.
+        # The lock lasts until commit/rollback; never rely on SELECT alone.
+        if conn.dialect.name != "postgresql":
+            raise RuntimeError("Atomic receipt allocation requires PostgreSQL")
+        conn.execute(text("SELECT pg_advisory_xact_lock(6211991)"))
 
         while conn.execute(
             text(
